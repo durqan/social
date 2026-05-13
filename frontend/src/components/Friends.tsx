@@ -75,22 +75,22 @@ function Friends() {
                             <p className="text-center text-gray-500 py-8">У вас пока нет друзей</p>
                         ) : (
                             <div className="space-y-3">
-                                {friends.map(Friend => (
-                                    <div key={Friend.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition">
+                                {friends.map(friend => (
+                                    <div key={friend.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition">
                                         <div
                                             className="flex items-center gap-3 cursor-pointer flex-1"
-                                            onClick={() => navigate(`/users/${Friend.id}`)}
+                                            onClick={() => navigate(`/users/${friend.id}`)}
                                         >
                                             <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
-                                                {Friend.name?.charAt(0).toUpperCase() || '😎'}
+                                                {friend.name?.charAt(0).toUpperCase() || '😎'}
                                             </div>
                                             <div>
-                                                <p className="font-semibold text-gray-800">{Friend.name || 'Пользователь'}</p>
-                                                <p className="text-sm text-gray-500">{Friend.email}</p>
+                                                <p className="font-semibold text-gray-800">{friend.name || 'Пользователь'}</p>
+                                                <p className="text-sm text-gray-500">{friend.email}</p>
                                             </div>
                                         </div>
                                         <button
-                                            onClick={() => removeFriend(Friend.id)}
+                                            onClick={() => removeFriend(friend.id)}
                                             className="text-red-500 hover:text-red-700 text-sm"
                                         >
                                             Удалить
@@ -106,18 +106,18 @@ function Friends() {
                             <p className="text-center text-gray-500 py-8">Нет входящих заявок</p>
                         ) : (
                             <div className="space-y-3">
-                                {requests.map(req => req.friend && (
+                                {requests.map(req => req.user && (
                                     <div key={req.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition">
                                         <div
                                             className="flex items-center gap-3 cursor-pointer flex-1"
-                                            onClick={() => navigate(`/users/${req.friend!.id}`)}
+                                            onClick={() => navigate(`/users/${req.user!.id}`)}
                                         >
                                             <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
-                                                {req.friend.name?.charAt(0).toUpperCase() || '😎'}
+                                                {req.user.name?.charAt(0).toUpperCase() || '😎'}
                                             </div>
                                             <div>
-                                                <p className="font-semibold text-gray-800">{req.friend.name || 'Пользователь'}</p>
-                                                <p className="text-sm text-gray-500">{req.friend.email}</p>
+                                                <p className="font-semibold text-gray-800">{req.user.name || 'Пользователь'}</p>
+                                                <p className="text-sm text-gray-500">{req.user.email}</p>
                                             </div>
                                         </div>
                                         <button
