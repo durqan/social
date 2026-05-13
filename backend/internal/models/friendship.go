@@ -12,6 +12,6 @@ type Friendship struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 
-	User   User `gorm:"foreignKey:UserID" json:"-"`
+	User   User `gorm:"foreignKey:UserID" json:"user"`
 	Friend User `gorm:"foreignKey:FriendID" json:"friend"`
 }
