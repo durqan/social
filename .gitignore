@@ -1,0 +1,35 @@
+# Environment files
+.env
+.env.production
+.env.local
+
+# Docker
+postgres-data/
+*.log
+
+# Backend
+backend/__debug_bin
+backend/*.exe
+backend/*.exe~
+backend/*.dll
+backend/*.so
+backend/*.dylib
+backend/bin/
+backend/dist/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
