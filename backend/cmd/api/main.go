@@ -1,8 +1,7 @@
 package main
 
 import (
-	"os"
-	"strings"
+	"tester/internal/config"
 	"tester/internal/db"
 	"tester/internal/handlers"
 	"tester/internal/middleware"
@@ -15,6 +14,7 @@ import (
 )
 
 func main() {
+	cfg := config.Load()
 	database, err := db.NewDB()
 	if err != nil {
 		panic("failed to connect database")
@@ -35,7 +35,7 @@ func main() {
 	r := gin.Default()
 
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     allowedOrigins(),
+		AllowOrigins:     cfg.AllowedOrigins,
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length"},
@@ -102,28 +102,7 @@ func main() {
 	handlers.InitWebSocket(database)
 	r.GET("/ws", handlers.WebSocketHandler)
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
-	if err := r.Run(":" + port); err != nil {
+	if err := r.Run(":" + cfg.Port); err != nil {
 		panic(err)
 	}
-}
-
-func allowedOrigins() []string {
-	origins := os.Getenv("CORS_ALLOWED_ORIGINS")
-	if origins == "" {
-		return []string{"http://localhost", "http://localhost:5173", "http://localhost:80"}
-	}
-
-	parts := strings.Split(origins, ",")
-	allowed := make([]string, 0, len(parts))
-	for _, origin := range parts {
-		origin = strings.TrimSpace(origin)
-		if origin != "" {
-			allowed = append(allowed, origin)
-		}
-	}
-	return allowed
 }

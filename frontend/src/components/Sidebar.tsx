@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
-import api from '../api/axios.js';
-import { wsService } from '../services/ws.js';
+import { useWebSocket } from '../contexts/WebSocketContext.js';
+import { messageService } from '../services/messageService.js';
+import { Avatar } from './ui/Avatar.js';
+import { Icon } from './ui/Icon.js';
+import { isMessageEvent, isTypedEvent, type WsEvent } from '../types/ws.js';
 
 interface SidebarProps {
     userId?: number | undefined;
@@ -10,6 +13,7 @@ interface SidebarProps {
 }
 
 function Sidebar({ userId, userName, userAvatar }: SidebarProps) {
+    const wsService = useWebSocket();
     const [isOpen, setIsOpen] = useState(false);
     const [unreadCount, setUnreadCount] = useState(0);
     const [notificationCount, setNotificationCount] = useState(0);
@@ -17,8 +21,7 @@ function Sidebar({ userId, userName, userAvatar }: SidebarProps) {
     const refreshUnreadCount = async () => {
         if (!userId) return;
         try {
-            const res = await api.get('/messages/unread/count');
-            setUnreadCount(res.data.unread_count);
+            setUnreadCount(await messageService.getUnreadCount());
         } catch (error) {
             console.error('Ошибка загрузки непрочитанных:', error);
         }
@@ -35,8 +38,8 @@ function Sidebar({ userId, userName, userAvatar }: SidebarProps) {
 
     // Счётчик уведомлений о друзьях
     useEffect(() => {
-        const handleNotification = (msg: any) => {
-            if (msg.type === 'friend_request' || msg.type === 'friend_accepted') {
+        const handleNotification = (msg: WsEvent) => {
+            if (isTypedEvent(msg, 'friend_request') || isTypedEvent(msg, 'friend_accepted')) {
                 setNotificationCount(prev => prev + 1);
                 setTimeout(() => {
                     setNotificationCount(prev => Math.max(0, prev - 1));
@@ -47,14 +50,15 @@ function Sidebar({ userId, userName, userAvatar }: SidebarProps) {
         return () => {
             wsService.removeMessageHandler(handleNotification);
         };
-    }, []);
+    }, [wsService]);
 
     useEffect(() => {
         if (!userId) return;
 
         refreshUnreadCount();
 
-        const handleNewMessage = (msg: any) => {
+        const handleNewMessage = (msg: WsEvent) => {
+            if (!isMessageEvent(msg)) return;
             const pathname = window.location.pathname;
             const isChatOpen = pathname.includes(`/chat/${msg.from_id}`);
 
@@ -72,12 +76,7 @@ function Sidebar({ userId, userName, userAvatar }: SidebarProps) {
         return () => {
             wsService.removeMessageHandler(handleNewMessage);
         };
-    }, [userId]);
-
-    const getInitials = (name?: string) => {
-        if (!name) return '😎';
-        return name.charAt(0).toUpperCase();
-    };
+    }, [userId, wsService]);
 
     const closeSidebar = () => setIsOpen(false);
 
@@ -88,9 +87,7 @@ function Sidebar({ userId, userName, userAvatar }: SidebarProps) {
                 onClick={() => setIsOpen(true)}
                 className="fixed top-4 left-4 z-50 p-2 bg-white rounded-lg shadow-md lg:hidden"
             >
-                <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
+                <Icon name="menu" className="w-6 h-6 text-gray-600" />
             </button>
 
             {/* Оверлей */}
@@ -113,24 +110,12 @@ function Sidebar({ userId, userName, userAvatar }: SidebarProps) {
                     onClick={closeSidebar}
                     className="absolute top-4 right-4 p-1 text-gray-400 hover:text-gray-600 lg:hidden"
                 >
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
+                    <Icon name="close" className="w-6 h-6" />
                 </button>
 
                 <div className="p-4 border-b border-gray-200">
                     <div className="flex items-center gap-3">
-                        {userAvatar ? (
-                            <img
-                                src={userAvatar}
-                                alt="Avatar"
-                                className="w-10 h-10 rounded-full object-cover"
-                            />
-                        ) : (
-                            <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold">
-                                {getInitials(userName)}
-                            </div>
-                        )}
+                        <Avatar name={userName} src={userAvatar} />
                         <div>
                             <p className="font-semibold text-gray-800">{userName || 'Пользователь'}</p>
                             <p className="text-xs text-gray-500">Online</p>
@@ -150,9 +135,7 @@ function Sidebar({ userId, userName, userAvatar }: SidebarProps) {
                             }`
                         }
                     >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                        </svg>
+                        <Icon name="home" />
                         <span>Моя страница</span>
                     </NavLink>
 
@@ -166,9 +149,7 @@ function Sidebar({ userId, userName, userAvatar }: SidebarProps) {
                             }`
                         }
                     >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
-                        </svg>
+                        <Icon name="wall" />
                         <span>Моя стена</span>
                     </NavLink>
 
@@ -182,9 +163,7 @@ function Sidebar({ userId, userName, userAvatar }: SidebarProps) {
                             }`
                         }
                     >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                        </svg>
+                        <Icon name="friends" />
                         <span>Друзья</span>
                         {notificationCount > 0 && (
                             <span className="ml-auto bg-blue-500 text-white text-xs rounded-full px-2 py-0.5">
@@ -203,9 +182,7 @@ function Sidebar({ userId, userName, userAvatar }: SidebarProps) {
                             }`
                         }
                     >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                        </svg>
+                        <Icon name="messages" />
                         <span>Сообщения</span>
                         {unreadCount > 0 && (
                             <span className="ml-auto bg-red-500 text-white text-xs rounded-full px-2 py-0.5">

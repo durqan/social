@@ -2,13 +2,11 @@ package auth
 
 import (
 	"errors"
-	"os"
+	"tester/internal/config"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
-
-const defaultJWTSecret = "your-secret-key-change-in-production"
 
 type Claims struct {
 	UserID uint `json:"user_id"`
@@ -48,9 +46,5 @@ func ValidateToken(tokenString string) (uint, error) {
 }
 
 func jwtSecret() []byte {
-	secret := os.Getenv("JWT_SECRET")
-	if secret == "" {
-		secret = defaultJWTSecret
-	}
-	return []byte(secret)
+	return []byte(config.Load().JWTSecret)
 }

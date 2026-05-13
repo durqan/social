@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { friendService } from '../services/friendService.js';
 import type { User, Friendship } from '../types.js';
+import { Avatar } from './ui/Avatar.js';
+import { Button } from './ui/Button.js';
 
 function Friends() {
     const navigate = useNavigate();
@@ -81,20 +83,19 @@ function Friends() {
                                             className="flex items-center gap-3 cursor-pointer flex-1"
                                             onClick={() => navigate(`/users/${friend.id}`)}
                                         >
-                                            <div className="w-12 h-12 bg-linear-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
-                                                {friend.name?.charAt(0).toUpperCase() || '😎'}
-                                            </div>
+                                            <Avatar name={friend.name} src={friend.avatar} size="lg" />
                                             <div>
                                                 <p className="font-semibold text-gray-800">{friend.name || 'Пользователь'}</p>
                                                 <p className="text-sm text-gray-500">{friend.email}</p>
                                             </div>
                                         </div>
-                                        <button
+                                        <Button
+                                            variant="ghost"
                                             onClick={() => removeFriend(friend.id)}
-                                            className="text-red-500 hover:text-red-700 text-sm"
+                                            className="text-red-500 hover:text-red-700"
                                         >
                                             Удалить
-                                        </button>
+                                        </Button>
                                     </div>
                                 ))}
                             </div>
@@ -112,20 +113,18 @@ function Friends() {
                                             className="flex items-center gap-3 cursor-pointer flex-1"
                                             onClick={() => navigate(`/users/${req.user!.id}`)}
                                         >
-                                            <div className="w-12 h-12 bg-linear-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
-                                                {req.user.name?.charAt(0).toUpperCase() || '😎'}
-                                            </div>
+                                            <Avatar name={req.user.name} src={req.user.avatar} size="lg" />
                                             <div>
                                                 <p className="font-semibold text-gray-800">{req.user.name || 'Пользователь'}</p>
                                                 <p className="text-sm text-gray-500">{req.user.email}</p>
                                             </div>
                                         </div>
-                                        <button
+                                        <Button
                                             onClick={() => acceptRequest(req.id)}
-                                            className="px-4 py-1 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-sm"
+                                            className="py-1"
                                         >
                                             Принять
-                                        </button>
+                                        </Button>
                                     </div>
                                 ))}
                             </div>

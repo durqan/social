@@ -3,6 +3,7 @@ package handlers
 import (
 	"errors"
 	"strconv"
+	"tester/internal/dto"
 	"tester/internal/models"
 	"tester/internal/repository"
 
@@ -13,14 +14,7 @@ import (
 
 func CreateUser(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var req struct {
-			Name     string `json:"name" binding:"required"`
-			Email    string `json:"email" binding:"required,email"`
-			Password string `json:"password" binding:"required,min=6"`
-			Age      int    `json:"age"`
-			Bio      string `json:"bio"`
-			Avatar   string `json:"avatar"`
-		}
+		var req dto.CreateUserRequest
 
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(400, gin.H{"error": err.Error()})
@@ -52,7 +46,7 @@ func CreateUser(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		c.JSON(201, user)
+		c.JSON(201, dto.ToUserResponse(user))
 	}
 }
 
@@ -63,7 +57,7 @@ func GetUsers(db *gorm.DB) gin.HandlerFunc {
 			c.JSON(500, gin.H{"error": "failed to fetch users"})
 			return
 		}
-		c.JSON(200, users)
+		c.JSON(200, dto.ToUserResponses(users))
 	}
 }
 
@@ -85,7 +79,7 @@ func GetUser(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		c.JSON(200, user)
+		c.JSON(200, dto.ToUserResponse(user))
 	}
 }
 
@@ -107,8 +101,7 @@ func GetProfile(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		user.Password = ""
-		c.JSON(200, user)
+		c.JSON(200, dto.ToUserResponse(user))
 	}
 }
 
@@ -151,13 +144,7 @@ func PatchUser(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		var req struct {
-			Name   *string `json:"name"`
-			Email  *string `json:"email" binding:"omitempty,email"`
-			Age    *int    `json:"age"`
-			Bio    *string `json:"bio"`
-			Avatar *string `json:"avatar"`
-		}
+		var req dto.UpdateUserRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(400, gin.H{"error": err.Error()})
 			return
@@ -203,8 +190,7 @@ func PatchUser(db *gorm.DB) gin.HandlerFunc {
 			c.JSON(500, gin.H{"error": "failed to fetch updated user"})
 			return
 		}
-		user.Password = ""
-		c.JSON(200, user)
+		c.JSON(200, dto.ToUserResponse(user))
 	}
 }
 
@@ -221,10 +207,7 @@ func ChangePassword(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		var req struct {
-			CurrentPassword string `json:"current_password" binding:"required"`
-			NewPassword     string `json:"new_password" binding:"required,min=6"`
-		}
+		var req dto.ChangePasswordRequest
 
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(400, gin.H{"error": err.Error()})
@@ -276,10 +259,6 @@ func SearchUsersByNameOrEmail(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		for i := range users {
-			users[i].Password = ""
-		}
-
-		c.JSON(200, users)
+		c.JSON(200, dto.ToUserResponses(users))
 	}
 }

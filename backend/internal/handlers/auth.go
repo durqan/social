@@ -2,8 +2,9 @@ package handlers
 
 import (
 	"errors"
-	"os"
 	"tester/internal/auth"
+	"tester/internal/config"
+	"tester/internal/dto"
 	"tester/internal/models"
 	"tester/internal/repository"
 
@@ -64,10 +65,9 @@ func Register(db *gorm.DB) gin.HandlerFunc {
 			true,
 		)
 
-		user.Password = ""
 		c.JSON(201, gin.H{
 			"message": "registration successful",
-			"user":    user,
+			"user":    dto.ToUserResponse(user),
 		})
 	}
 }
@@ -112,10 +112,9 @@ func Login(db *gorm.DB) gin.HandlerFunc {
 			true,
 		)
 
-		user.Password = ""
 		c.JSON(200, gin.H{
 			"message": "login successful",
-			"user":    user,
+			"user":    dto.ToUserResponse(user),
 		})
 	}
 }
@@ -136,5 +135,5 @@ func Logout() gin.HandlerFunc {
 }
 
 func secureCookie() bool {
-	return os.Getenv("COOKIE_SECURE") == "true"
+	return config.Load().CookieSecure
 }

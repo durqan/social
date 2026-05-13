@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import api from '../api/axios.js';
 import type { Post, ProfileContextType, Comment } from '../types.js';
+import { postService } from '../services/postService.js';
+import { Avatar } from './ui/Avatar.js';
+import { Icon } from './ui/Icon.js';
+import { Spinner } from './ui/Spinner.js';
 
 function Wall() {
     const { user } = useOutletContext<ProfileContextType>();
@@ -21,13 +24,7 @@ function Wall() {
 
     const fetchPosts = async () => {
         try {
-            const res = await api.get('/posts');
-            const postsData = res.data.map((p: any) => ({
-                ...p,
-                likes_count: Number(p.likes_count) || 0,
-                comments_count: Number(p.comments_count) || 0
-            }));
-            setPosts(postsData);
+            setPosts(await postService.getPosts());
         } catch (err) {
             console.error(err);
         } finally {
@@ -37,14 +34,8 @@ function Wall() {
 
     const fetchComments = async (postId: number) => {
         try {
-            const res = await api.get(`/posts/${postId}/comments`);
-            const commentsData = res.data.map((c: any) => ({
-                ...c,
-                id: Number(c.id),
-                postId: Number(c.post_id),
-                userId: Number(c.user_id)
-            }));
-            setComments(prev => ({ ...prev, [postId]: commentsData }));
+            const postComments = await postService.getComments(postId);
+            setComments(prev => ({ ...prev, [postId]: postComments }));
         } catch (err) {
             console.error(err);
         }
@@ -64,8 +55,8 @@ function Wall() {
         if (!newPostContent.trim()) return;
         setSubmitting(true);
         try {
-            const res = await api.post('/posts', { content: newPostContent });
-            setPosts(prev => [res.data, ...prev]);
+            const post = await postService.createPost(newPostContent);
+            setPosts(prev => [post, ...prev]);
             setNewPostContent('');
         } catch (err) {
             console.error(err);
@@ -77,8 +68,8 @@ function Wall() {
     const handleEditPost = async (postId: number) => {
         if (!editContent.trim()) return;
         try {
-            const res = await api.patch(`/posts/${postId}`, { content: editContent });
-            setPosts(prev => prev.map(p => p.id === postId ? res.data : p));
+            const post = await postService.updatePost(postId, editContent);
+            setPosts(prev => prev.map(p => p.id === postId ? post : p));
             setEditingPost(null);
             setEditContent('');
         } catch (err) {
@@ -89,7 +80,7 @@ function Wall() {
     const handleDeletePost = async (postId: number) => {
         if (!confirm('Удалить пост?')) return;
         try {
-            await api.delete(`/posts/${postId}`);
+            await postService.deletePost(postId);
             setPosts(prev => prev.filter(p => p.id !== postId));
         } catch (err) {
             console.error(err);
@@ -98,14 +89,14 @@ function Wall() {
 
     const handleLike = async (postId: number) => {
         try {
-            const response = await api.post(`/posts/${postId}/like`);
+            const response = await postService.toggleLike(postId);
 
             setPosts(prev => prev.map(p =>
                 p.id === postId
                     ? {
                         ...p,
-                        is_liked: response.data.is_liked,
-                        likes_count: response.data.likes_count
+                        is_liked: response.is_liked,
+                        likes_count: response.likes_count
                     }
                     : p
             ));
@@ -119,7 +110,7 @@ function Wall() {
         if (!text?.trim()) return;
 
         try {
-            await api.post(`/posts/${postId}/comments`, { content: text });
+            await postService.createComment(postId, text);
             setNewComment(prev => ({ ...prev, [postId]: '' }));
 
             await fetchComments(postId);
@@ -146,15 +137,13 @@ function Wall() {
         return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
     };
 
-    if (loading) return <div className="flex justify-center py-12"><div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div></div>;
+    if (loading) return <div className="flex justify-center py-12"><Spinner /></div>;
 
     return (
         <div className="max-w-2xl mx-auto">
             <div className="bg-white rounded-xl shadow-sm p-4 mb-6">
                 <form onSubmit={handleCreatePost} className="flex gap-3">
-                    <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0 cursor-pointer">
-                        {user?.name?.charAt(0).toUpperCase() || '😎'}
-                    </div>
+                    <Avatar name={user?.name} src={user?.avatar} className="flex-shrink-0 cursor-pointer" />
                     <div className="flex-1">
                         <textarea
                             value={newPostContent}
@@ -188,9 +177,7 @@ function Wall() {
                         <div key={post.id} className="bg-white rounded-xl shadow-sm p-4">
                             <div className="flex items-center justify-between mb-3">
                                 <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold cursor-pointer">
-                                        {post.user?.name?.charAt(0).toUpperCase() || '😎'}
-                                    </div>
+                                    <Avatar name={post.user?.name} className="cursor-pointer" />
                                     <div>
                                         <p className="font-semibold text-gray-800">{post.user?.name || 'Пользователь'}</p>
                                         <p className="text-xs text-gray-500">{formatDate(post.created_at)}</p>
@@ -202,17 +189,13 @@ function Wall() {
                                             onClick={() => { setEditingPost(post); setEditContent(post.content); }}
                                             className="text-gray-400 hover:text-blue-600 transition cursor-pointer"
                                         >
-                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                                            </svg>
+                                            <Icon name="edit" />
                                         </button>
                                         <button
                                             onClick={() => handleDeletePost(post.id)}
                                             className="text-gray-400 hover:text-red-600 transition cursor-pointer"
                                         >
-                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                            </svg>
+                                            <Icon name="delete" />
                                         </button>
                                     </div>
                                 )}
@@ -238,15 +221,11 @@ function Wall() {
 
                             <div className="flex items-center gap-4 pt-3 border-t border-gray-100">
                                 <button onClick={() => handleLike(post.id)} className={`flex items-center gap-1 transition cursor-pointer ${post.is_liked ? 'text-blue-600' : 'text-gray-500 hover:text-blue-600'}`}>
-                                    <svg className="w-5 h-5" fill={post.is_liked ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                                    </svg>
+                                    <Icon name="heart" filled={post.is_liked} />
                                     <span className="text-sm">{post.likes_count ?? 0}</span>
                                 </button>
                                 <button onClick={() => toggleComments(post.id)} className="flex items-center gap-1 text-gray-500 hover:text-blue-600 transition cursor-pointer">
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                                    </svg>
+                                    <Icon name="messages" />
                                     <span className="text-sm">{post.comments_count ?? 0}</span>
                                 </button>
                             </div>
@@ -256,9 +235,7 @@ function Wall() {
                                     <div className="space-y-3 mb-3">
                                         {comments[post.id]?.map(comment => (
                                             <div key={comment.id} className="flex gap-3">
-                                                <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0 cursor-pointer">
-                                                    {comment.user?.name?.charAt(0).toUpperCase() || '😎'}
-                                                </div>
+                                                <Avatar name={comment.user?.name} size="sm" className="flex-shrink-0 cursor-pointer" />
                                                 <div className="flex-1">
                                                     <div className="bg-gray-50 rounded-lg p-2">
                                                         <p className="font-semibold text-sm">{comment.user?.name || 'Пользователь'}</p>
@@ -273,9 +250,7 @@ function Wall() {
                                         )}
                                     </div>
                                     <div className="flex gap-2 mt-3">
-                                        <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0 cursor-pointer">
-                                            {user?.name?.charAt(0).toUpperCase() || '😎'}
-                                        </div>
+                                        <Avatar name={user?.name} src={user?.avatar} size="sm" className="flex-shrink-0 cursor-pointer" />
                                         <div className="flex-1">
                                             <textarea
                                                 value={newComment[post.id] || ''}

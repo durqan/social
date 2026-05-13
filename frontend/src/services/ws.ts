@@ -1,6 +1,8 @@
-class WebSocketService {
+import type { WsEvent } from '../types/ws.js';
+
+export class WebSocketService {
     private ws: WebSocket | null = null;
-    private handlers: ((data: any) => void)[] = [];
+    private handlers: ((data: WsEvent) => void)[] = [];
     private shouldReconnect = true;
 
     connect() {
@@ -15,9 +17,13 @@ class WebSocketService {
         };
 
         this.ws.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            console.log('📨 ws.onmessage:', data);
-            this.handlers.forEach(h => h(data));
+            try {
+                const data = JSON.parse(event.data) as WsEvent;
+                console.log('📨 ws.onmessage:', data);
+                this.handlers.forEach(h => h(data));
+            } catch (error) {
+                console.error('Invalid WebSocket message:', error);
+            }
         };
 
         this.ws.onclose = () => {
@@ -30,11 +36,11 @@ class WebSocketService {
         this.ws.onerror = (error) => console.error('WebSocket error:', error);
     }
 
-    onMessage(handler: (data: any) => void) {
+    onMessage(handler: (data: WsEvent) => void) {
         this.handlers.push(handler);
     }
 
-    removeMessageHandler(handler: (data: any) => void) {
+    removeMessageHandler(handler: (data: WsEvent) => void) {
         const index = this.handlers.indexOf(handler);
         if (index !== -1) this.handlers.splice(index, 1);
     }
@@ -54,5 +60,3 @@ class WebSocketService {
         this.ws.send(JSON.stringify({ type: 'read_receipt', to_id: toId }));
     }
 }
-
-export const wsService = new WebSocketService();

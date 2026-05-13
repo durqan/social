@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { authService } from '../services/authService.js';
-import {wsService} from "../services/ws.js";
+import { useAuth } from '../contexts/AuthContext.js';
+import { getApiError } from '../api/errors.js';
 
 function Login() {
     const navigate = useNavigate();
+    const { login } = useAuth();
     const [formData, setFormData] = useState({
         email: '',
         password: ''
@@ -26,15 +27,15 @@ function Login() {
         setError('');
 
         try {
-            const response = await authService.login(formData);
-            wsService.connect();
-            navigate(`/users/${response.user.id}`);
-        } catch (err: any) {
-            if (err.response?.data?.error) {
-                setError(err.response.data.error);
-            } else if (err.response?.data?.message) {
-                setError(err.response.data.message);
-            } else if (err.message === 'Network Error') {
+            const user = await login(formData);
+            navigate(`/users/${user.id}`);
+        } catch (err: unknown) {
+            const apiError = getApiError(err);
+            if (apiError.error) {
+                setError(apiError.error);
+            } else if (apiError.message) {
+                setError(apiError.message);
+            } else if (apiError.networkError) {
                 setError('Ошибка сети. Проверьте подключение к серверу');
             } else {
                 setError('Неверный email или пароль');

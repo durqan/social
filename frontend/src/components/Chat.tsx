@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams, useOutletContext } from 'react-router-dom';
-import api from '../api/axios.js';
-import { wsService } from '../services/ws.js';
 import type { User } from '../types.js';
+import { messageService } from '../services/messageService.js';
+import { userService } from '../services/userService.js';
 import { useChatMessages } from '../hooks/useChatMessages.js';
 import { useChatWebSocket } from '../hooks/useChatWebSocket.js';
 import { useChatScroll } from '../hooks/useChatScroll.js';
@@ -12,12 +12,15 @@ import { ChatHeader } from './chat/ChatHeader.js';
 import { ChatInput } from './chat/ChatInput.js';
 import { ChatMessageList } from './chat/ChatMessageList.js';
 import { DeleteConfirmModal } from './chat/DeleteConfirmModal.js';
+import { useWebSocket } from '../contexts/WebSocketContext.js';
+import { Spinner } from './ui/Spinner.js';
 
 const optimisticMessageFloor = 10000000;
 
 function Chat() {
     const { userId } = useParams();
     const { currentUser } = useOutletContext<{ currentUser: User }>();
+    const wsService = useWebSocket();
     const [recipient, setRecipient] = useState<User | null>(null);
     const [newMessage, setNewMessage] = useState('');
 
@@ -47,7 +50,7 @@ function Chat() {
         onTyping: setOtherTyping,
         onMessageDeleted: deleteMessage,
         onReadReceipt: markAsRead,
-        onNewMessage: (msg) => {
+        onNewMessage: useCallback((msg) => {
             setMessages(prev => {
                 const exists = prev.some(m => m.id === msg.id);
                 if (exists) return prev;
@@ -63,21 +66,23 @@ function Chat() {
                 return [...prev, msg];
             });
             if (msg.from_id === Number(userId)) {
-                api.patch(`/messages/read/${userId}`).then(() => markAsRead(Number(userId)));
+                messageService.markAsRead(userId).then(() => markAsRead(Number(userId)));
             }
-        },
+        }, [markAsRead, setMessages, userId]),
     });
 
     useEffect(() => {
         loadInitial();
-        api.get(`/users/${userId}`).then(res => setRecipient(res.data)).catch(console.error);
-    }, [userId]);
+        if (userId) {
+            userService.getUser(userId).then(setRecipient).catch(console.error);
+        }
+    }, [loadInitial, userId]);
 
     const handleBatchDelete = async () => {
         const realIds = Array.from(selectedMessages).filter(id => id > 0 && id < 10000000);
         if (!realIds.length) return alert('Нельзя удалить ещё не отправленные сообщения');
         try {
-            await api.delete('/messages/batch', { data: { message_ids: realIds } });
+            await messageService.deleteMessagesBatch(realIds);
             setMessages(prev => prev.filter(m => !selectedMessages.has(m.id)));
             exitSelectionMode();
         } catch (error) {
@@ -86,7 +91,7 @@ function Chat() {
         }
     };
 
-    const sendMessage = () => {
+    const sendMessage = useCallback(() => {
         if (!newMessage.trim()) return;
         const tempMessage = {
             id: Date.now(),
@@ -100,9 +105,9 @@ function Chat() {
         sendMessageToStore(newMessage, tempMessage);
         wsService.send(Number(userId), newMessage);
         setNewMessage('');
-    };
+    }, [currentUser, newMessage, sendMessageToStore, userId, wsService]);
 
-    if (initialLoading) return <div className="flex items-center justify-center h-[calc(100vh-120px)]"><div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div></div>;
+    if (initialLoading) return <div className="flex items-center justify-center h-[calc(100vh-120px)]"><Spinner /></div>;
 
     return (
         <div className="flex flex-col h-[calc(100vh-120px)] bg-gray-50">

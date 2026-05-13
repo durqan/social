@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"errors"
 	"tester/internal/models"
 
 	"gorm.io/gorm"
@@ -22,7 +23,7 @@ func GetFriendshipStatus(db *gorm.DB, userID, friendID uint) (string, error) {
 		userID, friendID, friendID, userID,
 	).Select("status").First(&friendship).Error
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return "none", nil
 		}
 		return "", err

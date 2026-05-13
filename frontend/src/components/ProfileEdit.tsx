@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useOutletContext, useNavigate, useParams } from 'react-router-dom';
-import api from '../api/axios.js';
 import type { User, ProfileContextType, PasswordChangeData } from '../types.js';
+import { userService } from '../services/userService.js';
+import { getApiError, getApiStatus } from '../api/errors.js';
 
 function ProfileEdit() {
     const { user, setUser } = useOutletContext<ProfileContextType>();
@@ -44,16 +45,18 @@ function ProfileEdit() {
         setMessage(null);
 
         try {
-            const response = await api.patch(`/users/${user.id}`, formData);
-            setUser(response.data);
+            const updatedUser = await userService.updateUser(user.id!, formData);
+            setUser(updatedUser);
             setMessage({ type: 'success', text: 'Профиль успешно обновлен!' });
-        } catch (err: any) {
-            if (err.response?.status === 409) {
+        } catch (err: unknown) {
+            const status = getApiStatus(err);
+            const apiError = getApiError(err);
+            if (status === 409) {
                 setMessage({ type: 'error', text: 'Пользователь с таким email уже существует' });
-            } else if (err.response?.status === 400) {
+            } else if (status === 400) {
                 setMessage({ type: 'error', text: 'Некорректные данные' });
             } else {
-                setMessage({ type: 'error', text: err.response?.data?.message || 'Ошибка при обновлении' });
+                setMessage({ type: 'error', text: apiError.message || 'Ошибка при обновлении' });
             }
         } finally {
             setLoading(false);
@@ -77,7 +80,7 @@ function ProfileEdit() {
         setMessage(null);
 
         try {
-            await api.patch(`/users/${user.id}/password`, {
+            await userService.changePassword(user.id!, {
                 current_password: passwordData.oldPassword,
                 new_password: passwordData.newPassword
             });
@@ -87,11 +90,13 @@ function ProfileEdit() {
                 newPassword: '',
                 confirmPassword: ''
             });
-        } catch (err: any) {
-            if (err.response?.status === 401) {
+        } catch (err: unknown) {
+            const status = getApiStatus(err);
+            const apiError = getApiError(err);
+            if (status === 401) {
                 setMessage({ type: 'error', text: 'Неверный старый пароль' });
             } else {
-                setMessage({ type: 'error', text: err.response?.data?.message || 'Ошибка при смене пароля' });
+                setMessage({ type: 'error', text: apiError.message || 'Ошибка при смене пароля' });
             }
         } finally {
             setLoading(false);

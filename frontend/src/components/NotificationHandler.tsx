@@ -1,12 +1,16 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
-import { wsService } from '../services/ws.js';
-import api from '../api/axios.js';
+import { useWebSocket } from '../contexts/WebSocketContext.js';
+import { useAuth } from '../contexts/AuthContext.js';
+import { userService } from '../services/userService.js';
+import { isMessageEvent, isTypedEvent, type WsEvent } from '../types/ws.js';
+import { Avatar } from './ui/Avatar.js';
 
 function NotificationHandler() {
     const navigate = useNavigate();
-    const isSubscribed = useRef(false);
+    const wsService = useWebSocket();
+    const { currentUser } = useAuth();
 
     const showNotification = (title: string, message: string, onClick: () => void, borderColor: string = 'blue') => {
         toast.custom((t) => (
@@ -18,9 +22,7 @@ function NotificationHandler() {
                 className={`bg-white rounded-lg shadow-lg p-4 cursor-pointer hover:bg-gray-50 transition-colors max-w-sm border-l-4 border-${borderColor}-500`}
             >
                 <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-linear-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold">
-                        {title.charAt(0).toUpperCase()}
-                    </div>
+                    <Avatar name={title} />
                     <div className="flex-1">
                         <p className="font-semibold text-gray-800">{title}</p>
                         <p className="text-sm text-gray-600">{message}</p>
@@ -31,16 +33,12 @@ function NotificationHandler() {
     };
 
     useEffect(() => {
-        if (isSubscribed.current) return;
-        isSubscribed.current = true;
-
         const shownNotifications = new Set<number>();
 
-        const handleMessage = async (msg: any) => {
-            if (msg.type === 'typing' || msg.type === 'message_deleted') return;
-            if (shownNotifications.has(msg.id)) return;
+        const handleMessage = async (msg: WsEvent) => {
+            if (isTypedEvent(msg, 'typing') || isTypedEvent(msg, 'message_deleted')) return;
 
-            if (msg.type === 'friend_request') {
+            if (isTypedEvent(msg, 'friend_request')) {
                 showNotification(
                     msg.from_name || 'Пользователь',
                     'Отправил(а) заявку в друзья',
@@ -50,7 +48,7 @@ function NotificationHandler() {
                 return;
             }
 
-            if (msg.type === 'friend_accepted') {
+            if (isTypedEvent(msg, 'friend_accepted')) {
                 showNotification(
                     msg.from_name || 'Пользователь',
                     'Принял(а) заявку в друзья',
@@ -60,13 +58,10 @@ function NotificationHandler() {
                 return;
             }
 
-            let currentUserId: number | null = null;
-            try {
-                const res = await api.get('/users/profile');
-                currentUserId = res.data.id;
-            } catch (e) {
-                return;
-            }
+            if (!isMessageEvent(msg) || shownNotifications.has(msg.id)) return;
+
+            const currentUserId = currentUser?.id;
+            if (!currentUserId) return;
 
             if (msg.from_id !== currentUserId) {
                 const pathname = window.location.pathname;
@@ -77,8 +72,8 @@ function NotificationHandler() {
 
                     let senderName = 'Пользователь';
                     try {
-                        const userRes = await api.get(`/users/${msg.from_id}`);
-                        senderName = userRes.data.name || 'Пользователь';
+                        const user = await userService.getUser(msg.from_id);
+                        senderName = user.name || 'Пользователь';
                     } catch (e) {}
 
                     toast.custom((t) => (
@@ -90,9 +85,7 @@ function NotificationHandler() {
                             className="bg-white rounded-lg shadow-lg p-4 cursor-pointer hover:bg-gray-50 transition-colors max-w-sm border border-gray-200"
                         >
                             <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-linear-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold">
-                                    {senderName.charAt(0).toUpperCase()}
-                                </div>
+                                <Avatar name={senderName} />
                                 <div className="flex-1">
                                     <p className="font-semibold text-gray-800">{senderName}</p>
                                     <p className="text-sm text-gray-600 truncate">{msg.content.slice(0, 50)}</p>
@@ -112,7 +105,8 @@ function NotificationHandler() {
         };
 
         wsService.onMessage(handleMessage);
-    }, [navigate]);
+        return () => wsService.removeMessageHandler(handleMessage);
+    }, [currentUser?.id, navigate, wsService]);
 
     return null;
 }

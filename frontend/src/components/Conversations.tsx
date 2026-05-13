@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import api from '../api/axios.js';
 import type {Conversation} from "../types.js";
+import { messageService } from '../services/messageService.js';
+import { Avatar } from './ui/Avatar.js';
 
 function Conversations() {
     const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -14,8 +15,7 @@ function Conversations() {
 
     const fetchConversations = async () => {
         try {
-            const res = await api.get('/messages/conversations');
-            setConversations(Array.isArray(res.data) ? res.data : []);
+            setConversations(await messageService.getConversations());
         } catch (err) {
             console.error(err);
             setConversations([]);
@@ -39,9 +39,7 @@ function Conversations() {
                             onClick={() => navigate(`/users/${conv.user_id}/chat/${conv.user_id}`)}
                             className="flex items-center gap-3 p-4 hover:bg-gray-50 cursor-pointer transition"
                         >
-                            <div className="w-12 h-12 bg-linear-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
-                                {conv.name?.charAt(0).toUpperCase() || '?'}
-                            </div>
+                            <Avatar name={conv.name} size="lg" />
                             <div className="flex-1">
                                 <div className="flex justify-between">
                                     <p className="font-semibold">{conv.name}</p>

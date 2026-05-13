@@ -1,14 +1,14 @@
 package db
 
 import (
-	"os"
+	"tester/internal/config"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
 func NewDB() (*gorm.DB, error) {
-	dsn := os.Getenv("DATABASE_URL")
+	dsn := config.Load().DatabaseURL
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
 		TranslateError: true,

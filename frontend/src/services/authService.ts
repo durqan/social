@@ -1,4 +1,5 @@
 import api from '../api/axios.js';
+import type { User } from '../types.js';
 
 export interface LoginData {
     email: string;
@@ -11,13 +12,18 @@ export interface RegisterData {
     password: string;
 }
 
+export interface AuthResponse {
+    message: string;
+    user: User;
+}
+
 export const authService = {
-    async login(data: LoginData) {
+    async login(data: LoginData): Promise<AuthResponse> {
         const response = await api.post('/auth/login', data);
         return response.data;
     },
 
-    async register(data: RegisterData) {
+    async register(data: RegisterData): Promise<AuthResponse> {
         const response = await api.post('/auth/register', data);
         return response.data;
     },

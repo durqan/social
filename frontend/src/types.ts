@@ -1,7 +1,9 @@
+import type { Dispatch, SetStateAction } from 'react';
+
 export interface User {
     id?: number;
     email: string;
-    password: string;
+    password?: string;
     name?: string;
     bio?: string;
     avatar?: string | null;
@@ -38,7 +40,7 @@ export interface Comment {
 
 export interface ProfileContextType {
     user: User;
-    setUser: (user: User) => void;
+    setUser: Dispatch<SetStateAction<User | null>>;
 }
 
 export interface PasswordChangeData {

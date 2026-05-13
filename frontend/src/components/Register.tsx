@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { authService } from '../services/authService.js';
-import {wsService} from "../services/ws.js";
+import { useAuth } from '../contexts/AuthContext.js';
+import { getApiError } from '../api/errors.js';
 
 function Register() {
     const navigate = useNavigate();
+    const { register } = useAuth();
     const [formData, setFormData] = useState({
         name: '',
         email: '',
@@ -59,16 +60,16 @@ function Register() {
         setErrors({});
 
         try {
-            const response = await authService.register({
+            const user = await register({
                 name: formData.name,
                 email: formData.email,
                 password: formData.password
             });
-            wsService.connect();
-            navigate(`/users/${response.user.id}`);
-        } catch (err: any) {
-            if (err.response?.data?.error) {
-                const errorMessage = err.response.data.error;
+            navigate(`/users/${user.id}`);
+        } catch (err: unknown) {
+            const apiError = getApiError(err);
+            if (apiError.error) {
+                const errorMessage = apiError.error;
 
                 if (errorMessage.includes('Password') && errorMessage.includes('min')) {
                     setErrors({ password: 'Пароль слишком короткий (минимум 6 символов)' });
@@ -86,8 +87,8 @@ function Register() {
                     setErrors({ general: errorMessage });
                 }
             }
-            else if (err.response?.data?.message) {
-                const message = err.response.data.message;
+            else if (apiError.message) {
+                const message = apiError.message;
                 if (message.includes('email') || message.includes('Email')) {
                     setErrors({ email: message });
                 } else if (message.includes('password') || message.includes('Password')) {
@@ -96,7 +97,7 @@ function Register() {
                     setErrors({ general: message });
                 }
             }
-            else if (err.message === 'Network Error') {
+            else if (apiError.networkError) {
                 setErrors({ general: 'Ошибка сети. Проверьте подключение к серверу' });
             }
             else {
