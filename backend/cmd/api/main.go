@@ -23,7 +23,9 @@ func main() {
 		&models.Post{},
 		&models.Like{},
 		&models.Comment{},
-		&models.Message{})
+		&models.Message{},
+		&models.Friendship{})
+
 	if err != nil {
 		panic("failed to migrate database")
 	}
@@ -57,6 +59,17 @@ func main() {
 		users.GET("/profile", handlers.GetProfile(database))
 		users.PATCH("/:id/password", handlers.ChangePassword(database))
 		users.GET("/search", handlers.SearchUsersByNameOrEmail(database))
+
+		friends := users.Group("/friends")
+		{
+			friends.GET("/list", handlers.GetFriendsList(database))
+			friends.GET("/requests", handlers.GetFriendRequests(database))
+			friends.GET("/status/:id", handlers.GetFriendshipStatus(database))
+			friends.POST("/request/:id", handlers.SendFriendRequest(database))
+			friends.PATCH("/:id/accept", handlers.AcceptFriendRequest(database))
+			friends.DELETE("/:id", handlers.RemoveFriend(database))
+			friends.POST("/:id/block", handlers.BlockUser(database))
+		}
 	}
 
 	posts := r.Group("/posts")

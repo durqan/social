@@ -23,7 +23,6 @@ function Sidebar({ userId, userName, userAvatar }: SidebarProps) {
         }
     };
 
-    // Сброс счётчика при открытии чата (слушаем событие из Chat.tsx)
     useEffect(() => {
         const handleResetUnread = () => {
             setUnreadCount(0);
@@ -38,7 +37,6 @@ function Sidebar({ userId, userName, userAvatar }: SidebarProps) {
         refreshUnreadCount();
 
         const handleNewMessage = (msg: any) => {
-            // Если чат с этим пользователем открыт, не увеличиваем счётчик
             const pathname = window.location.pathname;
             const isChatOpen = pathname.includes(`/chat/${msg.from_id}`);
 
@@ -74,7 +72,6 @@ function Sidebar({ userId, userName, userAvatar }: SidebarProps) {
 
     return (
         <>
-            {/* Бургер-кнопка для мобильных */}
             <button
                 onClick={() => setIsOpen(true)}
                 className="fixed top-4 left-4 z-50 p-2 bg-white rounded-lg shadow-md lg:hidden"
@@ -83,23 +80,18 @@ function Sidebar({ userId, userName, userAvatar }: SidebarProps) {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
                 </svg>
             </button>
-
-            {/* Оверлей */}
             {isOpen && (
                 <div
                     className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
                     onClick={closeSidebar}
                 />
             )}
-
-            {/* Сайдбар */}
             <aside className={`
                 fixed top-0 left-0 h-full bg-white border-r border-gray-200 flex flex-col shadow-xl z-50 transition-transform duration-300
                 w-64
                 ${isOpen ? 'translate-x-0' : '-translate-x-full'}
                 lg:translate-x-0
             `}>
-                {/* Кнопка закрытия на мобильных */}
                 <button
                     onClick={closeSidebar}
                     className="absolute top-4 right-4 p-1 text-gray-400 hover:text-gray-600 lg:hidden"
@@ -182,6 +174,21 @@ function Sidebar({ userId, userName, userAvatar }: SidebarProps) {
                                 {unreadCount > 99 ? '99+' : unreadCount}
                             </span>
                         )}
+                    </NavLink>
+                    <NavLink
+                        to={`/users/${userId}/friends`}
+                        className={({ isActive }) =>
+                            `flex items-center gap-3 px-4 py-3 mx-2 rounded-lg transition-colors ${
+                                isActive
+                                    ? 'bg-blue-50 text-blue-600'
+                                    : 'text-gray-700 hover:bg-gray-100'
+                            }`
+                        }
+                    >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                        </svg>
+                        <span>Друзья</span>
                     </NavLink>
                 </nav>
             </aside>

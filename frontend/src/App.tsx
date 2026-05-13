@@ -11,6 +11,7 @@ import Chat from "./components/Chat.js";
 import { Toaster } from "react-hot-toast";
 import NotificationHandler from "./components/NotificationHandler.js";
 import api from './api/axios.js';
+import Friends from "./components/Friends.js";
 
 function App() {
     const [userId, setUserId] = useState<number | null>(null);
@@ -48,6 +49,7 @@ function App() {
                         <Route path="wall" element={<Wall />} />
                         <Route path="conversations" element={<Conversations />} />
                         <Route path="chat/:userId" element={<Chat />} />
+                        <Route path="friends" element={<Friends />} />
                     </Route>
                     <Route path="/" element={<Navigate to={userId ? `/users/${userId}` : "/login"} />} />
                 </Routes>

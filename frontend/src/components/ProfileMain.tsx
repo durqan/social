@@ -1,16 +1,53 @@
-import { useOutletContext, useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useOutletContext } from 'react-router-dom';
+import { friendService } from '../services/friendService.js';
 import type { User } from '../types.js';
 
 interface ProfileContext {
     user: User;
-    setUser?: (user: User) => void;
     isOwner?: boolean;
-    currentUser?: User;
 }
 
 function ProfileMain() {
-    const { user, isOwner, currentUser } = useOutletContext<ProfileContext>();
-    const navigate = useNavigate();
+    const { user, isOwner } = useOutletContext<ProfileContext>();
+    const [friendStatus, setFriendStatus] = useState<string | null>(null);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        if (!isOwner && user?.id) {
+            friendService.getFriendshipStatus(user.id)
+                .then(setFriendStatus)
+                .catch(() => setFriendStatus('none'))
+                .finally(() => setLoading(false));
+        } else {
+            setLoading(false);
+        }
+    }, [user?.id, isOwner]);
+
+    const handleFriendAction = async () => {
+        if (!user?.id) return;
+
+        if (friendStatus === 'none') {
+            await friendService.sendFriendRequest(user.id);
+            setFriendStatus('pending');
+        } else if (friendStatus === 'accepted') {
+            if (confirm('Удалить из друзей?')) {
+                await friendService.removeFriend(user.id);
+                setFriendStatus('none');
+            }
+        } else if (friendStatus === 'pending') {
+            alert('Заявка уже отправлена');
+        }
+    };
+
+    const getFriendButtonText = () => {
+        switch (friendStatus) {
+            case 'none': return 'Добавить в друзья';
+            case 'pending': return 'Заявка отправлена ⌛';
+            case 'accepted': return 'Удалить из друзей';
+            default: return 'Добавить в друзья';
+        }
+    };
 
     const formatDate = (dateString?: string) => {
         if (!dateString) return 'Недавно';
@@ -21,6 +58,8 @@ function ProfileMain() {
             day: 'numeric'
         });
     };
+
+    if (loading) return <div>Загрузка...</div>;
 
     return (
         <div className="max-w-2xl mx-auto">
@@ -56,16 +95,23 @@ function ProfileMain() {
                                     <span className="text-yellow-600">⚡ Почта не подтверждена</span>
                                 )}
                             </div>
-                            {!isOwner && currentUser && (
-                                <button
-                                    onClick={() => navigate(`/users/${currentUser.id}/chat/${user.id}`)}
-                                    className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition text-sm mt-2"
-                                >
-                                    Написать сообщение
-                                </button>
-                            )}
                         </div>
                         <div className="flex gap-2">
+                            {!isOwner && (
+                                <button
+                                    onClick={handleFriendAction}
+                                    className={`px-4 py-2 rounded-lg text-sm transition ${
+                                        friendStatus === 'pending'
+                                            ? 'bg-gray-200 text-gray-600 cursor-not-allowed'
+                                            : friendStatus === 'accepted'
+                                                ? 'bg-red-500 text-white hover:bg-red-600'
+                                                : 'bg-blue-500 text-white hover:bg-blue-600'
+                                    }`}
+                                    disabled={friendStatus === 'pending'}
+                                >
+                                    {getFriendButtonText()}
+                                </button>
+                            )}
                             <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm">
                                 Online
                             </span>

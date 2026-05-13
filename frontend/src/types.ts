@@ -68,3 +68,13 @@ export interface Conversation {
     last_message_at: string;
     unread_count: number;
 }
+
+export interface Friendship {
+    id: number;
+    user_id: number;
+    friend_id: number;
+    status: 'pending' | 'accepted' | 'rejected' | 'blocked';
+    created_at: string;
+    user?: User;
+    friend?: User;
+}
