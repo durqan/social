@@ -75,22 +75,22 @@ function Friends() {
                             <p className="text-center text-gray-500 py-8">У вас пока нет друзей</p>
                         ) : (
                             <div className="space-y-3">
-                                {friends.map(friend => (
-                                    <div key={friend.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition">
+                                {friends.map(Friend => (
+                                    <div key={Friend.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition">
                                         <div
                                             className="flex items-center gap-3 cursor-pointer flex-1"
-                                            onClick={() => navigate(`/users/${friend.id}`)}
+                                            onClick={() => navigate(`/users/${Friend.id}`)}
                                         >
                                             <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
-                                                {friend.name?.charAt(0).toUpperCase() || '😎'}
+                                                {Friend.name?.charAt(0).toUpperCase() || '😎'}
                                             </div>
                                             <div>
-                                                <p className="font-semibold text-gray-800">{friend.name || 'Пользователь'}</p>
-                                                <p className="text-sm text-gray-500">{friend.email}</p>
+                                                <p className="font-semibold text-gray-800">{Friend.name || 'Пользователь'}</p>
+                                                <p className="text-sm text-gray-500">{Friend.email}</p>
                                             </div>
                                         </div>
                                         <button
-                                            onClick={() => removeFriend(friend.id)}
+                                            onClick={() => removeFriend(Friend.id)}
                                             className="text-red-500 hover:text-red-700 text-sm"
                                         >
                                             Удалить
