@@ -1,58 +1,58 @@
 services:
-    postgres:
-      image: postgres:18-alpine
-      container_name: postgres18
-      restart: unless-stopped
-      environment:
-        POSTGRES_USER: social
-        POSTGRES_PASSWORD: social
-        POSTGRES_DB: social
-        TZ: UTC
-      ports:
-        - "5432:5432"
-      volumes:
-        - postgres_data:/var/lib/postgresql
-        - ./init:/docker-entrypoint-initdb.d
-      healthcheck:
-        test: ["CMD-SHELL", "pg_isready -U social -d social -h 127.0.0.1 -p 5432"]
-        interval: 10s
-        timeout: 5s
-        retries: 5
-      networks:
-        - social_network
+  postgres:
+    image: postgres:18-alpine
+    container_name: postgres18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: social
+      POSTGRES_PASSWORD: social
+      POSTGRES_DB: social
+      TZ: UTC
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      - ./init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U social -d social -h 127.0.0.1 -p 5432" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - social_network
 
-    backend:
-      build: ./backend
-      container_name: social_backend
-      ports:
-        - "8080:8080"
-      environment:
-        DATABASE_URL: ${DATABASE_URL}
-        PORT: ${PORT}
-        GIN_MODE: ${GIN_MODE}
-      depends_on:
-        postgres:
-          condition: service_healthy
-      networks:
-        - social_network
+  backend:
+    build: ./backend
+    container_name: social_backend
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      PORT: ${PORT}
+      GIN_MODE: ${GIN_MODE}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - social_network
 
-    frontend:
-      build:
-        context: ./frontend
-        dockerfile: Dockerfile
-      container_name: social_frontend
-      restart: unless-stopped
-      ports:
-        - "80:80"
-      depends_on:
-        - backend
-      healthcheck:
-        test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost"]
-        interval: 30s
-        timeout: 10s
-        retries: 3
-      networks:
-        - social_network
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: social_frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    healthcheck:
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - social_network
 
 volumes:
   postgres_data:
