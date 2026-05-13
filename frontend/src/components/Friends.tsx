@@ -24,7 +24,6 @@ function Friends() {
         try {
             await friendService.acceptFriendRequest(friendshipId);
             setRequests(prev => prev.filter(r => r.id !== friendshipId));
-            // Обновить список друзей
             const newFriends = await friendService.getFriendsList();
             setFriends(newFriends);
         } catch (error) {
@@ -107,18 +106,18 @@ function Friends() {
                             <p className="text-center text-gray-500 py-8">Нет входящих заявок</p>
                         ) : (
                             <div className="space-y-3">
-                                {requests.map(req => req.user && (
+                                {requests.map(req => req.friend && (
                                     <div key={req.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition">
                                         <div
                                             className="flex items-center gap-3 cursor-pointer flex-1"
-                                            onClick={() => navigate(`/users/${req.user!.id}`)}
+                                            onClick={() => navigate(`/users/${req.friend!.id}`)}
                                         >
                                             <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
-                                                {req.user.name?.charAt(0).toUpperCase() || '😎'}
+                                                {req.friend.name?.charAt(0).toUpperCase() || '😎'}
                                             </div>
                                             <div>
-                                                <p className="font-semibold text-gray-800">{req.user.name || 'Пользователь'}</p>
-                                                <p className="text-sm text-gray-500">{req.user.email}</p>
+                                                <p className="font-semibold text-gray-800">{req.friend.name || 'Пользователь'}</p>
+                                                <p className="text-sm text-gray-500">{req.friend.email}</p>
                                             </div>
                                         </div>
                                         <button

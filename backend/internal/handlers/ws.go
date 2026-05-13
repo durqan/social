@@ -13,7 +13,7 @@ import (
 	"gorm.io/gorm"
 )
 
-var clients = make(map[uint]*websocket.Conn)
+var Clients = make(map[uint]*websocket.Conn)
 var dbInstance *gorm.DB
 
 func InitWebSocket(db *gorm.DB) {
@@ -42,8 +42,8 @@ func WebSocketHandler(c *gin.Context) {
 	}
 	defer conn.Close(websocket.StatusNormalClosure, "")
 
-	clients[userID] = conn
-	defer delete(clients, userID)
+	Clients[userID] = conn
+	defer delete(Clients, userID)
 
 	log.Printf("User %d connected", userID)
 
@@ -69,7 +69,7 @@ func WebSocketHandler(c *gin.Context) {
 			toID := uint(rawMsg["to_id"].(float64))
 			isTyping := rawMsg["is_typing"].(bool)
 
-			if toConn, ok := clients[toID]; ok {
+			if toConn, ok := Clients[toID]; ok {
 				typingMsg := map[string]interface{}{
 					"type":      "typing",
 					"from_id":   userID,
@@ -88,7 +88,7 @@ func WebSocketHandler(c *gin.Context) {
 				Update("is_read", true)
 
 			// Отправляем уведомление отправителю
-			if toConn, ok := clients[toID]; ok {
+			if toConn, ok := Clients[toID]; ok {
 				receiptMsg := map[string]interface{}{
 					"type":    "read_receipt",
 					"from_id": userID,
@@ -129,11 +129,11 @@ func WebSocketHandler(c *gin.Context) {
 				continue
 			}
 
-			if toConn, ok := clients[msg.ToID]; ok {
+			if toConn, ok := Clients[msg.ToID]; ok {
 				toConn.Write(ctx, websocket.MessageText, fullMessageBytes)
 			}
 
-			if fromConn, ok := clients[userID]; ok {
+			if fromConn, ok := Clients[userID]; ok {
 				fromConn.Write(ctx, websocket.MessageText, fullMessageBytes)
 			}
 		}

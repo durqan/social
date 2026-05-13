@@ -1,15 +1,17 @@
 import { useState, useEffect } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, useNavigate } from 'react-router-dom';
 import { friendService } from '../services/friendService.js';
 import type { User } from '../types.js';
 
 interface ProfileContext {
     user: User;
     isOwner?: boolean;
+    currentUser?: User;
 }
 
 function ProfileMain() {
-    const { user, isOwner } = useOutletContext<ProfileContext>();
+    const navigate = useNavigate();
+    const { user, isOwner, currentUser } = useOutletContext<ProfileContext>();
     const [friendStatus, setFriendStatus] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
 
@@ -95,6 +97,14 @@ function ProfileMain() {
                                     <span className="text-yellow-600">⚡ Почта не подтверждена</span>
                                 )}
                             </div>
+                            {!isOwner && friendStatus === 'accepted' && currentUser && (
+                                <button
+                                    onClick={() => navigate(`/users/${currentUser.id}/chat/${user.id}`)}
+                                    className="px-4 py-2 mt-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition text-sm"
+                                >
+                                    💬 Написать сообщение
+                                </button>
+                            )}
                         </div>
                         <div className="flex gap-2">
                             {!isOwner && (

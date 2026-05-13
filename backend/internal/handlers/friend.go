@@ -1,9 +1,13 @@
 package handlers
 
 import (
+	"context"
+	"encoding/json"
 	"strconv"
+	"tester/internal/models"
 	"tester/internal/repository"
 
+	"github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -36,6 +40,20 @@ func SendFriendRequest(db *gorm.DB) gin.HandlerFunc {
 		if err := repository.SendFriendRequest(db, currentUserID.(uint), uint(friendID)); err != nil {
 			c.JSON(500, gin.H{"error": "failed to send friend request"})
 			return
+		}
+
+		if toConn, ok := Clients[uint(friendID)]; ok {
+			var sender models.User
+			db.First(&sender, currentUserID.(uint))
+
+			notification := map[string]interface{}{
+				"type":      "friend_request",
+				"from_id":   currentUserID.(uint),
+				"from_name": sender.Name,
+				"message":   "sent you a friend request",
+			}
+			notificationBytes, _ := json.Marshal(notification)
+			toConn.Write(context.Background(), websocket.MessageText, notificationBytes)
 		}
 
 		c.JSON(201, gin.H{"message": "friend request sent"})
@@ -82,6 +100,23 @@ func AcceptFriendRequest(db *gorm.DB) gin.HandlerFunc {
 		if err := repository.AcceptFriendRequest(db, uint(friendshipID), currentUserID.(uint)); err != nil {
 			c.JSON(500, gin.H{"error": "failed to accept friend request"})
 			return
+		}
+
+		var friendship models.Friendship
+		db.First(&friendship, friendshipID)
+
+		if toConn, ok := Clients[friendship.UserID]; ok {
+			var currentUser models.User
+			db.First(&currentUser, currentUserID.(uint))
+
+			notification := map[string]interface{}{
+				"type":      "friend_accepted",
+				"from_id":   currentUserID.(uint),
+				"from_name": currentUser.Name,
+				"message":   "accepted your friend request",
+			}
+			notificationBytes, _ := json.Marshal(notification)
+			toConn.Write(context.Background(), websocket.MessageText, notificationBytes)
 		}
 
 		c.JSON(200, gin.H{"message": "friend request accepted"})
