@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"os"
 	"tester/internal/auth"
 	"tester/internal/models"
 	"tester/internal/repository"
@@ -59,7 +60,7 @@ func Register(db *gorm.DB) gin.HandlerFunc {
 			86400,
 			"/",
 			"",
-			false,
+			secureCookie(),
 			true,
 		)
 
@@ -107,7 +108,7 @@ func Login(db *gorm.DB) gin.HandlerFunc {
 			86400,
 			"/",
 			"",
-			false,
+			secureCookie(),
 			true,
 		)
 
@@ -127,9 +128,13 @@ func Logout() gin.HandlerFunc {
 			-1,
 			"/",
 			"",
-			false,
+			secureCookie(),
 			true,
 		)
 		c.JSON(200, gin.H{"message": "logout successful"})
 	}
+}
+
+func secureCookie() bool {
+	return os.Getenv("COOKIE_SECURE") == "true"
 }

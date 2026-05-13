@@ -37,9 +37,9 @@ function Conversations() {
                         <div
                             key={conv.user_id}
                             onClick={() => navigate(`/users/${conv.user_id}/chat/${conv.user_id}`)}
-                            className="flex items-center gap-3 p-4 border-b hover:bg-gray-50 cursor-pointer transition"
+                            className="flex items-center gap-3 p-4 hover:bg-gray-50 cursor-pointer transition"
                         >
-                            <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
+                            <div className="w-12 h-12 bg-linear-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
                                 {conv.name?.charAt(0).toUpperCase() || '?'}
                             </div>
                             <div className="flex-1">

@@ -7,7 +7,6 @@ import (
 	"tester/internal/models"
 	"tester/internal/repository"
 
-	"github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -42,7 +41,7 @@ func SendFriendRequest(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		if toConn, ok := Clients[uint(friendID)]; ok {
+		if toConn, ok := clients.get(uint(friendID)); ok {
 			var sender models.User
 			db.First(&sender, currentUserID.(uint))
 
@@ -53,7 +52,7 @@ func SendFriendRequest(db *gorm.DB) gin.HandlerFunc {
 				"message":   "sent you a friend request",
 			}
 			notificationBytes, _ := json.Marshal(notification)
-			toConn.Write(context.Background(), websocket.MessageText, notificationBytes)
+			_ = toConn.write(context.Background(), notificationBytes)
 		}
 
 		c.JSON(201, gin.H{"message": "friend request sent"})
@@ -105,7 +104,7 @@ func AcceptFriendRequest(db *gorm.DB) gin.HandlerFunc {
 		var friendship models.Friendship
 		db.First(&friendship, friendshipID)
 
-		if toConn, ok := Clients[friendship.UserID]; ok {
+		if toConn, ok := clients.get(friendship.UserID); ok {
 			var currentUser models.User
 			db.First(&currentUser, currentUserID.(uint))
 
@@ -116,7 +115,7 @@ func AcceptFriendRequest(db *gorm.DB) gin.HandlerFunc {
 				"message":   "accepted your friend request",
 			}
 			notificationBytes, _ := json.Marshal(notification)
-			toConn.Write(context.Background(), websocket.MessageText, notificationBytes)
+			_ = toConn.write(context.Background(), notificationBytes)
 		}
 
 		c.JSON(200, gin.H{"message": "friend request accepted"})

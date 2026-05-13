@@ -81,7 +81,7 @@ function Friends() {
                                             className="flex items-center gap-3 cursor-pointer flex-1"
                                             onClick={() => navigate(`/users/${friend.id}`)}
                                         >
-                                            <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
+                                            <div className="w-12 h-12 bg-linear-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
                                                 {friend.name?.charAt(0).toUpperCase() || '😎'}
                                             </div>
                                             <div>
@@ -112,7 +112,7 @@ function Friends() {
                                             className="flex items-center gap-3 cursor-pointer flex-1"
                                             onClick={() => navigate(`/users/${req.user!.id}`)}
                                         >
-                                            <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
+                                            <div className="w-12 h-12 bg-linear-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
                                                 {req.user.name?.charAt(0).toUpperCase() || '😎'}
                                             </div>
                                             <div>

@@ -18,7 +18,7 @@ function NotificationHandler() {
                 className={`bg-white rounded-lg shadow-lg p-4 cursor-pointer hover:bg-gray-50 transition-colors max-w-sm border-l-4 border-${borderColor}-500`}
             >
                 <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold">
+                    <div className="w-10 h-10 bg-linear-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold">
                         {title.charAt(0).toUpperCase()}
                     </div>
                     <div className="flex-1">
@@ -90,7 +90,7 @@ function NotificationHandler() {
                             className="bg-white rounded-lg shadow-lg p-4 cursor-pointer hover:bg-gray-50 transition-colors max-w-sm border border-gray-200"
                         >
                             <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold">
+                                <div className="w-10 h-10 bg-linear-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold">
                                     {senderName.charAt(0).toUpperCase()}
                                 </div>
                                 <div className="flex-1">

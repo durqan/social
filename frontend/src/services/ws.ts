@@ -7,7 +7,7 @@ class WebSocketService {
         if (this.ws?.readyState === WebSocket.OPEN || this.ws?.readyState === WebSocket.CONNECTING) return;
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        this.ws = new WebSocket(`${protocol}//${window.location.hostname}:8080/ws`);
+        this.ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
 
         this.ws.onopen = () => {
             console.log('✅ WebSocket connected');

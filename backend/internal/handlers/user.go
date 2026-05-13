@@ -13,14 +13,36 @@ import (
 
 func CreateUser(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var user models.User
+		var req struct {
+			Name     string `json:"name" binding:"required"`
+			Email    string `json:"email" binding:"required,email"`
+			Password string `json:"password" binding:"required,min=6"`
+			Age      int    `json:"age"`
+			Bio      string `json:"bio"`
+			Avatar   string `json:"avatar"`
+		}
 
-		if err := c.ShouldBindJSON(&user); err != nil {
+		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(400, gin.H{"error": err.Error()})
 			return
 		}
 
-		err := repository.CreateUser(db, &user)
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+		if err != nil {
+			c.JSON(500, gin.H{"error": "failed to hash password"})
+			return
+		}
+
+		user := models.User{
+			Name:     req.Name,
+			Email:    req.Email,
+			Password: string(hashedPassword),
+			Age:      req.Age,
+			Bio:      req.Bio,
+			Avatar:   req.Avatar,
+		}
+
+		err = repository.CreateUser(db, &user)
 		if err != nil {
 			if errors.Is(err, gorm.ErrDuplicatedKey) {
 				c.JSON(409, gin.H{"error": "email already exists"})
@@ -92,9 +114,14 @@ func GetProfile(db *gorm.DB) gin.HandlerFunc {
 
 func DeleteUser(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		userID, _ := c.Get("user_id")
 		id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 		if err != nil {
 			c.JSON(400, gin.H{"error": "invalid user id"})
+			return
+		}
+		if uint(id) != userID.(uint) {
+			c.JSON(403, gin.H{"error": "can only delete your own account"})
 			return
 		}
 
@@ -113,15 +140,47 @@ func DeleteUser(db *gorm.DB) gin.HandlerFunc {
 
 func PatchUser(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		userID, _ := c.Get("user_id")
 		id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 		if err != nil {
 			c.JSON(400, gin.H{"error": "invalid user id"})
 			return
 		}
+		if uint(id) != userID.(uint) {
+			c.JSON(403, gin.H{"error": "can only edit your own profile"})
+			return
+		}
 
-		var updates map[string]interface{}
-		if err := c.ShouldBindJSON(&updates); err != nil {
+		var req struct {
+			Name   *string `json:"name"`
+			Email  *string `json:"email" binding:"omitempty,email"`
+			Age    *int    `json:"age"`
+			Bio    *string `json:"bio"`
+			Avatar *string `json:"avatar"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(400, gin.H{"error": err.Error()})
+			return
+		}
+
+		updates := map[string]interface{}{}
+		if req.Name != nil {
+			updates["name"] = *req.Name
+		}
+		if req.Email != nil {
+			updates["email"] = *req.Email
+		}
+		if req.Age != nil {
+			updates["age"] = *req.Age
+		}
+		if req.Bio != nil {
+			updates["bio"] = *req.Bio
+		}
+		if req.Avatar != nil {
+			updates["avatar"] = *req.Avatar
+		}
+		if len(updates) == 0 {
+			c.JSON(400, gin.H{"error": "no valid fields to update"})
 			return
 		}
 
@@ -129,6 +188,10 @@ func PatchUser(db *gorm.DB) gin.HandlerFunc {
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				c.JSON(404, gin.H{"error": "user not found"})
+				return
+			}
+			if errors.Is(err, gorm.ErrDuplicatedKey) {
+				c.JSON(409, gin.H{"error": "email already exists"})
 				return
 			}
 			c.JSON(500, gin.H{"error": "internal server error"})
@@ -147,9 +210,14 @@ func PatchUser(db *gorm.DB) gin.HandlerFunc {
 
 func ChangePassword(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		userID, _ := c.Get("user_id")
 		id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 		if err != nil {
 			c.JSON(400, gin.H{"error": "invalid user id"})
+			return
+		}
+		if uint(id) != userID.(uint) {
+			c.JSON(403, gin.H{"error": "can only change your own password"})
 			return
 		}
 

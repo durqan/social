@@ -8,32 +8,23 @@ import ProfileEdit from "./components/ProfileEdit.js";
 import Wall from "./components/Wall.js";
 import Conversations from "./components/Conversations.js";
 import Chat from "./components/Chat.js";
+import Friends from "./components/Friends.js";
 import { Toaster } from "react-hot-toast";
 import NotificationHandler from "./components/NotificationHandler.js";
 import api from './api/axios.js';
-import Friends from "./components/Friends.js";
 
 function App() {
     const [userId, setUserId] = useState<number | null>(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const fetchCurrentUser = async () => {
-            try {
-                const res = await api.get('/users/profile');
-                setUserId(res.data.id);
-            } catch (error) {
-                console.log('Not authorized');
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetchCurrentUser();
+        api.get('/users/profile')
+            .then(res => setUserId(res.data.id))
+            .catch(() => console.log('Not authorized'))
+            .finally(() => setLoading(false));
     }, []);
 
-    if (loading) {
-        return <div className="min-h-screen bg-gray-100 flex items-center justify-center">Загрузка...</div>;
-    }
+    if (loading) return <div className="min-h-screen bg-gray-100 flex items-center justify-center">Загрузка...</div>;
 
     return (
         <>
