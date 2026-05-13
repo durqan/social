@@ -33,3 +33,4 @@ frontend/*.local
 # OS
 .DS_Store
 Thumbs.db
+webhook/
