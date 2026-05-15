@@ -1,7 +1,7 @@
-import { useEffect, useRef } from 'react';
-import { useWebSocket } from '../contexts/WebSocketContext.js';
-import type { Message } from '../types.js';
-import { isMessageEvent, isTypedEvent, type WsEvent } from '../types/ws.js';
+import {useEffect, useRef} from 'react';
+import {useWebSocket} from '../contexts/WebSocketContext.js';
+import type {Message} from '../types.js';
+import type {WsEvent} from '../types/ws.js';
 
 interface UseChatWebSocketProps {
     userId: string | undefined;
@@ -18,8 +18,8 @@ export const useChatWebSocket = ({
                                      onTyping,
                                      onMessageDeleted,
                                      onReadReceipt,
-                                 onNewMessage,
-                             }: UseChatWebSocketProps) => {
+                                     onNewMessage,
+                                 }: UseChatWebSocketProps) => {
     const isSubscribed = useRef(false);
     const wsService = useWebSocket();
 
@@ -27,21 +27,40 @@ export const useChatWebSocket = ({
         if (isSubscribed.current) return;
         isSubscribed.current = true;
 
-        const handleMessage = (msg: WsEvent) => {
-            if (isTypedEvent(msg, 'typing') && msg.from_id === Number(userId)) {
-                onTyping(msg.is_typing);
-                return;
-            }
-            if (isTypedEvent(msg, 'message_deleted')) {
-                onMessageDeleted(msg.message_id);
-                return;
-            }
-            if (isTypedEvent(msg, 'read_receipt') && msg.to_id === currentUserId) {
-                onReadReceipt(msg.to_id);
-                return;
-            }
-            if (isMessageEvent(msg) && (msg.from_id === Number(userId) || msg.to_id === Number(userId))) {
-                onNewMessage(msg);
+        const handleMessage = (event: WsEvent) => {
+
+            switch (event.type) {
+                case 'typing': {
+                    const payload = event.payload;
+                    if (payload.from_id === Number(userId)) {
+                        onTyping(payload.is_typing);
+                    }
+                    break;
+                }
+                case 'message_deleted': {
+                    const payload = event.payload;
+                    onMessageDeleted(payload.message_id);
+                    break;
+                }
+                case 'read_receipt': {
+                    const payload = event.payload;
+                    if (payload.to_id === currentUserId) {
+                        onReadReceipt(payload.to_id);
+                    }
+                    break;
+                }
+                case 'message': {
+                    const payload = event.payload;
+                    if (
+                        payload.from_id === Number(userId) ||
+                        payload.to_id === Number(userId)
+                    ) {
+                        onNewMessage(payload);
+                    }
+                    break;
+                }
+                default:
+                    console.warn('Unknown WS event:', event);
             }
         };
 

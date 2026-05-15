@@ -20,7 +20,7 @@ export const messageService = {
         };
     },
 
-    async markAsRead(userId: number | string): Promise<void> {
+    async markAsRead(userId: string | undefined): Promise<void> {
         await api.patch(`/messages/read/${userId}`);
     },
 

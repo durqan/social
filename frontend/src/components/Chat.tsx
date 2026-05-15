@@ -66,9 +66,10 @@ function Chat() {
                 return [...prev, msg];
             });
             if (msg.from_id === Number(userId)) {
-                messageService.markAsRead(userId).then(() => markAsRead(Number(userId)));
+                wsService.sendReadReceipt(Number(userId));
+                markAsRead(Number(userId));
             }
-        }, [markAsRead, setMessages, userId]),
+        }, [markAsRead, setMessages, userId, wsService]),
     });
 
     useEffect(() => {
@@ -77,6 +78,13 @@ function Chat() {
             userService.getUser(userId).then(setRecipient).catch(console.error);
         }
     }, [loadInitial, userId]);
+
+    useEffect(() => {
+        if (!userId) return;
+        wsService.sendReadReceipt(Number(userId));
+        markAsRead(Number(userId));
+        window.dispatchEvent(new Event('reset-unread'));
+    }, [userId, wsService, markAsRead]);
 
     const handleBatchDelete = async () => {
         const realIds = Array.from(selectedMessages).filter(id => id > 0 && id < 10000000);

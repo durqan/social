@@ -2,12 +2,18 @@ package config
 
 import (
 	"os"
+	"strconv"
 	"strings"
 )
 
 const (
 	defaultPort      = "8080"
 	defaultJWTSecret = "your-secret-key-change-in-production"
+
+	defaultRedisHost     = "localhost"
+	defaultRedisPort     = "6379"
+	defaultRedisPassword = ""
+	defaultRedisDB       = 0
 )
 
 type Config struct {
@@ -16,6 +22,11 @@ type Config struct {
 	JWTSecret      string
 	CookieSecure   bool
 	AllowedOrigins []string
+
+	RedisHost     string
+	RedisPort     string
+	RedisPassword string
+	RedisDB       int
 }
 
 func Load() Config {
@@ -25,6 +36,11 @@ func Load() Config {
 		JWTSecret:      getEnv("JWT_SECRET", defaultJWTSecret),
 		CookieSecure:   os.Getenv("COOKIE_SECURE") == "true",
 		AllowedOrigins: parseAllowedOrigins(os.Getenv("CORS_ALLOWED_ORIGINS")),
+
+		RedisHost:     getEnv("REDIS_HOST", defaultRedisHost),
+		RedisPort:     getEnv("REDIS_PORT", defaultRedisPort),
+		RedisPassword: getEnv("REDIS_PASSWORD", defaultRedisPassword),
+		RedisDB:       getEnvInt("REDIS_DB", defaultRedisDB),
 	}
 }
 
@@ -34,6 +50,19 @@ func getEnv(key, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func getEnvInt(key string, fallback int) int {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+
+	intValue, err := strconv.Atoi(value)
+	if err != nil {
+		return fallback
+	}
+	return intValue
 }
 
 func parseAllowedOrigins(value string) []string {
