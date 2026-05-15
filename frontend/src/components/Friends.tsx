@@ -4,6 +4,8 @@ import { friendService } from '../services/friendService.js';
 import type { User, Friendship } from '../types.js';
 import { Avatar } from './ui/Avatar.js';
 import { Button } from './ui/Button.js';
+import {usePresence} from "../hooks/usePresence.js";
+import Item from "./friends/Item.js";
 
 function Friends() {
     const navigate = useNavigate();
@@ -78,30 +80,15 @@ function Friends() {
                         ) : (
                             <div className="space-y-3">
                                 {friends.map(friend => (
-                                    <div key={friend.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition">
-                                        <div
-                                            className="flex items-center gap-3 cursor-pointer flex-1"
-                                            onClick={() => navigate(`/users/${friend.id}`)}
-                                        >
-                                            <Avatar name={friend.name} src={friend.avatar} size="lg" />
-                                            <div>
-                                                <p className="font-semibold text-gray-800">{friend.name || 'Пользователь'}</p>
-                                                <p className="text-sm text-gray-500">{friend.email}</p>
-                                            </div>
-                                        </div>
-                                        <Button
-                                            variant="ghost"
-                                            onClick={() => removeFriend(friend.id)}
-                                            className="text-red-500 hover:text-red-700"
-                                        >
-                                            Удалить
-                                        </Button>
-                                    </div>
+                                    <Item
+                                        key={friend.id}
+                                        friend={friend}
+                                        removeFriend={removeFriend}
+                                    />
                                 ))}
                             </div>
                         )
                     )}
-
                     {activeTab === 'requests' && (
                         requests.length === 0 ? (
                             <p className="text-center text-gray-500 py-8">Нет входящих заявок</p>

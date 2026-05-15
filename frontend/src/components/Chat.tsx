@@ -151,7 +151,7 @@ function Chat() {
                 formatTime={(date) => new Date(date).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
             />
             {otherTyping && <div className="px-4 pb-2 text-sm text-gray-500">{recipient?.name} печатает...</div>}
-            <ChatInput value={newMessage} onChange={e => { setNewMessage(e.target.value); handleTyping(e.target.value); }} onSend={sendMessage} />
+            <ChatInput value={newMessage} onChange={e => { setNewMessage(e.target.value); handleTyping(); }} onSend={sendMessage} />
             <DeleteConfirmModal isOpen={deleteConfirmOpen} onConfirm={handleBatchDelete} onCancel={closeDeleteConfirm} />
         </div>
     );

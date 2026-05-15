@@ -12,7 +12,10 @@ export const messageService = {
         return Array.isArray(response.data) ? response.data : [];
     },
 
-    async getMessagesWith(userId: number | string, params?: { before?: number; limit?: number }): Promise<PaginatedMessages> {
+    async getMessagesWith(userId: string | undefined, params?: {
+        before?: number;
+        limit?: number
+    }): Promise<PaginatedMessages> {
         const response = await api.get(`/messages/with/${userId}`, { params });
         return {
             messages: response.data.messages || [],

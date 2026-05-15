@@ -75,6 +75,14 @@ func (r *websocketRegistry) remove(userID uint, client *websocketClient) {
 }
 
 var clients = newWebsocketRegistry()
+
+var onlineUsers = struct {
+	mu    sync.RWMutex
+	users map[uint]bool
+}{
+	users: make(map[uint]bool),
+}
+
 var dbInstance *gorm.DB
 
 func InitWebSocket(db *gorm.DB) {
@@ -106,7 +114,15 @@ func WebSocketHandler(c *gin.Context) {
 	defer conn.Close(websocket.StatusNormalClosure, "")
 
 	client := clients.set(userID, conn)
+	onlineUsers.mu.Lock()
+	onlineUsers.users[userID] = true
+	onlineUsers.mu.Unlock()
 	defer clients.remove(userID, client)
+	defer func() {
+		onlineUsers.mu.Lock()
+		delete(onlineUsers.users, userID)
+		onlineUsers.mu.Unlock()
+	}()
 
 	log.Printf("User %d connected", userID)
 
@@ -127,7 +143,7 @@ func WebSocketHandler(c *gin.Context) {
 		}
 
 		switch wsMsg.Type {
-		case "message":
+		case "message:send":
 
 			var payload struct {
 				ToID    uint   `json:"to_id"`
@@ -164,7 +180,7 @@ func WebSocketHandler(c *gin.Context) {
 				First(&fullMessage, message.ID)
 
 			messageBytes, err := json.Marshal(gin.H{
-				"type":    "message",
+				"type":    "message:new",
 				"payload": fullMessage,
 			})
 
@@ -184,11 +200,10 @@ func WebSocketHandler(c *gin.Context) {
 					log.Println("Failed to send message to sender:", err)
 				}
 			}
-		case "typing":
+		case "typing:start", "typing:stop":
 
 			var payload struct {
-				ToID     uint `json:"to_id"`
-				IsTyping bool `json:"is_typing"`
+				ToID uint `json:"to_id"`
 			}
 
 			if err := json.Unmarshal(wsMsg.Payload, &payload); err != nil {
@@ -203,10 +218,9 @@ func WebSocketHandler(c *gin.Context) {
 			if toConn, ok := clients.get(payload.ToID); ok {
 
 				typingBytes, _ := json.Marshal(gin.H{
-					"type": "typing",
+					"type": wsMsg.Type,
 					"payload": gin.H{
-						"from_id":   userID,
-						"is_typing": payload.IsTyping,
+						"from_id": userID,
 					},
 				})
 
@@ -214,7 +228,7 @@ func WebSocketHandler(c *gin.Context) {
 					log.Println("Failed to send typing event:", err)
 				}
 			}
-		case "read_receipt":
+		case "message:read":
 
 			var payload struct {
 				ToID uint `json:"to_id"`
@@ -240,7 +254,7 @@ func WebSocketHandler(c *gin.Context) {
 			if toConn, ok := clients.get(payload.ToID); ok {
 
 				receiptBytes, _ := json.Marshal(gin.H{
-					"type": "read_receipt",
+					"type": "message:read",
 					"payload": gin.H{
 						"from_id": userID,
 						"to_id":   payload.ToID,

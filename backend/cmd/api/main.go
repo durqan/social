@@ -89,6 +89,11 @@ func main() {
 		)
 
 		users.GET(
+			"/:id/presence",
+			handlers.GetPresence,
+		)
+
+		users.GET(
 			"/profile",
 			middleware.CacheMiddleware(2*time.Minute),
 			handlers.GetProfile(database),

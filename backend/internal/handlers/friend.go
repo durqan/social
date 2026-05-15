@@ -46,7 +46,7 @@ func SendFriendRequest(db *gorm.DB) gin.HandlerFunc {
 			db.First(&sender, currentUserID.(uint))
 
 			notification := map[string]interface{}{
-				"type":      "friend_request",
+				"type":      "friend:request",
 				"from_id":   currentUserID.(uint),
 				"from_name": sender.Name,
 				"message":   "sent you a friend request",
@@ -109,7 +109,7 @@ func AcceptFriendRequest(db *gorm.DB) gin.HandlerFunc {
 			db.First(&currentUser, currentUserID.(uint))
 
 			notification := map[string]interface{}{
-				"type":      "friend_accepted",
+				"type":      "friend:accepted",
 				"from_id":   currentUserID.(uint),
 				"from_name": currentUser.Name,
 				"message":   "accepted your friend request",

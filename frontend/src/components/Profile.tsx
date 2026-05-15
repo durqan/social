@@ -7,6 +7,7 @@ import { userService } from '../services/userService.js';
 import { Avatar } from './ui/Avatar.js';
 import { Icon } from './ui/Icon.js';
 import { Spinner } from './ui/Spinner.js';
+import {usePresence} from "../hooks/usePresence.js";
 
 function Profile() {
     const { id } = useParams();
@@ -59,6 +60,10 @@ function Profile() {
         return 'Моя страница';
     };
 
+    const userPresence = usePresence(
+        currentUser?.id
+    );
+
     if (loading) {
         return (
             <div className="min-h-screen bg-gray-100 flex items-center justify-center">
@@ -83,6 +88,7 @@ function Profile() {
                 userId={currentUser?.id}
                 userName={currentUser?.name}
                 userAvatar={currentUser?.avatar}
+                userPresence={userPresence}
             />
             <div className="lg:ml-64">
                 <header className="bg-white border-b border-gray-200 sticky top-0 z-10">

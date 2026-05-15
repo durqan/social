@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useOutletContext, useNavigate } from 'react-router-dom';
 import { friendService } from '../services/friendService.js';
 import type { User } from '../types.js';
+import {usePresence} from "../hooks/usePresence.js";
 
 interface ProfileContext {
     user: User;
@@ -14,6 +15,7 @@ function ProfileMain() {
     const { user, isOwner, currentUser } = useOutletContext<ProfileContext>();
     const [friendStatus, setFriendStatus] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
+    const { online } = usePresence(user.id);
 
     useEffect(() => {
         if (!isOwner && user?.id) {
@@ -80,7 +82,11 @@ function ProfileMain() {
                 <div className="pt-16 pb-6 px-6">
                     <div className="flex justify-between items-start">
                         <div>
-                            <h1 className="text-2xl font-bold text-gray-800">{user?.name || 'Пользователь'}</h1>
+                            <h1 className="text-2xl font-bold text-gray-800">{user?.name || 'Пользователь'}
+                                {online && (
+                                <span className="ml-2 text-green-500">●</span>
+                                )}
+                            </h1>
                             <p className="text-gray-500 mt-1">{user?.email}</p>
                             {user?.bio && (
                                 <p className="text-gray-700 mt-3 pt-3 border-t border-gray-100">
@@ -122,9 +128,6 @@ function ProfileMain() {
                                     {getFriendButtonText()}
                                 </button>
                             )}
-                            <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm">
-                                Online
-                            </span>
                         </div>
                     </div>
                 </div>

@@ -14,7 +14,7 @@ export const useChatMessages = (userId: string | undefined, currentUserId: numbe
         if (!userId) return;
         setInitialLoading(true);
         try {
-            const res = await messageService.getMessagesWith(userId, { limit: 20 });
+            const res = await messageService.getMessagesWith(userId, {limit: 20});
             setMessages(res.messages);
             setHasMore(res.has_more);
             await messageService.markAsRead(userId);

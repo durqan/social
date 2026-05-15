@@ -8,7 +8,7 @@ import { useAuth } from '../contexts/AuthContext.js';
 
 import { userService } from '../services/userService.js';
 
-import type { WsEvent } from '../types/ws.js';
+import type { WsEvent } from '../types/ws/events.js';
 
 import { Avatar } from './ui/Avatar.js';
 
@@ -81,15 +81,16 @@ function NotificationHandler() {
                 // =========================
                 // IGNORE
                 // =========================
-                case 'typing':
-                case 'message_deleted':
-                case 'read_receipt':
+                case 'typing:start':
+                case 'typing:stop':
+                case 'message:delete':
+                case 'message:read':
                     return;
 
                 // =========================
                 // FRIEND REQUEST
                 // =========================
-                case 'friend_request': {
+                case 'friend:request': {
 
                     const payload = event.payload;
 
@@ -106,7 +107,7 @@ function NotificationHandler() {
                 // =========================
                 // FRIEND ACCEPTED
                 // =========================
-                case 'friend_accepted': {
+                case 'friend:accepted': {
 
                     const payload = event.payload;
 
@@ -123,7 +124,7 @@ function NotificationHandler() {
                 // =========================
                 // MESSAGE
                 // =========================
-                case 'message': {
+                case 'message:new': {
 
                     const msg = event.payload;
 

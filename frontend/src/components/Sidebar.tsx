@@ -1,34 +1,29 @@
-import { useState, useEffect } from 'react';
-import { NavLink } from 'react-router-dom';
-
-import { useWebSocket } from '../contexts/WebSocketContext.js';
-import { messageService } from '../services/messageService.js';
-
-import { Avatar } from './ui/Avatar.js';
-import { Icon } from './ui/Icon.js';
-
-import type { WsEvent } from '../types/ws.js';
+import {useState, useEffect} from 'react';
+import {NavLink} from 'react-router-dom';
+import {useWebSocket} from '../contexts/WebSocketContext.js';
+import {messageService} from '../services/messageService.js';
+import {Avatar} from './ui/Avatar.js';
+import {Icon} from './ui/Icon.js';
+import type {WsEvent} from '../types/ws/events.js';
 
 interface SidebarProps {
-    userId?: number | undefined;
-    userName?: string | undefined;
-    userAvatar?: string | null | undefined;
+    userId?: number | undefined,
+    userName?: string | undefined,
+    userAvatar?: string | null | undefined,
+    userPresence?: { online: boolean; loading: boolean }
 }
 
 function Sidebar({
                      userId,
                      userName,
                      userAvatar,
+                     userPresence
                  }: SidebarProps) {
 
     const wsService = useWebSocket();
-
     const [isOpen, setIsOpen] = useState(false);
-
     const [unreadCount, setUnreadCount] = useState(0);
-
     const [notificationCount, setNotificationCount] = useState(0);
-
     const refreshUnreadCount = async () => {
         if (!userId) return;
 
@@ -42,10 +37,6 @@ function Sidebar({
             );
         }
     };
-
-    // =========================
-    // RESET UNREAD
-    // =========================
 
     useEffect(() => {
 
@@ -77,8 +68,8 @@ function Sidebar({
 
             switch (event.type) {
 
-                case 'friend_request':
-                case 'friend_accepted':
+                case 'friend:request':
+                case 'friend:accepted':
 
                     setNotificationCount(prev => prev + 1);
 
@@ -114,14 +105,14 @@ function Sidebar({
 
         const handleNewMessage = (event: WsEvent) => {
             switch (event.type) {
-                case 'message': {
+                case 'message:new': {
                     const msg = event.payload;
                     if (msg.to_id === Number(userId)) {
                         refreshUnreadCount();
                     }
                     break;
                 }
-                case 'read_receipt': {
+                case 'message:read': {
                     refreshUnreadCount();
                     break;
                 }
@@ -216,14 +207,8 @@ function Sidebar({
                             <p className="font-semibold text-gray-800">
                                 {userName || 'Пользователь'}
                             </p>
-
-                            <p className="text-xs text-gray-500">
-                                Online
-                            </p>
                         </div>
-
                     </div>
-
                 </div>
 
                 {/* NAVIGATION */}
@@ -236,7 +221,7 @@ function Sidebar({
                     <NavLink
                         to={`/users/${userId}`}
                         end
-                        className={({ isActive }) =>
+                        className={({isActive}) =>
                             `
                                 flex items-center gap-3
                                 px-4 py-3 mx-2 rounded-lg
@@ -249,14 +234,14 @@ function Sidebar({
                             `
                         }
                     >
-                        <Icon name="home" />
+                        <Icon name="home"/>
                         <span>Моя страница</span>
                     </NavLink>
 
                     {/* WALL */}
                     <NavLink
                         to={`/users/${userId}/wall`}
-                        className={({ isActive }) =>
+                        className={({isActive}) =>
                             `
                                 flex items-center gap-3
                                 px-4 py-3 mx-2 rounded-lg
@@ -269,14 +254,14 @@ function Sidebar({
                             `
                         }
                     >
-                        <Icon name="wall" />
+                        <Icon name="wall"/>
                         <span>Моя стена</span>
                     </NavLink>
 
                     {/* FRIENDS */}
                     <NavLink
                         to={`/users/${userId}/friends`}
-                        className={({ isActive }) =>
+                        className={({isActive}) =>
                             `
                                 flex items-center gap-3
                                 px-4 py-3 mx-2 rounded-lg
@@ -289,7 +274,7 @@ function Sidebar({
                             `
                         }
                     >
-                        <Icon name="friends" />
+                        <Icon name="friends"/>
 
                         <span>Друзья</span>
 
@@ -310,7 +295,7 @@ function Sidebar({
                     {/* MESSAGES */}
                     <NavLink
                         to={`/users/${userId}/conversations`}
-                        className={({ isActive }) =>
+                        className={({isActive}) =>
                             `
                                 flex items-center gap-3
                                 px-4 py-3 mx-2 rounded-lg
@@ -323,7 +308,7 @@ function Sidebar({
                             `
                         }
                     >
-                        <Icon name="messages" />
+                        <Icon name="messages"/>
 
                         <span>Сообщения</span>
 
@@ -348,7 +333,7 @@ function Sidebar({
             </aside>
 
             {/* DESKTOP SPACER */}
-            <div className="hidden lg:block w-64" />
+            <div className="hidden lg:block w-64"/>
         </>
     );
 }

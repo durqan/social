@@ -1,11 +1,54 @@
-import type { WsEvent } from '../types/ws.js';
+import type { WsEvent } from '../types/ws/events.js';
 
 export class WebSocketService {
+
     private ws: WebSocket | null = null;
-    private handlers: ((data: WsEvent) => void)[] = [];
+
+    private handlers: ((event: WsEvent) => void)[] = [];
+
     private shouldReconnect = true;
 
+    // =========================
+    // PARSE MESSAGE
+    // =========================
+
+    private parseMessage(raw: string): WsEvent | null {
+
+        try {
+
+            const parsed = JSON.parse(raw);
+
+            if (!parsed.type || !parsed.payload) {
+                return null;
+            }
+
+            return parsed as WsEvent;
+
+        } catch {
+
+            return null;
+        }
+    }
+
+    // =========================
+    // SEND EVENT
+    // =========================
+
+    private sendEvent(event: unknown) {
+
+        if (this.ws?.readyState !== WebSocket.OPEN) {
+            return;
+        }
+
+        this.ws.send(JSON.stringify(event));
+    }
+
+    // =========================
+    // CONNECT
+    // =========================
+
     connect() {
+
         if (
             this.ws?.readyState === WebSocket.OPEN ||
             this.ws?.readyState === WebSocket.CONNECTING
@@ -14,89 +57,142 @@ export class WebSocketService {
         }
 
         const protocol =
-            window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            window.location.protocol === 'https:'
+                ? 'wss:'
+                : 'ws:';
 
         this.ws = new WebSocket(
             `${protocol}//${window.location.host}/ws`
         );
 
         this.ws.onopen = () => {
-            console.log('✅ WebSocket connected');
             this.shouldReconnect = true;
         };
 
         this.ws.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data) as WsEvent;
 
-                console.log('📨 ws.onmessage:', data);
+            const parsed = this.parseMessage(event.data);
 
-                this.handlers.forEach(h => h(data));
+            if (!parsed) return;
 
-            } catch (error) {
-                console.error('Invalid WebSocket message:', error);
-            }
+            this.handlers.forEach(handler =>
+                handler(parsed)
+            );
         };
 
         this.ws.onclose = () => {
-            console.log('❌ WebSocket disconnected');
 
             this.ws = null;
 
             if (this.shouldReconnect) {
-                // reconnect logic
+
+                setTimeout(() => {
+                    this.connect();
+                }, 3000);
             }
         };
 
         this.ws.onerror = (error) => {
-            console.error('WebSocket error:', error);
+            console.error(
+                'WebSocket error:',
+                error
+            );
         };
     }
 
-    onMessage(handler: (data: WsEvent) => void) {
+    // =========================
+    // SUBSCRIBE
+    // =========================
+
+    onMessage(
+        handler: (event: WsEvent) => void
+    ) {
         this.handlers.push(handler);
     }
 
-    removeMessageHandler(handler: (data: WsEvent) => void) {
-        const index = this.handlers.indexOf(handler);
+    removeMessageHandler(
+        handler: (event: WsEvent) => void
+    ) {
+
+        const index =
+            this.handlers.indexOf(handler);
 
         if (index !== -1) {
             this.handlers.splice(index, 1);
         }
     }
 
-    send(toId: number, content: string) {
-        if (this.ws?.readyState !== WebSocket.OPEN) return;
+    // =========================
+    // SEND MESSAGE
+    // =========================
 
-        this.ws.send(JSON.stringify({
-            type: 'message',
+    send(toId: number, content: string) {
+
+        this.sendEvent({
+            type: 'message:send',
+
             payload: {
                 to_id: toId,
                 content,
             },
-        }));
+        });
     }
 
-    sendTyping(toId: number, isTyping: boolean) {
-        if (this.ws?.readyState !== WebSocket.OPEN) return;
+    // =========================
+    // TYPING START
+    // =========================
 
-        this.ws.send(JSON.stringify({
-            type: 'typing',
+    sendTypingStart(toId: number) {
+
+        this.sendEvent({
+            type: 'typing:start',
+
             payload: {
                 to_id: toId,
-                is_typing: isTyping,
             },
-        }));
+        });
     }
+
+    // =========================
+    // TYPING STOP
+    // =========================
+
+    sendTypingStop(toId: number) {
+
+        this.sendEvent({
+            type: 'typing:stop',
+
+            payload: {
+                to_id: toId,
+            },
+        });
+    }
+
+    // =========================
+    // READ RECEIPT
+    // =========================
 
     sendReadReceipt(toId: number) {
-        if (this.ws?.readyState !== WebSocket.OPEN) return;
 
-        this.ws.send(JSON.stringify({
-            type: 'read_receipt',
+        this.sendEvent({
+            type: 'message:read',
+
             payload: {
                 to_id: toId,
             },
-        }));
+        });
+    }
+
+    // =========================
+    // DISCONNECT
+    // =========================
+
+    disconnect() {
+
+        this.shouldReconnect = false;
+
+        this.ws?.close();
+
+        this.ws = null;
     }
 }
