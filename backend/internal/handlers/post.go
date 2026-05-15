@@ -26,7 +26,7 @@ func GetPosts(db *gorm.DB) gin.HandlerFunc {
 		userID, _ := c.Get("user_id")
 		currentUserID := userID.(uint)
 
-		posts, err := repository.GetAllPosts(db)
+		posts, err := repository.GetPostsByUser(db, currentUserID)
 		if err != nil {
 			c.JSON(500, gin.H{"error": "failed to fetch posts"})
 			return

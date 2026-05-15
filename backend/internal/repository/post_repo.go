@@ -16,6 +16,16 @@ func GetAllPosts(db *gorm.DB) ([]models.Post, error) {
 	return posts, err
 }
 
+func GetPostsByUser(db *gorm.DB, userID uint) ([]models.Post, error) {
+	var posts []models.Post
+	err := db.Preload("User").
+		Where("UserID = ?", userID).
+		Order("created_at DESC").
+		Find(&posts).Error
+
+	return posts, err
+}
+
 func GetPostByID(db *gorm.DB, postID uint) (models.Post, error) {
 	var post models.Post
 	err := db.Preload("User").First(&post, postID).Error
