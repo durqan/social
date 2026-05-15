@@ -16,6 +16,11 @@ export const postService = {
         return response.data;
     },
 
+    async toggleCommentLike(postId: number, commentId: number): Promise<{ is_liked: boolean; likes_count: number }> {
+        const response = await api.post(`/posts/${postId}/comments/${commentId}/like`);
+        return response.data;
+    },
+
     async updatePost(postId: number, content: string): Promise<Post> {
         const response = await api.patch(`/posts/${postId}`, { content });
         return response.data;

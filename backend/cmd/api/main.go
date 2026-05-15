@@ -32,7 +32,8 @@ func main() {
 	err = database.AutoMigrate(
 		&models.User{},
 		&models.Post{},
-		&models.Like{},
+		&models.PostLike{},
+		&models.CommentLike{},
 		&models.Comment{},
 		&models.Message{},
 		&models.Friendship{},
@@ -158,11 +159,11 @@ func main() {
 		posts.PATCH("/:id", handlers.UpdatePost(database))
 		posts.DELETE("/:id", handlers.DeletePost(database))
 
-		posts.POST("/:id/like", handlers.ToggleLike(database))
+		posts.POST("/:id/like", handlers.TogglePostLike(database))
 		posts.POST("/:id/comments", handlers.CreateComment(database))
+		posts.POST("/:id/comments/:commentID/like", handlers.ToggleCommentLike(database))
 	}
 
-	// MESSAGES
 	messages := r.Group("/messages")
 
 	messages.Use(

@@ -36,6 +36,8 @@ export interface Comment {
     };
     content: string;
     created_at: string;
+    likes_count: number;
+    is_liked: boolean;
 }
 
 export interface ProfileContextType {

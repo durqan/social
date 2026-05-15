@@ -19,7 +19,7 @@ func GetAllPosts(db *gorm.DB) ([]models.Post, error) {
 func GetPostsByUser(db *gorm.DB, userID uint) ([]models.Post, error) {
 	var posts []models.Post
 	err := db.Preload("User").
-		Where("UserID = ?", userID).
+		Where("user_id = ?", userID).
 		Order("created_at DESC").
 		Find(&posts).Error
 
@@ -52,7 +52,7 @@ func DeletePost(db *gorm.DB, postID uint) error {
 
 func GetPostLikeCount(db *gorm.DB, postID uint) (int64, error) {
 	var count int64
-	err := db.Model(&models.Like{}).Where("post_id = ?", postID).Count(&count).Error
+	err := db.Model(&models.PostLike{}).Where("post_id = ?", postID).Count(&count).Error
 	return count, err
 }
 
@@ -63,7 +63,7 @@ func GetPostCommentCount(db *gorm.DB, postID uint) (int64, error) {
 }
 
 func IsPostLikedByUser(db *gorm.DB, postID, userID uint) (bool, error) {
-	var like models.Like
+	var like models.PostLike
 	err := db.Where("post_id = ? AND user_id = ?", postID, userID).First(&like).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -74,12 +74,12 @@ func IsPostLikedByUser(db *gorm.DB, postID, userID uint) (bool, error) {
 	return true, nil
 }
 
-func ToggleLike(db *gorm.DB, postID, userID uint) (bool, error) {
-	var like models.Like
+func TogglePostLike(db *gorm.DB, postID, userID uint) (bool, error) {
+	var like models.PostLike
 	err := db.Where("post_id = ? AND user_id = ?", postID, userID).First(&like).Error
 
 	if err == gorm.ErrRecordNotFound {
-		like = models.Like{PostID: postID, UserID: userID}
+		like = models.PostLike{PostID: postID, UserID: userID}
 		err = db.Create(&like).Error
 		return true, err
 	}
@@ -109,7 +109,7 @@ func DeletePostComments(db *gorm.DB, postID uint) error {
 }
 
 func DeletePostLikes(db *gorm.DB, postID uint) error {
-	return db.Where("post_id = ?", postID).Delete(&models.Like{}).Error
+	return db.Where("post_id = ?", postID).Delete(&models.PostLike{}).Error
 }
 
 func IsPostOwner(db *gorm.DB, postID, userID uint) bool {
@@ -119,4 +119,58 @@ func IsPostOwner(db *gorm.DB, postID, userID uint) bool {
 		return false
 	}
 	return post.UserID == userID
+}
+
+func GetCommentLikeCount(db *gorm.DB, commentID uint) (int64, error) {
+	var count int64
+	err := db.Model(&models.CommentLike{}).Where("comment_id = ?", commentID).Count(&count).Error
+	return count, err
+}
+
+func IsCommentLikedByUser(db *gorm.DB, commentID, userID uint) (bool, error) {
+	var like models.CommentLike
+	err := db.Where("comment_id = ? AND user_id = ?", commentID, userID).First(&like).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+func ToggleCommentLike(db *gorm.DB, commentID, userID uint) (bool, error) {
+	var like models.CommentLike
+	err := db.Where("comment_id = ? AND user_id = ?", commentID, userID).First(&like).Error
+
+	if err == gorm.ErrRecordNotFound {
+		like = models.CommentLike{CommentID: commentID, UserID: userID}
+		err = db.Create(&like).Error
+		return true, err
+	}
+	if err != nil {
+		return false, err
+	}
+
+	err = db.Delete(&like).Error
+	return false, err
+}
+
+func DeleteCommentLikes(db *gorm.DB, commentID uint) error {
+	return db.Where("comment_id = ?", commentID).Delete(&models.CommentLike{}).Error
+}
+
+func GetCommentByID(db *gorm.DB, commentID uint) (models.Comment, error) {
+	var comment models.Comment
+	err := db.First(&comment, commentID).Error
+	return comment, err
+}
+
+func IsCommentOwner(db *gorm.DB, commentID, userID uint) bool {
+	var comment models.Comment
+	err := db.First(&comment, commentID).Error
+	if err != nil {
+		return false
+	}
+	return comment.UserID == userID
 }

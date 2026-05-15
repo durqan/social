@@ -1,13 +1,13 @@
-import { useState, useEffect } from 'react';
-import { useOutletContext } from 'react-router-dom';
-import type { Post, ProfileContextType, Comment } from '../types.js';
-import { postService } from '../services/postService.js';
-import { Avatar } from './ui/Avatar.js';
-import { Icon } from './ui/Icon.js';
-import { Spinner } from './ui/Spinner.js';
+import {useState, useEffect} from 'react';
+import {useOutletContext} from 'react-router-dom';
+import type {Post, ProfileContextType, Comment} from '../types.js';
+import {postService} from '../services/postService.js';
+import {Avatar} from './ui/Avatar.js';
+import {Icon} from './ui/Icon.js';
+import {Spinner} from './ui/Spinner.js';
 
 function Wall() {
-    const { user } = useOutletContext<ProfileContextType>();
+    const {user} = useOutletContext<ProfileContextType>();
     const [posts, setPosts] = useState<Post[]>([]);
     const [newPostContent, setNewPostContent] = useState('');
     const [loading, setLoading] = useState(true);
@@ -35,7 +35,7 @@ function Wall() {
     const fetchComments = async (postId: number) => {
         try {
             const postComments = await postService.getComments(postId);
-            setComments(prev => ({ ...prev, [postId]: postComments }));
+            setComments(prev => ({...prev, [postId]: postComments}));
         } catch (err) {
             console.error(err);
         }
@@ -105,19 +105,35 @@ function Wall() {
         }
     };
 
+    const handleCommentLike = async (commentId: number, postId: number) => {
+        try {
+            const response = await postService.toggleCommentLike(postId,commentId);
+            setComments(prev => ({
+                ...prev,
+                [postId]: prev[postId]?.map(c =>
+                    c.id === commentId
+                        ? { ...c, is_liked: response.is_liked, likes_count: response.likes_count }
+                        : c
+                ) || []
+            }));
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
     const handleComment = async (postId: number) => {
         const text = newComment[postId];
         if (!text?.trim()) return;
 
         try {
             await postService.createComment(postId, text);
-            setNewComment(prev => ({ ...prev, [postId]: '' }));
+            setNewComment(prev => ({...prev, [postId]: ''}));
 
             await fetchComments(postId);
 
             setPosts(prev => prev.map(p =>
                 p.id === postId
-                    ? { ...p, comments_count: (Number(p.comments_count) || 0) + 1 }
+                    ? {...p, comments_count: (Number(p.comments_count) || 0) + 1}
                     : p
             ));
         } catch (err) {
@@ -134,16 +150,16 @@ function Wall() {
         if (diff < 3600) return `${Math.floor(diff / 60)} мин назад`;
         if (diff < 86400) return `${Math.floor(diff / 3600)} ч назад`;
         if (diff < 604800) return `${Math.floor(diff / 86400)} д назад`;
-        return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+        return d.toLocaleDateString('ru-RU', {day: 'numeric', month: 'long', year: 'numeric'});
     };
 
-    if (loading) return <div className="flex justify-center py-12"><Spinner /></div>;
+    if (loading) return <div className="flex justify-center py-12"><Spinner/></div>;
 
     return (
         <div className="max-w-2xl mx-auto">
             <div className="bg-white rounded-xl shadow-sm p-4 mb-6">
                 <form onSubmit={handleCreatePost} className="flex gap-3">
-                    <Avatar name={user?.name} src={user?.avatar} className="flex-shrink-0 cursor-pointer" />
+                    <Avatar name={user?.name} src={user?.avatar} className="flex-shrink-0 cursor-pointer"/>
                     <div className="flex-1">
                         <textarea
                             value={newPostContent}
@@ -177,7 +193,7 @@ function Wall() {
                         <div key={post.id} className="bg-white rounded-xl shadow-sm p-4">
                             <div className="flex items-center justify-between mb-3">
                                 <div className="flex items-center gap-3">
-                                    <Avatar name={post.user?.name} className="cursor-pointer" />
+                                    <Avatar name={post.user?.name} className="cursor-pointer"/>
                                     <div>
                                         <p className="font-semibold text-gray-800">{post.user?.name || 'Пользователь'}</p>
                                         <p className="text-xs text-gray-500">{formatDate(post.created_at)}</p>
@@ -186,16 +202,19 @@ function Wall() {
                                 {post.user?.id === user?.id && (
                                     <div className="flex gap-2">
                                         <button
-                                            onClick={() => { setEditingPost(post); setEditContent(post.content); }}
+                                            onClick={() => {
+                                                setEditingPost(post);
+                                                setEditContent(post.content);
+                                            }}
                                             className="text-gray-400 hover:text-blue-600 transition cursor-pointer"
                                         >
-                                            <Icon name="edit" />
+                                            <Icon name="edit"/>
                                         </button>
                                         <button
                                             onClick={() => handleDeletePost(post.id)}
                                             className="text-gray-400 hover:text-red-600 transition cursor-pointer"
                                         >
-                                            <Icon name="delete" />
+                                            <Icon name="delete"/>
                                         </button>
                                     </div>
                                 )}
@@ -211,8 +230,12 @@ function Wall() {
                                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                                     />
                                     <div className="flex gap-2 mt-2">
-                                        <button onClick={() => handleEditPost(post.id)} className="px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm cursor-pointer">Сохранить</button>
-                                        <button onClick={() => setEditingPost(null)} className="px-3 py-1 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition text-sm cursor-pointer">Отмена</button>
+                                        <button onClick={() => handleEditPost(post.id)}
+                                                className="px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm cursor-pointer">Сохранить
+                                        </button>
+                                        <button onClick={() => setEditingPost(null)}
+                                                className="px-3 py-1 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition text-sm cursor-pointer">Отмена
+                                        </button>
                                     </div>
                                 </div>
                             ) : (
@@ -220,12 +243,14 @@ function Wall() {
                             )}
 
                             <div className="flex items-center gap-4 pt-3 border-t border-gray-100">
-                                <button onClick={() => handleLike(post.id)} className={`flex items-center gap-1 transition cursor-pointer ${post.is_liked ? 'text-blue-600' : 'text-gray-500 hover:text-blue-600'}`}>
-                                    <Icon name="heart" filled={post.is_liked} />
+                                <button onClick={() => handleLike(post.id)}
+                                        className={`flex items-center gap-1 transition cursor-pointer ${post.is_liked ? 'text-blue-600' : 'text-gray-500 hover:text-blue-600'}`}>
+                                    <Icon name="heart" filled={post.is_liked}/>
                                     <span className="text-sm">{post.likes_count ?? 0}</span>
                                 </button>
-                                <button onClick={() => toggleComments(post.id)} className="flex items-center gap-1 text-gray-500 hover:text-blue-600 transition cursor-pointer">
-                                    <Icon name="messages" />
+                                <button onClick={() => toggleComments(post.id)}
+                                        className="flex items-center gap-1 text-gray-500 hover:text-blue-600 transition cursor-pointer">
+                                    <Icon name="messages"/>
                                     <span className="text-sm">{post.comments_count ?? 0}</span>
                                 </button>
                             </div>
@@ -235,26 +260,43 @@ function Wall() {
                                     <div className="space-y-3 mb-3">
                                         {comments[post.id]?.map(comment => (
                                             <div key={comment.id} className="flex gap-3">
-                                                <Avatar name={comment.user?.name} size="sm" className="flex-shrink-0 cursor-pointer" />
+                                                <Avatar name={comment.user?.name} size="sm"
+                                                        className="flex-shrink-0 cursor-pointer"/>
                                                 <div className="flex-1">
                                                     <div className="bg-gray-50 rounded-lg p-2">
                                                         <p className="font-semibold text-sm">{comment.user?.name || 'Пользователь'}</p>
                                                         <p className="text-gray-700 text-sm">{comment.content}</p>
                                                     </div>
-                                                    <p className="text-xs text-gray-500 mt-1">{formatDate(comment.created_at)}</p>
+                                                    <div className="flex items-center justify-between mt-1">
+                                                        <p className="text-xs text-gray-500">{formatDate(comment.created_at)}</p>
+                                                        <button
+                                                            onClick={() => handleCommentLike(comment.id, post.id)}
+                                                            className={`flex items-center gap-1 text-xs transition cursor-pointer ${
+                                                                comment.is_liked ? 'text-blue-600' : 'text-gray-500 hover:text-blue-600'
+                                                            }`}
+                                                        >
+                                                            <Icon name="heart" filled={comment.is_liked}/>
+                                                            <span>{comment.likes_count ?? 0}</span>
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         ))}
                                         {(!comments[post.id] || comments[post.id]?.length === 0) && (
-                                            <p className="text-center text-gray-500 py-4 text-sm">Пока нет комментариев</p>
+                                            <p className="text-center text-gray-500 py-4 text-sm">Пока нет
+                                                комментариев</p>
                                         )}
                                     </div>
                                     <div className="flex gap-2 mt-3">
-                                        <Avatar name={user?.name} src={user?.avatar} size="sm" className="flex-shrink-0 cursor-pointer" />
+                                        <Avatar name={user?.name} src={user?.avatar} size="sm"
+                                                className="flex-shrink-0 cursor-pointer"/>
                                         <div className="flex-1">
                                             <textarea
                                                 value={newComment[post.id] || ''}
-                                                onChange={e => setNewComment(prev => ({ ...prev, [post.id]: e.target.value }))}
+                                                onChange={e => setNewComment(prev => ({
+                                                    ...prev,
+                                                    [post.id]: e.target.value
+                                                }))}
                                                 placeholder="Написать комментарий..."
                                                 rows={2}
                                                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none text-sm"

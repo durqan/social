@@ -21,6 +21,17 @@ type PostResponse struct {
 	IsLiked       bool        `json:"is_liked"`
 }
 
+type CommentResponse struct {
+	ID         uint        `json:"id"`
+	Content    string      `json:"content"`
+	CreatedAt  string      `json:"created_at"`
+	UpdatedAt  string      `json:"updated_at"`
+	User       models.User `json:"user"`
+	PostID     uint        `json:"post_id"`
+	LikesCount int64       `json:"likes_count"`
+	IsLiked    bool        `json:"is_liked"`
+}
+
 func GetPosts(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID, _ := c.Get("user_id")
@@ -141,7 +152,7 @@ func DeletePost(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-func ToggleLike(db *gorm.DB) gin.HandlerFunc {
+func TogglePostLike(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID, _ := c.Get("user_id")
 		postID, err := strconv.ParseUint(c.Param("id"), 10, 32)
@@ -150,13 +161,37 @@ func ToggleLike(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		isLiked, err := repository.ToggleLike(db, uint(postID), userID.(uint))
+		isLiked, err := repository.TogglePostLike(db, uint(postID), userID.(uint))
 		if err != nil {
 			c.JSON(500, gin.H{"error": "failed to toggle like"})
 			return
 		}
 
 		likesCount, _ := repository.GetPostLikeCount(db, uint(postID))
+
+		c.JSON(200, gin.H{
+			"is_liked":    isLiked,
+			"likes_count": likesCount,
+		})
+	}
+}
+
+func ToggleCommentLike(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, _ := c.Get("user_id")
+		commentID, err := strconv.ParseUint(c.Param("commentID"), 10, 32)
+		if err != nil {
+			c.JSON(400, gin.H{"error": "invalid comment id"})
+			return
+		}
+
+		isLiked, err := repository.ToggleCommentLike(db, uint(commentID), userID.(uint))
+		if err != nil {
+			c.JSON(500, gin.H{"error": "failed to toggle like"})
+			return
+		}
+
+		likesCount, _ := repository.GetCommentLikeCount(db, uint(commentID))
 
 		c.JSON(200, gin.H{
 			"is_liked":    isLiked,
@@ -173,13 +208,32 @@ func GetComments(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
+		userID, _ := c.Get("user_id")
+		currentUserID := userID.(uint)
+
 		comments, err := repository.GetCommentsByPostID(db, uint(postID))
 		if err != nil {
 			c.JSON(500, gin.H{"error": "failed to fetch comments"})
 			return
 		}
 
-		c.JSON(200, comments)
+		var response []CommentResponse
+		for _, comment := range comments {
+			likesCount, _ := repository.GetCommentLikeCount(db, comment.ID)
+			isLiked, _ := repository.IsCommentLikedByUser(db, comment.ID, currentUserID)
+
+			response = append(response, CommentResponse{
+				ID:         comment.ID,
+				Content:    comment.Content,
+				CreatedAt:  comment.CreatedAt.Format("2006-01-02 15:04:05"),
+				User:       comment.User,
+				PostID:     comment.PostID,
+				LikesCount: likesCount,
+				IsLiked:    isLiked,
+			})
+		}
+
+		c.JSON(200, response)
 	}
 }
 
