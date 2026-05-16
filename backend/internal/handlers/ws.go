@@ -114,24 +114,31 @@ func WebSocketHandler(c *gin.Context) {
 	defer conn.Close(websocket.StatusNormalClosure, "")
 
 	client := clients.set(userID, conn)
+
 	onlineUsers.mu.Lock()
 	onlineUsers.users[userID] = true
 	onlineUsers.mu.Unlock()
+
+	broadcastPresence(userID, true)
+
 	defer clients.remove(userID, client)
+
 	defer func() {
+
 		onlineUsers.mu.Lock()
 		delete(onlineUsers.users, userID)
 		onlineUsers.mu.Unlock()
-	}()
 
-	log.Printf("User %d connected", userID)
+		broadcastPresence(userID, false)
+
+	}()
 
 	ctx := context.Background()
 
 	for {
 		_, data, err := conn.Read(ctx)
 		if err != nil {
-			log.Printf("User %d disconnected", userID)
+			log.Printf("User %s disconnected", err)
 			break
 		}
 

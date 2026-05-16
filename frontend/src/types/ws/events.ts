@@ -57,6 +57,15 @@ export type FriendAcceptedEvent = BaseWsEvent<
     }
 >;
 
+export interface PresenceUpdateEvent {
+    type: 'presence:update';
+
+    payload: {
+        user_id: number;
+        online: boolean;
+    };
+}
+
 export type WsEvent =
     | MessageEvent
     | TypingStartEvent
@@ -64,4 +73,5 @@ export type WsEvent =
     | ReadReceiptEvent
     | MessageDeletedEvent
     | FriendRequestEvent
-    | FriendAcceptedEvent;
+    | FriendAcceptedEvent
+    | PresenceUpdateEvent;
