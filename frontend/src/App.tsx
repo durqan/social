@@ -8,6 +8,7 @@ import Wall from "./components/Wall.js";
 import Conversations from "./components/Conversations.js";
 import Chat from "./components/Chat.js";
 import Friends from "./components/Friends.js";
+import VerifyEmail from "./components/VerifyEmail.js";
 import { Toaster } from "react-hot-toast";
 import NotificationHandler from "./components/NotificationHandler.js";
 import { AuthProvider, useAuth } from './contexts/AuthContext.js';
@@ -21,6 +22,7 @@ function AppRoutes() {
         <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
+            <Route path="/verify-email/:token" element={<VerifyEmail />} />
             <Route element={<RequireAuth />}>
                 <Route path="/users/:id" element={<Profile />}>
                     <Route index element={<ProfileMain />} />

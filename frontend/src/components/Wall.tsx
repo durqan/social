@@ -159,7 +159,6 @@ function Wall() {
         <div className="max-w-2xl mx-auto">
             <div className="bg-white rounded-xl shadow-sm p-4 mb-6">
                 <form onSubmit={handleCreatePost} className="flex gap-3">
-                    <Avatar name={user?.name} src={user?.avatar} className="flex-shrink-0 cursor-pointer"/>
                     <div className="flex-1">
                         <textarea
                             value={newPostContent}

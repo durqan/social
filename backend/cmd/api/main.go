@@ -37,6 +37,7 @@ func main() {
 		&models.Comment{},
 		&models.Message{},
 		&models.Friendship{},
+		&models.EmailVerification{},
 	)
 
 	if err != nil {
@@ -44,6 +45,7 @@ func main() {
 	}
 
 	r := gin.Default()
+	r.Static("/uploads", "./uploads")
 
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     cfg.AllowedOrigins,
@@ -54,15 +56,20 @@ func main() {
 		MaxAge:           12 * time.Hour,
 	}))
 
-	// AUTH
 	auth := r.Group("/auth")
 	{
 		auth.POST("/register", handlers.Register(database))
 		auth.POST("/login", handlers.Login(database))
 		auth.POST("/logout", handlers.Logout())
+
+		auth.POST("/send-verification",
+			middleware.AuthMiddleware(),
+			handlers.SendVerificationEmailHandler(database))
+
+		auth.GET("/verify-email/:token",
+			handlers.VerifyEmailHandler(database))
 	}
 
-	// USERS
 	users := r.Group("/users")
 
 	users.Use(
@@ -106,10 +113,10 @@ func main() {
 		)
 
 		users.PATCH("/:id", handlers.PatchUser(database))
+		users.PATCH("/:id/avatar", handlers.UploadAvatar(database))
 		users.DELETE("/:id", handlers.DeleteUser(database))
 		users.PATCH("/:id/password", handlers.ChangePassword(database))
 
-		// FRIENDS
 		friends := users.Group("/friends")
 
 		{
@@ -137,7 +144,6 @@ func main() {
 		}
 	}
 
-	// POSTS
 	posts := r.Group("/posts")
 
 	posts.Use(

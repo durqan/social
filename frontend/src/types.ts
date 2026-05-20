@@ -9,6 +9,8 @@ export interface User {
     avatar?: string | null;
     createdAt?: string;
     isEmailVerified?: boolean;
+    is_email_verified?: boolean;
+    created_at?: string;
 }
 
 export interface Post {

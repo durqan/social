@@ -7,8 +7,7 @@ RUN go mod download
 COPY . .
 RUN go build -o main ./cmd/api
 
-FROM alpine:latest
-RUN apk --no-cache add ca-certificates
+FROM alpine:3.20
 WORKDIR /root/
 
 COPY --from=builder /app/main .

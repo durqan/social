@@ -34,3 +34,4 @@ frontend/*.local
 .DS_Store
 Thumbs.db
 webhook/
+backend/upload/

@@ -89,3 +89,10 @@ func GetUsersByEmailOrName(db *gorm.DB, query string) ([]models.User, error) {
 		Find(&users).Error
 	return users, err
 }
+
+func UpdateUserAvatar(db *gorm.DB, userID uint, avatar string) error {
+	return db.Model(&models.User{}).
+		Where("id = ?", userID).
+		Update("avatar", avatar).
+		Error
+}

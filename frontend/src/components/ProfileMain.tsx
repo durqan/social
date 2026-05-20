@@ -3,6 +3,9 @@ import { useOutletContext, useNavigate } from 'react-router-dom';
 import { friendService } from '../services/friendService.js';
 import type { User } from '../types.js';
 import {usePresence} from "../hooks/usePresence.js";
+import {Avatar} from "./ui/Avatar.js";
+import { authService } from '../services/authService.js';
+import { getApiError } from '../api/errors.js';
 
 interface ProfileContext {
     user: User;
@@ -15,6 +18,11 @@ function ProfileMain() {
     const { user, isOwner, currentUser } = useOutletContext<ProfileContext>();
     const [friendStatus, setFriendStatus] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
+    const [verificationLoading, setVerificationLoading] = useState(false);
+    const [verificationMessage, setVerificationMessage] = useState<{
+        type: 'success' | 'error';
+        text: string;
+    } | null>(null);
     const { online } = usePresence(user.id);
 
     useEffect(() => {
@@ -53,6 +61,27 @@ function ProfileMain() {
         }
     };
 
+    const handleSendVerification = async () => {
+        setVerificationLoading(true);
+        setVerificationMessage(null);
+
+        try {
+            await authService.sendVerificationEmail();
+            setVerificationMessage({
+                type: 'success',
+                text: 'Письмо для подтверждения отправлено',
+            });
+        } catch (err: unknown) {
+            const apiError = getApiError(err);
+            setVerificationMessage({
+                type: 'error',
+                text: apiError.message || apiError.error || 'Не удалось отправить письмо',
+            });
+        } finally {
+            setVerificationLoading(false);
+        }
+    };
+
     const formatDate = (dateString?: string) => {
         if (!dateString) return 'Недавно';
         const date = new Date(dateString);
@@ -69,12 +98,14 @@ function ProfileMain() {
         <div className="max-w-2xl mx-auto">
             <div className="bg-white rounded-xl shadow-sm overflow-hidden">
                 <div className="relative">
-                    <div className="h-32 bg-gradient-to-r from-blue-500 to-purple-600"></div>
+                    <div className="h-32"></div>
                     <div className="absolute -bottom-12 left-6">
                         <div className="w-24 h-24 bg-white rounded-full p-1">
-                            <div className="w-full h-full bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-3xl font-bold text-white">
-                                {user?.name?.charAt(0).toUpperCase() || '😎'}
-                            </div>
+                            <Avatar
+                                name={user?.name}
+                                src={user?.avatar}
+                                size="lg"
+                            />
                         </div>
                     </div>
                 </div>
@@ -110,6 +141,32 @@ function ProfileMain() {
                                 >
                                     💬 Написать сообщение
                                 </button>
+                            )}
+                            {isOwner && !user?.isEmailVerified && (
+                                <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <p className="text-sm text-yellow-700">
+                                            Подтвердите почту, чтобы завершить настройку аккаунта.
+                                        </p>
+                                        <button
+                                            type="button"
+                                            onClick={handleSendVerification}
+                                            disabled={verificationLoading}
+                                            className="px-3 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition text-sm disabled:opacity-50 cursor-pointer"
+                                        >
+                                            {verificationLoading ? 'Отправка...' : 'Отправить письмо'}
+                                        </button>
+                                    </div>
+                                    {verificationMessage && (
+                                        <p className={`mt-2 text-sm ${
+                                            verificationMessage.type === 'success'
+                                                ? 'text-green-700'
+                                                : 'text-red-700'
+                                        }`}>
+                                            {verificationMessage.text}
+                                        </p>
+                                    )}
+                                </div>
                             )}
                         </div>
                         <div className="flex gap-2">

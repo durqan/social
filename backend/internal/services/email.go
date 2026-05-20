@@ -1,0 +1,114 @@
+package services
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"strings"
+	"time"
+
+	"tester/internal/cache"
+	"tester/internal/models"
+	"tester/internal/repository"
+	"tester/internal/utils"
+
+	"github.com/wneessen/go-mail"
+	"gorm.io/gorm"
+)
+
+func SendVerificationEmail(db *gorm.DB, user *models.User) error {
+	token, err := utils.GenerateVerificationToken()
+	if err != nil {
+		return fmt.Errorf("failed to generate token: %w", err)
+	}
+
+	if err := repository.CreateEmailVerification(db, user.ID, token); err != nil {
+		return fmt.Errorf("failed to create email verification: %w", err)
+	}
+
+	verifyURL := fmt.Sprintf("%s/verify-email/%s", frontendURL(), token)
+
+	username := os.Getenv("GMAIL_USERNAME")
+	password := os.Getenv("GMAIL_PASSWORD")
+
+	if username == "" || password == "" {
+		return fmt.Errorf("GMAIL_USERNAME or GMAIL_PASSWORD not set in .env")
+	}
+
+	m := mail.NewMsg()
+	m.From(username)
+	m.To(user.Email)
+	m.Subject("Подтвердите ваш email — Social")
+
+	htmlBody := fmt.Sprintf(`<h2>Привет, %s!</h2>
+				<p>Спасибо за регистрацию.</p>
+				<p>Чтобы подтвердить email, перейдите по ссылке:</p>
+				<p><a href="%s">%s</a></p>
+				<p>Ссылка действует 24 часа.</p>`, user.Name, verifyURL, verifyURL)
+
+	m.SetBodyString(mail.TypeTextHTML, htmlBody)
+	m.SetBodyString(mail.TypeTextPlain, "Привет, "+user.Name+"!\nПерейди по ссылке: "+verifyURL)
+
+	client, err := mail.NewClient("smtp.gmail.com",
+		mail.WithPort(587),
+		mail.WithSMTPAuth(mail.SMTPAuthLogin),
+		mail.WithUsername(username),
+		mail.WithPassword(password),
+		mail.WithTLSPolicy(mail.TLSMandatory),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create mail client: %w", err)
+	}
+
+	if err = client.DialAndSend(m); err != nil {
+		return fmt.Errorf("failed to send email: %w", err)
+	}
+
+	return nil
+}
+
+func VerifyEmail(db *gorm.DB, token string) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		verification, err := repository.FindEmailVerificationByToken(tx, token)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("invalid or expired verification link")
+			}
+			return err
+		}
+
+		if time.Now().After(verification.ExpiresAt) {
+			return errors.New("verification link has expired")
+		}
+
+		if verification.Used {
+			return errors.New("this link has already been used")
+		}
+
+		if err := repository.MarkEmailAsUsed(tx, verification.ID); err != nil {
+			return err
+		}
+
+		if err := repository.VerifyUserEmail(tx, verification.UserID); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func frontendURL() string {
+	url := strings.TrimRight(os.Getenv("FRONTEND_URL"), "/")
+	if url == "" {
+		return "https://durqan.ru"
+	}
+	return url
+}
+
+func InvalidateEmailVerificationCaches() {
+	if cache.Redis == nil {
+		return
+	}
+
+	_ = cache.Redis.DeletePattern("cache:/users*")
+}

@@ -2,10 +2,13 @@ package handlers
 
 import (
 	"errors"
+	"fmt"
+	"path/filepath"
 	"strconv"
 	"tester/internal/dto"
 	"tester/internal/models"
 	"tester/internal/repository"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
@@ -260,5 +263,64 @@ func SearchUsersByNameOrEmail(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		c.JSON(200, dto.ToUserResponses(users))
+	}
+}
+
+func UploadAvatar(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		idParam := c.Param("id")
+		id, err := strconv.Atoi(idParam)
+		if err != nil {
+			c.JSON(400, gin.H{
+				"error": "invalid user id",
+			})
+			return
+		}
+
+		file, err := c.FormFile("avatar")
+		if err != nil {
+			c.JSON(400, gin.H{
+				"error": "avatar is required",
+			})
+			return
+		}
+
+		ext := filepath.Ext(
+			file.Filename,
+		)
+
+		filename := fmt.Sprintf("%d_%d%s", id, time.Now().Unix(), ext)
+
+		savePath := filepath.Join(
+			"uploads",
+			"avatars",
+			filename,
+		)
+
+		if err := c.SaveUploadedFile(
+			file,
+			savePath,
+		); err != nil {
+			c.JSON(500, gin.H{
+				"error": "failed to save avatar",
+			})
+			return
+		}
+
+		avatarURL := "/" + savePath
+
+		if err := repository.UpdateUserAvatar(
+			db,
+			uint(id),
+			avatarURL,
+		); err != nil {
+			c.JSON(500, gin.H{
+				"error": "failed to update user",
+			})
+			return
+		}
+		c.JSON(200, gin.H{
+			"avatar": avatarURL,
+		})
 	}
 }
