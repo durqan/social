@@ -1,39 +1,39 @@
 # Social Network
 
-Full-stack social network application with real-time chat, posts, comments, and user profiles.
+**Современная full-stack социальная сеть** с реал-тайм чатом, лентой и удобным интерфейсом.
 
-## Tech Stack
+## ✨ Основные возможности
 
-- **Frontend**: React 19, TypeScript, Vite, Tailwind CSS
-- **Backend**: Go, Gin, GORM, WebSocket
-- **Database**: PostgreSQL
-- **Deployment**: Docker, Docker Compose
+- 🔐 Авторизация (JWT + HttpOnly cookies)
+- 👤 Профили с аватарками и био
+- 📱 Лента постов с лайками и комментариями
+- 💬 **Реал-тайм чат** (приватные сообщения)
+    - Индикаторы печати
+    - Галочки прочтения
+    - Массовое удаление
+- 🔔 Toast-уведомления
+- 📱 Полностью адаптивный дизайн
 
-## Features
+## 🛠 Tech Stack
 
-- ✅ Authentication (HttpOnly cookies)
-- ✅ User profiles with avatars and bio
-- ✅ Posts wall with likes and comments
-- ✅ Real-time private messaging with WebSocket
-- ✅ Read receipts (✓/✓✓)
-- ✅ Typing indicators
-- ✅ Batch message deletion
-- ✅ Mobile responsive sidebar
-- ✅ Toast notifications
+**Frontend**: React 19 + TypeScript + Vite + Tailwind CSS  
+**Backend**: Go + Gin + GORM + WebSocket + **Redis**  
+**Database**: PostgreSQL  
+**Cache / Sessions**: **Redis**  
+**Deployment**: Docker + Docker Compose
 
-## Quick Start
+## 🚀 Быстрый старт
 
-### Prerequisites
+### Предварительные требования
+- Docker и Docker Compose
+- Go 1.26+ (для локальной разработки)
+- Node.js 20+
 
-- Docker and Docker Compose
-- Go 1.26+ (for local development)
-- Node.js 20+ (for local development)
-
-### Production Deployment
+### Production
 
 ```bash
-git clone https://github.com/your-username/social.git
+git clone https://github.com/durqan/social.git
 cd social
 cp .env.example .env
-# Edit .env with your secure passwords
+# Отредактируй .env (секреты!)
 docker compose up -d
