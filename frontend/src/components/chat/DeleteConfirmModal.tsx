@@ -8,8 +8,8 @@ export const DeleteConfirmModal = ({ isOpen, onConfirm, onCancel }: DeleteConfir
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl p-6 max-w-sm mx-auto">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 px-4">
+            <div className="w-full max-w-sm rounded-lg bg-white p-5 shadow-xl sm:rounded-xl sm:p-6">
                 <h3 className="text-lg font-semibold mb-2">Удалить сообщения?</h3>
                 <p className="text-gray-600 mb-4">Вы уверены, что хотите удалить выбранные сообщения? Это действие необратимо.</p>
                 <div className="flex gap-3">

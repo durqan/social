@@ -184,7 +184,7 @@ function Wall() {
 
             <div className="space-y-3 sm:space-y-4">
                 {posts.length === 0 ? (
-                    <div className="rounded-lg bg-white p-8 text-center text-gray-500 shadow-sm sm:rounded-xl">
+                    <div className="rounded-lg bg-white p-6 text-center text-gray-500 shadow-sm sm:rounded-xl sm:p-8">
                         Пока нет постов. Напишите первый!
                     </div>
                 ) : (

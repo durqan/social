@@ -46,8 +46,8 @@ function Login() {
     };
 
     return (
-        <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-            <div className="bg-white p-8 rounded-lg shadow-md w-96">
+        <div className="min-h-screen bg-gray-100 flex items-center justify-center px-4 py-6">
+            <div className="w-full max-w-sm rounded-lg bg-white p-5 shadow-md sm:p-8">
                 <h2 className="text-2xl font-bold text-center mb-6">Вход</h2>
                 {error && (
                     <div className="mb-4 p-3 bg-red-100 text-red-700 rounded">
@@ -85,7 +85,7 @@ function Login() {
                         {loading ? 'Вход...' : 'Войти'}
                     </button>
                 </form>
-                <p className="mt-4 text-center text-gray-600">
+                <p className="mt-4 text-center text-sm text-gray-600 sm:text-base">
                     Нет аккаунта?{' '}
                     <a href="/register" className="text-blue-500 hover:underline">
                         Зарегистрироваться

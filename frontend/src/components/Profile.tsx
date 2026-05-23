@@ -60,6 +60,8 @@ function Profile() {
         return 'Моя страница';
     };
 
+    const isChatPage = location.pathname.includes('/chat');
+
     const userPresence = usePresence(
         currentUser?.id
     );
@@ -117,7 +119,7 @@ function Profile() {
                             </div>
                         </div>
 
-                        <div className="mt-3 lg:absolute lg:left-1/2 lg:top-1/2 lg:mt-0 lg:w-full lg:max-w-md lg:-translate-x-1/2 lg:-translate-y-1/2">
+                        <div className={`${isChatPage ? 'hidden lg:block' : ''} mt-3 lg:absolute lg:left-1/2 lg:top-1/2 lg:mt-0 lg:w-full lg:max-w-md lg:-translate-x-1/2 lg:-translate-y-1/2`}>
                             <div className="relative">
                                 <input
                                     type="text"
@@ -160,7 +162,7 @@ function Profile() {
                     </div>
                 </header>
 
-                <main className="px-3 py-4 sm:p-6">
+                <main className={isChatPage ? 'h-[calc(100dvh-57px)] p-0 sm:h-auto sm:p-6' : 'px-3 py-4 sm:p-6'}>
                     <Outlet context={contextValue} />
                 </main>
             </div>

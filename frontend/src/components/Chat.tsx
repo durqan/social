@@ -117,10 +117,10 @@ function Chat() {
         setNewMessage('');
     }, [currentUser, newMessage, sendMessageToStore, userId, wsService]);
 
-    if (initialLoading) return <div className="flex h-[calc(100dvh-132px)] items-center justify-center sm:h-[calc(100vh-120px)]"><Spinner /></div>;
+    if (initialLoading) return <div className="flex h-full items-center justify-center sm:h-[calc(100vh-120px)]"><Spinner /></div>;
 
     return (
-        <div className="flex h-[calc(100dvh-132px)] flex-col overflow-hidden rounded-lg bg-gray-50 sm:h-[calc(100vh-120px)] sm:rounded-none">
+        <div className="flex h-full flex-col overflow-hidden bg-gray-50 sm:h-[calc(100vh-120px)] sm:rounded-none">
             <ChatHeader
                 recipientName={recipient?.name}
                 selectionMode={selectionMode}

@@ -31,7 +31,7 @@ function Conversations() {
             <h1 className="mb-3 text-xl font-bold sm:mb-4 sm:text-2xl">Сообщения</h1>
             <div className="overflow-hidden rounded-lg bg-white shadow-sm sm:rounded-xl">
                 {!conversations || conversations.length === 0 ? (
-                    <div className="p-8 text-center text-gray-500">Нет диалогов</div>
+                    <div className="p-6 text-center text-gray-500 sm:p-8">Нет диалогов</div>
                 ) : (
                     conversations.map(conv => (
                         <div

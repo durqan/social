@@ -30,8 +30,8 @@ function VerifyEmail() {
     }, [token]);
 
     return (
-        <div className="min-h-screen bg-gray-100 flex items-center justify-center px-4">
-            <div className="bg-white w-full max-w-md rounded-lg shadow-md p-8 text-center">
+        <div className="min-h-screen bg-gray-100 flex items-center justify-center px-4 py-6">
+            <div className="bg-white w-full max-w-md rounded-lg shadow-md p-5 text-center sm:p-8">
                 <div className={`mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full text-2xl ${
                     state === 'success'
                         ? 'bg-green-100 text-green-700'
@@ -42,7 +42,7 @@ function VerifyEmail() {
                     {state === 'success' ? '✓' : state === 'error' ? '!' : '...'}
                 </div>
 
-                <h1 className="text-2xl font-bold text-gray-800 mb-3">
+                <h1 className="text-xl font-bold text-gray-800 mb-3 sm:text-2xl">
                     {state === 'success'
                         ? 'Email подтвержден'
                         : state === 'error'
