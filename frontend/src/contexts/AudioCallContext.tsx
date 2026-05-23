@@ -20,14 +20,14 @@ const audioConstraints: MediaTrackConstraints = {
 };
 
 const videoConstraints: MediaTrackConstraints = {
-    width: { ideal: 1920 },
-    height: { ideal: 1080 },
+    width: { ideal: 1280, max: 1280 },
+    height: { ideal: 720, max: 720 },
     frameRate: { ideal: 30, max: 30 },
     facingMode: 'user',
 };
 
 const videoSenderParams: RTCRtpEncodingParameters = {
-    maxBitrate: 2_500_000,
+    maxBitrate: 1_800_000,
     maxFramerate: 30,
     priority: 'high',
     networkPriority: 'high',
