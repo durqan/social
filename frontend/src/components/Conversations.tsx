@@ -27,9 +27,9 @@ function Conversations() {
     if (loading) return <div className="p-4 text-center">Загрузка...</div>;
 
     return (
-        <div className="max-w-2xl mx-auto">
-            <h1 className="text-2xl font-bold mb-4">Сообщения</h1>
-            <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+        <div className="mx-auto max-w-2xl">
+            <h1 className="mb-3 text-xl font-bold sm:mb-4 sm:text-2xl">Сообщения</h1>
+            <div className="overflow-hidden rounded-lg bg-white shadow-sm sm:rounded-xl">
                 {!conversations || conversations.length === 0 ? (
                     <div className="p-8 text-center text-gray-500">Нет диалогов</div>
                 ) : (
@@ -37,13 +37,13 @@ function Conversations() {
                         <div
                             key={conv.user_id}
                             onClick={() => navigate(`/users/${conv.user_id}/chat/${conv.user_id}`)}
-                            className="flex items-center gap-3 p-4 hover:bg-gray-50 cursor-pointer transition"
+                            className="flex items-center gap-3 p-3 hover:bg-gray-50 cursor-pointer transition sm:p-4"
                         >
                             <Avatar name={conv.name} size="lg" />
-                            <div className="flex-1">
-                                <div className="flex justify-between">
-                                    <p className="font-semibold">{conv.name}</p>
-                                    <p className="text-xs text-gray-500">
+                            <div className="min-w-0 flex-1">
+                                <div className="flex items-start justify-between gap-3">
+                                    <p className="truncate font-semibold">{conv.name}</p>
+                                    <p className="flex-shrink-0 text-xs text-gray-500">
                                         {new Date(conv.last_message_at).toLocaleDateString()}
                                     </p>
                                 </div>

@@ -249,8 +249,8 @@ function ProfileEdit() {
     };
 
     return (
-        <div className="max-w-2xl mx-auto">
-            <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+        <div className="mx-auto max-w-2xl">
+            <div className="overflow-hidden rounded-lg bg-white shadow-sm sm:rounded-xl">
 
                 <div className="border-b border-gray-200">
                     <div className="flex">
@@ -259,7 +259,7 @@ function ProfileEdit() {
                             onClick={() =>
                                 setActiveTab('profile')
                             }
-                            className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+                            className={`flex-1 px-2 py-3 text-sm font-medium transition-colors sm:px-4 ${
                                 activeTab === 'profile'
                                     ? 'text-blue-600 border-b-2 border-blue-600'
                                     : 'text-gray-500 hover:text-gray-700'
@@ -272,7 +272,7 @@ function ProfileEdit() {
                             onClick={() =>
                                 setActiveTab('password')
                             }
-                            className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+                            className={`flex-1 px-2 py-3 text-sm font-medium transition-colors sm:px-4 ${
                                 activeTab === 'password'
                                     ? 'text-blue-600 border-b-2 border-blue-600'
                                     : 'text-gray-500 hover:text-gray-700'
@@ -284,7 +284,7 @@ function ProfileEdit() {
                     </div>
                 </div>
 
-                <div className="p-6">
+                <div className="p-4 sm:p-6">
 
                     {message && (
                         <div className={`mb-4 p-3 rounded-lg ${
@@ -324,6 +324,7 @@ function ProfileEdit() {
                                         type="file"
                                         accept="image/*"
                                         onChange={handleAvatarChange}
+                                        className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-gray-100 file:px-3 file:py-2 file:text-sm file:text-gray-700"
                                     />
                                 </div>
 
@@ -377,12 +378,12 @@ function ProfileEdit() {
                                 </p>
                             </div>
 
-                            <div className="flex gap-3 pt-4">
+                            <div className="flex flex-col gap-2 pt-4 sm:flex-row sm:gap-3">
 
                                 <button
                                     type="submit"
                                     disabled={loading}
-                                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 cursor-pointer"
+                                    className="w-full px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 cursor-pointer sm:w-auto"
                                 >
                                     {loading
                                         ? 'Сохранение...'
@@ -396,7 +397,7 @@ function ProfileEdit() {
                                             `/profile/${id}`
                                         )
                                     }
-                                    className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition cursor-pointer"
+                                    className="w-full px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition cursor-pointer sm:w-auto"
                                 >
                                     Отмена
                                 </button>
@@ -466,7 +467,7 @@ function ProfileEdit() {
                                 <button
                                     type="submit"
                                     disabled={loading}
-                                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 cursor-pointer"
+                                    className="w-full px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 cursor-pointer sm:w-auto"
                                 >
                                     {loading
                                         ? 'Смена пароля...'

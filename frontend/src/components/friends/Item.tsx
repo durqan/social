@@ -19,12 +19,13 @@ function Item({friend, removeFriend,}: FriendItemProps) {
 
     return (
         <div className="
-            flex items-center
-            justify-between
+            flex flex-col gap-3
             p-3 hover:bg-gray-50
-            rounded-lg transition">
+            rounded-lg transition
+            sm:flex-row sm:items-center
+            sm:justify-between">
             <div className="
-                    flex items-center
+                    flex min-w-0 items-center
                     gap-3 cursor-pointer
                     flex-1"
                 onClick={() =>
@@ -35,13 +36,13 @@ function Item({friend, removeFriend,}: FriendItemProps) {
                     src={friend.avatar}
                     size="lg"
                 />
-                <div>
+                <div className="min-w-0">
                     <p className="
-                        font-semibold text-gray-800">
+                        truncate font-semibold text-gray-800">
                         {friend.name || 'Пользователь'}
                     </p>
                     <p className="
-                        text-sm text-gray-500">
+                        truncate text-sm text-gray-500">
                         {friend.email}
                     </p>
                     <p className={
@@ -59,8 +60,10 @@ function Item({friend, removeFriend,}: FriendItemProps) {
                     removeFriend(friend.id)
                 }
                 className="
+                    w-full justify-center
                     text-red-500
                     hover:text-red-700
+                    sm:w-auto
                 "
             >
                 Удалить

@@ -95,36 +95,37 @@ function ProfileMain() {
     if (loading) return <div>Загрузка...</div>;
 
     return (
-        <div className="max-w-2xl mx-auto">
-            <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+        <div className="mx-auto max-w-2xl">
+            <div className="bg-white rounded-lg shadow-sm overflow-hidden sm:rounded-xl">
                 <div className="relative">
-                    <div className="h-32"></div>
-                    <div className="absolute -bottom-12 left-6">
-                        <div className="w-24 h-24 bg-white rounded-full p-1">
+                    <div className="h-24 bg-gradient-to-r from-blue-500 to-slate-700 sm:h-32"></div>
+                    <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 sm:-bottom-12 sm:left-6 sm:translate-x-0">
+                        <div className="w-20 h-20 bg-white rounded-full p-1 sm:w-24 sm:h-24">
                             <Avatar
                                 name={user?.name}
                                 src={user?.avatar}
                                 size="lg"
+                                className="w-full h-full text-xl sm:text-2xl"
                             />
                         </div>
                     </div>
                 </div>
 
-                <div className="pt-16 pb-6 px-6">
-                    <div className="flex justify-between items-start">
-                        <div>
-                            <h1 className="text-2xl font-bold text-gray-800">{user?.name || 'Пользователь'}
+                <div className="px-4 pb-5 pt-14 sm:px-6 sm:pb-6 sm:pt-16">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0 text-center sm:text-left">
+                            <h1 className="break-words text-2xl font-bold text-gray-800">{user?.name || 'Пользователь'}
                                 {online && (
                                 <span className="ml-2 text-green-500">●</span>
                                 )}
                             </h1>
-                            <p className="text-gray-500 mt-1">{user?.email}</p>
+                            <p className="mt-1 break-words text-sm text-gray-500 sm:text-base">{user?.email}</p>
                             {user?.bio && (
-                                <p className="text-gray-700 mt-3 pt-3 border-t border-gray-100">
+                                <p className="mt-3 border-t border-gray-100 pt-3 text-left text-gray-700">
                                     {user.bio}
                                 </p>
                             )}
-                            <div className="flex gap-4 mt-4 text-sm text-gray-500">
+                            <div className="mt-4 flex flex-col gap-2 text-sm text-gray-500 sm:flex-row sm:flex-wrap sm:gap-x-4">
                                 {user?.createdAt && (
                                     <span>📅 Участник с {formatDate(user.createdAt)}</span>
                                 )}
@@ -137,14 +138,14 @@ function ProfileMain() {
                             {!isOwner && friendStatus === 'accepted' && currentUser && (
                                 <button
                                     onClick={() => navigate(`/users/${currentUser.id}/chat/${user.id}`)}
-                                    className="px-4 py-2 mt-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition text-sm"
+                                    className="mt-4 w-full px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition text-sm sm:w-auto"
                                 >
                                     💬 Написать сообщение
                                 </button>
                             )}
                             {isOwner && !user?.isEmailVerified && (
                                 <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                                    <div className="flex items-center justify-between gap-3">
+                                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                         <p className="text-sm text-yellow-700">
                                             Подтвердите почту, чтобы завершить настройку аккаунта.
                                         </p>
@@ -169,11 +170,11 @@ function ProfileMain() {
                                 </div>
                             )}
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 sm:flex-shrink-0">
                             {!isOwner && (
                                 <button
                                     onClick={handleFriendAction}
-                                    className={`px-4 py-2 rounded-lg text-sm transition ${
+                                    className={`w-full px-4 py-2 rounded-lg text-sm transition sm:w-auto ${
                                         friendStatus === 'pending'
                                             ? 'bg-gray-200 text-gray-600 cursor-not-allowed'
                                             : friendStatus === 'accepted'

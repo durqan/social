@@ -38,41 +38,6 @@ services:
     networks:
       - social_network
 
-  coturn:
-    image: coturn/coturn:4.6.2
-    container_name: social_coturn
-    restart: unless-stopped
-    ports:
-      - "3478:3478/tcp"
-      - "3478:3478/udp"
-      - "49160-49200:49160-49200/udp"
-      - "49160-49200:49160-49200/tcp"
-    environment:
-      TURN_REALM: ${TURN_REALM:-localhost}
-      TURN_USERNAME: ${TURN_USERNAME:-social_turn}
-      TURN_PASSWORD: ${TURN_PASSWORD:-change_me_turn_password}
-      TURN_EXTERNAL_IP: ${TURN_EXTERNAL_IP:-}
-    entrypoint: /bin/sh
-    command:
-      - -c
-      - >
-        exec turnserver
-        -n
-        --log-file=stdout
-        --listening-port=3478
-        --min-port=49160
-        --max-port=49200
-        --realm="$${TURN_REALM}"
-        --server-name="$${TURN_REALM}"
-        --lt-cred-mech
-        --user="$${TURN_USERNAME}:$${TURN_PASSWORD}"
-        --fingerprint
-        --no-multicast-peers
-        --no-cli
-        $${TURN_EXTERNAL_IP:+--external-ip=$${TURN_EXTERNAL_IP}}
-    networks:
-      - social_network
-
   backend:
     build: ./backend
     container_name: social_backend

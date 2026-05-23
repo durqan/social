@@ -156,8 +156,8 @@ function Wall() {
     if (loading) return <div className="flex justify-center py-12"><Spinner/></div>;
 
     return (
-        <div className="max-w-2xl mx-auto">
-            <div className="bg-white rounded-xl shadow-sm p-4 mb-6">
+        <div className="mx-auto max-w-2xl">
+            <div className="mb-4 rounded-lg bg-white p-3 shadow-sm sm:mb-6 sm:rounded-xl sm:p-4">
                 <form onSubmit={handleCreatePost} className="flex gap-3">
                     <div className="flex-1">
                         <textarea
@@ -168,12 +168,12 @@ function Wall() {
                             maxLength={500}
                             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                         />
-                        <div className="flex justify-between items-center mt-2">
+                        <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                             <p className="text-xs text-gray-500">{newPostContent.length}/500</p>
                             <button
                                 type="submit"
                                 disabled={submitting || !newPostContent.trim()}
-                                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 cursor-pointer"
+                                className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 cursor-pointer sm:w-auto"
                             >
                                 {submitting ? 'Публикация...' : 'Опубликовать'}
                             </button>
@@ -182,19 +182,19 @@ function Wall() {
                 </form>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-3 sm:space-y-4">
                 {posts.length === 0 ? (
-                    <div className="bg-white rounded-xl shadow-sm p-8 text-center text-gray-500">
+                    <div className="rounded-lg bg-white p-8 text-center text-gray-500 shadow-sm sm:rounded-xl">
                         Пока нет постов. Напишите первый!
                     </div>
                 ) : (
                     posts.map(post => (
-                        <div key={post.id} className="bg-white rounded-xl shadow-sm p-4">
+                        <div key={post.id} className="rounded-lg bg-white p-3 shadow-sm sm:rounded-xl sm:p-4">
                             <div className="flex items-center justify-between mb-3">
-                                <div className="flex items-center gap-3">
+                                <div className="flex min-w-0 items-center gap-3">
                                     <Avatar name={post.user?.name} className="cursor-pointer"/>
-                                    <div>
-                                        <p className="font-semibold text-gray-800">{post.user?.name || 'Пользователь'}</p>
+                                    <div className="min-w-0">
+                                        <p className="truncate font-semibold text-gray-800">{post.user?.name || 'Пользователь'}</p>
                                         <p className="text-xs text-gray-500">{formatDate(post.created_at)}</p>
                                     </div>
                                 </div>
@@ -258,15 +258,15 @@ function Wall() {
                                 <div className="mt-4 pt-4 border-t border-gray-100">
                                     <div className="space-y-3 mb-3">
                                         {comments[post.id]?.map(comment => (
-                                            <div key={comment.id} className="flex gap-3">
+                                            <div key={comment.id} className="flex gap-2 sm:gap-3">
                                                 <Avatar name={comment.user?.name} size="sm"
                                                         className="flex-shrink-0 cursor-pointer"/>
-                                                <div className="flex-1">
+                                                <div className="min-w-0 flex-1">
                                                     <div className="bg-gray-50 rounded-lg p-2">
-                                                        <p className="font-semibold text-sm">{comment.user?.name || 'Пользователь'}</p>
-                                                        <p className="text-gray-700 text-sm">{comment.content}</p>
+                                                        <p className="truncate font-semibold text-sm">{comment.user?.name || 'Пользователь'}</p>
+                                                        <p className="break-words text-gray-700 text-sm">{comment.content}</p>
                                                     </div>
-                                                    <div className="flex items-center justify-between mt-1">
+                                                    <div className="mt-1 flex items-center justify-between gap-2">
                                                         <p className="text-xs text-gray-500">{formatDate(comment.created_at)}</p>
                                                         <button
                                                             onClick={() => handleCommentLike(comment.id, post.id)}
@@ -289,7 +289,7 @@ function Wall() {
                                     <div className="flex gap-2 mt-3">
                                         <Avatar name={user?.name} src={user?.avatar} size="sm"
                                                 className="flex-shrink-0 cursor-pointer"/>
-                                        <div className="flex-1">
+                                        <div className="min-w-0 flex-1">
                                             <textarea
                                                 value={newComment[post.id] || ''}
                                                 onChange={e => setNewComment(prev => ({

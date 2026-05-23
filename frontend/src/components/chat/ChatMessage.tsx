@@ -90,7 +90,7 @@ const ChatMessageComponent = ({
                 {!isOwn && !selectionMode && (
                     <Avatar name={recipientName} size="sm" className="flex-shrink-0 mr-2" />
                 )}
-                <div className="relative max-w-[70%]">
+                <div className="relative max-w-[82%] sm:max-w-[70%]">
                     {editingMessageId === message.id ? (
                         <div className="bg-white rounded-2xl px-4 py-2 shadow-sm">
                             <textarea
@@ -110,7 +110,7 @@ const ChatMessageComponent = ({
                             </div>
                         </div>
                     ) : (
-                        <div className={`rounded-2xl px-4 py-2 ${isOwn ? 'bg-blue-500 text-white rounded-br-sm' : 'bg-white text-gray-800 rounded-bl-sm shadow-sm'}`}>
+                        <div className={`rounded-2xl px-3 py-2 sm:px-4 ${isOwn ? 'bg-blue-500 text-white rounded-br-sm' : 'bg-white text-gray-800 rounded-bl-sm shadow-sm'}`}>
                             <p className="text-sm break-words">{message.content}</p>
                             <div className={`text-xs mt-1 ${isOwn ? 'text-blue-100 text-right' : 'text-gray-400 text-left'}`}>
                                 {formatTime(message.created_at)}
@@ -120,7 +120,7 @@ const ChatMessageComponent = ({
                     )}
 
                     {!selectionMode && (
-                        <div className={`absolute top-1/2 -translate-y-1/2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200 ${isOwn ? '-left-20' : '-right-20'}`}>
+                        <div className={`absolute top-1/2 hidden -translate-y-1/2 gap-1 opacity-0 transition-all duration-200 group-hover:opacity-100 sm:flex ${isOwn ? '-left-20' : '-right-20'}`}>
                             {isOwn && (
                                 <button
                                     onClick={onEdit}

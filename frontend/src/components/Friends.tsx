@@ -48,8 +48,8 @@ function Friends() {
     if (loading) return <div className="p-4 text-center">Загрузка...</div>;
 
     return (
-        <div className="max-w-2xl mx-auto">
-            <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+        <div className="mx-auto max-w-2xl">
+            <div className="overflow-hidden rounded-lg bg-white shadow-sm sm:rounded-xl">
                 <div className="flex border-b border-gray-200">
                     <button
                         onClick={() => setActiveTab('friends')}
@@ -73,7 +73,7 @@ function Friends() {
                     </button>
                 </div>
 
-                <div className="p-4">
+                <div className="p-3 sm:p-4">
                     {activeTab === 'friends' && (
                         friends.length === 0 ? (
                             <p className="text-center text-gray-500 py-8">У вас пока нет друзей</p>
@@ -95,20 +95,20 @@ function Friends() {
                         ) : (
                             <div className="space-y-3">
                                 {requests.map(req => req.user && (
-                                    <div key={req.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition">
+                                    <div key={req.id} className="flex flex-col gap-3 p-3 hover:bg-gray-50 rounded-lg transition sm:flex-row sm:items-center sm:justify-between">
                                         <div
-                                            className="flex items-center gap-3 cursor-pointer flex-1"
+                                            className="flex min-w-0 flex-1 cursor-pointer items-center gap-3"
                                             onClick={() => navigate(`/users/${req.user!.id}`)}
                                         >
                                             <Avatar name={req.user.name} src={req.user.avatar} size="lg" />
-                                            <div>
-                                                <p className="font-semibold text-gray-800">{req.user.name || 'Пользователь'}</p>
-                                                <p className="text-sm text-gray-500">{req.user.email}</p>
+                                            <div className="min-w-0">
+                                                <p className="truncate font-semibold text-gray-800">{req.user.name || 'Пользователь'}</p>
+                                                <p className="truncate text-sm text-gray-500">{req.user.email}</p>
                                             </div>
                                         </div>
                                         <Button
                                             onClick={() => acceptRequest(req.id)}
-                                            className="py-1"
+                                            className="w-full py-2 sm:w-auto sm:py-1"
                                         >
                                             Принять
                                         </Button>

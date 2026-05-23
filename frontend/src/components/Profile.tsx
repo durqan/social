@@ -92,13 +92,32 @@ function Profile() {
             />
             <div className="lg:ml-64">
                 <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
-                    <div className="px-6 py-3 flex justify-between items-center">
-                        <div className="pl-12 lg:pl-0">
-                            <h1 className="text-xl font-semibold text-gray-800">
-                                {getPageTitle()}
-                            </h1>
+                    <div className="relative px-4 py-3 sm:px-6">
+                        <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0 pl-12 lg:pl-0">
+                                <h1 className="truncate text-lg font-semibold text-gray-800 sm:text-xl">
+                                    {getPageTitle()}
+                                </h1>
+                            </div>
+                            <div className="flex items-center gap-2 sm:gap-3">
+                                <button
+                                    onClick={() => navigate(`/users/${id}/edit`)}
+                                    className="p-2 text-gray-600 hover:text-blue-600 transition-colors rounded-full hover:bg-gray-100 cursor-pointer"
+                                    title="Редактировать профиль"
+                                >
+                                    <Icon name="edit" />
+                                </button>
+                                <button
+                                    onClick={handleLogout}
+                                    className="p-2 text-gray-600 hover:text-red-600 transition-colors rounded-full hover:bg-gray-100 cursor-pointer"
+                                    title="Выйти"
+                                >
+                                    <Icon name="logout" />
+                                </button>
+                            </div>
                         </div>
-                        <div className="flex-1 max-w-md mx-4">
+
+                        <div className="mt-3 lg:absolute lg:left-1/2 lg:top-1/2 lg:mt-0 lg:w-full lg:max-w-md lg:-translate-x-1/2 lg:-translate-y-1/2">
                             <div className="relative">
                                 <input
                                     type="text"
@@ -116,7 +135,7 @@ function Profile() {
                                 />
                                 <Icon name="search" className="absolute left-3 top-2.5 w-5 h-5 text-gray-400" />
                                 {searchResults.length > 0 && (
-                                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 max-h-96 overflow-y-auto">
+                                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 max-h-80 overflow-y-auto">
                                         {searchResults.map(searchUser => (
                                             <div
                                                 key={searchUser.id}
@@ -128,9 +147,9 @@ function Profile() {
                                                 className="flex items-center gap-3 p-3 hover:bg-gray-50 cursor-pointer transition"
                                             >
                                                 <Avatar name={searchUser.name} src={searchUser.avatar} />
-                                                <div>
-                                                    <p className="font-semibold text-gray-800">{searchUser.name || 'Пользователь'}</p>
-                                                    <p className="text-xs text-gray-500">{searchUser.email}</p>
+                                                <div className="min-w-0">
+                                                    <p className="font-semibold text-gray-800 truncate">{searchUser.name || 'Пользователь'}</p>
+                                                    <p className="text-xs text-gray-500 truncate">{searchUser.email}</p>
                                                 </div>
                                             </div>
                                         ))}
@@ -138,26 +157,10 @@ function Profile() {
                                 )}
                             </div>
                         </div>
-                        <div className="flex items-center gap-3">
-                            <button
-                                onClick={() => navigate(`/users/${id}/edit`)}
-                                className="p-2 text-gray-600 hover:text-blue-600 transition-colors rounded-full hover:bg-gray-100 cursor-pointer"
-                                title="Редактировать профиль"
-                            >
-                                <Icon name="edit" />
-                            </button>
-                            <button
-                                onClick={handleLogout}
-                                className="p-2 text-gray-600 hover:text-red-600 transition-colors rounded-full hover:bg-gray-100 cursor-pointer"
-                                title="Выйти"
-                            >
-                                <Icon name="logout" />
-                            </button>
-                        </div>
                     </div>
                 </header>
 
-                <main className="p-6">
+                <main className="px-3 py-4 sm:p-6">
                     <Outlet context={contextValue} />
                 </main>
             </div>

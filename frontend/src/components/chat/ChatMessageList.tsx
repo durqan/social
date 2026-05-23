@@ -58,14 +58,14 @@ export const ChatMessageList = ({
     }, [loadingMore]);
 
     return (
-        <div ref={containerRef} onScroll={onScroll} className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div ref={containerRef} onScroll={onScroll} className="flex-1 overflow-y-auto p-3 space-y-3 sm:p-4 sm:space-y-4">
             {loadingMore && (
                 <div className="flex justify-center py-2">
                     <Spinner size="sm" />
                 </div>
             )}
             {messages.length === 0 ? (
-                <div className="flex items-center justify-center h-full text-gray-400">
+                <div className="flex h-full items-center justify-center px-6 text-center text-gray-400">
                     Нет сообщений. Напишите что-нибудь...
                 </div>
             ) : (

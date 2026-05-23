@@ -90,6 +90,7 @@ function NotificationHandler() {
                 case 'call:ice':
                 case 'call:end':
                 case 'call:reject':
+                case 'presence:update':
                     return;
 
                 // =========================
@@ -227,10 +228,7 @@ function NotificationHandler() {
                 }
 
                 default:
-                    console.warn(
-                        'Unknown websocket event:',
-                        event
-                    );
+                    return;
             }
         };
 

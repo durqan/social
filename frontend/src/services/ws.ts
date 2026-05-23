@@ -187,13 +187,18 @@ export class WebSocketService {
     // AUDIO CALL
     // =========================
 
-    sendCallOffer(toId: number, offer: RTCSessionDescriptionInit) {
+    sendCallOffer(
+        toId: number,
+        offer: RTCSessionDescriptionInit,
+        callType: 'audio' | 'video' = 'audio'
+    ) {
 
         this.sendEvent({
             type: 'call:offer',
 
             payload: {
                 to_id: toId,
+                call_type: callType,
                 offer,
             },
         });

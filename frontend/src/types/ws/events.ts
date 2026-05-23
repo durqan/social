@@ -70,6 +70,7 @@ export type CallOfferEvent = BaseWsEvent<
     'call:offer',
     {
         from_id: number;
+        call_type?: 'audio' | 'video';
         offer: RTCSessionDescriptionInit;
     }
 >;

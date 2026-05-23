@@ -22,7 +22,7 @@ function Chat() {
     const { userId } = useParams();
     const { currentUser } = useOutletContext<{ currentUser: User }>();
     const wsService = useWebSocket();
-    const { status: callStatus, startCall } = useAudioCall();
+    const { status: callStatus, startCall, startVideoCall } = useAudioCall();
     const [recipient, setRecipient] = useState<User | null>(null);
     const [newMessage, setNewMessage] = useState('');
 
@@ -117,10 +117,10 @@ function Chat() {
         setNewMessage('');
     }, [currentUser, newMessage, sendMessageToStore, userId, wsService]);
 
-    if (initialLoading) return <div className="flex items-center justify-center h-[calc(100vh-120px)]"><Spinner /></div>;
+    if (initialLoading) return <div className="flex h-[calc(100dvh-132px)] items-center justify-center sm:h-[calc(100vh-120px)]"><Spinner /></div>;
 
     return (
-        <div className="flex flex-col h-[calc(100vh-120px)] bg-gray-50">
+        <div className="flex h-[calc(100dvh-132px)] flex-col overflow-hidden rounded-lg bg-gray-50 sm:h-[calc(100vh-120px)] sm:rounded-none">
             <ChatHeader
                 recipientName={recipient?.name}
                 selectionMode={selectionMode}
@@ -130,6 +130,11 @@ function Chat() {
                 onStartAudioCall={
                     userId && callStatus === 'idle'
                         ? () => startCall(Number(userId), recipient?.name)
+                        : undefined
+                }
+                onStartVideoCall={
+                    userId && callStatus === 'idle'
+                        ? () => startVideoCall(Number(userId), recipient?.name)
                         : undefined
                 }
             />

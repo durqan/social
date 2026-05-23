@@ -11,11 +11,34 @@ import { Avatar } from '../components/ui/Avatar.js';
 import { Icon } from '../components/ui/Icon.js';
 
 type CallStatus = 'idle' | 'incoming' | 'calling' | 'active';
+type CallType = 'audio' | 'video';
+
+const getCallErrorMessage = (error: unknown, fallback: string) => {
+    if (!(error instanceof Error)) {
+        return fallback;
+    }
+
+    if (error.name === 'NotAllowedError') {
+        return 'Нет доступа к камере или микрофону';
+    }
+
+    if (error.name === 'NotFoundError') {
+        return 'Камера или микрофон не найдены';
+    }
+
+    if (error.name === 'NotReadableError') {
+        return 'Камера или микрофон уже используются другим приложением';
+    }
+
+    return error.message || fallback;
+};
 
 type AudioCallContextValue = {
     status: CallStatus;
+    callType: CallType;
     peerUserId: number | null;
     startCall: (toId: number, peerName?: string) => Promise<void>;
+    startVideoCall: (toId: number, peerName?: string) => Promise<void>;
 };
 
 const AudioCallContext = createContext<AudioCallContextValue | null>(null);
@@ -60,17 +83,23 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
     const { currentUser } = useAuth();
 
     const [status, setStatus] = useState<CallStatus>('idle');
+    const [callType, setCallType] = useState<CallType>('audio');
     const [peerUserId, setPeerUserId] = useState<number | null>(null);
     const [peerName, setPeerName] = useState('Пользователь');
     const [error, setError] = useState<string | null>(null);
 
     const statusRef = useRef<CallStatus>('idle');
+    const callTypeRef = useRef<CallType>('audio');
     const peerUserIdRef = useRef<number | null>(null);
     const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
     const localStreamRef = useRef<MediaStream | null>(null);
+    const remoteStreamRef = useRef<MediaStream | null>(null);
     const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
+    const localVideoRef = useRef<HTMLVideoElement | null>(null);
+    const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
     const incomingOfferRef = useRef<RTCSessionDescriptionInit | null>(null);
     const pendingIceRef = useRef<RTCIceCandidateInit[]>([]);
+    const disconnectTimeoutRef = useRef<number | null>(null);
 
     const setCallStatus = useCallback((nextStatus: CallStatus) => {
         statusRef.current = nextStatus;
@@ -82,41 +111,79 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
         setPeerUserId(nextPeerId);
     }, []);
 
+    const setCurrentCallType = useCallback((nextCallType: CallType) => {
+        callTypeRef.current = nextCallType;
+        setCallType(nextCallType);
+    }, []);
+
     const stopLocalStream = useCallback(() => {
         localStreamRef.current?.getTracks().forEach(track => track.stop());
         localStreamRef.current = null;
     }, []);
 
-    const cleanupCall = useCallback(() => {
+    const cleanupMediaSession = useCallback(() => {
+        if (disconnectTimeoutRef.current) {
+            window.clearTimeout(disconnectTimeoutRef.current);
+            disconnectTimeoutRef.current = null;
+        }
+
         peerConnectionRef.current?.close();
         peerConnectionRef.current = null;
         incomingOfferRef.current = null;
         pendingIceRef.current = [];
+        remoteStreamRef.current = null;
         stopLocalStream();
 
         if (remoteAudioRef.current) {
             remoteAudioRef.current.srcObject = null;
         }
 
+        if (localVideoRef.current) {
+            localVideoRef.current.srcObject = null;
+        }
+
+        if (remoteVideoRef.current) {
+            remoteVideoRef.current.srcObject = null;
+        }
+    }, [stopLocalStream]);
+
+    const cleanupCall = useCallback(() => {
+        cleanupMediaSession();
         setCallPeer(null);
         setPeerName('Пользователь');
+        setCurrentCallType('audio');
         setCallStatus('idle');
-    }, [setCallPeer, setCallStatus, stopLocalStream]);
+    }, [cleanupMediaSession, setCallPeer, setCallStatus, setCurrentCallType]);
 
-    const getMicrophoneStream = useCallback(async () => {
+    const getLocalStream = useCallback(async (nextCallType: CallType) => {
         if (!navigator.mediaDevices?.getUserMedia) {
-            throw new Error('Браузер не поддерживает доступ к микрофону');
+            throw new Error('Браузер не поддерживает доступ к камере и микрофону');
         }
 
         if (!localStreamRef.current) {
-            localStreamRef.current = await navigator.mediaDevices.getUserMedia({
-                audio: true,
-                video: false,
-            });
+            try {
+                localStreamRef.current = await navigator.mediaDevices.getUserMedia({
+                    audio: true,
+                    video: nextCallType === 'video',
+                });
+            } catch (e) {
+                if (nextCallType !== 'video') {
+                    throw e;
+                }
+
+                console.warn('Video input failed, falling back to audio-only call:', e);
+                setError('Камера недоступна, звонок продолжен без видео');
+                setCurrentCallType('audio');
+
+                localStreamRef.current = await navigator.mediaDevices.getUserMedia({
+                    audio: true,
+                    video: false,
+                });
+            }
         }
 
         return localStreamRef.current;
-    }, []);
+    }, [setCurrentCallType]);
 
     const flushPendingIce = useCallback(async () => {
         const pc = peerConnectionRef.current;
@@ -129,7 +196,11 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
         pendingIceRef.current = [];
 
         for (const candidate of pendingCandidates) {
-            await pc.addIceCandidate(new RTCIceCandidate(candidate));
+            try {
+                await pc.addIceCandidate(new RTCIceCandidate(candidate));
+            } catch (e) {
+                console.warn('Failed to add pending ICE candidate:', e);
+            }
         }
     }, []);
 
@@ -145,23 +216,46 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
         pc.ontrack = event => {
             const [remoteStream] = event.streams;
 
+            remoteStreamRef.current = remoteStream || null;
+
             if (remoteAudioRef.current && remoteStream) {
                 remoteAudioRef.current.srcObject = remoteStream;
                 remoteAudioRef.current.play().catch(() => undefined);
             }
+
+            if (remoteVideoRef.current && remoteStream) {
+                remoteVideoRef.current.srcObject = remoteStream;
+                remoteVideoRef.current.play().catch(() => undefined);
+            }
         };
 
         pc.onconnectionstatechange = () => {
+            console.info('Call connection state:', pc.connectionState);
+
             if (pc.connectionState === 'connected') {
+                if (disconnectTimeoutRef.current) {
+                    window.clearTimeout(disconnectTimeoutRef.current);
+                    disconnectTimeoutRef.current = null;
+                }
+
                 setCallStatus('active');
             }
 
             if (
                 pc.connectionState === 'failed' ||
-                pc.connectionState === 'closed' ||
-                pc.connectionState === 'disconnected'
+                pc.connectionState === 'closed'
             ) {
                 cleanupCall();
+            }
+
+            if (pc.connectionState === 'disconnected' && !disconnectTimeoutRef.current) {
+                disconnectTimeoutRef.current = window.setTimeout(() => {
+                    disconnectTimeoutRef.current = null;
+
+                    if (peerConnectionRef.current?.connectionState === 'disconnected') {
+                        cleanupCall();
+                    }
+                }, 10000);
             }
         };
 
@@ -183,7 +277,7 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
         }
     }, []);
 
-    const startCall = useCallback(async (toId: number, name?: string) => {
+    const startCallWithType = useCallback(async (toId: number, name: string | undefined, nextCallType: CallType) => {
         if (!currentUser || statusRef.current !== 'idle') {
             return;
         }
@@ -191,10 +285,11 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
         setError(null);
         setCallPeer(toId);
         setPeerName(name || 'Пользователь');
+        setCurrentCallType(nextCallType);
         setCallStatus('calling');
 
         try {
-            const localStream = await getMicrophoneStream();
+            const localStream = await getLocalStream(nextCallType);
             const pc = createPeerConnection(toId);
 
             localStream.getTracks().forEach(track => {
@@ -204,24 +299,35 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
 
-            wsService.sendCallOffer(toId, offer);
+            wsService.sendCallOffer(toId, offer, callTypeRef.current);
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'Не удалось начать звонок');
+            console.error('Failed to start call:', e);
+            setError(getCallErrorMessage(e, 'Не удалось начать звонок'));
             cleanupCall();
         }
     }, [
         cleanupCall,
         createPeerConnection,
         currentUser,
-        getMicrophoneStream,
+        getLocalStream,
         setCallPeer,
         setCallStatus,
+        setCurrentCallType,
         wsService,
     ]);
+
+    const startCall = useCallback((toId: number, name?: string) => (
+        startCallWithType(toId, name, 'audio')
+    ), [startCallWithType]);
+
+    const startVideoCall = useCallback((toId: number, name?: string) => (
+        startCallWithType(toId, name, 'video')
+    ), [startCallWithType]);
 
     const acceptCall = useCallback(async () => {
         const fromId = peerUserIdRef.current;
         const offer = incomingOfferRef.current;
+        const nextCallType = callTypeRef.current;
 
         if (!fromId || !offer) {
             return;
@@ -230,7 +336,7 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
         setError(null);
 
         try {
-            const localStream = await getMicrophoneStream();
+            const localStream = await getLocalStream(nextCallType);
             const pc = createPeerConnection(fromId);
 
             localStream.getTracks().forEach(track => {
@@ -246,15 +352,17 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
             wsService.sendCallAnswer(fromId, answer);
             setCallStatus('active');
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'Не удалось принять звонок');
+            console.error('Failed to accept call:', e);
+            setError(getCallErrorMessage(e, 'Не удалось принять звонок'));
             wsService.sendCallReject(fromId);
-            cleanupCall();
+            cleanupMediaSession();
         }
     }, [
         cleanupCall,
+        cleanupMediaSession,
         createPeerConnection,
         flushPendingIce,
-        getMicrophoneStream,
+        getLocalStream,
         setCallStatus,
         wsService,
     ]);
@@ -283,7 +391,7 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
         const handleMessage = async (event: WsEvent) => {
             switch (event.type) {
                 case 'call:offer': {
-                    const { from_id: fromId, offer } = event.payload;
+                    const { from_id: fromId, offer, call_type: incomingCallType } = event.payload;
 
                     if (fromId === currentUser?.id) {
                         return;
@@ -296,6 +404,7 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
 
                     setError(null);
                     setCallPeer(fromId);
+                    setCurrentCallType(incomingCallType === 'video' ? 'video' : 'audio');
                     incomingOfferRef.current = offer;
                     setCallStatus('incoming');
                     await loadPeerName(fromId);
@@ -333,7 +442,11 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
                         return;
                     }
 
-                    await pc.addIceCandidate(new RTCIceCandidate(candidate));
+                    try {
+                        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+                    } catch (e) {
+                        console.warn('Failed to add ICE candidate:', e);
+                    }
 
                     return;
                 }
@@ -366,6 +479,7 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
         loadPeerName,
         setCallPeer,
         setCallStatus,
+        setCurrentCallType,
         wsService,
     ]);
 
@@ -375,13 +489,31 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
         }
     }, [cleanupCall, currentUser]);
 
+    useEffect(() => {
+        if (callType !== 'video') {
+            return;
+        }
+
+        if (localVideoRef.current && localStreamRef.current) {
+            localVideoRef.current.srcObject = localStreamRef.current;
+            localVideoRef.current.play().catch(() => undefined);
+        }
+
+        if (remoteVideoRef.current && remoteStreamRef.current) {
+            remoteVideoRef.current.srcObject = remoteStreamRef.current;
+            remoteVideoRef.current.play().catch(() => undefined);
+        }
+    }, [callType, status]);
+
     useEffect(() => cleanupCall, [cleanupCall]);
 
     const value = useMemo(() => ({
         status,
+        callType,
         peerUserId,
         startCall,
-    }), [peerUserId, startCall, status]);
+        startVideoCall,
+    }), [callType, peerUserId, startCall, startVideoCall, status]);
 
     return (
         <AudioCallContext.Provider value={value}>
@@ -390,7 +522,26 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
             <audio ref={remoteAudioRef} autoPlay />
 
             {status !== 'idle' && (
-                <div className="fixed bottom-6 right-6 z-50 w-[min(360px,calc(100vw-32px))] rounded-lg bg-white shadow-xl border border-gray-200 p-4">
+                <div className="fixed inset-x-3 bottom-3 z-50 rounded-lg bg-white p-3 shadow-xl border border-gray-200 sm:inset-x-auto sm:bottom-6 sm:right-6 sm:w-[min(440px,calc(100vw-32px))] sm:p-4">
+                    {callType === 'video' && (
+                        <div className="mb-4 overflow-hidden rounded-lg bg-gray-900 aspect-video relative">
+                            <video
+                                ref={remoteVideoRef}
+                                autoPlay
+                                playsInline
+                                className="h-full w-full object-cover"
+                            />
+
+                            <video
+                                ref={localVideoRef}
+                                autoPlay
+                                muted
+                                playsInline
+                                className="absolute bottom-2 right-2 h-20 w-24 rounded-md bg-gray-800 object-cover border border-white/30 shadow sm:bottom-3 sm:right-3 sm:h-24 sm:w-32"
+                            />
+                        </div>
+                    )}
+
                     <div className="flex items-center gap-3">
                         <Avatar name={peerName} />
 
@@ -400,9 +551,9 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
                             </p>
 
                             <p className="text-sm text-gray-500">
-                                {status === 'incoming' && 'Входящий аудиозвонок'}
+                                {status === 'incoming' && (callType === 'video' ? 'Входящий видеозвонок' : 'Входящий аудиозвонок')}
                                 {status === 'calling' && 'Звоним...'}
-                                {status === 'active' && 'Аудиозвонок идет'}
+                                {status === 'active' && (callType === 'video' ? 'Видеозвонок идет' : 'Аудиозвонок идет')}
                             </p>
 
                             {error && (
