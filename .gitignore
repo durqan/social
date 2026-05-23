@@ -34,4 +34,8 @@ frontend/*.local
 .DS_Store
 Thumbs.db
 webhook/
+
+# Uploaded files
 backend/upload/
+backend/uploads/*
+!backend/uploads/.gitkeep
