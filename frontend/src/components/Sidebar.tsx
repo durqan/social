@@ -2,6 +2,7 @@ import {useState, useEffect} from 'react';
 import {NavLink} from 'react-router-dom';
 import {useWebSocket} from '../contexts/WebSocketContext.js';
 import {messageService} from '../services/messageService.js';
+import {friendService} from '../services/friendService.js';
 import {Avatar} from './ui/Avatar.js';
 import {Icon} from './ui/Icon.js';
 import type {WsEvent} from '../types/ws/events.js';
@@ -24,6 +25,7 @@ function Sidebar({
     const [isOpen, setIsOpen] = useState(false);
     const [unreadCount, setUnreadCount] = useState(0);
     const [notificationCount, setNotificationCount] = useState(0);
+
     const refreshUnreadCount = async () => {
         if (!userId) return;
 
@@ -33,6 +35,20 @@ function Sidebar({
         } catch (error) {
             console.error(
                 'Ошибка загрузки непрочитанных:',
+                error
+            );
+        }
+    };
+
+    const refreshFriendRequestCount = async () => {
+        if (!userId) return;
+
+        try {
+            const requests = await friendService.getFriendRequests();
+            setNotificationCount(requests.length);
+        } catch (error) {
+            console.error(
+                'Ошибка загрузки заявок:',
                 error
             );
         }
@@ -64,21 +80,17 @@ function Sidebar({
 
     useEffect(() => {
 
-        const handleNotification = (event: WsEvent) => {
+        if (!userId) return;
 
+        refreshFriendRequestCount();
+
+        const handleNotification = (event: WsEvent) => {
             switch (event.type) {
 
                 case 'friend:request':
+                    refreshFriendRequestCount();
+                    break;
                 case 'friend:accepted':
-
-                    setNotificationCount(prev => prev + 1);
-
-                    setTimeout(() => {
-                        setNotificationCount(prev =>
-                            Math.max(0, prev - 1)
-                        );
-                    }, 3000);
-
                     break;
             }
         };
@@ -91,7 +103,7 @@ function Sidebar({
             );
         };
 
-    }, [wsService]);
+    }, [userId, wsService]);
 
     // =========================
     // UNREAD MESSAGES
@@ -108,12 +120,16 @@ function Sidebar({
                 case 'message:new': {
                     const msg = event.payload;
                     if (msg.to_id === Number(userId)) {
-                        refreshUnreadCount();
+                        setUnreadCount(prev => prev + 1);
                     }
                     break;
                 }
                 case 'message:read': {
-                    refreshUnreadCount();
+                    const payload = event.payload;
+
+                    if (payload.from_id === Number(userId)) {
+                        refreshUnreadCount();
+                    }
                     break;
                 }
             }
