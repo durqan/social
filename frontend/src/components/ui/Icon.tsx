@@ -1,4 +1,4 @@
-type IconName = 'close' | 'delete' | 'edit' | 'send' | 'search' | 'logout' | 'menu' | 'home' | 'wall' | 'friends' | 'messages' | 'heart' | 'phone' | 'phoneOff' | 'video';
+type IconName = 'close' | 'delete' | 'edit' | 'send' | 'search' | 'logout' | 'menu' | 'home' | 'wall' | 'friends' | 'messages' | 'heart' | 'phone' | 'phoneOff' | 'video' | 'maximize' | 'minimize';
 
 interface IconProps {
     name: IconName;
@@ -22,6 +22,8 @@ const paths: Record<IconName, string> = {
     phone: 'M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498A1 1 0 0121 15.72V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z',
     phoneOff: 'M16.49 12.49l-1.367 1.367a1 1 0 00-.23 1.09l.382.894a1 1 0 01-.21 1.09l-.54.54A11.02 11.02 0 016.53 9.475l.54-.54a1 1 0 011.09-.21l.894.382a1 1 0 001.09-.23l1.367-1.367M3 3l18 18',
     video: 'M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 6h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2z',
+    maximize: 'M8 3H5a2 2 0 00-2 2v3m0 8v3a2 2 0 002 2h3m8-18h3a2 2 0 012 2v3m0 8v3a2 2 0 01-2 2h-3',
+    minimize: 'M8 3v3a2 2 0 01-2 2H3m18 0h-3a2 2 0 01-2-2V3M3 16h3a2 2 0 012 2v3m8 0v-3a2 2 0 012-2h3',
 };
 
 export const Icon = ({ name, className = 'w-5 h-5', filled = false }: IconProps) => (

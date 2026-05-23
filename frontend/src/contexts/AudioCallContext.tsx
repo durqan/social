@@ -13,6 +13,26 @@ import { Icon } from '../components/ui/Icon.js';
 type CallStatus = 'idle' | 'incoming' | 'calling' | 'active';
 type CallType = 'audio' | 'video';
 
+const audioConstraints: MediaTrackConstraints = {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+};
+
+const videoConstraints: MediaTrackConstraints = {
+    width: { ideal: 1920 },
+    height: { ideal: 1080 },
+    frameRate: { ideal: 30, max: 30 },
+    facingMode: 'user',
+};
+
+const videoSenderParams: RTCRtpEncodingParameters = {
+    maxBitrate: 2_500_000,
+    maxFramerate: 30,
+    priority: 'high',
+    networkPriority: 'high',
+};
+
 const getCallErrorMessage = (error: unknown, fallback: string) => {
     if (!(error instanceof Error)) {
         return fallback;
@@ -87,6 +107,7 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
     const [peerUserId, setPeerUserId] = useState<number | null>(null);
     const [peerName, setPeerName] = useState('Пользователь');
     const [error, setError] = useState<string | null>(null);
+    const [isExpanded, setIsExpanded] = useState(false);
 
     const statusRef = useRef<CallStatus>('idle');
     const callTypeRef = useRef<CallType>('audio');
@@ -152,6 +173,7 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
         setCallPeer(null);
         setPeerName('Пользователь');
         setCurrentCallType('audio');
+        setIsExpanded(false);
         setCallStatus('idle');
     }, [cleanupMediaSession, setCallPeer, setCallStatus, setCurrentCallType]);
 
@@ -163,8 +185,8 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
         if (!localStreamRef.current) {
             try {
                 localStreamRef.current = await navigator.mediaDevices.getUserMedia({
-                    audio: true,
-                    video: nextCallType === 'video',
+                    audio: audioConstraints,
+                    video: nextCallType === 'video' ? videoConstraints : false,
                 });
             } catch (e) {
                 if (nextCallType !== 'video') {
@@ -176,7 +198,7 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
                 setCurrentCallType('audio');
 
                 localStreamRef.current = await navigator.mediaDevices.getUserMedia({
-                    audio: true,
+                    audio: audioConstraints,
                     video: false,
                 });
             }
@@ -184,6 +206,29 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
 
         return localStreamRef.current;
     }, [setCurrentCallType]);
+
+    const applySenderQuality = useCallback(async (pc: RTCPeerConnection) => {
+        const videoSender = pc.getSenders().find(sender => sender.track?.kind === 'video');
+
+        if (!videoSender) {
+            return;
+        }
+
+        const params = videoSender.getParameters();
+        params.degradationPreference = 'maintain-resolution';
+        params.encodings = params.encodings?.length
+            ? params.encodings.map(encoding => ({
+                ...encoding,
+                ...videoSenderParams,
+            }))
+            : [videoSenderParams];
+
+        try {
+            await videoSender.setParameters(params);
+        } catch (e) {
+            console.warn('Failed to apply video sender quality:', e);
+        }
+    }, []);
 
     const flushPendingIce = useCallback(async () => {
         const pc = peerConnectionRef.current;
@@ -296,6 +341,8 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
                 pc.addTrack(track, localStream);
             });
 
+            await applySenderQuality(pc);
+
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
 
@@ -307,6 +354,7 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
         }
     }, [
         cleanupCall,
+        applySenderQuality,
         createPeerConnection,
         currentUser,
         getLocalStream,
@@ -343,6 +391,8 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
                 pc.addTrack(track, localStream);
             });
 
+            await applySenderQuality(pc);
+
             await pc.setRemoteDescription(new RTCSessionDescription(offer));
             await flushPendingIce();
 
@@ -360,6 +410,7 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
     }, [
         cleanupCall,
         cleanupMediaSession,
+        applySenderQuality,
         createPeerConnection,
         flushPendingIce,
         getLocalStream,
@@ -522,9 +573,17 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
             <audio ref={remoteAudioRef} autoPlay />
 
             {status !== 'idle' && (
-                <div className="fixed inset-x-3 bottom-3 z-50 rounded-lg bg-white p-3 shadow-xl border border-gray-200 sm:inset-x-auto sm:bottom-6 sm:right-6 sm:w-[min(440px,calc(100vw-32px))] sm:p-4">
+                <div className={
+                    isExpanded && callType === 'video'
+                        ? 'fixed inset-0 z-50 flex flex-col bg-gray-950 text-white'
+                        : 'fixed inset-x-3 bottom-3 z-50 rounded-lg bg-white p-3 shadow-xl border border-gray-200 sm:inset-x-auto sm:bottom-6 sm:right-6 sm:w-[min(440px,calc(100vw-32px))] sm:p-4'
+                }>
                     {callType === 'video' && (
-                        <div className="mb-4 overflow-hidden rounded-lg bg-gray-900 aspect-video relative">
+                        <div className={
+                            isExpanded
+                                ? 'relative flex-1 overflow-hidden bg-gray-950'
+                                : 'mb-4 overflow-hidden rounded-lg bg-gray-900 aspect-video relative'
+                        }>
                             <video
                                 ref={remoteVideoRef}
                                 autoPlay
@@ -537,55 +596,69 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
                                 autoPlay
                                 muted
                                 playsInline
-                                className="absolute bottom-2 right-2 h-20 w-24 rounded-md bg-gray-800 object-cover border border-white/30 shadow sm:bottom-3 sm:right-3 sm:h-24 sm:w-32"
+                                className={
+                                    isExpanded
+                                        ? 'absolute right-3 top-3 h-28 w-20 rounded-lg bg-gray-800 object-cover border border-white/30 shadow sm:h-36 sm:w-56'
+                                        : 'absolute bottom-2 right-2 h-20 w-24 rounded-md bg-gray-800 object-cover border border-white/30 shadow sm:bottom-3 sm:right-3 sm:h-24 sm:w-32'
+                                }
                             />
+
+                            <button
+                                type="button"
+                                onClick={() => setIsExpanded(prev => !prev)}
+                                className="absolute left-3 top-3 h-10 w-10 rounded-full bg-black/45 text-white hover:bg-black/60 flex items-center justify-center"
+                                aria-label={isExpanded ? 'Свернуть видеозвонок' : 'Развернуть видеозвонок'}
+                                title={isExpanded ? 'Свернуть' : 'На весь экран'}
+                            >
+                                <Icon name={isExpanded ? 'minimize' : 'maximize'} />
+                            </button>
                         </div>
                     )}
 
-                    <div className="flex items-center gap-3">
-                        <Avatar name={peerName} />
+                    <div className={isExpanded ? 'absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-4 pt-16 sm:p-6 sm:pt-20' : 'flex items-center gap-3'}>
+                        {!isExpanded && <Avatar name={peerName} />}
 
-                        <div className="min-w-0 flex-1">
-                            <p className="font-semibold text-gray-900 truncate">
+                        <div className={isExpanded ? 'min-w-0 text-center' : 'min-w-0 flex-1'}>
+                            <p className={isExpanded ? 'truncate text-lg font-semibold text-white' : 'font-semibold text-gray-900 truncate'}>
                                 {peerName}
                             </p>
 
-                            <p className="text-sm text-gray-500">
+                            <p className={isExpanded ? 'text-sm text-gray-200' : 'text-sm text-gray-500'}>
                                 {status === 'incoming' && (callType === 'video' ? 'Входящий видеозвонок' : 'Входящий аудиозвонок')}
                                 {status === 'calling' && 'Звоним...'}
                                 {status === 'active' && (callType === 'video' ? 'Видеозвонок идет' : 'Аудиозвонок идет')}
                             </p>
 
                             {error && (
-                                <p className="mt-1 text-xs text-red-500">
+                                <p className={isExpanded ? 'mt-1 text-xs text-red-200' : 'mt-1 text-xs text-red-500'}>
                                     {error}
                                 </p>
                             )}
                         </div>
-                    </div>
 
-                    <div className="mt-4 flex justify-end gap-2">
-                        {status === 'incoming' && (
+                        <div className={isExpanded ? 'mt-5 flex justify-center gap-3' : 'mt-4 flex justify-end gap-2'}>
+                            {status === 'incoming' && (
+                                <button
+                                    type="button"
+                                    onClick={acceptCall}
+                                    className={isExpanded ? 'h-12 w-12 rounded-full bg-green-500 text-white hover:bg-green-600 flex items-center justify-center' : 'h-10 w-10 rounded-full bg-green-500 text-white hover:bg-green-600 flex items-center justify-center'}
+                                    aria-label="Принять звонок"
+                                    title="Принять звонок"
+                                >
+                                    <Icon name="phone" />
+                                </button>
+                            )}
+
                             <button
                                 type="button"
-                                onClick={acceptCall}
-                                className="h-10 w-10 rounded-full bg-green-500 text-white hover:bg-green-600 flex items-center justify-center"
-                                aria-label="Принять звонок"
-                                title="Принять звонок"
+                                onClick={status === 'incoming' ? rejectCall : endCall}
+                                className={isExpanded ? 'h-12 w-12 rounded-full bg-red-500 text-white hover:bg-red-600 flex items-center justify-center' : 'h-10 w-10 rounded-full bg-red-500 text-white hover:bg-red-600 flex items-center justify-center'}
+                                aria-label="Завершить звонок"
+                                title="Завершить звонок"
                             >
-                                <Icon name="phone" />
+                                <Icon name="phoneOff" />
                             </button>
-                        )}
-
-                        <button
-                            type="button"
-                            onClick={status === 'incoming' ? rejectCall : endCall}
-                            className="h-10 w-10 rounded-full bg-red-500 text-white hover:bg-red-600 flex items-center justify-center"
-                            aria-label="Завершить звонок"
-                            title="Завершить звонок"
-                        >
-                            <Icon name="phoneOff" />
-                        </button>
+                        </div>
                     </div>
                 </div>
             )}
