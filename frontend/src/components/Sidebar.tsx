@@ -11,7 +11,7 @@ interface SidebarProps {
     userId?: number | undefined,
     userName?: string | undefined,
     userAvatar?: string | null | undefined,
-    userPresence?: { online: boolean; loading: boolean }
+    userPresence?: { online: boolean; loading?: boolean }
 }
 
 function Sidebar({

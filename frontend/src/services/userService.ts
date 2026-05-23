@@ -6,7 +6,6 @@ export type UpdateUserData = {
     email?: string;
     age?: number;
     bio?: string;
-    avatar?: string | null;
 };
 
 export type ChangePasswordData = {

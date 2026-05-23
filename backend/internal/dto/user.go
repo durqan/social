@@ -26,11 +26,10 @@ type CreateUserRequest struct {
 }
 
 type UpdateUserRequest struct {
-	Name   *string `json:"name"`
-	Email  *string `json:"email" binding:"omitempty,email"`
-	Age    *int    `json:"age"`
-	Bio    *string `json:"bio"`
-	Avatar *string `json:"avatar"`
+	Name  *string `json:"name"`
+	Email *string `json:"email" binding:"omitempty,email"`
+	Age   *int    `json:"age"`
+	Bio   *string `json:"bio"`
 }
 
 type ChangePasswordRequest struct {

@@ -3,6 +3,8 @@ package handlers
 import (
 	"errors"
 	"fmt"
+	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"tester/internal/dto"
@@ -14,6 +16,17 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
+
+const (
+	avatarMaxSize        = 5 << 20 // 5 MB
+	avatarMaxRequestSize = avatarMaxSize + 1<<20
+)
+
+var allowedAvatarTypes = map[string]string{
+	"image/jpeg": ".jpg",
+	"image/png":  ".png",
+	"image/webp": ".webp",
+}
 
 func CreateUser(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -166,9 +179,6 @@ func PatchUser(db *gorm.DB) gin.HandlerFunc {
 		if req.Bio != nil {
 			updates["bio"] = *req.Bio
 		}
-		if req.Avatar != nil {
-			updates["avatar"] = *req.Avatar
-		}
 		if len(updates) == 0 {
 			c.JSON(400, gin.H{"error": "no valid fields to update"})
 			return
@@ -268,32 +278,73 @@ func SearchUsersByNameOrEmail(db *gorm.DB) gin.HandlerFunc {
 
 func UploadAvatar(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		idParam := c.Param("id")
-		id, err := strconv.Atoi(idParam)
-		if err != nil {
-			c.JSON(400, gin.H{
-				"error": "invalid user id",
-			})
+		userID, exists := c.Get("user_id")
+		if !exists {
+			c.JSON(401, gin.H{"error": "unauthorized"})
 			return
 		}
+
+		id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+		if err != nil {
+			c.JSON(400, gin.H{"error": "invalid user id"})
+			return
+		}
+
+		authUserID, ok := userID.(uint)
+		if !ok {
+			c.JSON(401, gin.H{"error": "invalid user"})
+			return
+		}
+
+		if uint(id) != authUserID {
+			c.JSON(403, gin.H{"error": "can only upload your own avatar"})
+			return
+		}
+
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, avatarMaxRequestSize)
 
 		file, err := c.FormFile("avatar")
 		if err != nil {
-			c.JSON(400, gin.H{
-				"error": "avatar is required",
-			})
+			c.JSON(400, gin.H{"error": "avatar is required"})
 			return
 		}
 
-		ext := filepath.Ext(
-			file.Filename,
-		)
+		if file.Size > avatarMaxSize {
+			c.JSON(413, gin.H{"error": "avatar is too large"})
+			return
+		}
 
-		filename := fmt.Sprintf("%d_%d%s", id, time.Now().Unix(), ext)
+		src, err := file.Open()
+		if err != nil {
+			c.JSON(400, gin.H{"error": "failed to read avatar"})
+			return
+		}
+		defer src.Close()
+
+		buf := make([]byte, 512)
+		n, err := src.Read(buf)
+		if err != nil && n == 0 {
+			c.JSON(400, gin.H{"error": "failed to read avatar"})
+			return
+		}
+
+		contentType := http.DetectContentType(buf[:n])
+		ext, ok := allowedAvatarTypes[contentType]
+		if !ok {
+			c.JSON(415, gin.H{"error": "avatar must be jpeg, png or webp"})
+			return
+		}
+
+		uploadDir := filepath.Join("uploads", "avatars")
+		if err := os.MkdirAll(uploadDir, 0755); err != nil {
+			c.JSON(500, gin.H{"error": "failed to prepare upload directory"})
+			return
+		}
+
+		filename := fmt.Sprintf("%d_%d%s", id, time.Now().UnixNano(), ext)
 
 		savePath := filepath.Join(
-			"uploads",
-			"avatars",
+			uploadDir,
 			filename,
 		)
 
@@ -301,24 +352,26 @@ func UploadAvatar(db *gorm.DB) gin.HandlerFunc {
 			file,
 			savePath,
 		); err != nil {
-			c.JSON(500, gin.H{
-				"error": "failed to save avatar",
-			})
+			c.JSON(500, gin.H{"error": "failed to save avatar"})
 			return
 		}
 
-		avatarURL := "/" + savePath
+		avatarURL := "/" + filepath.ToSlash(savePath)
 
 		if err := repository.UpdateUserAvatar(
 			db,
 			uint(id),
 			avatarURL,
 		); err != nil {
-			c.JSON(500, gin.H{
-				"error": "failed to update user",
-			})
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				c.JSON(404, gin.H{"error": "user not found"})
+				return
+			}
+
+			c.JSON(500, gin.H{"error": "failed to update user"})
 			return
 		}
+
 		c.JSON(200, gin.H{
 			"avatar": avatarURL,
 		})

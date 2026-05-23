@@ -100,25 +100,17 @@ function ProfileEdit() {
         setMessage(null);
 
         try {
-            let avatar = user.avatar;
-
             if (avatarFile) {
-                const res =
-                    await userService.uploadAvatar(
-                        user.id!,
-                        avatarFile,
-                    );
-
-                avatar = res.avatar;
+                await userService.uploadAvatar(
+                    user.id!,
+                    avatarFile,
+                );
             }
 
             const updatedUser =
                 await userService.updateUser(
                     user.id!,
-                    {
-                        ...formData,
-                        avatar,
-                    },
+                    formData,
                 );
 
             setUser(updatedUser);

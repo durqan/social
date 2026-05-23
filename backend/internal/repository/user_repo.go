@@ -91,8 +91,21 @@ func GetUsersByEmailOrName(db *gorm.DB, query string) ([]models.User, error) {
 }
 
 func UpdateUserAvatar(db *gorm.DB, userID uint, avatar string) error {
-	return db.Model(&models.User{}).
+	if userID <= 0 {
+		return gorm.ErrRecordNotFound
+	}
+
+	result := db.Model(&models.User{}).
 		Where("id = ?", userID).
-		Update("avatar", avatar).
-		Error
+		Update("avatar", avatar)
+
+	if result.Error != nil {
+		return result.Error
+	}
+
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+
+	return nil
 }
