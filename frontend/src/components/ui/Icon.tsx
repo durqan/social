@@ -1,4 +1,4 @@
-type IconName = 'close' | 'delete' | 'edit' | 'send' | 'search' | 'logout' | 'menu' | 'home' | 'wall' | 'friends' | 'messages' | 'heart';
+type IconName = 'close' | 'delete' | 'edit' | 'send' | 'search' | 'logout' | 'menu' | 'home' | 'wall' | 'friends' | 'messages' | 'heart' | 'phone' | 'phoneOff';
 
 interface IconProps {
     name: IconName;
@@ -19,6 +19,8 @@ const paths: Record<IconName, string> = {
     friends: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z',
     messages: 'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z',
     heart: 'M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z',
+    phone: 'M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498A1 1 0 0121 15.72V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z',
+    phoneOff: 'M16.49 12.49l-1.367 1.367a1 1 0 00-.23 1.09l.382.894a1 1 0 01-.21 1.09l-.54.54A11.02 11.02 0 016.53 9.475l.54-.54a1 1 0 011.09-.21l.894.382a1 1 0 001.09-.23l1.367-1.367M3 3l18 18',
 };
 
 export const Icon = ({ name, className = 'w-5 h-5', filled = false }: IconProps) => (

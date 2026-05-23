@@ -184,6 +184,68 @@ export class WebSocketService {
     }
 
     // =========================
+    // AUDIO CALL
+    // =========================
+
+    sendCallOffer(toId: number, offer: RTCSessionDescriptionInit) {
+
+        this.sendEvent({
+            type: 'call:offer',
+
+            payload: {
+                to_id: toId,
+                offer,
+            },
+        });
+    }
+
+    sendCallAnswer(toId: number, answer: RTCSessionDescriptionInit) {
+
+        this.sendEvent({
+            type: 'call:answer',
+
+            payload: {
+                to_id: toId,
+                answer,
+            },
+        });
+    }
+
+    sendCallIce(toId: number, candidate: RTCIceCandidateInit) {
+
+        this.sendEvent({
+            type: 'call:ice',
+
+            payload: {
+                to_id: toId,
+                candidate,
+            },
+        });
+    }
+
+    sendCallEnd(toId: number) {
+
+        this.sendEvent({
+            type: 'call:end',
+
+            payload: {
+                to_id: toId,
+            },
+        });
+    }
+
+    sendCallReject(toId: number) {
+
+        this.sendEvent({
+            type: 'call:reject',
+
+            payload: {
+                to_id: toId,
+            },
+        });
+    }
+
+    // =========================
     // DISCONNECT
     // =========================
 

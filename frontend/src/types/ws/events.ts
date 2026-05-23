@@ -66,6 +66,44 @@ export interface PresenceUpdateEvent {
     };
 }
 
+export type CallOfferEvent = BaseWsEvent<
+    'call:offer',
+    {
+        from_id: number;
+        offer: RTCSessionDescriptionInit;
+    }
+>;
+
+export type CallAnswerEvent = BaseWsEvent<
+    'call:answer',
+    {
+        from_id: number;
+        answer: RTCSessionDescriptionInit;
+    }
+>;
+
+export type CallIceEvent = BaseWsEvent<
+    'call:ice',
+    {
+        from_id: number;
+        candidate: RTCIceCandidateInit;
+    }
+>;
+
+export type CallEndEvent = BaseWsEvent<
+    'call:end',
+    {
+        from_id: number;
+    }
+>;
+
+export type CallRejectEvent = BaseWsEvent<
+    'call:reject',
+    {
+        from_id: number;
+    }
+>;
+
 export type WsEvent =
     | MessageEvent
     | TypingStartEvent
@@ -74,4 +112,9 @@ export type WsEvent =
     | MessageDeletedEvent
     | FriendRequestEvent
     | FriendAcceptedEvent
-    | PresenceUpdateEvent;
+    | PresenceUpdateEvent
+    | CallOfferEvent
+    | CallAnswerEvent
+    | CallIceEvent
+    | CallEndEvent
+    | CallRejectEvent;

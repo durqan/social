@@ -13,6 +13,7 @@ import { Toaster } from "react-hot-toast";
 import NotificationHandler from "./components/NotificationHandler.js";
 import { AuthProvider, useAuth } from './contexts/AuthContext.js';
 import { WebSocketProvider } from './contexts/WebSocketContext.js';
+import { AudioCallProvider } from './contexts/AudioCallContext.js';
 import { RequireAuth } from './components/RequireAuth.js';
 
 function AppRoutes() {
@@ -46,8 +47,10 @@ function App() {
             <Router>
                 <WebSocketProvider>
                     <AuthProvider>
-                        <NotificationHandler />
-                        <AppRoutes />
+                        <AudioCallProvider>
+                            <NotificationHandler />
+                            <AppRoutes />
+                        </AudioCallProvider>
                     </AuthProvider>
                 </WebSocketProvider>
             </Router>

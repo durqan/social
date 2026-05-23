@@ -13,6 +13,7 @@ import { ChatInput } from './chat/ChatInput.js';
 import { ChatMessageList } from './chat/ChatMessageList.js';
 import { DeleteConfirmModal } from './chat/DeleteConfirmModal.js';
 import { useWebSocket } from '../contexts/WebSocketContext.js';
+import { useAudioCall } from '../contexts/AudioCallContext.js';
 import { Spinner } from './ui/Spinner.js';
 
 const optimisticMessageFloor = 10000000;
@@ -21,6 +22,7 @@ function Chat() {
     const { userId } = useParams();
     const { currentUser } = useOutletContext<{ currentUser: User }>();
     const wsService = useWebSocket();
+    const { status: callStatus, startCall } = useAudioCall();
     const [recipient, setRecipient] = useState<User | null>(null);
     const [newMessage, setNewMessage] = useState('');
 
@@ -125,6 +127,11 @@ function Chat() {
                 selectedCount={selectedMessages.size}
                 onExitSelection={exitSelectionMode}
                 onDeleteClick={openDeleteConfirm}
+                onStartAudioCall={
+                    userId && callStatus === 'idle'
+                        ? () => startCall(Number(userId), recipient?.name)
+                        : undefined
+                }
             />
             <ChatMessageList
                 messages={messages}

@@ -85,6 +85,11 @@ function NotificationHandler() {
                 case 'typing:stop':
                 case 'message:delete':
                 case 'message:read':
+                case 'call:offer':
+                case 'call:answer':
+                case 'call:ice':
+                case 'call:end':
+                case 'call:reject':
                     return;
 
                 // =========================

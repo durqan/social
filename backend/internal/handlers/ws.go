@@ -30,6 +30,51 @@ type WSMessage struct {
 	Payload json.RawMessage `json:"payload"`
 }
 
+func forwardCallEvent(ctx context.Context, eventType string, fromID uint, payload json.RawMessage) {
+	var callPayload map[string]json.RawMessage
+
+	if err := json.Unmarshal(payload, &callPayload); err != nil {
+		log.Println("Invalid call payload:", err)
+		return
+	}
+
+	toRaw, ok := callPayload["to_id"]
+	if !ok {
+		return
+	}
+
+	var toID uint
+	if err := json.Unmarshal(toRaw, &toID); err != nil || toID == 0 {
+		return
+	}
+
+	delete(callPayload, "to_id")
+
+	eventPayload := gin.H{
+		"from_id": fromID,
+	}
+
+	for key, value := range callPayload {
+		eventPayload[key] = value
+	}
+
+	eventBytes, err := json.Marshal(gin.H{
+		"type":    eventType,
+		"payload": eventPayload,
+	})
+
+	if err != nil {
+		log.Println("Failed to marshal call event:", err)
+		return
+	}
+
+	if toConn, ok := clients.get(toID); ok {
+		if err := toConn.write(ctx, eventBytes); err != nil {
+			log.Println("Failed to forward call event:", err)
+		}
+	}
+}
+
 func (c *websocketClient) write(ctx context.Context, data []byte) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
@@ -272,6 +317,8 @@ func WebSocketHandler(c *gin.Context) {
 					log.Println("Failed to send read receipt:", err)
 				}
 			}
+		case "call:offer", "call:answer", "call:ice", "call:end", "call:reject":
+			forwardCallEvent(ctx, wsMsg.Type, userID, wsMsg.Payload)
 		default:
 			log.Println("Unknown websocket event:", wsMsg.Type)
 		}

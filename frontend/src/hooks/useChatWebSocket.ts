@@ -112,6 +112,13 @@ export const useChatWebSocket = ({
                     break;
                 }
 
+                case 'call:offer':
+                case 'call:answer':
+                case 'call:ice':
+                case 'call:end':
+                case 'call:reject':
+                    break;
+
                 default:
                     console.warn(
                         'Unknown WS event:',
