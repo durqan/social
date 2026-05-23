@@ -27,6 +27,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             wsService.connect();
             return user;
         } catch {
+            wsService.disconnect();
             setCurrentUser(null);
             return null;
         }
@@ -51,9 +52,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }, [wsService]);
 
     const logout = useCallback(async () => {
-        await authService.logout();
-        setCurrentUser(null);
-    }, []);
+        try {
+            await authService.logout();
+        } finally {
+            wsService.disconnect();
+            setCurrentUser(null);
+        }
+    }, [wsService]);
 
     const value = useMemo(() => ({
         currentUser,

@@ -3,14 +3,9 @@ import type { WsEvent } from '../types/ws/events.js';
 export class WebSocketService {
 
     private ws: WebSocket | null = null;
-
     private handlers: ((event: WsEvent) => void)[] = [];
-
     private shouldReconnect = true;
-
-    // =========================
-    // PARSE MESSAGE
-    // =========================
+    private reconnectTimer: number | null = null;
 
     private parseMessage(raw: string): WsEvent | null {
 
@@ -49,6 +44,13 @@ export class WebSocketService {
 
     connect() {
 
+        this.shouldReconnect = true;
+
+        if (this.reconnectTimer) {
+            window.clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
+
         if (
             this.ws?.readyState === WebSocket.OPEN ||
             this.ws?.readyState === WebSocket.CONNECTING
@@ -86,8 +88,12 @@ export class WebSocketService {
 
             if (this.shouldReconnect) {
 
-                setTimeout(() => {
-                    this.connect();
+                this.reconnectTimer = window.setTimeout(() => {
+                    this.reconnectTimer = null;
+
+                    if (this.shouldReconnect) {
+                        this.connect();
+                    }
                 }, 3000);
             }
         };
@@ -257,6 +263,11 @@ export class WebSocketService {
     disconnect() {
 
         this.shouldReconnect = false;
+
+        if (this.reconnectTimer) {
+            window.clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
 
         this.ws?.close();
 
