@@ -45,8 +45,6 @@ export interface Comment {
 export interface ProfileContextType {
     user: User;
     setUser: Dispatch<SetStateAction<User | null>>;
-    isOwner?: boolean;
-    currentUser?: User | null;
 }
 
 export interface PasswordChangeData {

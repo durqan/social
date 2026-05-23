@@ -65,50 +65,6 @@ func GetPosts(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-func GetPostsByUserID(db *gorm.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		userID, _ := c.Get("user_id")
-		currentUserID := userID.(uint)
-
-		profileUserID, err := strconv.ParseUint(c.Param("userId"), 10, 32)
-		if err != nil {
-			c.JSON(400, gin.H{"error": "invalid user id"})
-			return
-		}
-
-		if _, err := repository.GetUserById(db, uint(profileUserID)); err != nil {
-			c.JSON(404, gin.H{"error": "user not found"})
-			return
-		}
-
-		posts, err := repository.GetPostsByUser(db, uint(profileUserID))
-		if err != nil {
-			c.JSON(500, gin.H{"error": "failed to fetch posts"})
-			return
-		}
-
-		var response []PostResponse
-		for _, post := range posts {
-			likesCount, _ := repository.GetPostLikeCount(db, post.ID)
-			commentsCount, _ := repository.GetPostCommentCount(db, post.ID)
-			isLiked, _ := repository.IsPostLikedByUser(db, post.ID, currentUserID)
-
-			response = append(response, PostResponse{
-				ID:            post.ID,
-				Content:       post.Content,
-				CreatedAt:     post.CreatedAt.Format("2006-01-02 15:04:05"),
-				UpdatedAt:     post.UpdatedAt.Format("2006-01-02 15:04:05"),
-				User:          post.User,
-				LikesCount:    likesCount,
-				CommentsCount: commentsCount,
-				IsLiked:       isLiked,
-			})
-		}
-
-		c.JSON(200, response)
-	}
-}
-
 func CreatePost(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID, _ := c.Get("user_id")
@@ -122,15 +78,9 @@ func CreatePost(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		content, ok := trimAndValidateContent(req.Content, maxPostContentLength)
-		if !ok {
-			c.JSON(400, gin.H{"error": "post content must be between 1 and 500 characters"})
-			return
-		}
-
 		post := models.Post{
 			UserID:  userID.(uint),
-			Content: content,
+			Content: req.Content,
 		}
 
 		if err := repository.CreatePost(db, &post); err != nil {
@@ -166,13 +116,7 @@ func UpdatePost(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		content, ok := trimAndValidateContent(req.Content, maxPostContentLength)
-		if !ok {
-			c.JSON(400, gin.H{"error": "post content must be between 1 and 500 characters"})
-			return
-		}
-
-		if err := repository.UpdatePost(db, uint(postID), content); err != nil {
+		if err := repository.UpdatePost(db, uint(postID), req.Content); err != nil {
 			c.JSON(500, gin.H{"error": "failed to update post"})
 			return
 		}
@@ -217,11 +161,6 @@ func TogglePostLike(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		if _, err := repository.GetPostByID(db, uint(postID)); err != nil {
-			c.JSON(404, gin.H{"error": "post not found"})
-			return
-		}
-
 		isLiked, err := repository.TogglePostLike(db, uint(postID), userID.(uint))
 		if err != nil {
 			c.JSON(500, gin.H{"error": "failed to toggle like"})
@@ -240,21 +179,9 @@ func TogglePostLike(db *gorm.DB) gin.HandlerFunc {
 func ToggleCommentLike(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID, _ := c.Get("user_id")
-		postID, err := strconv.ParseUint(c.Param("id"), 10, 32)
-		if err != nil {
-			c.JSON(400, gin.H{"error": "invalid post id"})
-			return
-		}
-
 		commentID, err := strconv.ParseUint(c.Param("commentID"), 10, 32)
 		if err != nil {
 			c.JSON(400, gin.H{"error": "invalid comment id"})
-			return
-		}
-
-		comment, err := repository.GetCommentByID(db, uint(commentID))
-		if err != nil || comment.PostID != uint(postID) {
-			c.JSON(404, gin.H{"error": "comment not found"})
 			return
 		}
 
@@ -278,11 +205,6 @@ func GetComments(db *gorm.DB) gin.HandlerFunc {
 		postID, err := strconv.ParseUint(c.Param("id"), 10, 32)
 		if err != nil {
 			c.JSON(400, gin.H{"error": "invalid post id"})
-			return
-		}
-
-		if _, err := repository.GetPostByID(db, uint(postID)); err != nil {
-			c.JSON(404, gin.H{"error": "post not found"})
 			return
 		}
 
@@ -333,21 +255,10 @@ func CreateComment(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		if _, err := repository.GetPostByID(db, uint(postID)); err != nil {
-			c.JSON(404, gin.H{"error": "post not found"})
-			return
-		}
-
-		content, ok := trimAndValidateContent(req.Content, maxCommentContentLength)
-		if !ok {
-			c.JSON(400, gin.H{"error": "comment content must be between 1 and 500 characters"})
-			return
-		}
-
 		comment := models.Comment{
 			PostID:  uint(postID),
 			UserID:  userID.(uint),
-			Content: content,
+			Content: req.Content,
 		}
 
 		if err := repository.CreateComment(db, &comment); err != nil {

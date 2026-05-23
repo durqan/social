@@ -102,15 +102,13 @@ function Profile() {
                                 </h1>
                             </div>
                             <div className="flex items-center gap-2 sm:gap-3">
-                                {currentUser?.id === user?.id && (
-                                    <button
-                                        onClick={() => navigate(`/users/${id}/edit`)}
-                                        className="icon-button h-10 w-10"
-                                        title="Редактировать профиль"
-                                    >
-                                        <Icon name="edit" />
-                                    </button>
-                                )}
+                                <button
+                                    onClick={() => navigate(`/users/${id}/edit`)}
+                                    className="icon-button h-10 w-10"
+                                    title="Редактировать профиль"
+                                >
+                                    <Icon name="edit" />
+                                </button>
                                 <button
                                     onClick={handleLogout}
                                     className="icon-button h-10 w-10 hover:text-red-600"

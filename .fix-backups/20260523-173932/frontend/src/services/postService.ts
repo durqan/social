@@ -2,8 +2,8 @@ import api from '../api/axios.js';
 import type { Comment, Post } from '../types.js';
 
 export const postService = {
-    async getPosts(userId?: number): Promise<Post[]> {
-        const response = await api.get(userId ? `/posts/user/${userId}` : '/posts');
+    async getPosts(): Promise<Post[]> {
+        const response = await api.get('/posts');
         return response.data.map((post: Post) => ({
             ...post,
             likes_count: Number(post.likes_count) || 0,

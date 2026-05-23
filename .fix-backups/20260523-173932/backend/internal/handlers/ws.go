@@ -209,26 +209,15 @@ func WebSocketHandler(c *gin.Context) {
 				continue
 			}
 
-			if payload.ToID == 0 {
+			if payload.ToID == 0 || payload.Content == "" {
 				log.Println("Invalid message data")
-				continue
-			}
-
-			if _, err := repository.GetUserById(dbInstance, payload.ToID); err != nil {
-				log.Println("Recipient not found")
-				continue
-			}
-
-			content, ok := trimAndValidateContent(payload.Content, maxMessageContentLength)
-			if !ok {
-				log.Println("Invalid message content")
 				continue
 			}
 
 			message := models.Message{
 				FromID:  userID,
 				ToID:    payload.ToID,
-				Content: content,
+				Content: payload.Content,
 				IsRead:  false,
 			}
 

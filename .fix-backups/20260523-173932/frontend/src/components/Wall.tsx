@@ -7,7 +7,7 @@ import {Icon} from './ui/Icon.js';
 import {Spinner} from './ui/Spinner.js';
 
 function Wall() {
-    const {user, isOwner, currentUser} = useOutletContext<ProfileContextType>();
+    const {user} = useOutletContext<ProfileContextType>();
     const [posts, setPosts] = useState<Post[]>([]);
     const [newPostContent, setNewPostContent] = useState('');
     const [loading, setLoading] = useState(true);
@@ -20,16 +20,11 @@ function Wall() {
 
     useEffect(() => {
         fetchPosts();
-    }, [user?.id]);
+    }, []);
 
     const fetchPosts = async () => {
-        if (!user?.id) {
-            setLoading(false);
-            return;
-        }
-
         try {
-            setPosts(await postService.getPosts(user.id));
+            setPosts(await postService.getPosts());
         } catch (err) {
             console.error(err);
         } finally {
@@ -162,7 +157,6 @@ function Wall() {
 
     return (
         <div className="mx-auto max-w-2xl">
-            {isOwner && (
             <div className="app-card mb-4 p-3 sm:mb-6 sm:p-4">
                 <form onSubmit={handleCreatePost} className="flex gap-3">
                     <div className="flex-1">
@@ -187,12 +181,11 @@ function Wall() {
                     </div>
                 </form>
             </div>
-            )}
 
             <div className="space-y-3 sm:space-y-4">
                 {posts.length === 0 ? (
                     <div className="app-card p-6 text-center text-gray-500 sm:p-8">
-                        Пока нет постов.
+                        Пока нет постов. Напишите первый!
                     </div>
                 ) : (
                     posts.map(post => (
@@ -205,7 +198,7 @@ function Wall() {
                                         <p className="text-xs text-gray-500">{formatDate(post.created_at)}</p>
                                     </div>
                                 </div>
-                                {post.user?.id === currentUser?.id && (
+                                {post.user?.id === user?.id && (
                                     <div className="flex gap-2">
                                         <button
                                             onClick={() => {
@@ -294,7 +287,7 @@ function Wall() {
                                         )}
                                     </div>
                                     <div className="flex gap-2 mt-3">
-                                        <Avatar name={currentUser?.name} src={currentUser?.avatar} size="sm"
+                                        <Avatar name={user?.name} src={user?.avatar} size="sm"
                                                 className="flex-shrink-0 cursor-pointer"/>
                                         <div className="min-w-0 flex-1">
                                             <textarea

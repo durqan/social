@@ -31,7 +31,7 @@ type Config struct {
 }
 
 func Load() Config {
-	cfg := Config{
+	return Config{
 		DatabaseURL:    os.Getenv("DATABASE_URL"),
 		Port:           getEnv("PORT", defaultPort),
 		JWTSecret:      getEnv("JWT_SECRET", defaultJWTSecret),
@@ -43,10 +43,6 @@ func Load() Config {
 		RedisPassword: getEnv("REDIS_PASSWORD", defaultRedisPassword),
 		RedisDB:       getEnvInt("REDIS_DB", defaultRedisDB),
 	}
-
-	validateSecurity(cfg)
-
-	return cfg
 }
 
 func getEnv(key, fallback string) string {
@@ -84,14 +80,4 @@ func parseAllowedOrigins(value string) []string {
 		}
 	}
 	return origins
-}
-
-func validateSecurity(cfg Config) {
-	if os.Getenv("GIN_MODE") != "release" {
-		return
-	}
-
-	if len(cfg.JWTSecret) < 32 || strings.Contains(cfg.JWTSecret, "your-secret-key") {
-		log.Fatal("JWT_SECRET must be changed and contain at least 32 characters in release mode")
-	}
 }

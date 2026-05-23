@@ -58,13 +58,12 @@ func main() {
 
 	auth := r.Group("/auth")
 	{
-		auth.POST("/register", middleware.RateLimitMiddleware(5, 15*time.Minute), handlers.Register(database))
-		auth.POST("/login", middleware.RateLimitMiddleware(10, 15*time.Minute), handlers.Login(database))
+		auth.POST("/register", handlers.Register(database))
+		auth.POST("/login", handlers.Login(database))
 		auth.POST("/logout", handlers.Logout())
 
 		auth.POST("/send-verification",
 			middleware.AuthMiddleware(),
-			middleware.RateLimitMiddleware(3, time.Hour),
 			handlers.SendVerificationEmailHandler(database))
 
 		auth.GET("/verify-email/:token",
@@ -159,12 +158,6 @@ func main() {
 			"",
 			middleware.CacheMiddleware(2*time.Minute),
 			handlers.GetPosts(database),
-		)
-
-		posts.GET(
-			"/user/:userId",
-			middleware.CacheMiddleware(2*time.Minute),
-			handlers.GetPostsByUserID(database),
 		)
 
 		posts.GET(

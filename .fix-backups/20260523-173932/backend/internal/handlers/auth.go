@@ -57,7 +57,15 @@ func Register(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		setAuthCookie(c, token, 86400)
+		c.SetCookie(
+			"token",
+			token,
+			86400,
+			"/",
+			"",
+			secureCookie(),
+			true,
+		)
 
 		c.JSON(201, gin.H{
 			"message": "registration successful",
@@ -96,7 +104,15 @@ func Login(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		setAuthCookie(c, token, 86400)
+		c.SetCookie(
+			"token",
+			token,
+			86400,
+			"/",
+			"",
+			secureCookie(),
+			true,
+		)
 
 		c.JSON(200, gin.H{
 			"message": "login successful",
@@ -107,22 +123,17 @@ func Login(db *gorm.DB) gin.HandlerFunc {
 
 func Logout() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		setAuthCookie(c, "", -1)
+		c.SetCookie(
+			"token",
+			"",
+			-1,
+			"/",
+			"",
+			secureCookie(),
+			true,
+		)
 		c.JSON(200, gin.H{"message": "logout successful"})
 	}
-}
-
-func setAuthCookie(c *gin.Context, token string, maxAge int) {
-	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie(
-		"token",
-		token,
-		maxAge,
-		"/",
-		"",
-		secureCookie(),
-		true,
-	)
 }
 
 func secureCookie() bool {

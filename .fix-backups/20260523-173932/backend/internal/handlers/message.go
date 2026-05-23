@@ -27,21 +27,10 @@ func SendMessage(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		if _, err := repository.GetUserById(db, uint(toID)); err != nil {
-			c.JSON(404, gin.H{"error": "recipient not found"})
-			return
-		}
-
-		content, ok := trimAndValidateContent(req.Content, maxMessageContentLength)
-		if !ok {
-			c.JSON(400, gin.H{"error": "message content must be between 1 and 1000 characters"})
-			return
-		}
-
 		message := models.Message{
 			FromID:  userID.(uint),
 			ToID:    uint(toID),
-			Content: content,
+			Content: req.Content,
 		}
 
 		if err := repository.CreateMessage(db, &message); err != nil {
@@ -66,9 +55,6 @@ func GetMessagesWith(db *gorm.DB) gin.HandlerFunc {
 		limit := 20
 		if l := c.Query("limit"); l != "" {
 			limit, _ = strconv.Atoi(l)
-		}
-		if limit < 1 || limit > 100 {
-			limit = 20
 		}
 
 		var beforeID *uint
@@ -135,13 +121,7 @@ func UpdateMessage(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		content, ok := trimAndValidateContent(req.Content, maxMessageContentLength)
-		if !ok {
-			c.JSON(400, gin.H{"error": "message content must be between 1 and 1000 characters"})
-			return
-		}
-
-		message.Content = content
+		message.Content = req.Content
 		if err := repository.UpdateMessage(db, message); err != nil {
 			c.JSON(500, gin.H{"error": "failed to update message"})
 			return

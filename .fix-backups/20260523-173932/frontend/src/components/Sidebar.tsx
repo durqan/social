@@ -57,7 +57,7 @@ function Sidebar({
     useEffect(() => {
 
         const handleResetUnread = () => {
-            refreshUnreadCount();
+            setUnreadCount(0);
         };
 
         window.addEventListener(
@@ -72,7 +72,7 @@ function Sidebar({
             );
         };
 
-    }, [userId]);
+    }, []);
 
     // =========================
     // FRIEND NOTIFICATIONS

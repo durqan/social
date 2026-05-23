@@ -85,6 +85,7 @@ function Chat() {
         if (!userId) return;
         wsService.sendReadReceipt(Number(userId));
         markAsRead(Number(userId));
+        window.dispatchEvent(new Event('reset-unread'));
     }, [userId, wsService, markAsRead]);
 
     const handleBatchDelete = async () => {

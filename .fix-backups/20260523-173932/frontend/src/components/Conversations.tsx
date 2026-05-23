@@ -3,13 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import type {Conversation} from "../types.js";
 import { messageService } from '../services/messageService.js';
 import { Avatar } from './ui/Avatar.js';
-import { useAuth } from '../contexts/AuthContext.js';
 
 function Conversations() {
     const [conversations, setConversations] = useState<Conversation[]>([]);
     const [loading, setLoading] = useState(true);
     const navigate = useNavigate();
-    const { currentUser } = useAuth();
 
     useEffect(() => {
         fetchConversations();
@@ -38,7 +36,7 @@ function Conversations() {
                     conversations.map(conv => (
                         <div
                             key={conv.user_id}
-                            onClick={() => currentUser?.id && navigate(`/users/${currentUser.id}/chat/${conv.user_id}`)}
+                            onClick={() => navigate(`/users/${conv.user_id}/chat/${conv.user_id}`)}
                             className="flex items-center gap-3 border-b border-gray-100 p-3 transition last:border-b-0 hover:bg-gray-50 sm:p-4"
                         >
                             <Avatar name={conv.name} size="lg" />

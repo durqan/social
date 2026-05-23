@@ -11,22 +11,13 @@ import (
 
 func RateLimitMiddleware(limit int, window time.Duration) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if cache.Redis == nil || cache.Redis.Client == nil {
+		userID, exists := c.Get("user_id")
+		if !exists {
 			c.Next()
 			return
 		}
 
-		identity := fmt.Sprintf("ip:%s", c.ClientIP())
-		if userID, exists := c.Get("user_id"); exists {
-			identity = fmt.Sprintf("user:%v", userID)
-		}
-
-		path := c.FullPath()
-		if path == "" {
-			path = c.Request.URL.Path
-		}
-
-		key := fmt.Sprintf("ratelimit:%s:%s", identity, path)
+		key := fmt.Sprintf("ratelimit:%d:%s", userID, c.Request.URL.Path)
 
 		count, err := cache.Redis.Client.Incr(cache.Redis.Ctx, key).Result()
 		if err != nil {
@@ -40,7 +31,7 @@ func RateLimitMiddleware(limit int, window time.Duration) gin.HandlerFunc {
 
 		if count > int64(limit) {
 			c.JSON(http.StatusTooManyRequests, gin.H{
-				"error": "too many requests",
+				"error": "Too many requests",
 			})
 			c.Abort()
 			return
