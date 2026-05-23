@@ -210,7 +210,7 @@ func main() {
 		messages.PATCH("/read/:userId", handlers.MarkMessagesAsRead(database))
 	}
 
-	handlers.InitWebSocket(database)
+	handlers.InitWebSocket(database, cfg.AllowedOrigins)
 
 	r.GET("/ws", handlers.WebSocketHandler)
 

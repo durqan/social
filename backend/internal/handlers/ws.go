@@ -129,9 +129,11 @@ var onlineUsers = struct {
 }
 
 var dbInstance *gorm.DB
+var websocketOriginPatterns []string
 
-func InitWebSocket(db *gorm.DB) {
+func InitWebSocket(db *gorm.DB, originPatterns []string) {
 	dbInstance = db
+	websocketOriginPatterns = originPatterns
 }
 
 func WebSocketHandler(c *gin.Context) {
@@ -148,7 +150,7 @@ func WebSocketHandler(c *gin.Context) {
 	}
 
 	conn, err := websocket.Accept(c.Writer, c.Request, &websocket.AcceptOptions{
-		InsecureSkipVerify: true,
+		OriginPatterns: websocketOriginPatterns,
 	})
 
 	if err != nil {
