@@ -1,3 +1,4 @@
+import type { MessageAttachment } from '../types.js';
 import type { WsEvent } from '../types/ws/events.js';
 
 export class WebSocketService {
@@ -131,8 +132,11 @@ export class WebSocketService {
     // =========================
     // SEND MESSAGE
     // =========================
-
-    send(toId: number, content: string) {
+    send(
+        toId: number,
+        content: string,
+        attachments: MessageAttachment[] = []
+    ) {
 
         this.sendEvent({
             type: 'message:send',
@@ -140,6 +144,7 @@ export class WebSocketService {
             payload: {
                 to_id: toId,
                 content,
+                attachments,
             },
         });
     }

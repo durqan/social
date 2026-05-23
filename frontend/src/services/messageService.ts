@@ -1,5 +1,5 @@
 import api from '../api/axios.js';
-import type { Conversation, Message } from '../types.js';
+import type { Conversation, Message, MessageAttachment } from '../types.js';
 
 export type PaginatedMessages = {
     messages: Message[];
@@ -7,6 +7,12 @@ export type PaginatedMessages = {
 };
 
 export const messageService = {
+    async uploadImage(file: File): Promise<MessageAttachment> {
+        const formData = new FormData();
+        formData.append('image', file);
+        const response = await api.post('/messages/upload', formData);
+        return response.data;
+    },
     async getConversations(): Promise<Conversation[]> {
         const response = await api.get('/messages/conversations');
         return Array.isArray(response.data) ? response.data : [];

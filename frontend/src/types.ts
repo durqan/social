@@ -55,6 +55,16 @@ export interface PasswordChangeData {
     confirmPassword: string;
 }
 
+export interface MessageAttachment {
+    id?: number;
+    message_id?: number;
+    file_url: string;
+    file_type: 'image';
+    width?: number;
+    height?: number;
+    size: number;
+}
+
 export interface Message {
     id: number;
     from_id: number;
@@ -67,6 +77,7 @@ export interface Message {
         name: string;
         email: string;
     };
+    attachments?: MessageAttachment[];
 }
 
 export interface Conversation {

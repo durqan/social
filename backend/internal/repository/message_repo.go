@@ -11,6 +11,14 @@ func CreateMessage(db *gorm.DB, message *models.Message) error {
 	return db.Create(message).Error
 }
 
+func CreateMessageAttachments(db *gorm.DB, attachments []models.MessageAttachment) error {
+	if len(attachments) == 0 {
+		return nil
+	}
+
+	return db.Create(&attachments).Error
+}
+
 func GetConversations(db *gorm.DB, userID uint) ([]map[string]interface{}, error) {
 	var conversations []map[string]interface{}
 
@@ -59,7 +67,7 @@ func MarkMessagesAsRead(db *gorm.DB, fromID, toID uint) error {
 
 func GetMessageByID(db *gorm.DB, id uint) (*models.Message, error) {
 	var message models.Message
-	err := db.Preload("From").Preload("To").First(&message, id).Error
+	err := db.Preload("From").Preload("To").Preload("Attachments").Preload("Attachments").First(&message, id).Error
 	return &message, err
 }
 
@@ -74,7 +82,7 @@ func DeleteMessage(db *gorm.DB, id uint) error {
 func GetMessagesBetweenPaginated(db *gorm.DB, userID1, userID2 uint, limit int, beforeID *uint) ([]models.Message, error) {
 	var messages []models.Message
 
-	query := db.Preload("From").Preload("To").
+	query := db.Preload("From").Preload("To").Preload("Attachments").Preload("Attachments").
 		Where("(from_id = ? AND to_id = ?) OR (from_id = ? AND to_id = ?)", userID1, userID2, userID2, userID1).
 		Order("created_at DESC")
 

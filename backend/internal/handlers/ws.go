@@ -13,6 +13,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"strings"
 )
 
 type websocketRegistry struct {
@@ -200,8 +201,9 @@ func WebSocketHandler(c *gin.Context) {
 		case "message:send":
 
 			var payload struct {
-				ToID    uint   `json:"to_id"`
-				Content string `json:"content"`
+				ToID        uint                     `json:"to_id"`
+				Content     string                   `json:"content"`
+				Attachments []messageAttachmentInput `json:"attachments"`
 			}
 
 			if err := json.Unmarshal(wsMsg.Payload, &payload); err != nil {
@@ -209,19 +211,15 @@ func WebSocketHandler(c *gin.Context) {
 				continue
 			}
 
-			if payload.ToID == 0 {
+			content := strings.TrimSpace(payload.Content)
+			attachments, err := normalizeMessageAttachments(payload.Attachments)
+			if err != nil {
+				log.Println("Invalid attachments:", err)
+				continue
+			}
+
+			if payload.ToID == 0 || (content == "" && len(attachments) == 0) {
 				log.Println("Invalid message data")
-				continue
-			}
-
-			if _, err := repository.GetUserById(dbInstance, payload.ToID); err != nil {
-				log.Println("Recipient not found")
-				continue
-			}
-
-			content, ok := trimAndValidateContent(payload.Content, maxMessageContentLength)
-			if !ok {
-				log.Println("Invalid message content")
 				continue
 			}
 
@@ -237,11 +235,21 @@ func WebSocketHandler(c *gin.Context) {
 				continue
 			}
 
+			for i := range attachments {
+				attachments[i].MessageID = message.ID
+			}
+
+			if err := repository.CreateMessageAttachments(dbInstance, attachments); err != nil {
+				log.Println("Failed to save attachments:", err)
+				continue
+			}
+
 			var fullMessage models.Message
 
 			dbInstance.
 				Preload("From").
 				Preload("To").
+				Preload("Attachments").
 				First(&fullMessage, message.ID)
 
 			messageBytes, err := json.Marshal(gin.H{

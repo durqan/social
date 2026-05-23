@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useOutletContext } from 'react-router-dom';
-import type { User } from '../types.js';
+import type { MessageAttachment, User } from '../types.js';
 import { messageService } from '../services/messageService.js';
 import { userService } from '../services/userService.js';
 import { useChatMessages } from '../hooks/useChatMessages.js';
@@ -87,6 +87,18 @@ function Chat() {
         markAsRead(Number(userId));
     }, [userId, wsService, markAsRead]);
 
+    const uploadAttachments = useCallback(async (files: File[]): Promise<MessageAttachment[]> => {
+        if (!files.length) return [];
+
+        if (files.length > 5) {
+            throw new Error('Можно отправить максимум 5 картинок за раз');
+        }
+
+        return Promise.all(
+            files.map(file => messageService.uploadImage(file))
+        );
+    }, []);
+
     const handleBatchDelete = async () => {
         const realIds = Array.from(selectedMessages).filter(id => id > 0 && id < 10000000);
         if (!realIds.length) return alert('Нельзя удалить ещё не отправленные сообщения');
@@ -100,21 +112,32 @@ function Chat() {
         }
     };
 
-    const sendMessage = useCallback(() => {
-        if (!newMessage.trim()) return;
-        const tempMessage = {
-            id: Date.now(),
-            from_id: currentUser?.id || 0,
-            to_id: Number(userId),
-            content: newMessage,
-            created_at: new Date().toISOString(),
-            is_read: false,
-            from: { id: currentUser?.id || 0, name: currentUser?.name || '', email: currentUser?.email || '' }
-        };
-        sendMessageToStore(newMessage, tempMessage);
-        wsService.send(Number(userId), newMessage);
-        setNewMessage('');
-    }, [currentUser, newMessage, sendMessageToStore, userId, wsService]);
+        const sendMessage = useCallback(async (files: File[] = []) => {
+        const content = newMessage.trim();
+        if (!content && files.length === 0) return;
+
+        try {
+            const attachments = await uploadAttachments(files);
+
+            const tempMessage = {
+                id: Date.now(),
+                from_id: currentUser?.id || 0,
+                to_id: Number(userId),
+                content,
+                created_at: new Date().toISOString(),
+                is_read: false,
+                from: { id: currentUser?.id || 0, name: currentUser?.name || '', email: currentUser?.email || '' },
+                attachments,
+            };
+
+            sendMessageToStore(content, tempMessage);
+            wsService.send(Number(userId), content, attachments);
+            setNewMessage('');
+        } catch (error) {
+            console.error(error);
+            alert(error instanceof Error ? error.message : 'Не удалось отправить картинку');
+        }
+    }, [currentUser, newMessage, sendMessageToStore, uploadAttachments, userId, wsService]);
 
     if (initialLoading) return <div className="flex h-full items-center justify-center sm:h-[calc(100vh-120px)]"><Spinner /></div>;
 

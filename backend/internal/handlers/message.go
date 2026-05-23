@@ -1,13 +1,151 @@
 package handlers
 
 import (
+	_ "image/jpeg"
+	_ "image/png"
 	"strconv"
 	"tester/internal/models"
 	"tester/internal/repository"
 
+	"errors"
+	"fmt"
+	"image"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
+
+const (
+	chatImageMaxSize        = 10 << 20 // 10 MB
+	chatImageMaxRequestSize = chatImageMaxSize + 1<<20
+	chatImageMaxCount       = 5
+)
+
+type messageAttachmentInput struct {
+	ID        uint   `json:"id,omitempty"`
+	MessageID uint   `json:"message_id,omitempty"`
+	FileURL   string `json:"file_url"`
+	FileType  string `json:"file_type"`
+	Width     int    `json:"width"`
+	Height    int    `json:"height"`
+	Size      int64  `json:"size"`
+}
+
+var allowedChatImageTypes = map[string]string{
+	"image/jpeg": ".jpg",
+	"image/png":  ".png",
+	"image/webp": ".webp",
+}
+
+func normalizeMessageAttachments(input []messageAttachmentInput) ([]models.MessageAttachment, error) {
+	if len(input) > chatImageMaxCount {
+		return nil, errors.New("too many images")
+	}
+
+	attachments := make([]models.MessageAttachment, 0, len(input))
+
+	for _, item := range input {
+		if item.FileType != "image" {
+			return nil, errors.New("only image attachments are supported")
+		}
+
+		if !strings.HasPrefix(item.FileURL, "/uploads/chat/") {
+			return nil, errors.New("invalid image url")
+		}
+
+		attachments = append(attachments, models.MessageAttachment{
+			FileURL:  item.FileURL,
+			FileType: "image",
+			Width:    &item.Width,
+			Height:   &item.Height,
+			Size:     item.Size,
+		})
+	}
+
+	return attachments, nil
+}
+
+func UploadMessageImage(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, exists := c.Get("user_id")
+		if !exists || userID == nil {
+			c.JSON(401, gin.H{"error": "unauthorized"})
+			return
+		}
+
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, chatImageMaxRequestSize)
+
+		file, err := c.FormFile("image")
+		if err != nil {
+			c.JSON(400, gin.H{"error": "image is required"})
+			return
+		}
+
+		if file.Size > chatImageMaxSize {
+			c.JSON(413, gin.H{"error": "image is too large"})
+			return
+		}
+
+		src, err := file.Open()
+		if err != nil {
+			c.JSON(400, gin.H{"error": "failed to read image"})
+			return
+		}
+		defer src.Close()
+
+		buf := make([]byte, 512)
+		n, err := src.Read(buf)
+		if err != nil && n == 0 {
+			c.JSON(400, gin.H{"error": "failed to read image"})
+			return
+		}
+
+		contentType := http.DetectContentType(buf[:n])
+		ext, ok := allowedChatImageTypes[contentType]
+		if !ok {
+			c.JSON(415, gin.H{"error": "image must be jpeg, png or webp"})
+			return
+		}
+
+		if _, err := src.Seek(0, 0); err != nil {
+			c.JSON(400, gin.H{"error": "failed to read image"})
+			return
+		}
+
+		cfg, _, err := image.DecodeConfig(src)
+		if err != nil {
+			c.JSON(415, gin.H{"error": "invalid image"})
+			return
+		}
+
+		uploadDir := filepath.Join("uploads", "chat")
+		if err := os.MkdirAll(uploadDir, 0755); err != nil {
+			c.JSON(500, gin.H{"error": "failed to prepare upload directory"})
+			return
+		}
+
+		filename := fmt.Sprintf("%d_%d%s", userID.(uint), time.Now().UnixNano(), ext)
+		savePath := filepath.Join(uploadDir, filename)
+
+		if err := c.SaveUploadedFile(file, savePath); err != nil {
+			c.JSON(500, gin.H{"error": "failed to save image"})
+			return
+		}
+
+		c.JSON(201, messageAttachmentInput{
+			FileURL:  "/" + filepath.ToSlash(savePath),
+			FileType: "image",
+			Width:    cfg.Width,
+			Height:   cfg.Height,
+			Size:     file.Size,
+		})
+	}
+}
 
 func SendMessage(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -19,7 +157,8 @@ func SendMessage(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		var req struct {
-			Content string `json:"content" binding:"required"`
+			Content     string                   `json:"content"`
+			Attachments []messageAttachmentInput `json:"attachments"`
 		}
 
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -27,14 +166,15 @@ func SendMessage(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		if _, err := repository.GetUserById(db, uint(toID)); err != nil {
-			c.JSON(404, gin.H{"error": "recipient not found"})
+		content := strings.TrimSpace(req.Content)
+		attachments, err := normalizeMessageAttachments(req.Attachments)
+		if err != nil {
+			c.JSON(400, gin.H{"error": err.Error()})
 			return
 		}
 
-		content, ok := trimAndValidateContent(req.Content, maxMessageContentLength)
-		if !ok {
-			c.JSON(400, gin.H{"error": "message content must be between 1 and 1000 characters"})
+		if content == "" && len(attachments) == 0 {
+			c.JSON(400, gin.H{"error": "message content or image is required"})
 			return
 		}
 
@@ -49,7 +189,16 @@ func SendMessage(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		db.Preload("From").Preload("To").First(&message, message.ID)
+		for i := range attachments {
+			attachments[i].MessageID = message.ID
+		}
+
+		if err := repository.CreateMessageAttachments(db, attachments); err != nil {
+			c.JSON(500, gin.H{"error": "failed to attach images"})
+			return
+		}
+
+		db.Preload("From").Preload("To").Preload("Attachments").First(&message, message.ID)
 		c.JSON(201, message)
 	}
 }

@@ -111,7 +111,29 @@ const ChatMessageComponent = ({
                         </div>
                     ) : (
                         <div className={`rounded-2xl px-3 py-2 sm:px-4 ${isOwn ? 'bg-sky-600 text-white rounded-br-md' : 'bg-white text-gray-900 rounded-bl-md border border-gray-200/70'}`}>
-                            <p className="text-sm break-words">{message.content}</p>
+                            {message.attachments?.length ? (
+                                <div className={`grid gap-2 ${message.attachments.length > 1 ? 'grid-cols-2' : 'grid-cols-1'} ${message.content ? 'mb-2' : ''}`}>
+                                    {message.attachments.map(attachment => (
+                                        <a
+                                            key={attachment.file_url}
+                                            href={attachment.file_url}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="block overflow-hidden rounded-xl bg-black/5"
+                                        >
+                                            <img
+                                                src={attachment.file_url}
+                                                alt="Вложение"
+                                                className="max-h-72 w-full object-cover"
+                                                loading="lazy"
+                                            />
+                                        </a>
+                                    ))}
+                                </div>
+                            ) : null}
+
+                            {message.content && <p className="text-sm break-words">{message.content}</p>}
+
                             <div className={`text-xs mt-1 ${isOwn ? 'text-sky-100 text-right' : 'text-gray-400 text-left'}`}>
                                 {formatTime(message.created_at)}
                                 {isOwn && <span className="ml-1">{message.is_read ? '✓✓' : '✓'}</span>}

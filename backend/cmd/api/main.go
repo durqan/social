@@ -36,6 +36,7 @@ func main() {
 		&models.CommentLike{},
 		&models.Comment{},
 		&models.Message{},
+		&models.MessageAttachment{},
 		&models.Friendship{},
 		&models.EmailVerification{},
 	)
@@ -210,6 +211,7 @@ func main() {
 			handlers.GetUnreadCount(database),
 		)
 
+		messages.POST("/upload", handlers.UploadMessageImage(database))
 		messages.POST("/send/:toId", handlers.SendMessage(database))
 		messages.PATCH("/:messageId", handlers.UpdateMessage(database))
 		messages.DELETE("/:messageId", handlers.DeleteMessage(database))
