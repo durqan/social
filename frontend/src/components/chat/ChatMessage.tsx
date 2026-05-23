@@ -71,7 +71,7 @@ const ChatMessageComponent = ({
         >
             {showDate && (
                 <div className="flex justify-center my-4">
-                    <span className="text-xs text-gray-400 bg-gray-100 px-3 py-1 rounded-full">
+                    <span className="rounded-full bg-white/80 px-3 py-1 text-xs text-gray-500 shadow-sm">
                         {formatDate(message.created_at)}
                     </span>
                 </div>
@@ -83,7 +83,7 @@ const ChatMessageComponent = ({
                             type="checkbox"
                             checked={isSelected}
                             onChange={onToggleSelect}
-                            className="w-5 h-5 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
+                            className="w-5 h-5 rounded border-gray-300 text-sky-500 focus:ring-sky-500"
                         />
                     </div>
                 )}
@@ -92,27 +92,27 @@ const ChatMessageComponent = ({
                 )}
                 <div className="relative max-w-[82%] sm:max-w-[70%]">
                     {editingMessageId === message.id ? (
-                        <div className="bg-white rounded-2xl px-4 py-2 shadow-sm">
+                        <div className="rounded-2xl border border-gray-200/80 bg-white px-4 py-2">
                             <textarea
                                 value={editContent}
                                 onChange={e => setEditContent(e.target.value)}
-                                className="w-full p-2 text-sm border rounded-lg resize-none"
+                                className="app-input p-2 text-sm resize-none"
                                 rows={2}
                                 autoFocus
                             />
                             <div className="flex gap-2 mt-2 justify-end">
-                                <button onClick={onSaveEdit} className="px-3 py-1 text-xs bg-blue-500 text-white rounded-lg hover:bg-blue-600">
+                                <button onClick={onSaveEdit} className="rounded-lg bg-sky-600 px-3 py-1 text-xs text-white hover:bg-sky-700">
                                     Сохранить
                                 </button>
-                                <button onClick={onCancelEdit} className="px-3 py-1 text-xs bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">
+                                <button onClick={onCancelEdit} className="rounded-lg bg-gray-100 px-3 py-1 text-xs text-gray-800 hover:bg-gray-200">
                                     Отмена
                                 </button>
                             </div>
                         </div>
                     ) : (
-                        <div className={`rounded-2xl px-3 py-2 sm:px-4 ${isOwn ? 'bg-blue-500 text-white rounded-br-sm' : 'bg-white text-gray-800 rounded-bl-sm shadow-sm'}`}>
+                        <div className={`rounded-2xl px-3 py-2 sm:px-4 ${isOwn ? 'bg-sky-600 text-white rounded-br-md' : 'bg-white text-gray-900 rounded-bl-md border border-gray-200/70'}`}>
                             <p className="text-sm break-words">{message.content}</p>
-                            <div className={`text-xs mt-1 ${isOwn ? 'text-blue-100 text-right' : 'text-gray-400 text-left'}`}>
+                            <div className={`text-xs mt-1 ${isOwn ? 'text-sky-100 text-right' : 'text-gray-400 text-left'}`}>
                                 {formatTime(message.created_at)}
                                 {isOwn && <span className="ml-1">{message.is_read ? '✓✓' : '✓'}</span>}
                             </div>
@@ -124,7 +124,7 @@ const ChatMessageComponent = ({
                             {isOwn && (
                                 <button
                                     onClick={onEdit}
-                                    className="w-7 h-7 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center shadow-sm"
+                                    className="flex h-7 w-7 items-center justify-center rounded-full bg-white text-gray-600 shadow-sm hover:bg-gray-100"
                                     title="Редактировать"
                                 >
                                     <Icon name="edit" className="w-3.5 h-3.5 text-gray-600" />
@@ -132,7 +132,7 @@ const ChatMessageComponent = ({
                             )}
                             <button
                                 onClick={onDelete}
-                                className="w-7 h-7 rounded-full bg-gray-200 hover:bg-red-200 flex items-center justify-center shadow-sm"
+                                className="flex h-7 w-7 items-center justify-center rounded-full bg-white text-gray-600 shadow-sm hover:bg-red-50"
                                 title="Удалить"
                             >
                                 <Icon name="delete" className="w-3.5 h-3.5 text-gray-600 hover:text-red-500" />

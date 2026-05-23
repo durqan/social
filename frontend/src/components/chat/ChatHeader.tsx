@@ -21,16 +21,16 @@ export const ChatHeader = ({
                                onStartVideoCall,
                            }: ChatHeaderProps) => {
     return (
-        <div className="bg-white px-3 py-3 flex items-center gap-3 shadow-sm sticky top-0 z-10 sm:px-6 sm:py-4">
+        <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-gray-200/80 bg-white/95 px-3 py-3 backdrop-blur sm:px-5 sm:py-4">
             {selectionMode ? (
                 <div className="flex items-center justify-between w-full">
                     <div className="flex items-center gap-3">
-                        <button onClick={onExitSelection} className="text-gray-500">
+                        <button onClick={onExitSelection} className="icon-button h-9 w-9 text-gray-500">
                             <Icon name="close" className="w-6 h-6" />
                         </button>
                         <span className="font-semibold text-sm sm:text-base">Выбрано: {selectedCount}</span>
                     </div>
-                    <button onClick={onDeleteClick} disabled={selectedCount === 0} className="text-red-500 disabled:opacity-50">
+                    <button onClick={onDeleteClick} disabled={selectedCount === 0} className="icon-button h-9 w-9 text-red-500 disabled:opacity-50">
                         <Icon name="delete" />
                     </button>
                 </div>
@@ -39,8 +39,8 @@ export const ChatHeader = ({
                     <div className="flex items-center gap-3 min-w-0">
                         <Avatar name={recipientName} />
                         <div className="min-w-0">
-                            <h2 className="font-semibold text-gray-800 truncate text-sm sm:text-base">{recipientName || 'Пользователь'}</h2>
-                            <p className="text-xs text-green-600">● Онлайн</p>
+                            <h2 className="font-semibold text-gray-950 truncate text-sm sm:text-base">{recipientName || 'Пользователь'}</h2>
+                            <p className="text-xs text-emerald-600">● Онлайн</p>
                         </div>
                     </div>
 
@@ -49,7 +49,7 @@ export const ChatHeader = ({
                             type="button"
                             onClick={onStartAudioCall}
                             disabled={!onStartAudioCall}
-                            className="h-9 w-9 rounded-full bg-green-50 text-green-600 hover:bg-green-100 disabled:opacity-50 disabled:hover:bg-green-50 flex items-center justify-center sm:h-10 sm:w-10"
+                            className="h-9 w-9 rounded-full bg-emerald-50 text-emerald-600 hover:bg-emerald-100 disabled:opacity-50 disabled:hover:bg-emerald-50 flex items-center justify-center sm:h-10 sm:w-10"
                             aria-label="Аудиозвонок"
                             title="Аудиозвонок"
                         >
@@ -60,7 +60,7 @@ export const ChatHeader = ({
                             type="button"
                             onClick={onStartVideoCall}
                             disabled={!onStartVideoCall}
-                            className="h-9 w-9 rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 disabled:opacity-50 disabled:hover:bg-blue-50 flex items-center justify-center sm:h-10 sm:w-10"
+                            className="h-9 w-9 rounded-full bg-sky-50 text-sky-600 hover:bg-sky-100 disabled:opacity-50 disabled:hover:bg-sky-50 flex items-center justify-center sm:h-10 sm:w-10"
                             aria-label="Видеозвонок"
                             title="Видеозвонок"
                         >

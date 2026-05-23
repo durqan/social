@@ -157,7 +157,7 @@ function Wall() {
 
     return (
         <div className="mx-auto max-w-2xl">
-            <div className="mb-4 rounded-lg bg-white p-3 shadow-sm sm:mb-6 sm:rounded-xl sm:p-4">
+            <div className="app-card mb-4 p-3 sm:mb-6 sm:p-4">
                 <form onSubmit={handleCreatePost} className="flex gap-3">
                     <div className="flex-1">
                         <textarea
@@ -166,14 +166,14 @@ function Wall() {
                             placeholder="Что у вас нового?"
                             rows={3}
                             maxLength={500}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                            className="app-input w-full px-4 py-2 resize-none"
                         />
                         <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                             <p className="text-xs text-gray-500">{newPostContent.length}/500</p>
                             <button
                                 type="submit"
                                 disabled={submitting || !newPostContent.trim()}
-                                className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 cursor-pointer sm:w-auto"
+                                className="w-full rounded-xl bg-sky-600 px-4 py-2 text-white transition hover:bg-sky-700 disabled:opacity-50 cursor-pointer sm:w-auto"
                             >
                                 {submitting ? 'Публикация...' : 'Опубликовать'}
                             </button>
@@ -184,12 +184,12 @@ function Wall() {
 
             <div className="space-y-3 sm:space-y-4">
                 {posts.length === 0 ? (
-                    <div className="rounded-lg bg-white p-6 text-center text-gray-500 shadow-sm sm:rounded-xl sm:p-8">
+                    <div className="app-card p-6 text-center text-gray-500 sm:p-8">
                         Пока нет постов. Напишите первый!
                     </div>
                 ) : (
                     posts.map(post => (
-                        <div key={post.id} className="rounded-lg bg-white p-3 shadow-sm sm:rounded-xl sm:p-4">
+                        <div key={post.id} className="app-card p-3 sm:p-4">
                             <div className="flex items-center justify-between mb-3">
                                 <div className="flex min-w-0 items-center gap-3">
                                     <Avatar name={post.user?.name} className="cursor-pointer"/>
@@ -205,7 +205,7 @@ function Wall() {
                                                 setEditingPost(post);
                                                 setEditContent(post.content);
                                             }}
-                                            className="text-gray-400 hover:text-blue-600 transition cursor-pointer"
+                                            className="text-gray-400 hover:text-sky-600 transition cursor-pointer"
                                         >
                                             <Icon name="edit"/>
                                         </button>
@@ -226,14 +226,14 @@ function Wall() {
                                         onChange={e => setEditContent(e.target.value)}
                                         rows={3}
                                         maxLength={500}
-                                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                                        className="app-input px-4 py-2 resize-none"
                                     />
                                     <div className="flex gap-2 mt-2">
                                         <button onClick={() => handleEditPost(post.id)}
-                                                className="px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm cursor-pointer">Сохранить
+                                                className="rounded-xl bg-sky-600 px-3 py-1.5 text-sm text-white transition hover:bg-sky-700 cursor-pointer">Сохранить
                                         </button>
                                         <button onClick={() => setEditingPost(null)}
-                                                className="px-3 py-1 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition text-sm cursor-pointer">Отмена
+                                                className="rounded-xl bg-gray-100 px-3 py-1.5 text-sm text-gray-800 transition hover:bg-gray-200 cursor-pointer">Отмена
                                         </button>
                                     </div>
                                 </div>
@@ -243,12 +243,12 @@ function Wall() {
 
                             <div className="flex items-center gap-4 pt-3 border-t border-gray-100">
                                 <button onClick={() => handleLike(post.id)}
-                                        className={`flex items-center gap-1 transition cursor-pointer ${post.is_liked ? 'text-blue-600' : 'text-gray-500 hover:text-blue-600'}`}>
+                                        className={`flex items-center gap-1 transition cursor-pointer ${post.is_liked ? 'text-sky-600' : 'text-gray-500 hover:text-sky-600'}`}>
                                     <Icon name="heart" filled={post.is_liked}/>
                                     <span className="text-sm">{post.likes_count ?? 0}</span>
                                 </button>
                                 <button onClick={() => toggleComments(post.id)}
-                                        className="flex items-center gap-1 text-gray-500 hover:text-blue-600 transition cursor-pointer">
+                                        className="flex items-center gap-1 text-gray-500 hover:text-sky-600 transition cursor-pointer">
                                     <Icon name="messages"/>
                                     <span className="text-sm">{post.comments_count ?? 0}</span>
                                 </button>
@@ -262,7 +262,7 @@ function Wall() {
                                                 <Avatar name={comment.user?.name} size="sm"
                                                         className="flex-shrink-0 cursor-pointer"/>
                                                 <div className="min-w-0 flex-1">
-                                                    <div className="bg-gray-50 rounded-lg p-2">
+                                                    <div className="rounded-xl bg-gray-50 p-2">
                                                         <p className="truncate font-semibold text-sm">{comment.user?.name || 'Пользователь'}</p>
                                                         <p className="break-words text-gray-700 text-sm">{comment.content}</p>
                                                     </div>
@@ -271,7 +271,7 @@ function Wall() {
                                                         <button
                                                             onClick={() => handleCommentLike(comment.id, post.id)}
                                                             className={`flex items-center gap-1 text-xs transition cursor-pointer ${
-                                                                comment.is_liked ? 'text-blue-600' : 'text-gray-500 hover:text-blue-600'
+                                                                comment.is_liked ? 'text-sky-600' : 'text-gray-500 hover:text-sky-600'
                                                             }`}
                                                         >
                                                             <Icon name="heart" filled={comment.is_liked}/>
@@ -298,13 +298,13 @@ function Wall() {
                                                 }))}
                                                 placeholder="Написать комментарий..."
                                                 rows={2}
-                                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none text-sm"
+                                                className="app-input w-full px-4 py-2 resize-none text-sm"
                                             />
                                             <div className="flex justify-end mt-2">
                                                 <button
                                                     onClick={() => handleComment(post.id)}
                                                     disabled={!newComment[post.id]?.trim()}
-                                                    className="px-4 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 text-sm cursor-pointer"
+                                                    className="rounded-xl bg-sky-600 px-4 py-1.5 text-sm text-white transition hover:bg-sky-700 disabled:opacity-50 cursor-pointer"
                                                 >
                                                     Отправить
                                                 </button>

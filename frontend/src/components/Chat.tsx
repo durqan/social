@@ -120,7 +120,7 @@ function Chat() {
     if (initialLoading) return <div className="flex h-full items-center justify-center sm:h-[calc(100vh-120px)]"><Spinner /></div>;
 
     return (
-        <div className="flex h-full flex-col overflow-hidden bg-gray-50 sm:h-[calc(100vh-120px)] sm:rounded-none">
+        <div className="flex h-full flex-col overflow-hidden bg-[#f4f5f7] sm:h-[calc(100vh-120px)] sm:rounded-2xl sm:border sm:border-gray-200/80">
             <ChatHeader
                 recipientName={recipient?.name}
                 selectionMode={selectionMode}

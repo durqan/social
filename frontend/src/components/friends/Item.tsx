@@ -21,7 +21,7 @@ function Item({friend, removeFriend,}: FriendItemProps) {
         <div className="
             flex flex-col gap-3
             p-3 hover:bg-gray-50
-            rounded-lg transition
+            rounded-xl transition
             sm:flex-row sm:items-center
             sm:justify-between">
             <div className="

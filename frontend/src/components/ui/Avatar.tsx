@@ -18,7 +18,7 @@ export const Avatar = ({ name, src, size = 'md', className = '' }: AvatarProps) 
     }
 
     return (
-        <div className={`${sizes[size]} bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold ${className}`}>
+        <div className={`${sizes[size]} bg-sky-500 rounded-full flex items-center justify-center text-white font-bold ${className}`}>
             {name?.charAt(0).toUpperCase() || '?'}
         </div>
     );

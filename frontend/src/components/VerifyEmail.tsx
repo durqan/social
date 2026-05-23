@@ -30,14 +30,14 @@ function VerifyEmail() {
     }, [token]);
 
     return (
-        <div className="min-h-screen bg-gray-100 flex items-center justify-center px-4 py-6">
-            <div className="bg-white w-full max-w-md rounded-lg shadow-md p-5 text-center sm:p-8">
+        <div className="min-h-screen bg-[var(--app-bg)] flex items-center justify-center px-4 py-6">
+            <div className="app-card w-full max-w-md p-5 text-center sm:p-8">
                 <div className={`mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full text-2xl ${
                     state === 'success'
-                        ? 'bg-green-100 text-green-700'
+                        ? 'bg-emerald-100 text-emerald-700'
                         : state === 'error'
                             ? 'bg-red-100 text-red-700'
-                            : 'bg-blue-100 text-blue-700'
+                            : 'bg-sky-100 text-sky-700'
                 }`}>
                     {state === 'success' ? '✓' : state === 'error' ? '!' : '...'}
                 </div>
@@ -54,7 +54,7 @@ function VerifyEmail() {
 
                 <Link
                     to="/"
-                    className="inline-flex items-center justify-center px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                    className="inline-flex items-center justify-center rounded-xl bg-sky-600 px-5 py-2 text-white transition hover:bg-sky-700"
                 >
                     Перейти в профиль
                 </Link>

@@ -49,13 +49,13 @@ function Friends() {
 
     return (
         <div className="mx-auto max-w-2xl">
-            <div className="overflow-hidden rounded-lg bg-white shadow-sm sm:rounded-xl">
-                <div className="flex border-b border-gray-200">
+            <div className="app-card overflow-hidden">
+                <div className="flex border-b border-gray-200/80 bg-gray-50/70">
                     <button
                         onClick={() => setActiveTab('friends')}
                         className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
                             activeTab === 'friends'
-                                ? 'text-blue-600 border-b-2 border-blue-600'
+                                ? 'text-sky-700 border-b-2 border-sky-600'
                                 : 'text-gray-500 hover:text-gray-700'
                         }`}
                     >
@@ -65,7 +65,7 @@ function Friends() {
                         onClick={() => setActiveTab('requests')}
                         className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
                             activeTab === 'requests'
-                                ? 'text-blue-600 border-b-2 border-blue-600'
+                                ? 'text-sky-700 border-b-2 border-sky-600'
                                 : 'text-gray-500 hover:text-gray-700'
                         }`}
                     >
@@ -78,7 +78,7 @@ function Friends() {
                         friends.length === 0 ? (
                             <p className="text-center text-gray-500 py-8">У вас пока нет друзей</p>
                         ) : (
-                            <div className="space-y-3">
+                            <div className="space-y-2">
                                 {friends.map(friend => (
                                     <Item
                                         key={friend.id}
@@ -93,9 +93,9 @@ function Friends() {
                         requests.length === 0 ? (
                             <p className="text-center text-gray-500 py-8">Нет входящих заявок</p>
                         ) : (
-                            <div className="space-y-3">
+                            <div className="space-y-2">
                                 {requests.map(req => req.user && (
-                                    <div key={req.id} className="flex flex-col gap-3 p-3 hover:bg-gray-50 rounded-lg transition sm:flex-row sm:items-center sm:justify-between">
+                                    <div key={req.id} className="flex flex-col gap-3 rounded-xl p-3 transition hover:bg-gray-50 sm:flex-row sm:items-center sm:justify-between">
                                         <div
                                             className="flex min-w-0 flex-1 cursor-pointer items-center gap-3"
                                             onClick={() => navigate(`/users/${req.user!.id}`)}

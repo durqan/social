@@ -5,5 +5,5 @@ export const Spinner = ({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) => {
         lg: 'w-12 h-12 border-4',
     }[size];
 
-    return <div className={`${className} border-blue-500 border-t-transparent rounded-full animate-spin`} />;
+    return <div className={`${className} border-sky-500 border-t-transparent rounded-full animate-spin`} />;
 };

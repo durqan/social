@@ -8,7 +8,7 @@ interface ChatInputProps {
 
 export const ChatInput = ({ value, onChange, onSend }: ChatInputProps) => {
     return (
-        <div className="bg-white p-3 sm:p-4">
+        <div className="border-t border-gray-200/80 bg-white/95 p-3 backdrop-blur sm:p-4">
             <div className="flex gap-2 items-end">
                 <textarea
                     value={value}
@@ -21,13 +21,13 @@ export const ChatInput = ({ value, onChange, onSend }: ChatInputProps) => {
                     }}
                     placeholder="Сообщение..."
                     rows={1}
-                    className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none overflow-y-auto sm:px-4 sm:text-base"
+                    className="app-input flex-1 px-3 py-2 text-sm resize-none overflow-y-auto sm:px-4 sm:text-base"
                     style={{ maxHeight: '120px' }}
                 />
                 <button
                     onClick={onSend}
                     disabled={!value.trim()}
-                    className="w-10 h-10 bg-blue-500 text-white rounded-full hover:bg-blue-600 transition disabled:opacity-50 flex items-center justify-center flex-shrink-0"
+                    className="w-10 h-10 bg-sky-600 text-white rounded-full hover:bg-sky-700 transition disabled:opacity-50 flex items-center justify-center flex-shrink-0"
                 >
                     <Icon name="send" />
                 </button>

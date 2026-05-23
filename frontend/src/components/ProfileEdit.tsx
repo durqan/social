@@ -250,7 +250,7 @@ function ProfileEdit() {
 
     return (
         <div className="mx-auto max-w-2xl">
-            <div className="overflow-hidden rounded-lg bg-white shadow-sm sm:rounded-xl">
+            <div className="app-card overflow-hidden">
 
                 <div className="border-b border-gray-200">
                     <div className="flex">
@@ -261,7 +261,7 @@ function ProfileEdit() {
                             }
                             className={`flex-1 px-2 py-3 text-sm font-medium transition-colors sm:px-4 ${
                                 activeTab === 'profile'
-                                    ? 'text-blue-600 border-b-2 border-blue-600'
+                                    ? 'text-sky-700 border-b-2 border-sky-600'
                                     : 'text-gray-500 hover:text-gray-700'
                             }`}
                         >
@@ -274,7 +274,7 @@ function ProfileEdit() {
                             }
                             className={`flex-1 px-2 py-3 text-sm font-medium transition-colors sm:px-4 ${
                                 activeTab === 'password'
-                                    ? 'text-blue-600 border-b-2 border-blue-600'
+                                    ? 'text-sky-700 border-b-2 border-sky-600'
                                     : 'text-gray-500 hover:text-gray-700'
                             }`}
                         >
@@ -340,7 +340,7 @@ function ProfileEdit() {
                                     name="name"
                                     value={formData.name}
                                     onChange={handleChange}
-                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    className="app-input px-4 py-2"
                                 />
                             </div>
 
@@ -354,7 +354,7 @@ function ProfileEdit() {
                                     name="email"
                                     value={formData.email}
                                     onChange={handleChange}
-                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    className="app-input px-4 py-2"
                                 />
                             </div>
 
@@ -369,7 +369,7 @@ function ProfileEdit() {
                                     onChange={handleChange}
                                     rows={4}
                                     maxLength={150}
-                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                                    className="app-input px-4 py-2 resize-none"
                                     placeholder="Расскажите о себе..."
                                 />
 
@@ -383,7 +383,7 @@ function ProfileEdit() {
                                 <button
                                     type="submit"
                                     disabled={loading}
-                                    className="w-full px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 cursor-pointer sm:w-auto"
+                                    className="w-full rounded-xl bg-sky-600 px-6 py-2 text-white transition hover:bg-sky-700 disabled:opacity-50 cursor-pointer sm:w-auto"
                                 >
                                     {loading
                                         ? 'Сохранение...'
@@ -397,7 +397,7 @@ function ProfileEdit() {
                                             `/profile/${id}`
                                         )
                                     }
-                                    className="w-full px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition cursor-pointer sm:w-auto"
+                                    className="w-full rounded-xl bg-gray-100 px-6 py-2 text-gray-800 transition hover:bg-gray-200 cursor-pointer sm:w-auto"
                                 >
                                     Отмена
                                 </button>
@@ -424,7 +424,7 @@ function ProfileEdit() {
                                     value={passwordData.oldPassword}
                                     onChange={handlePasswordChange}
                                     required
-                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    className="app-input px-4 py-2"
                                 />
                             </div>
 
@@ -440,7 +440,7 @@ function ProfileEdit() {
                                     onChange={handlePasswordChange}
                                     required
                                     minLength={6}
-                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    className="app-input px-4 py-2"
                                 />
 
                                 <p className="text-xs text-gray-500 mt-1">
@@ -459,7 +459,7 @@ function ProfileEdit() {
                                     value={passwordData.confirmPassword}
                                     onChange={handlePasswordChange}
                                     required
-                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    className="app-input px-4 py-2"
                                 />
                             </div>
 
@@ -467,7 +467,7 @@ function ProfileEdit() {
                                 <button
                                     type="submit"
                                     disabled={loading}
-                                    className="w-full px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 cursor-pointer sm:w-auto"
+                                    className="w-full rounded-xl bg-sky-600 px-6 py-2 text-white transition hover:bg-sky-700 disabled:opacity-50 cursor-pointer sm:w-auto"
                                 >
                                     {loading
                                         ? 'Смена пароля...'

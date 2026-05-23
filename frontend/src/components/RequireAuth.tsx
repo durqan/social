@@ -8,7 +8,7 @@ export const RequireAuth = () => {
 
     if (loading) {
         return (
-            <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+            <div className="min-h-screen bg-[var(--app-bg)] flex items-center justify-center">
                 <Spinner size="lg" />
             </div>
         );

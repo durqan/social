@@ -109,12 +109,12 @@ function Register() {
     };
 
     return (
-        <div className="min-h-screen bg-gray-100 flex items-center justify-center px-4 py-6">
-            <div className="w-full max-w-sm rounded-lg bg-white p-5 shadow-md sm:p-8">
-                <h2 className="text-2xl font-bold text-center mb-6">Регистрация</h2>
+        <div className="min-h-screen bg-[var(--app-bg)] flex items-center justify-center px-4 py-6">
+            <div className="app-card w-full max-w-sm p-5 sm:p-8">
+                <h2 className="text-2xl font-semibold tracking-tight text-center mb-6">Регистрация</h2>
 
                 {errors.general && (
-                    <div className="mb-4 p-3 bg-red-100 text-red-700 rounded">
+                    <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-red-700">
                         {errors.general}
                     </div>
                 )}
@@ -128,7 +128,7 @@ function Register() {
                             value={formData.name}
                             onChange={handleChange}
                             required
-                            className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                            className={`app-input px-3 py-2 ${
                                 errors.name ? 'border-red-500' : ''
                             }`}
                         />
@@ -145,7 +145,7 @@ function Register() {
                             value={formData.email}
                             onChange={handleChange}
                             required
-                            className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                            className={`app-input px-3 py-2 ${
                                 errors.email ? 'border-red-500' : ''
                             }`}
                         />
@@ -162,7 +162,7 @@ function Register() {
                             value={formData.password}
                             onChange={handleChange}
                             required
-                            className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                            className={`app-input px-3 py-2 ${
                                 errors.password ? 'border-red-500' : ''
                             }`}
                         />
@@ -179,7 +179,7 @@ function Register() {
                             value={formData.confirmPassword}
                             onChange={handleChange}
                             required
-                            className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                            className={`app-input px-3 py-2 ${
                                 errors.confirmPassword ? 'border-red-500' : ''
                             }`}
                         />
@@ -191,7 +191,7 @@ function Register() {
                     <button
                         type="submit"
                         disabled={loading}
-                        className="w-full bg-green-500 text-white py-2 rounded-lg hover:bg-green-600 transition disabled:opacity-50 cursor-pointer"
+                        className="w-full rounded-xl bg-sky-600 py-2.5 text-white transition hover:bg-sky-700 disabled:opacity-50 cursor-pointer"
                     >
                         {loading ? 'Регистрация...' : 'Зарегистрироваться'}
                     </button>
@@ -199,7 +199,7 @@ function Register() {
 
                 <p className="mt-4 text-center text-sm text-gray-600 sm:text-base">
                     Уже есть аккаунт?{' '}
-                    <a href="/login" className="text-blue-500 hover:underline">
+                    <a href="/login" className="text-sky-600 hover:underline">
                         Войти
                     </a>
                 </p>

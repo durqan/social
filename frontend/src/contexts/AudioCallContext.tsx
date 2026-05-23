@@ -641,7 +641,7 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
                                 <button
                                     type="button"
                                     onClick={acceptCall}
-                                    className={isExpanded ? 'h-12 w-12 rounded-full bg-green-500 text-white hover:bg-green-600 flex items-center justify-center' : 'h-10 w-10 rounded-full bg-green-500 text-white hover:bg-green-600 flex items-center justify-center'}
+                                    className={isExpanded ? 'h-12 w-12 rounded-full bg-emerald-500 text-white hover:bg-emerald-600 flex items-center justify-center' : 'h-10 w-10 rounded-full bg-emerald-500 text-white hover:bg-emerald-600 flex items-center justify-center'}
                                     aria-label="Принять звонок"
                                     title="Принять звонок"
                                 >

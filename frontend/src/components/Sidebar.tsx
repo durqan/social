@@ -1,5 +1,5 @@
 import {useState, useEffect} from 'react';
-import {NavLink} from 'react-router-dom';
+import {NavLink, useLocation} from 'react-router-dom';
 import {useWebSocket} from '../contexts/WebSocketContext.js';
 import {messageService} from '../services/messageService.js';
 import {friendService} from '../services/friendService.js';
@@ -22,7 +22,7 @@ function Sidebar({
                  }: SidebarProps) {
 
     const wsService = useWebSocket();
-    const [isOpen, setIsOpen] = useState(false);
+    const location = useLocation();
     const [unreadCount, setUnreadCount] = useState(0);
     const [notificationCount, setNotificationCount] = useState(0);
 
@@ -145,211 +145,128 @@ function Sidebar({
 
     }, [userId, wsService]);
 
-    const closeSidebar = () => {
-        setIsOpen(false);
-    };
+    const isChatPage = location.pathname.includes('/chat/');
+
+    const badge = (count: number, color = 'bg-red-500') => (
+        count > 0 ? (
+            <span className={`ml-auto min-w-5 rounded-full px-1.5 py-0.5 text-center text-[11px] font-semibold leading-none text-white ${color}`}>
+                {count > 99 ? '99+' : count}
+            </span>
+        ) : null
+    );
+
+    const navClass = ({isActive}: { isActive: boolean }) =>
+        `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
+            isActive
+                ? 'bg-sky-50 text-sky-700'
+                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-950'
+        }`;
+
+    const mobileNavClass = ({isActive}: { isActive: boolean }) =>
+        `relative flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-[11px] font-medium transition-colors ${
+            isActive
+                ? 'text-sky-700'
+                : 'text-gray-500'
+        }`;
 
     return (
         <>
-            {/* MOBILE BURGER */}
-            <button
-                onClick={() => setIsOpen(true)}
-                className="
-                    fixed top-4 left-4 z-50
-                    p-2 bg-white rounded-lg shadow-md
-                    lg:hidden
-                "
-            >
-                <Icon
-                    name="menu"
-                    className="w-6 h-6 text-gray-600"
-                />
-            </button>
-
-            {/* OVERLAY */}
-            {isOpen && (
-                <div
-                    className="
-                        fixed inset-0
-                        bg-black bg-opacity-50
-                        z-40 lg:hidden
-                    "
-                    onClick={closeSidebar}
-                />
-            )}
-
-            {/* SIDEBAR */}
             <aside
-                className={`
-                    fixed top-0 left-0 h-full
-                    bg-white border-r border-gray-200
-                    flex flex-col shadow-xl
-                    z-50 transition-transform duration-300
-                    w-64
-                    ${isOpen
-                    ? 'translate-x-0'
-                    : '-translate-x-full'}
-                    lg:translate-x-0
-                `}
+                className="fixed left-0 top-0 z-40 hidden h-full w-72 flex-col border-r border-gray-200/80 bg-white/95 px-3 py-4 shadow-sm backdrop-blur lg:flex"
             >
-
-                {/* CLOSE BUTTON */}
-                <button
-                    onClick={closeSidebar}
-                    className="
-                        absolute top-4 right-4
-                        p-1 text-gray-400
-                        hover:text-gray-600
-                        lg:hidden
-                    "
-                >
-                    <Icon
-                        name="close"
-                        className="w-6 h-6"
-                    />
-                </button>
-
-                {/* PROFILE */}
-                <div className="p-4 border-b border-gray-200">
-
-                    <div className="flex items-center gap-3">
-
+                <div className="mb-4 rounded-2xl border border-gray-100 bg-gray-50/80 p-3">
+                    <div className="flex min-w-0 items-center gap-3">
                         <Avatar
                             name={userName}
                             src={userAvatar}
                         />
 
-                        <div>
-                            <p className="font-semibold text-gray-800">
+                        <div className="min-w-0">
+                            <p className="truncate font-semibold text-gray-900">
                                 {userName || 'Пользователь'}
+                            </p>
+                            <p className={userPresence?.online ? 'text-xs text-emerald-600' : 'text-xs text-gray-400'}>
+                                {userPresence?.online ? 'Online' : 'Offline'}
                             </p>
                         </div>
                     </div>
                 </div>
 
-                {/* NAVIGATION */}
-                <nav
-                    className="flex-1 py-4"
-                    onClick={closeSidebar}
-                >
-
-                    {/* PROFILE */}
+                <nav className="flex-1 space-y-1">
                     <NavLink
                         to={`/users/${userId}`}
                         end
-                        className={({isActive}) =>
-                            `
-                                flex items-center gap-3
-                                px-4 py-3 mx-2 rounded-lg
-                                transition-colors
-                                ${
-                                isActive
-                                    ? 'bg-blue-50 text-blue-600'
-                                    : 'text-gray-700 hover:bg-gray-100'
-                            }
-                            `
-                        }
+                        className={navClass}
                     >
                         <Icon name="home"/>
-                        <span>Моя страница</span>
+                        <span>Профиль</span>
                     </NavLink>
 
-                    {/* WALL */}
                     <NavLink
                         to={`/users/${userId}/wall`}
-                        className={({isActive}) =>
-                            `
-                                flex items-center gap-3
-                                px-4 py-3 mx-2 rounded-lg
-                                transition-colors
-                                ${
-                                isActive
-                                    ? 'bg-blue-50 text-blue-600'
-                                    : 'text-gray-700 hover:bg-gray-100'
-                            }
-                            `
-                        }
+                        className={navClass}
                     >
                         <Icon name="wall"/>
-                        <span>Моя стена</span>
+                        <span>Стена</span>
                     </NavLink>
 
-                    {/* FRIENDS */}
                     <NavLink
                         to={`/users/${userId}/friends`}
-                        className={({isActive}) =>
-                            `
-                                flex items-center gap-3
-                                px-4 py-3 mx-2 rounded-lg
-                                transition-colors
-                                ${
-                                isActive
-                                    ? 'bg-blue-50 text-blue-600'
-                                    : 'text-gray-700 hover:bg-gray-100'
-                            }
-                            `
-                        }
+                        className={navClass}
                     >
                         <Icon name="friends"/>
-
                         <span>Друзья</span>
-
-                        {notificationCount > 0 && (
-                            <span
-                                className="
-                                    ml-auto
-                                    bg-blue-500 text-white
-                                    text-xs rounded-full
-                                    px-2 py-0.5
-                                "
-                            >
-                                {notificationCount}
-                            </span>
-                        )}
+                        {badge(notificationCount, 'bg-sky-500')}
                     </NavLink>
 
-                    {/* MESSAGES */}
                     <NavLink
                         to={`/users/${userId}/conversations`}
-                        className={({isActive}) =>
-                            `
-                                flex items-center gap-3
-                                px-4 py-3 mx-2 rounded-lg
-                                transition-colors
-                                ${
-                                isActive
-                                    ? 'bg-blue-50 text-blue-600'
-                                    : 'text-gray-700 hover:bg-gray-100'
-                            }
-                            `
-                        }
+                        className={navClass}
                     >
                         <Icon name="messages"/>
-
                         <span>Сообщения</span>
-
-                        {unreadCount > 0 && (
-                            <span
-                                className="
-                                    ml-auto
-                                    bg-red-500 text-white
-                                    text-xs rounded-full
-                                    px-2 py-0.5
-                                "
-                            >
-                                {unreadCount > 99
-                                    ? '99+'
-                                    : unreadCount}
-                            </span>
-                        )}
+                        {badge(unreadCount)}
                     </NavLink>
-
                 </nav>
-
             </aside>
 
-            {/* DESKTOP SPACER */}
-            <div className="hidden lg:block w-64"/>
+            {!isChatPage && (
+                <nav className="fixed inset-x-3 bottom-3 z-40 flex rounded-2xl border border-gray-200/80 bg-white/95 p-1.5 shadow-lg shadow-gray-900/10 backdrop-blur lg:hidden">
+                    <NavLink to={`/users/${userId}`} end className={mobileNavClass}>
+                        <Icon name="home" className="h-5 w-5" />
+                        <span>Профиль</span>
+                    </NavLink>
+
+                    <NavLink to={`/users/${userId}/wall`} className={mobileNavClass}>
+                        <Icon name="wall" className="h-5 w-5" />
+                        <span>Стена</span>
+                    </NavLink>
+
+                    <NavLink to={`/users/${userId}/friends`} className={mobileNavClass}>
+                        <span className="relative">
+                            <Icon name="friends" className="h-5 w-5" />
+                            {notificationCount > 0 && (
+                                <span className="absolute -right-2 -top-1 h-4 min-w-4 rounded-full bg-sky-500 px-1 text-[10px] font-bold leading-4 text-white">
+                                    {notificationCount > 9 ? '9+' : notificationCount}
+                                </span>
+                            )}
+                        </span>
+                        <span>Друзья</span>
+                    </NavLink>
+
+                    <NavLink to={`/users/${userId}/conversations`} className={mobileNavClass}>
+                        <span className="relative">
+                            <Icon name="messages" className="h-5 w-5" />
+                            {unreadCount > 0 && (
+                                <span className="absolute -right-2 -top-1 h-4 min-w-4 rounded-full bg-red-500 px-1 text-[10px] font-bold leading-4 text-white">
+                                    {unreadCount > 9 ? '9+' : unreadCount}
+                                </span>
+                            )}
+                        </span>
+                        <span>Чаты</span>
+                    </NavLink>
+                </nav>
+            )}
         </>
     );
 }

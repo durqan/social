@@ -26,6 +26,10 @@ function NotificationHandler() {
         onClick: () => void,
         borderColor: string = 'blue',
     ) => {
+        const borderClass =
+            borderColor === 'green'
+                ? 'border-emerald-500'
+                : 'border-sky-500';
 
         toast.custom((t) => (
 
@@ -34,23 +38,16 @@ function NotificationHandler() {
                     toast.dismiss(t.id);
                     onClick();
                 }}
-                className={`
-                    bg-white rounded-lg shadow-lg
-                    p-4 cursor-pointer
-                    hover:bg-gray-50 transition-colors
-                    max-w-sm
-                    border-l-4
-                    border-${borderColor}-500
-                `}
+                className={`mx-3 max-w-sm cursor-pointer rounded-2xl border border-gray-200 border-l-4 bg-white p-4 shadow-xl shadow-gray-900/10 transition-colors hover:bg-gray-50 ${borderClass}`}
             >
 
                 <div className="flex items-center gap-3">
 
                     <Avatar name={title} />
 
-                    <div className="flex-1">
+                    <div className="min-w-0 flex-1">
 
-                        <p className="font-semibold text-gray-800">
+                        <p className="truncate font-semibold text-gray-900">
                             {title}
                         </p>
 
@@ -184,24 +181,16 @@ function NotificationHandler() {
                                     `/users/${currentUserId}/chat/${msg.from_id}`
                                 );
                             }}
-                            className="
-                                bg-white rounded-lg
-                                shadow-lg p-4
-                                cursor-pointer
-                                hover:bg-gray-50
-                                transition-colors
-                                max-w-sm
-                                border border-gray-200
-                            "
+                            className="mx-3 max-w-sm cursor-pointer rounded-2xl border border-gray-200 bg-white p-4 shadow-xl shadow-gray-900/10 transition-colors hover:bg-gray-50"
                         >
 
                             <div className="flex items-center gap-3">
 
                                 <Avatar name={senderName} />
 
-                                <div className="flex-1">
+                                <div className="min-w-0 flex-1">
 
-                                    <p className="font-semibold text-gray-800">
+                                    <p className="truncate font-semibold text-gray-900">
                                         {senderName}
                                     </p>
 

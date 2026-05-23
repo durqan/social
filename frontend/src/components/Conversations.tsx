@@ -28,8 +28,8 @@ function Conversations() {
 
     return (
         <div className="mx-auto max-w-2xl">
-            <h1 className="mb-3 text-xl font-bold sm:mb-4 sm:text-2xl">Сообщения</h1>
-            <div className="overflow-hidden rounded-lg bg-white shadow-sm sm:rounded-xl">
+            <h1 className="mb-3 text-xl font-semibold tracking-tight text-gray-950 sm:mb-4 sm:text-2xl">Сообщения</h1>
+            <div className="app-card overflow-hidden">
                 {!conversations || conversations.length === 0 ? (
                     <div className="p-6 text-center text-gray-500 sm:p-8">Нет диалогов</div>
                 ) : (
@@ -37,20 +37,20 @@ function Conversations() {
                         <div
                             key={conv.user_id}
                             onClick={() => navigate(`/users/${conv.user_id}/chat/${conv.user_id}`)}
-                            className="flex items-center gap-3 p-3 hover:bg-gray-50 cursor-pointer transition sm:p-4"
+                            className="flex items-center gap-3 border-b border-gray-100 p-3 transition last:border-b-0 hover:bg-gray-50 sm:p-4"
                         >
                             <Avatar name={conv.name} size="lg" />
                             <div className="min-w-0 flex-1">
                                 <div className="flex items-start justify-between gap-3">
-                                    <p className="truncate font-semibold">{conv.name}</p>
+                                    <p className="truncate font-semibold text-gray-950">{conv.name}</p>
                                     <p className="flex-shrink-0 text-xs text-gray-500">
                                         {new Date(conv.last_message_at).toLocaleDateString()}
                                     </p>
                                 </div>
-                                <p className="text-sm text-gray-500 truncate">{conv.last_message}</p>
+                                <p className="truncate text-sm text-gray-500">{conv.last_message}</p>
                             </div>
                             {conv.unread_count > 0 && (
-                                <div className="w-5 h-5 bg-blue-500 text-white text-xs rounded-full flex items-center justify-center">
+                                <div className="flex h-5 min-w-5 items-center justify-center rounded-full bg-sky-500 px-1.5 text-xs text-white">
                                     {conv.unread_count}
                                 </div>
                             )}
