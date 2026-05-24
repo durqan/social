@@ -9,11 +9,11 @@ services:
       POSTGRES_DB: social
       TZ: UTC
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U social -d social -h 127.0.0.1 -p 5432" ]
+      test: [ "CMD-SHELL", "pg_isready -U social -d social -h 127.0.0.1 -p 5433" ]
       interval: 10s
       timeout: 5s
       retries: 5

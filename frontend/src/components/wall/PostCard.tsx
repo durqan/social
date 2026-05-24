@@ -117,7 +117,7 @@ export function PostCard({
             </div>
 
             {commentsOpen && (
-                <div className="mt-4 pt-4 border-t border-gray-100">
+                <div className="mt-4 pt-1">
                     <div className="space-y-3 mb-3">
                         {comments.map(comment => (
                             <div key={comment.id} className="flex gap-2 sm:gap-3">
@@ -140,9 +140,6 @@ export function PostCard({
                                 </div>
                             </div>
                         ))}
-                        {comments.length === 0 && (
-                            <p className="text-center text-gray-500 py-4 text-sm">Пока нет комментариев</p>
-                        )}
                     </div>
 
                     <div className="flex gap-2 mt-3">

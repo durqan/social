@@ -11,7 +11,7 @@ import (
 const (
 	defaultPort      = "8080"
 	defaultJWTSecret = "your-secret-key-change-in-production"
-	defaultDatabase  = "postgres://social:social@localhost:5432/social?sslmode=disable"
+	defaultDatabase  = "postgres://social:social@localhost:5433/social?sslmode=disable"
 
 	defaultRedisHost     = "localhost"
 	defaultRedisPort     = "6379"

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Icon } from '../ui/Icon.js';
+import EmojiPicker from 'emoji-picker-react';
+import type { EmojiClickData } from 'emoji-picker-react';
 
 interface ChatInputProps {
     value: string;
@@ -12,6 +14,7 @@ export const ChatInput = ({ value, onChange, onSend }: ChatInputProps) => {
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
     const [previews, setPreviews] = useState<string[]>([]);
     const canSend = Boolean(value.trim()) || selectedFiles.length > 0;
+    const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
     useEffect(() => {
         const urls = selectedFiles.map(file => URL.createObjectURL(file));
@@ -60,7 +63,7 @@ export const ChatInput = ({ value, onChange, onSend }: ChatInputProps) => {
                 </div>
             )}
 
-            <div className="flex gap-2 items-end">
+            <div className="relative flex gap-2 items-end">
                 <input
                     ref={fileInputRef}
                     type="file"
@@ -96,12 +99,38 @@ export const ChatInput = ({ value, onChange, onSend }: ChatInputProps) => {
                     className="app-input flex-1 px-3 py-2 text-sm resize-none overflow-y-auto sm:px-4 sm:text-base"
                     style={{ maxHeight: '120px' }}
                 />
+                <button
+                    type="button"
+                    onClick={() => setShowEmojiPicker(prev => !prev)}
+                    className="w-10 h-10 rounded-full border border-gray-200 bg-white hover:bg-gray-50 transition flex items-center justify-center flex-shrink-0"
+                    title="Эмодзи">
+                    😊
+                </button>
+                {showEmojiPicker && (
+                    <div className="absolute bottom-16 right-4 z-50">
+                        <EmojiPicker
+                            width={300}
+                            height={260}
+                            searchDisabled
+                            previewConfig={{
+                                showPreview: false,
+                            }}
+                            onEmojiClick={(emoji: EmojiClickData) => {
+                                onChange({
+                                    target: {
+                                        value: value + emoji.emoji,
+                                    },
+                                } as React.ChangeEvent<HTMLTextAreaElement>);
 
+                                setShowEmojiPicker(false);
+                            }}
+                        />
+                    </div>
+                )}
                 <button
                     onClick={handleSend}
                     disabled={!canSend}
-                    className="w-10 h-10 bg-sky-600 text-white rounded-full hover:bg-sky-700 transition disabled:opacity-50 flex items-center justify-center flex-shrink-0"
-                >
+                    className="w-10 h-10 bg-sky-600 text-white rounded-full hover:bg-sky-700 transition disabled:opacity-50 flex items-center justify-center flex-shrink-0">
                     <Icon name="send" />
                 </button>
             </div>

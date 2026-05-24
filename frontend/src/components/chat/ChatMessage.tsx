@@ -110,7 +110,7 @@ const ChatMessageComponent = ({
                             </div>
                         </div>
                     ) : (
-                        <div className={`rounded-2xl px-3 py-2 sm:px-4 ${isOwn ? 'bg-sky-600 text-white rounded-br-md' : 'bg-white text-gray-900 rounded-bl-md border border-gray-200/70'}`}>
+                        <div className={`rounded-2xl px-3 py-2 sm:px-4 ${isOwn ? 'bg-sky-50 text-slate-900 border border-sky-100 rounded-br-md' : 'bg-white text-gray-900 rounded-bl-md border border-gray-200/70'}`}>
                             {message.attachments?.length ? (
                                 <div className={`grid gap-2 ${message.attachments.length > 1 ? 'grid-cols-2' : 'grid-cols-1'} ${message.content ? 'mb-2' : ''}`}>
                                     {message.attachments.map(attachment => (
@@ -134,7 +134,7 @@ const ChatMessageComponent = ({
 
                             {message.content && <p className="text-sm break-words">{message.content}</p>}
 
-                            <div className={`text-xs mt-1 ${isOwn ? 'text-sky-100 text-right' : 'text-gray-400 text-left'}`}>
+                            <div className={`text-xs mt-1 ${isOwn ? 'text-black text-right' : 'text-gray-400 text-left'}`}>
                                 {formatTime(message.created_at)}
                                 {isOwn && <span className="ml-1">{message.is_read ? '✓✓' : '✓'}</span>}
                             </div>
