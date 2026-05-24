@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bufio"
 	"log"
 	"os"
 	"strconv"
@@ -10,6 +11,7 @@ import (
 const (
 	defaultPort      = "8080"
 	defaultJWTSecret = "your-secret-key-change-in-production"
+	defaultDatabase  = "postgres://social:social@localhost:5432/social?sslmode=disable"
 
 	defaultRedisHost     = "localhost"
 	defaultRedisPort     = "6379"
@@ -31,8 +33,11 @@ type Config struct {
 }
 
 func Load() Config {
+	lockedEnv := currentEnvKeys()
+	loadDotEnv(".env", lockedEnv)
+
 	cfg := Config{
-		DatabaseURL:    os.Getenv("DATABASE_URL"),
+		DatabaseURL:    getEnv("DATABASE_URL", defaultDatabase),
 		Port:           getEnv("PORT", defaultPort),
 		JWTSecret:      getEnv("JWT_SECRET", defaultJWTSecret),
 		CookieSecure:   os.Getenv("COOKIE_SECURE") == "true",
@@ -47,6 +52,49 @@ func Load() Config {
 	validateSecurity(cfg)
 
 	return cfg
+}
+
+func currentEnvKeys() map[string]struct{} {
+	keys := make(map[string]struct{})
+	for _, pair := range os.Environ() {
+		key, _, ok := strings.Cut(pair, "=")
+		if ok {
+			keys[key] = struct{}{}
+		}
+	}
+	return keys
+}
+
+func loadDotEnv(path string, lockedEnv map[string]struct{}) {
+	file, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+
+		key = strings.TrimSpace(key)
+		value = strings.Trim(strings.TrimSpace(value), `"'`)
+		if key == "" {
+			continue
+		}
+		if _, locked := lockedEnv[key]; locked {
+			continue
+		}
+
+		os.Setenv(key, value)
+	}
 }
 
 func getEnv(key, fallback string) string {

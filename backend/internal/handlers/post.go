@@ -1,8 +1,6 @@
 package handlers
 
 import (
-	_ "errors"
-	"strconv"
 	"tester/internal/models"
 	"tester/internal/repository"
 
@@ -10,32 +8,12 @@ import (
 	"gorm.io/gorm"
 )
 
-type PostResponse struct {
-	ID            uint        `json:"id"`
-	Content       string      `json:"content"`
-	CreatedAt     string      `json:"created_at"`
-	UpdatedAt     string      `json:"updated_at"`
-	User          models.User `json:"user"`
-	LikesCount    int64       `json:"likes_count"`
-	CommentsCount int64       `json:"comments_count"`
-	IsLiked       bool        `json:"is_liked"`
-}
-
-type CommentResponse struct {
-	ID         uint        `json:"id"`
-	Content    string      `json:"content"`
-	CreatedAt  string      `json:"created_at"`
-	UpdatedAt  string      `json:"updated_at"`
-	User       models.User `json:"user"`
-	PostID     uint        `json:"post_id"`
-	LikesCount int64       `json:"likes_count"`
-	IsLiked    bool        `json:"is_liked"`
-}
-
 func GetPosts(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		userID, _ := c.Get("user_id")
-		currentUserID := userID.(uint)
+		currentUserID, ok := authenticatedUserID(c)
+		if !ok {
+			return
+		}
 
 		posts, err := repository.GetPostsByUser(db, currentUserID)
 		if err != nil {
@@ -43,75 +21,42 @@ func GetPosts(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		var response []PostResponse
-		for _, post := range posts {
-			likesCount, _ := repository.GetPostLikeCount(db, post.ID)
-			commentsCount, _ := repository.GetPostCommentCount(db, post.ID)
-			isLiked, _ := repository.IsPostLikedByUser(db, post.ID, currentUserID)
-
-			response = append(response, PostResponse{
-				ID:            post.ID,
-				Content:       post.Content,
-				CreatedAt:     post.CreatedAt.Format("2006-01-02 15:04:05"),
-				UpdatedAt:     post.UpdatedAt.Format("2006-01-02 15:04:05"),
-				User:          post.User,
-				LikesCount:    likesCount,
-				CommentsCount: commentsCount,
-				IsLiked:       isLiked,
-			})
-		}
-
-		c.JSON(200, response)
+		c.JSON(200, buildPostResponses(db, posts, currentUserID))
 	}
 }
 
 func GetPostsByUserID(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		userID, _ := c.Get("user_id")
-		currentUserID := userID.(uint)
-
-		profileUserID, err := strconv.ParseUint(c.Param("userId"), 10, 32)
-		if err != nil {
-			c.JSON(400, gin.H{"error": "invalid user id"})
+		currentUserID, ok := authenticatedUserID(c)
+		if !ok {
+			return
+		}
+		profileUserID, ok := uintParam(c, "userId", "invalid user id")
+		if !ok {
 			return
 		}
 
-		if _, err := repository.GetUserById(db, uint(profileUserID)); err != nil {
+		if _, err := repository.GetUserById(db, profileUserID); err != nil {
 			c.JSON(404, gin.H{"error": "user not found"})
 			return
 		}
 
-		posts, err := repository.GetPostsByUser(db, uint(profileUserID))
+		posts, err := repository.GetPostsByUser(db, profileUserID)
 		if err != nil {
 			c.JSON(500, gin.H{"error": "failed to fetch posts"})
 			return
 		}
 
-		var response []PostResponse
-		for _, post := range posts {
-			likesCount, _ := repository.GetPostLikeCount(db, post.ID)
-			commentsCount, _ := repository.GetPostCommentCount(db, post.ID)
-			isLiked, _ := repository.IsPostLikedByUser(db, post.ID, currentUserID)
-
-			response = append(response, PostResponse{
-				ID:            post.ID,
-				Content:       post.Content,
-				CreatedAt:     post.CreatedAt.Format("2006-01-02 15:04:05"),
-				UpdatedAt:     post.UpdatedAt.Format("2006-01-02 15:04:05"),
-				User:          post.User,
-				LikesCount:    likesCount,
-				CommentsCount: commentsCount,
-				IsLiked:       isLiked,
-			})
-		}
-
-		c.JSON(200, response)
+		c.JSON(200, buildPostResponses(db, posts, currentUserID))
 	}
 }
 
 func CreatePost(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		userID, _ := c.Get("user_id")
+		userID, ok := authenticatedUserID(c)
+		if !ok {
+			return
+		}
 
 		var req struct {
 			Content string `json:"content" binding:"required"`
@@ -129,7 +74,7 @@ func CreatePost(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		post := models.Post{
-			UserID:  userID.(uint),
+			UserID:  userID,
 			Content: content,
 		}
 
@@ -145,14 +90,16 @@ func CreatePost(db *gorm.DB) gin.HandlerFunc {
 
 func UpdatePost(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		userID, _ := c.Get("user_id")
-		postID, err := strconv.ParseUint(c.Param("id"), 10, 32)
-		if err != nil {
-			c.JSON(400, gin.H{"error": "invalid post id"})
+		userID, ok := authenticatedUserID(c)
+		if !ok {
+			return
+		}
+		postID, ok := uintParam(c, "id", "invalid post id")
+		if !ok {
 			return
 		}
 
-		if !repository.IsPostOwner(db, uint(postID), userID.(uint)) {
+		if !repository.IsPostOwner(db, postID, userID) {
 			c.JSON(403, gin.H{"error": "you can only edit your own posts"})
 			return
 		}
@@ -172,190 +119,40 @@ func UpdatePost(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		if err := repository.UpdatePost(db, uint(postID), content); err != nil {
+		if err := repository.UpdatePost(db, postID, content); err != nil {
 			c.JSON(500, gin.H{"error": "failed to update post"})
 			return
 		}
 
-		post, _ := repository.GetPostByID(db, uint(postID))
+		post, _ := repository.GetPostByID(db, postID)
 		c.JSON(200, post)
 	}
 }
 
 func DeletePost(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		userID, _ := c.Get("user_id")
-		postID, err := strconv.ParseUint(c.Param("id"), 10, 32)
-		if err != nil {
-			c.JSON(400, gin.H{"error": "invalid post id"})
+		userID, ok := authenticatedUserID(c)
+		if !ok {
+			return
+		}
+		postID, ok := uintParam(c, "id", "invalid post id")
+		if !ok {
 			return
 		}
 
-		if !repository.IsPostOwner(db, uint(postID), userID.(uint)) {
+		if !repository.IsPostOwner(db, postID, userID) {
 			c.JSON(403, gin.H{"error": "you can only delete your own posts"})
 			return
 		}
 
-		repository.DeletePostComments(db, uint(postID))
-		repository.DeletePostLikes(db, uint(postID))
+		repository.DeletePostComments(db, postID)
+		repository.DeletePostLikes(db, postID)
 
-		if err := repository.DeletePost(db, uint(postID)); err != nil {
+		if err := repository.DeletePost(db, postID); err != nil {
 			c.JSON(500, gin.H{"error": "failed to delete post"})
 			return
 		}
 
 		c.JSON(200, gin.H{"message": "post deleted successfully"})
-	}
-}
-
-func TogglePostLike(db *gorm.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		userID, _ := c.Get("user_id")
-		postID, err := strconv.ParseUint(c.Param("id"), 10, 32)
-		if err != nil {
-			c.JSON(400, gin.H{"error": "invalid post id"})
-			return
-		}
-
-		if _, err := repository.GetPostByID(db, uint(postID)); err != nil {
-			c.JSON(404, gin.H{"error": "post not found"})
-			return
-		}
-
-		isLiked, err := repository.TogglePostLike(db, uint(postID), userID.(uint))
-		if err != nil {
-			c.JSON(500, gin.H{"error": "failed to toggle like"})
-			return
-		}
-
-		likesCount, _ := repository.GetPostLikeCount(db, uint(postID))
-
-		c.JSON(200, gin.H{
-			"is_liked":    isLiked,
-			"likes_count": likesCount,
-		})
-	}
-}
-
-func ToggleCommentLike(db *gorm.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		userID, _ := c.Get("user_id")
-		postID, err := strconv.ParseUint(c.Param("id"), 10, 32)
-		if err != nil {
-			c.JSON(400, gin.H{"error": "invalid post id"})
-			return
-		}
-
-		commentID, err := strconv.ParseUint(c.Param("commentID"), 10, 32)
-		if err != nil {
-			c.JSON(400, gin.H{"error": "invalid comment id"})
-			return
-		}
-
-		comment, err := repository.GetCommentByID(db, uint(commentID))
-		if err != nil || comment.PostID != uint(postID) {
-			c.JSON(404, gin.H{"error": "comment not found"})
-			return
-		}
-
-		isLiked, err := repository.ToggleCommentLike(db, uint(commentID), userID.(uint))
-		if err != nil {
-			c.JSON(500, gin.H{"error": "failed to toggle like"})
-			return
-		}
-
-		likesCount, _ := repository.GetCommentLikeCount(db, uint(commentID))
-
-		c.JSON(200, gin.H{
-			"is_liked":    isLiked,
-			"likes_count": likesCount,
-		})
-	}
-}
-
-func GetComments(db *gorm.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		postID, err := strconv.ParseUint(c.Param("id"), 10, 32)
-		if err != nil {
-			c.JSON(400, gin.H{"error": "invalid post id"})
-			return
-		}
-
-		if _, err := repository.GetPostByID(db, uint(postID)); err != nil {
-			c.JSON(404, gin.H{"error": "post not found"})
-			return
-		}
-
-		userID, _ := c.Get("user_id")
-		currentUserID := userID.(uint)
-
-		comments, err := repository.GetCommentsByPostID(db, uint(postID))
-		if err != nil {
-			c.JSON(500, gin.H{"error": "failed to fetch comments"})
-			return
-		}
-
-		var response []CommentResponse
-		for _, comment := range comments {
-			likesCount, _ := repository.GetCommentLikeCount(db, comment.ID)
-			isLiked, _ := repository.IsCommentLikedByUser(db, comment.ID, currentUserID)
-
-			response = append(response, CommentResponse{
-				ID:         comment.ID,
-				Content:    comment.Content,
-				CreatedAt:  comment.CreatedAt.Format("2006-01-02 15:04:05"),
-				User:       comment.User,
-				PostID:     comment.PostID,
-				LikesCount: likesCount,
-				IsLiked:    isLiked,
-			})
-		}
-
-		c.JSON(200, response)
-	}
-}
-
-func CreateComment(db *gorm.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		userID, _ := c.Get("user_id")
-		postID, err := strconv.ParseUint(c.Param("id"), 10, 32)
-		if err != nil {
-			c.JSON(400, gin.H{"error": "invalid post id"})
-			return
-		}
-
-		var req struct {
-			Content string `json:"content" binding:"required"`
-		}
-
-		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(400, gin.H{"error": err.Error()})
-			return
-		}
-
-		if _, err := repository.GetPostByID(db, uint(postID)); err != nil {
-			c.JSON(404, gin.H{"error": "post not found"})
-			return
-		}
-
-		content, ok := trimAndValidateContent(req.Content, maxCommentContentLength)
-		if !ok {
-			c.JSON(400, gin.H{"error": "comment content must be between 1 and 500 characters"})
-			return
-		}
-
-		comment := models.Comment{
-			PostID:  uint(postID),
-			UserID:  userID.(uint),
-			Content: content,
-		}
-
-		if err := repository.CreateComment(db, &comment); err != nil {
-			c.JSON(500, gin.H{"error": "failed to create comment"})
-			return
-		}
-
-		db.Preload("User").First(&comment, comment.ID)
-		c.JSON(201, comment)
 	}
 }

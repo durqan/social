@@ -1,4 +1,4 @@
-type IconName = 'close' | 'delete' | 'edit' | 'send' | 'search' | 'logout' | 'menu' | 'home' | 'wall' | 'friends' | 'messages' | 'heart' | 'phone' | 'phoneOff' | 'video' | 'maximize' | 'minimize' | 'image';
+export type IconName = 'close' | 'delete' | 'edit' | 'send' | 'search' | 'logout' | 'menu' | 'home' | 'wall' | 'friends' | 'messages' | 'heart' | 'phone' | 'phoneOff' | 'video' | 'maximize' | 'minimize' | 'image';
 
 interface IconProps {
     name: IconName;

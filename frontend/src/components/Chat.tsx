@@ -15,6 +15,7 @@ import { DeleteConfirmModal } from './chat/DeleteConfirmModal.js';
 import { useWebSocket } from '../contexts/WebSocketContext.js';
 import { useAudioCall } from '../contexts/AudioCallContext.js';
 import { Spinner } from './ui/Spinner.js';
+import { formatMonthDayDate, formatTime } from '../utils/date.js';
 
 const optimisticMessageFloor = 10000000;
 
@@ -112,7 +113,7 @@ function Chat() {
         }
     };
 
-        const sendMessage = useCallback(async (files: File[] = []) => {
+    const sendMessage = useCallback(async (files: File[] = []) => {
         const content = newMessage.trim();
         if (!content && files.length === 0) return;
 
@@ -181,8 +182,8 @@ function Chat() {
                 loadingMore={loadingMore}
                 onScroll={handleScroll}
                 messagesEndRef={messagesEndRef}
-                formatDate={(date) => new Date(date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}
-                formatTime={(date) => new Date(date).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                formatDate={formatMonthDayDate}
+                formatTime={formatTime}
             />
             {otherTyping && <div className="px-4 pb-2 text-sm text-gray-500">{recipient?.name} печатает...</div>}
             <ChatInput value={newMessage} onChange={e => { setNewMessage(e.target.value); handleTyping(); }} onSend={sendMessage} />

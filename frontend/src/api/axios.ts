@@ -1,9 +1,50 @@
-import axios from 'axios';
+import axios, { type AxiosRequestConfig } from 'axios';
+
+const apiBaseURL = import.meta.env.VITE_API_BASE_URL || '/api';
 
 const api = axios.create({
-    baseURL: '/api',
+    baseURL: apiBaseURL,
     timeout: 10000,
     withCredentials: true,
+});
+
+const unsafeMethods = new Set(['post', 'put', 'patch', 'delete']);
+let csrfRefresh: Promise<string> | null = null;
+
+const readCookie = (name: string) => {
+    const prefix = `${name}=`;
+    return document.cookie
+        .split(';')
+        .map(cookie => cookie.trim())
+        .find(cookie => cookie.startsWith(prefix))
+        ?.slice(prefix.length);
+};
+
+const ensureCSRFToken = async () => {
+    const existingToken = readCookie('csrf_token');
+    if (existingToken) return decodeURIComponent(existingToken);
+
+    csrfRefresh ??= axios.get(`${apiBaseURL}/auth/csrf`, {
+        withCredentials: true,
+    }).then(() => {
+        const token = readCookie('csrf_token');
+        if (!token) {
+            throw new Error('CSRF token was not issued');
+        }
+        return decodeURIComponent(token);
+    }).finally(() => {
+        csrfRefresh = null;
+    });
+
+    return csrfRefresh;
+};
+
+api.interceptors.request.use(async (config) => {
+    const method = config.method?.toLowerCase();
+    if (method && unsafeMethods.has(method)) {
+        config.headers.set('X-CSRF-Token', await ensureCSRFToken());
+    }
+    return config;
 });
 
 api.interceptors.response.use(
@@ -16,5 +57,23 @@ api.interceptors.response.use(
         return Promise.reject(err);
     }
 );
+
+export const request = {
+    async get<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
+        return (await api.get<T>(url, config)).data;
+    },
+
+    async post<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
+        return (await api.post<T>(url, data, config)).data;
+    },
+
+    async patch<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
+        return (await api.patch<T>(url, data, config)).data;
+    },
+
+    async delete<T = void>(url: string, config?: AxiosRequestConfig): Promise<T> {
+        return (await api.delete<T>(url, config)).data;
+    },
+};
 
 export default api;

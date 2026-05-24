@@ -20,10 +20,9 @@ func broadcastPresence(
 		},
 	})
 
-	clients.mu.RLock()
-	defer clients.mu.RUnlock()
+	recipients := clients.all()
 
-	for _, client := range clients.clients {
+	for _, client := range recipients {
 		client.write(
 			context.Background(),
 			payload,

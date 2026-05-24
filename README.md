@@ -29,11 +29,39 @@
 - Go 1.26+ (для локальной разработки)
 - Node.js 20+
 
+### Локальная разработка без пересборки Docker
+
+Docker используется только для Postgres и Redis:
+
+```bash
+make dev-infra
+```
+
+Backend запускается напрямую с хоста:
+
+```bash
+make dev-backend
+```
+
+Frontend запускается отдельно:
+
+```bash
+make dev-frontend
+```
+
+Локальные переменные лежат в `.env`; пример для новой машины есть в `.env.example`.
+Frontend dev server проксирует `/api` и `/ws` на `http://localhost:8080`, поэтому nginx и Docker-сборка frontend для разработки не нужны.
+
 ### Production
 
 ```bash
 git clone https://github.com/durqan/social.git
 cd social
-cp .env.example .env
-# Отредактируй .env (секреты!)
-docker compose up -d
+docker compose -f docker-compose.prod.yml up -d
+```
+
+Если нужен TURN-сервер для WebRTC:
+
+```bash
+docker compose -f docker-compose.prod.yml --profile turn up -d
+```

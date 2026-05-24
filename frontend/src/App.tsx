@@ -2,15 +2,15 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import Login from './components/Login.js';
 import Register from './components/Register.js';
 import Profile from './components/Profile.js';
-import ProfileMain from "./components/ProfileMain.js";
-import ProfileEdit from "./components/ProfileEdit.js";
-import Wall from "./components/Wall.js";
-import Conversations from "./components/Conversations.js";
-import Chat from "./components/Chat.js";
-import Friends from "./components/Friends.js";
-import VerifyEmail from "./components/VerifyEmail.js";
-import { Toaster } from "react-hot-toast";
-import NotificationHandler from "./components/NotificationHandler.js";
+import ProfileMain from './components/ProfileMain.js';
+import ProfileEdit from './components/ProfileEdit.js';
+import Wall from './components/Wall.js';
+import Conversations from './components/Conversations.js';
+import Chat from './components/Chat.js';
+import Friends from './components/Friends.js';
+import VerifyEmail from './components/VerifyEmail.js';
+import { Toaster } from 'react-hot-toast';
+import NotificationHandler from './components/NotificationHandler.js';
 import { AuthProvider, useAuth } from './contexts/AuthContext.js';
 import { WebSocketProvider } from './contexts/WebSocketContext.js';
 import { AudioCallProvider } from './contexts/AudioCallContext.js';
@@ -34,13 +34,12 @@ function AppRoutes() {
                     <Route path="friends" element={<Friends />} />
                 </Route>
             </Route>
-            <Route path="/" element={<Navigate to={currentUser ? `/users/${currentUser.id}` : "/login"} />} />
+            <Route path="/" element={<Navigate to={currentUser ? `/users/${currentUser.id}` : '/login'} />} />
         </Routes>
     );
 }
 
 function App() {
-
     return (
         <>
             <Toaster position="top-right" />

@@ -50,9 +50,16 @@ func GetFriendRequests(db *gorm.DB, userID uint) ([]models.Friendship, error) {
 }
 
 func AcceptFriendRequest(db *gorm.DB, friendshipID, userID uint) error {
-	return db.Model(&models.Friendship{}).
+	result := db.Model(&models.Friendship{}).
 		Where("id = ? AND friend_id = ? AND status = ?", friendshipID, userID, "pending").
-		Update("status", "accepted").Error
+		Update("status", "accepted")
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 func RemoveFriend(db *gorm.DB, userID, friendID uint) error {

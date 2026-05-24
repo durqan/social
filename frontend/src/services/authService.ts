@@ -1,4 +1,4 @@
-import api from '../api/axios.js';
+import { request } from '../api/axios.js';
 import type { User } from '../types.js';
 import { normalizeUser } from './userService.js';
 
@@ -20,32 +20,30 @@ export interface AuthResponse {
 
 export const authService = {
     async login(data: LoginData): Promise<AuthResponse> {
-        const response = await api.post('/auth/login', data);
+        const response = await request.post<AuthResponse>('/auth/login', data);
         return {
-            ...response.data,
-            user: normalizeUser(response.data.user),
+            ...response,
+            user: normalizeUser(response.user),
         };
     },
 
     async register(data: RegisterData): Promise<AuthResponse> {
-        const response = await api.post('/auth/register', data);
+        const response = await request.post<AuthResponse>('/auth/register', data);
         return {
-            ...response.data,
-            user: normalizeUser(response.data.user),
+            ...response,
+            user: normalizeUser(response.user),
         };
     },
 
     async logout() {
-        await api.post('/auth/logout');
+        await request.post('/auth/logout');
     },
 
     async sendVerificationEmail(): Promise<string> {
-        const response = await api.post('/auth/send-verification');
-        return response.data.message;
+        return (await request.post<{ message: string }>('/auth/send-verification')).message;
     },
 
     async verifyEmail(token: string): Promise<string> {
-        const response = await api.get(`/auth/verify-email/${token}`);
-        return response.data.message;
+        return (await request.get<{ message: string }>(`/auth/verify-email/${token}`)).message;
     },
 };

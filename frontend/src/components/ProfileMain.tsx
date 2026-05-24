@@ -1,98 +1,26 @@
-import { useState, useEffect } from 'react';
 import { useOutletContext, useNavigate } from 'react-router-dom';
-import { friendService } from '../services/friendService.js';
-import type { User } from '../types.js';
-import {usePresence} from "../hooks/usePresence.js";
-import {Avatar} from "./ui/Avatar.js";
-import { authService } from '../services/authService.js';
-import { getApiError } from '../api/errors.js';
-
-interface ProfileContext {
-    user: User;
-    isOwner?: boolean;
-    currentUser?: User;
-}
+import type { ProfileContextType } from '../types.js';
+import { usePresence } from '../hooks/usePresence.js';
+import { Avatar } from './ui/Avatar.js';
+import { formatLongDate } from '../utils/date.js';
+import { EmailVerificationNotice } from './profile/EmailVerificationNotice.js';
+import { friendButtonText, useFriendStatus } from '../hooks/useFriendStatus.js';
+import { useEmailVerification } from '../hooks/useEmailVerification.js';
 
 function ProfileMain() {
     const navigate = useNavigate();
-    const { user, isOwner, currentUser } = useOutletContext<ProfileContext>();
-    const [friendStatus, setFriendStatus] = useState<string | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [verificationLoading, setVerificationLoading] = useState(false);
-    const [verificationMessage, setVerificationMessage] = useState<{
-        type: 'success' | 'error';
-        text: string;
-    } | null>(null);
+    const { user, isOwner, currentUser } = useOutletContext<ProfileContextType>();
     const { online } = usePresence(user.id);
+    const {
+        friendStatus,
+        friendStatusLoading,
+        handleFriendAction,
+    } = useFriendStatus(user.id, isOwner);
+    const emailVerification = useEmailVerification();
 
-    useEffect(() => {
-        if (!isOwner && user?.id) {
-            friendService.getFriendshipStatus(user.id)
-                .then(setFriendStatus)
-                .catch(() => setFriendStatus('none'))
-                .finally(() => setLoading(false));
-        } else {
-            setLoading(false);
-        }
-    }, [user?.id, isOwner]);
-
-    const handleFriendAction = async () => {
-        if (!user?.id) return;
-
-        if (friendStatus === 'none') {
-            await friendService.sendFriendRequest(user.id);
-            setFriendStatus('pending');
-        } else if (friendStatus === 'accepted') {
-            if (confirm('Удалить из друзей?')) {
-                await friendService.removeFriend(user.id);
-                setFriendStatus('none');
-            }
-        } else if (friendStatus === 'pending') {
-            alert('Заявка уже отправлена');
-        }
-    };
-
-    const getFriendButtonText = () => {
-        switch (friendStatus) {
-            case 'none': return 'Добавить в друзья';
-            case 'pending': return 'Заявка отправлена ⌛';
-            case 'accepted': return 'Удалить из друзей';
-            default: return 'Добавить в друзья';
-        }
-    };
-
-    const handleSendVerification = async () => {
-        setVerificationLoading(true);
-        setVerificationMessage(null);
-
-        try {
-            await authService.sendVerificationEmail();
-            setVerificationMessage({
-                type: 'success',
-                text: 'Письмо для подтверждения отправлено',
-            });
-        } catch (err: unknown) {
-            const apiError = getApiError(err);
-            setVerificationMessage({
-                type: 'error',
-                text: apiError.message || apiError.error || 'Не удалось отправить письмо',
-            });
-        } finally {
-            setVerificationLoading(false);
-        }
-    };
-
-    const formatDate = (dateString?: string) => {
-        if (!dateString) return 'Недавно';
-        const date = new Date(dateString);
-        return date.toLocaleDateString('ru-RU', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
-        });
-    };
-
-    if (loading) return <div>Загрузка...</div>;
+    if (friendStatusLoading) {
+        return <div>Загрузка...</div>;
+    }
 
     return (
         <div className="mx-auto max-w-2xl">
@@ -127,7 +55,7 @@ function ProfileMain() {
                             )}
                             <div className="mt-4 flex flex-col gap-2 text-sm text-gray-500 sm:flex-row sm:flex-wrap sm:gap-x-4">
                                 {user?.createdAt && (
-                                    <span>Участник с {formatDate(user.createdAt)}</span>
+                                    <span>Участник с {formatLongDate(user.createdAt)}</span>
                                 )}
                                 {user?.isEmailVerified ? (
                                     <span className="text-emerald-600">Почта подтверждена</span>
@@ -144,30 +72,7 @@ function ProfileMain() {
                                 </button>
                             )}
                             {isOwner && !user?.isEmailVerified && (
-                                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
-                                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                                        <p className="text-sm text-yellow-700">
-                                            Подтвердите почту, чтобы завершить настройку аккаунта.
-                                        </p>
-                                        <button
-                                            type="button"
-                                            onClick={handleSendVerification}
-                                            disabled={verificationLoading}
-                                            className="rounded-xl bg-amber-600 px-3 py-2 text-sm text-white transition hover:bg-amber-700 disabled:opacity-50 cursor-pointer"
-                                        >
-                                            {verificationLoading ? 'Отправка...' : 'Отправить письмо'}
-                                        </button>
-                                    </div>
-                                    {verificationMessage && (
-                                        <p className={`mt-2 text-sm ${
-                                            verificationMessage.type === 'success'
-                                                ? 'text-green-700'
-                                                : 'text-red-700'
-                                        }`}>
-                                            {verificationMessage.text}
-                                        </p>
-                                    )}
-                                </div>
+                                <EmailVerificationNotice {...emailVerification} />
                             )}
                         </div>
                         <div className="flex gap-2 sm:flex-shrink-0">
@@ -183,7 +88,7 @@ function ProfileMain() {
                                     }`}
                                     disabled={friendStatus === 'pending'}
                                 >
-                                    {getFriendButtonText()}
+                                    {friendButtonText(friendStatus)}
                                 </button>
                             )}
                         </div>

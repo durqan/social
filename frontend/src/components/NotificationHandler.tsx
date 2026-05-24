@@ -3,216 +3,130 @@ import { useNavigate } from 'react-router-dom';
 
 import { toast } from 'react-hot-toast';
 
-import { useWebSocket } from '../contexts/WebSocketContext.js';
 import { useAuth } from '../contexts/AuthContext.js';
-
+import { useWebSocket } from '../contexts/WebSocketContext.js';
 import { userService } from '../services/userService.js';
-
 import type { WsEvent } from '../types/ws/events.js';
-
 import { Avatar } from './ui/Avatar.js';
 
+const ignoredEvents: ReadonlySet<WsEvent['type']> = new Set([
+    'typing:start',
+    'typing:stop',
+    'message:delete',
+    'message:read',
+    'call:offer',
+    'call:answer',
+    'call:ice',
+    'call:end',
+    'call:reject',
+    'presence:update',
+]);
+
+type NotificationToast = {
+    title: string;
+    message: string;
+    onClick: () => void;
+    tone?: 'default' | 'blue' | 'green';
+};
+
+function showNotificationToast({
+    title,
+    message,
+    onClick,
+    tone = 'default',
+}: NotificationToast) {
+    const borderClass = {
+        default: '',
+        blue: 'border-l-4 border-sky-500',
+        green: 'border-l-4 border-emerald-500',
+    }[tone];
+
+    toast.custom((toastRef) => (
+        <div
+            onClick={() => {
+                toast.dismiss(toastRef.id);
+                onClick();
+            }}
+            className={`mx-3 max-w-sm cursor-pointer rounded-2xl border border-gray-200 bg-white p-4 shadow-xl shadow-gray-900/10 transition-colors hover:bg-gray-50 ${borderClass}`}
+        >
+            <div className="flex items-center gap-3">
+                <Avatar name={title} />
+                <div className="min-w-0 flex-1">
+                    <p className="truncate font-semibold text-gray-900">{title}</p>
+                    <p className="truncate text-sm text-gray-600">{message}</p>
+                </div>
+            </div>
+        </div>
+    ), {
+        duration: 5000,
+        position: 'top-right',
+    });
+}
+
 function NotificationHandler() {
-
     const navigate = useNavigate();
-
     const wsService = useWebSocket();
-
     const { currentUser } = useAuth();
 
-    const showNotification = (
-        title: string,
-        message: string,
-        onClick: () => void,
-        borderColor: string = 'blue',
-    ) => {
-        const borderClass =
-            borderColor === 'green'
-                ? 'border-emerald-500'
-                : 'border-sky-500';
-
-        toast.custom((t) => (
-
-            <div
-                onClick={() => {
-                    toast.dismiss(t.id);
-                    onClick();
-                }}
-                className={`mx-3 max-w-sm cursor-pointer rounded-2xl border border-gray-200 border-l-4 bg-white p-4 shadow-xl shadow-gray-900/10 transition-colors hover:bg-gray-50 ${borderClass}`}
-            >
-
-                <div className="flex items-center gap-3">
-
-                    <Avatar name={title} />
-
-                    <div className="min-w-0 flex-1">
-
-                        <p className="truncate font-semibold text-gray-900">
-                            {title}
-                        </p>
-
-                        <p className="text-sm text-gray-600">
-                            {message}
-                        </p>
-
-                    </div>
-
-                </div>
-
-            </div>
-
-        ), {
-            duration: 5000,
-            position: 'top-right',
-        });
-    };
-
     useEffect(() => {
-
-        const shownNotifications = new Set<number>();
+        const shownMessageNotifications = new Set<number>();
 
         const handleMessage = async (event: WsEvent) => {
+            if (ignoredEvents.has(event.type)) {
+                return;
+            }
 
             switch (event.type) {
-
-                // =========================
-                // IGNORE
-                // =========================
-                case 'typing:start':
-                case 'typing:stop':
-                case 'message:delete':
-                case 'message:read':
-                case 'call:offer':
-                case 'call:answer':
-                case 'call:ice':
-                case 'call:end':
-                case 'call:reject':
-                case 'presence:update':
+                case 'friend:request':
+                    showNotificationToast({
+                        title: event.payload.from_name || 'Пользователь',
+                        message: 'Отправил(а) заявку в друзья',
+                        tone: 'blue',
+                        onClick: () => navigate(`/users/${event.payload.from_id}`),
+                    });
                     return;
 
-                // =========================
-                // FRIEND REQUEST
-                // =========================
-                case 'friend:request': {
-
-                    const payload = event.payload;
-
-                    showNotification(
-                        payload.from_name || 'Пользователь',
-                        'Отправил(а) заявку в друзья',
-                        () => navigate(`/users/${payload.from_id}`),
-                        'blue',
-                    );
-
+                case 'friend:accepted':
+                    showNotificationToast({
+                        title: event.payload.from_name || 'Пользователь',
+                        message: 'Принял(а) заявку в друзья',
+                        tone: 'green',
+                        onClick: () => navigate(`/users/${event.payload.from_id}`),
+                    });
                     return;
-                }
 
-                // =========================
-                // FRIEND ACCEPTED
-                // =========================
-                case 'friend:accepted': {
-
-                    const payload = event.payload;
-
-                    showNotification(
-                        payload.from_name || 'Пользователь',
-                        'Принял(а) заявку в друзья',
-                        () => navigate(`/users/${payload.from_id}`),
-                        'green',
-                    );
-
-                    return;
-                }
-
-                // =========================
-                // MESSAGE
-                // =========================
                 case 'message:new': {
-
-                    const msg = event.payload;
-
-                    if (shownNotifications.has(msg.id)) {
-                        return;
-                    }
-
+                    const message = event.payload;
                     const currentUserId = currentUser?.id;
 
-                    if (!currentUserId) {
+                    if (
+                        !currentUserId ||
+                        message.from_id === currentUserId ||
+                        shownMessageNotifications.has(message.id) ||
+                        window.location.pathname.includes(`/chat/${message.from_id}`)
+                    ) {
                         return;
                     }
 
-                    if (msg.from_id === currentUserId) {
-                        return;
-                    }
-
-                    const pathname = window.location.pathname;
-
-                    const isChatOpen =
-                        pathname.includes(`/chat/${msg.from_id}`);
-
-                    if (isChatOpen) {
-                        return;
-                    }
-
-                    shownNotifications.add(msg.id);
+                    shownMessageNotifications.add(message.id);
 
                     let senderName = 'Пользователь';
-
                     try {
-
-                        const user = await userService.getUser(
-                            msg.from_id
-                        );
-
-                        senderName =
-                            user.name || 'Пользователь';
-
-                    } catch (e) {
-                        console.error(e);
+                        const sender = await userService.getUser(message.from_id);
+                        senderName = sender.name || 'Пользователь';
+                    } catch (error) {
+                        console.error(error);
                     }
 
-                    toast.custom((t) => (
-
-                        <div
-                            onClick={() => {
-                                toast.dismiss(t.id);
-
-                                navigate(
-                                    `/users/${currentUserId}/chat/${msg.from_id}`
-                                );
-                            }}
-                            className="mx-3 max-w-sm cursor-pointer rounded-2xl border border-gray-200 bg-white p-4 shadow-xl shadow-gray-900/10 transition-colors hover:bg-gray-50"
-                        >
-
-                            <div className="flex items-center gap-3">
-
-                                <Avatar name={senderName} />
-
-                                <div className="min-w-0 flex-1">
-
-                                    <p className="truncate font-semibold text-gray-900">
-                                        {senderName}
-                                    </p>
-
-                                    <p className="text-sm text-gray-600 truncate">
-                                        {msg.content.slice(0, 50)}
-                                    </p>
-
-                                </div>
-
-                            </div>
-
-                        </div>
-
-                    ), {
-                        duration: 5000,
-                        position: 'top-right',
+                    showNotificationToast({
+                        title: senderName,
+                        message: message.content.slice(0, 50),
+                        onClick: () => navigate(`/users/${currentUserId}/chat/${message.from_id}`),
                     });
 
-                    setTimeout(() => {
-                        shownNotifications.delete(msg.id);
+                    window.setTimeout(() => {
+                        shownMessageNotifications.delete(message.id);
                     }, 10000);
-
                     return;
                 }
 
@@ -222,18 +136,8 @@ function NotificationHandler() {
         };
 
         wsService.onMessage(handleMessage);
-
-        return () => {
-            wsService.removeMessageHandler(
-                handleMessage
-            );
-        };
-
-    }, [
-        currentUser?.id,
-        navigate,
-        wsService,
-    ]);
+        return () => wsService.removeMessageHandler(handleMessage);
+    }, [currentUser?.id, navigate, wsService]);
 
     return null;
 }

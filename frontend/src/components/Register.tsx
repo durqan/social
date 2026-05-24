@@ -1,58 +1,67 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, type ChangeEvent, type FormEvent } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+
+import { AuthCard } from './auth/AuthCard.js';
+import { AuthField } from './auth/AuthField.js';
 import { useAuth } from '../contexts/AuthContext.js';
-import { getApiError } from '../api/errors.js';
+import { registerErrors, type RegisterFormErrors } from '../utils/authErrors.js';
+
+type RegisterForm = {
+    name: string;
+    email: string;
+    password: string;
+    confirmPassword: string;
+};
+
+const initialForm: RegisterForm = {
+    name: '',
+    email: '',
+    password: '',
+    confirmPassword: '',
+};
+
+function validateRegisterForm(formData: RegisterForm): RegisterFormErrors {
+    const errors: RegisterFormErrors = {};
+
+    if (formData.password !== formData.confirmPassword) {
+        errors.confirmPassword = 'Пароли не совпадают';
+    }
+    if (formData.password.length < 6) {
+        errors.password = 'Пароль должен содержать минимум 6 символов';
+    }
+    if (!formData.email.includes('@')) {
+        errors.email = 'Введите корректный email';
+    }
+
+    return errors;
+}
 
 function Register() {
     const navigate = useNavigate();
     const { register } = useAuth();
-    const [formData, setFormData] = useState({
-        name: '',
-        email: '',
-        password: '',
-        confirmPassword: ''
-    });
-    const [errors, setErrors] = useState<{
-        name?: string;
-        email?: string;
-        password?: string;
-        confirmPassword?: string;
-        general?: string;
-    }>({});
+    const [formData, setFormData] = useState(initialForm);
+    const [errors, setErrors] = useState<RegisterFormErrors>({});
     const [loading, setLoading] = useState(false);
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        setFormData({
-            ...formData,
-            [e.target.name]: e.target.value
-        });
-        if (errors[e.target.name as keyof typeof errors]) {
-            setErrors({
-                ...errors,
-                [e.target.name]: undefined
-            });
-        }
+    const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
+        const field = event.target.name as keyof RegisterForm;
+
+        setFormData(prev => ({
+            ...prev,
+            [field]: event.target.value,
+        }));
+        setErrors(prev => ({
+            ...prev,
+            [field]: undefined,
+        }));
     };
 
-    const handleSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
-        e.preventDefault();
+    const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
 
-        const newErrors: typeof errors = {};
-
-        if (formData.password !== formData.confirmPassword) {
-            newErrors.confirmPassword = 'Пароли не совпадают';
-        }
-
-        if (formData.password.length < 6) {
-            newErrors.password = 'Пароль должен содержать минимум 6 символов';
-        }
-
-        if (!formData.email.includes('@')) {
-            newErrors.email = 'Введите корректный email';
-        }
-
-        if (Object.keys(newErrors).length > 0) {
-            setErrors(newErrors);
+        const validationErrors = validateRegisterForm(formData);
+        if (Object.keys(validationErrors).length > 0) {
+            setErrors(validationErrors);
             return;
         }
 
@@ -63,148 +72,76 @@ function Register() {
             const user = await register({
                 name: formData.name,
                 email: formData.email,
-                password: formData.password
+                password: formData.password,
             });
             navigate(`/users/${user.id}`);
-        } catch (err: unknown) {
-            const apiError = getApiError(err);
-            if (apiError.error) {
-                const errorMessage = apiError.error;
-
-                if (errorMessage.includes('Password') && errorMessage.includes('min')) {
-                    setErrors({ password: 'Пароль слишком короткий (минимум 6 символов)' });
-                }
-                else if (errorMessage.includes('Email')) {
-                    setErrors({ email: 'Некорректный формат email' });
-                }
-                else if (errorMessage.includes('Name')) {
-                    setErrors({ name: 'Имя обязательно для заполнения' });
-                }
-                else if (errorMessage.includes('duplicate') || errorMessage.includes('already exists')) {
-                    setErrors({ email: 'Пользователь с таким email уже существует' });
-                }
-                else {
-                    setErrors({ general: errorMessage });
-                }
-            }
-            else if (apiError.message) {
-                const message = apiError.message;
-                if (message.includes('email') || message.includes('Email')) {
-                    setErrors({ email: message });
-                } else if (message.includes('password') || message.includes('Password')) {
-                    setErrors({ password: message });
-                } else {
-                    setErrors({ general: message });
-                }
-            }
-            else if (apiError.networkError) {
-                setErrors({ general: 'Ошибка сети. Проверьте подключение к серверу' });
-            }
-            else {
-                setErrors({ general: 'Произошла неизвестная ошибка. Попробуйте позже' });
-            }
+        } catch (error: unknown) {
+            setErrors(registerErrors(error));
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        <div className="min-h-screen bg-[var(--app-bg)] flex items-center justify-center px-4 py-6">
-            <div className="app-card w-full max-w-sm p-5 sm:p-8">
-                <h2 className="text-2xl font-semibold tracking-tight text-center mb-6">Регистрация</h2>
-
-                {errors.general && (
-                    <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-red-700">
-                        {errors.general}
-                    </div>
-                )}
-
-                <form onSubmit={handleSubmit}>
-                    <div className="mb-4">
-                        <label className="block text-gray-700 mb-2">Имя</label>
-                        <input
-                            type="text"
-                            name="name"
-                            value={formData.name}
-                            onChange={handleChange}
-                            required
-                            className={`app-input px-3 py-2 ${
-                                errors.name ? 'border-red-500' : ''
-                            }`}
-                        />
-                        {errors.name && (
-                            <p className="mt-1 text-sm text-red-600">{errors.name}</p>
-                        )}
-                    </div>
-
-                    <div className="mb-4">
-                        <label className="block text-gray-700 mb-2">Email</label>
-                        <input
-                            type="email"
-                            name="email"
-                            value={formData.email}
-                            onChange={handleChange}
-                            required
-                            className={`app-input px-3 py-2 ${
-                                errors.email ? 'border-red-500' : ''
-                            }`}
-                        />
-                        {errors.email && (
-                            <p className="mt-1 text-sm text-red-600">{errors.email}</p>
-                        )}
-                    </div>
-
-                    <div className="mb-4">
-                        <label className="block text-gray-700 mb-2">Пароль</label>
-                        <input
-                            type="password"
-                            name="password"
-                            value={formData.password}
-                            onChange={handleChange}
-                            required
-                            className={`app-input px-3 py-2 ${
-                                errors.password ? 'border-red-500' : ''
-                            }`}
-                        />
-                        {errors.password && (
-                            <p className="mt-1 text-sm text-red-600">{errors.password}</p>
-                        )}
-                    </div>
-
-                    <div className="mb-6">
-                        <label className="block text-gray-700 mb-2">Подтверждение пароля</label>
-                        <input
-                            type="password"
-                            name="confirmPassword"
-                            value={formData.confirmPassword}
-                            onChange={handleChange}
-                            required
-                            className={`app-input px-3 py-2 ${
-                                errors.confirmPassword ? 'border-red-500' : ''
-                            }`}
-                        />
-                        {errors.confirmPassword && (
-                            <p className="mt-1 text-sm text-red-600">{errors.confirmPassword}</p>
-                        )}
-                    </div>
-
-                    <button
-                        type="submit"
-                        disabled={loading}
-                        className="w-full rounded-xl bg-sky-600 py-2.5 text-white transition hover:bg-sky-700 disabled:opacity-50 cursor-pointer"
-                    >
-                        {loading ? 'Регистрация...' : 'Зарегистрироваться'}
-                    </button>
-                </form>
-
-                <p className="mt-4 text-center text-sm text-gray-600 sm:text-base">
+        <AuthCard
+            title="Регистрация"
+            error={errors.general}
+            footer={(
+                <>
                     Уже есть аккаунт?{' '}
-                    <a href="/login" className="text-sky-600 hover:underline">
+                    <Link to="/login" className="text-sky-600 hover:underline">
                         Войти
-                    </a>
-                </p>
-            </div>
-        </div>
+                    </Link>
+                </>
+            )}
+        >
+            <form onSubmit={handleSubmit}>
+                <AuthField
+                    label="Имя"
+                    type="text"
+                    name="name"
+                    value={formData.name}
+                    error={errors.name}
+                    onChange={handleChange}
+                    autoComplete="name"
+                />
+                <AuthField
+                    label="Email"
+                    type="email"
+                    name="email"
+                    value={formData.email}
+                    error={errors.email}
+                    onChange={handleChange}
+                    autoComplete="email"
+                />
+                <AuthField
+                    label="Пароль"
+                    type="password"
+                    name="password"
+                    value={formData.password}
+                    error={errors.password}
+                    onChange={handleChange}
+                    autoComplete="new-password"
+                />
+                <AuthField
+                    label="Подтверждение пароля"
+                    type="password"
+                    name="confirmPassword"
+                    value={formData.confirmPassword}
+                    error={errors.confirmPassword}
+                    onChange={handleChange}
+                    autoComplete="new-password"
+                    className="mb-6"
+                />
+                <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full rounded-xl bg-sky-600 py-2.5 text-white transition hover:bg-sky-700 disabled:opacity-50 cursor-pointer"
+                >
+                    {loading ? 'Регистрация...' : 'Зарегистрироваться'}
+                </button>
+            </form>
+        </AuthCard>
     );
 }
 

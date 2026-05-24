@@ -2,22 +2,38 @@ package auth
 
 import (
 	"errors"
+	"fmt"
+	"tester/internal/cache"
 	"tester/internal/config"
+	"tester/internal/utils"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
 
+const sessionTTL = 24 * time.Hour
+
 type Claims struct {
-	UserID uint `json:"user_id"`
+	UserID    uint   `json:"user_id"`
+	SessionID string `json:"session_id"`
 	jwt.RegisteredClaims
 }
 
 func GenerateToken(userID uint) (string, error) {
+	sessionID, err := utils.GenerateSecureToken()
+	if err != nil {
+		return "", err
+	}
+
+	if err := storeSession(userID, sessionID); err != nil {
+		return "", err
+	}
+
 	claims := Claims{
-		UserID: userID,
+		UserID:    userID,
+		SessionID: sessionID,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(sessionTTL)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
 	}
@@ -26,7 +42,7 @@ func GenerateToken(userID uint) (string, error) {
 	return token.SignedString(jwtSecret())
 }
 
-func ValidateToken(tokenString string) (uint, error) {
+func ValidateToken(tokenString string) (uint, string, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
 		if token.Method != jwt.SigningMethodHS256 {
 			return nil, errors.New("unexpected signing method")
@@ -35,16 +51,97 @@ func ValidateToken(tokenString string) (uint, error) {
 	})
 
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
 
 	if claims, ok := token.Claims.(*Claims); ok && token.Valid {
-		return claims.UserID, nil
+		if claims.UserID == 0 || claims.SessionID == "" {
+			return 0, "", errors.New("invalid token claims")
+		}
+		if !sessionExists(claims.UserID, claims.SessionID) {
+			return 0, "", errors.New("session revoked")
+		}
+		return claims.UserID, claims.SessionID, nil
 	}
 
-	return 0, errors.New("invalid token")
+	return 0, "", errors.New("invalid token")
+}
+
+func RevokeToken(tokenString string) error {
+	userID, sessionID, err := ValidateToken(tokenString)
+	if err != nil {
+		return err
+	}
+	return RevokeSession(userID, sessionID)
+}
+
+func RevokeSession(userID uint, sessionID string) error {
+	if cache.Redis == nil {
+		return errors.New("redis unavailable")
+	}
+	return cache.Redis.Delete(sessionKey(userID, sessionID))
+}
+
+func RevokeUserSessionsExcept(userID uint, keepSessionID string) error {
+	if cache.Redis == nil {
+		return errors.New("redis unavailable")
+	}
+
+	pattern := fmt.Sprintf("auth:session:%d:*", userID)
+	keys, err := scanSessionKeys(pattern)
+	if err != nil {
+		return err
+	}
+
+	keepKey := sessionKey(userID, keepSessionID)
+	for _, key := range keys {
+		if key != keepKey {
+			if err := cache.Redis.Delete(key); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func jwtSecret() []byte {
 	return []byte(config.Load().JWTSecret)
+}
+
+func storeSession(userID uint, sessionID string) error {
+	if cache.Redis == nil {
+		return errors.New("redis unavailable")
+	}
+	return cache.Redis.Client.Set(cache.Redis.Ctx, sessionKey(userID, sessionID), "1", sessionTTL).Err()
+}
+
+func sessionExists(userID uint, sessionID string) bool {
+	if cache.Redis == nil {
+		return false
+	}
+	count, err := cache.Redis.Client.Exists(cache.Redis.Ctx, sessionKey(userID, sessionID)).Result()
+	return err == nil && count == 1
+}
+
+func sessionKey(userID uint, sessionID string) string {
+	return fmt.Sprintf("auth:session:%d:%s", userID, sessionID)
+}
+
+func scanSessionKeys(pattern string) ([]string, error) {
+	var cursor uint64
+	var keys []string
+
+	for {
+		batch, nextCursor, err := cache.Redis.Client.Scan(cache.Redis.Ctx, cursor, pattern, 100).Result()
+		if err != nil {
+			return nil, err
+		}
+		keys = append(keys, batch...)
+		cursor = nextCursor
+		if cursor == 0 {
+			break
+		}
+	}
+
+	return keys, nil
 }

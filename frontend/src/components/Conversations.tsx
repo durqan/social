@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type {Conversation} from "../types.js";
+import type { Conversation } from '../types.js';
 import { messageService } from '../services/messageService.js';
 import { Avatar } from './ui/Avatar.js';
 import { useAuth } from '../contexts/AuthContext.js';
+import { formatMonthDayDate } from '../utils/date.js';
 
 function Conversations() {
     const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -26,7 +27,9 @@ function Conversations() {
         }
     };
 
-    if (loading) return <div className="p-4 text-center">Загрузка...</div>;
+    if (loading) {
+        return <div className="p-4 text-center">Загрузка...</div>;
+    }
 
     return (
         <div className="mx-auto max-w-2xl">
@@ -46,7 +49,7 @@ function Conversations() {
                                 <div className="flex items-start justify-between gap-3">
                                     <p className="truncate font-semibold text-gray-950">{conv.name}</p>
                                     <p className="flex-shrink-0 text-xs text-gray-500">
-                                        {new Date(conv.last_message_at).toLocaleDateString()}
+                                        {formatMonthDayDate(conv.last_message_at)}
                                     </p>
                                 </div>
                                 <p className="truncate text-sm text-gray-500">{conv.last_message}</p>

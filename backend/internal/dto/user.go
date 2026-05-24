@@ -16,15 +16,6 @@ type UserResponse struct {
 	CreatedAt       time.Time `json:"created_at"`
 }
 
-type CreateUserRequest struct {
-	Name     string `json:"name" binding:"required"`
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,min=6"`
-	Age      int    `json:"age"`
-	Bio      string `json:"bio"`
-	Avatar   string `json:"avatar"`
-}
-
 type UpdateUserRequest struct {
 	Name  *string `json:"name"`
 	Email *string `json:"email" binding:"omitempty,email"`

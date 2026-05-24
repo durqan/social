@@ -10,12 +10,6 @@ func CreatePost(db *gorm.DB, post *models.Post) error {
 	return db.Create(post).Error
 }
 
-func GetAllPosts(db *gorm.DB) ([]models.Post, error) {
-	var posts []models.Post
-	err := db.Preload("User").Order("created_at DESC").Find(&posts).Error
-	return posts, err
-}
-
 func GetPostsByUser(db *gorm.DB, userID uint) ([]models.Post, error) {
 	var posts []models.Post
 	err := db.Preload("User").
@@ -156,21 +150,8 @@ func ToggleCommentLike(db *gorm.DB, commentID, userID uint) (bool, error) {
 	return false, err
 }
 
-func DeleteCommentLikes(db *gorm.DB, commentID uint) error {
-	return db.Where("comment_id = ?", commentID).Delete(&models.CommentLike{}).Error
-}
-
 func GetCommentByID(db *gorm.DB, commentID uint) (models.Comment, error) {
 	var comment models.Comment
 	err := db.First(&comment, commentID).Error
 	return comment, err
-}
-
-func IsCommentOwner(db *gorm.DB, commentID, userID uint) bool {
-	var comment models.Comment
-	err := db.First(&comment, commentID).Error
-	if err != nil {
-		return false
-	}
-	return comment.UserID == userID
 }

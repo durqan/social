@@ -1,56 +1,29 @@
 import type { MessageAttachment } from '../types.js';
+import type { CallType } from '../types/call.js';
 import type { WsEvent } from '../types/ws/events.js';
 
-export class WebSocketService {
+type WsHandler = (event: WsEvent) => void;
+type OutgoingEvent = {
+    type: string;
+    payload: unknown;
+};
 
+const reconnectDelayMs = 3000;
+
+function websocketURL() {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//${window.location.host}/ws`;
+}
+
+export class WebSocketService {
     private ws: WebSocket | null = null;
-    private handlers: ((event: WsEvent) => void)[] = [];
+    private handlers = new Set<WsHandler>();
     private shouldReconnect = true;
     private reconnectTimer: number | null = null;
 
-    private parseMessage(raw: string): WsEvent | null {
-
-        try {
-
-            const parsed = JSON.parse(raw);
-
-            if (!parsed.type || !parsed.payload) {
-                return null;
-            }
-
-            return parsed as WsEvent;
-
-        } catch {
-
-            return null;
-        }
-    }
-
-    // =========================
-    // SEND EVENT
-    // =========================
-
-    private sendEvent(event: unknown) {
-
-        if (this.ws?.readyState !== WebSocket.OPEN) {
-            return;
-        }
-
-        this.ws.send(JSON.stringify(event));
-    }
-
-    // =========================
-    // CONNECT
-    // =========================
-
     connect() {
-
         this.shouldReconnect = true;
-
-        if (this.reconnectTimer) {
-            window.clearTimeout(this.reconnectTimer);
-            this.reconnectTimer = null;
-        }
+        this.clearReconnectTimer();
 
         if (
             this.ws?.readyState === WebSocket.OPEN ||
@@ -59,88 +32,37 @@ export class WebSocketService {
             return;
         }
 
-        const protocol =
-            window.location.protocol === 'https:'
-                ? 'wss:'
-                : 'ws:';
-
-        this.ws = new WebSocket(
-            `${protocol}//${window.location.host}/ws`
-        );
-
+        this.ws = new WebSocket(websocketURL());
         this.ws.onopen = () => {
             this.shouldReconnect = true;
         };
-
-        this.ws.onmessage = (event) => {
-
+        this.ws.onmessage = event => {
             const parsed = this.parseMessage(event.data);
 
-            if (!parsed) return;
-
-            this.handlers.forEach(handler =>
-                handler(parsed)
-            );
-        };
-
-        this.ws.onclose = () => {
-
-            this.ws = null;
-
-            if (this.shouldReconnect) {
-
-                this.reconnectTimer = window.setTimeout(() => {
-                    this.reconnectTimer = null;
-
-                    if (this.shouldReconnect) {
-                        this.connect();
-                    }
-                }, 3000);
+            if (parsed) {
+                this.handlers.forEach(handler => handler(parsed));
             }
         };
-
-        this.ws.onerror = (error) => {
-            console.error(
-                'WebSocket error:',
-                error
-            );
+        this.ws.onclose = () => {
+            this.ws = null;
+            this.scheduleReconnect();
+        };
+        this.ws.onerror = error => {
+            console.error('WebSocket error:', error);
         };
     }
 
-    // =========================
-    // SUBSCRIBE
-    // =========================
-
-    onMessage(
-        handler: (event: WsEvent) => void
-    ) {
-        this.handlers.push(handler);
+    onMessage(handler: WsHandler) {
+        this.handlers.add(handler);
     }
 
-    removeMessageHandler(
-        handler: (event: WsEvent) => void
-    ) {
-
-        const index =
-            this.handlers.indexOf(handler);
-
-        if (index !== -1) {
-            this.handlers.splice(index, 1);
-        }
+    removeMessageHandler(handler: WsHandler) {
+        this.handlers.delete(handler);
     }
 
-    // =========================
-    // SEND MESSAGE
-    // =========================
-    send(
-        toId: number,
-        content: string,
-        attachments: MessageAttachment[] = []
-    ) {
-
+    send(toId: number, content: string, attachments: MessageAttachment[] = []) {
         this.sendEvent({
             type: 'message:send',
-
             payload: {
                 to_id: toId,
                 content,
@@ -149,133 +71,104 @@ export class WebSocketService {
         });
     }
 
-    // =========================
-    // TYPING START
-    // =========================
-
     sendTypingStart(toId: number) {
-
-        this.sendEvent({
-            type: 'typing:start',
-
-            payload: {
-                to_id: toId,
-            },
-        });
+        this.sendEventToUser('typing:start', toId);
     }
-
-    // =========================
-    // TYPING STOP
-    // =========================
 
     sendTypingStop(toId: number) {
-
-        this.sendEvent({
-            type: 'typing:stop',
-
-            payload: {
-                to_id: toId,
-            },
-        });
+        this.sendEventToUser('typing:stop', toId);
     }
-
-    // =========================
-    // READ RECEIPT
-    // =========================
 
     sendReadReceipt(toId: number) {
-
-        this.sendEvent({
-            type: 'message:read',
-
-            payload: {
-                to_id: toId,
-            },
-        });
+        this.sendEventToUser('message:read', toId);
     }
-
-    // =========================
-    // AUDIO CALL
-    // =========================
 
     sendCallOffer(
         toId: number,
         offer: RTCSessionDescriptionInit,
-        callType: 'audio' | 'video' = 'audio'
+        callType: CallType = 'audio',
     ) {
-
-        this.sendEvent({
-            type: 'call:offer',
-
-            payload: {
-                to_id: toId,
-                call_type: callType,
-                offer,
-            },
+        this.sendEventToUser('call:offer', toId, {
+            call_type: callType,
+            offer,
         });
     }
 
     sendCallAnswer(toId: number, answer: RTCSessionDescriptionInit) {
-
-        this.sendEvent({
-            type: 'call:answer',
-
-            payload: {
-                to_id: toId,
-                answer,
-            },
-        });
+        this.sendEventToUser('call:answer', toId, { answer });
     }
 
     sendCallIce(toId: number, candidate: RTCIceCandidateInit) {
-
-        this.sendEvent({
-            type: 'call:ice',
-
-            payload: {
-                to_id: toId,
-                candidate,
-            },
-        });
+        this.sendEventToUser('call:ice', toId, { candidate });
     }
 
     sendCallEnd(toId: number) {
-
-        this.sendEvent({
-            type: 'call:end',
-
-            payload: {
-                to_id: toId,
-            },
-        });
+        this.sendEventToUser('call:end', toId);
     }
 
     sendCallReject(toId: number) {
+        this.sendEventToUser('call:reject', toId);
+    }
 
+    disconnect() {
+        this.shouldReconnect = false;
+        this.clearReconnectTimer();
+        this.ws?.close();
+        this.ws = null;
+    }
+
+    private parseMessage(raw: string): WsEvent | null {
+        try {
+            const parsed = JSON.parse(raw) as Partial<WsEvent>;
+
+            if (!parsed || typeof parsed.type !== 'string' || !('payload' in parsed)) {
+                return null;
+            }
+
+            return parsed as WsEvent;
+        } catch {
+            return null;
+        }
+    }
+
+    private sendEvent(event: OutgoingEvent) {
+        if (this.ws?.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify(event));
+        }
+    }
+
+    private sendEventToUser(
+        type: string,
+        toId: number,
+        payload: Record<string, unknown> = {},
+    ) {
         this.sendEvent({
-            type: 'call:reject',
-
+            type,
             payload: {
                 to_id: toId,
+                ...payload,
             },
         });
     }
 
-    // =========================
-    // DISCONNECT
-    // =========================
+    private scheduleReconnect() {
+        if (!this.shouldReconnect) {
+            return;
+        }
 
-    disconnect() {
+        this.reconnectTimer = window.setTimeout(() => {
+            this.reconnectTimer = null;
 
-        this.shouldReconnect = false;
+            if (this.shouldReconnect) {
+                this.connect();
+            }
+        }, reconnectDelayMs);
+    }
 
+    private clearReconnectTimer() {
         if (this.reconnectTimer) {
             window.clearTimeout(this.reconnectTimer);
             this.reconnectTimer = null;
         }
-
-        this.ws?.close();
-
-        this.ws = null;
     }
 }

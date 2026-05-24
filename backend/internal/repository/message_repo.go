@@ -19,6 +19,15 @@ func CreateMessageAttachments(db *gorm.DB, attachments []models.MessageAttachmen
 	return db.Create(&attachments).Error
 }
 
+func GetMessageAttachmentForUser(db *gorm.DB, attachmentID, userID uint) (*models.MessageAttachment, error) {
+	var attachment models.MessageAttachment
+	err := db.
+		Joins("JOIN messages ON messages.id = message_attachments.message_id").
+		Where("message_attachments.id = ? AND (messages.from_id = ? OR messages.to_id = ?)", attachmentID, userID, userID).
+		First(&attachment).Error
+	return &attachment, err
+}
+
 func GetConversations(db *gorm.DB, userID uint) ([]map[string]interface{}, error) {
 	var conversations []map[string]interface{}
 

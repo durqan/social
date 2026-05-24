@@ -1,9 +1,7 @@
 package handlers
 
 import (
-	"context"
-	"encoding/json"
-	"strconv"
+	"errors"
 	"tester/internal/models"
 	"tester/internal/repository"
 
@@ -13,19 +11,21 @@ import (
 
 func SendFriendRequest(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		currentUserID, _ := c.Get("user_id")
-		friendID, err := strconv.ParseUint(c.Param("id"), 10, 32)
-		if err != nil {
-			c.JSON(400, gin.H{"error": "invalid user id"})
+		currentUserID, ok := authenticatedUserID(c)
+		if !ok {
+			return
+		}
+		friendID, ok := uintParam(c, "id", "invalid user id")
+		if !ok {
 			return
 		}
 
-		if currentUserID.(uint) == uint(friendID) {
+		if currentUserID == friendID {
 			c.JSON(400, gin.H{"error": "you cannot add yourself as a friend"})
 			return
 		}
 
-		status, err := repository.GetFriendshipStatus(db, currentUserID.(uint), uint(friendID))
+		status, err := repository.GetFriendshipStatus(db, currentUserID, friendID)
 		if err != nil {
 			c.JSON(500, gin.H{"error": "failed to check friendship status"})
 			return
@@ -36,26 +36,12 @@ func SendFriendRequest(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		if err := repository.SendFriendRequest(db, currentUserID.(uint), uint(friendID)); err != nil {
+		if err := repository.SendFriendRequest(db, currentUserID, friendID); err != nil {
 			c.JSON(500, gin.H{"error": "failed to send friend request"})
 			return
 		}
 
-		if toConn, ok := clients.get(uint(friendID)); ok {
-			var sender models.User
-			db.First(&sender, currentUserID.(uint))
-
-			notification := map[string]interface{}{
-				"type": "friend:request",
-				"payload": gin.H{
-					"from_id":   currentUserID.(uint),
-					"from_name": sender.Name,
-					"message":   "sent you a friend request",
-				},
-			}
-			notificationBytes, _ := json.Marshal(notification)
-			_ = toConn.write(context.Background(), notificationBytes)
-		}
+		notifyFriendEvent(db, friendID, currentUserID, "friend:request", "sent you a friend request")
 
 		c.JSON(201, gin.H{"message": "friend request sent"})
 	}
@@ -63,9 +49,12 @@ func SendFriendRequest(db *gorm.DB) gin.HandlerFunc {
 
 func GetFriendsList(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		currentUserID, _ := c.Get("user_id")
+		currentUserID, ok := authenticatedUserID(c)
+		if !ok {
+			return
+		}
 
-		friends, err := repository.GetFriendsList(db, currentUserID.(uint))
+		friends, err := repository.GetFriendsList(db, currentUserID)
 		if err != nil {
 			c.JSON(500, gin.H{"error": "failed to get friends list"})
 			return
@@ -77,9 +66,12 @@ func GetFriendsList(db *gorm.DB) gin.HandlerFunc {
 
 func GetFriendRequests(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		currentUserID, _ := c.Get("user_id")
+		currentUserID, ok := authenticatedUserID(c)
+		if !ok {
+			return
+		}
 
-		requests, err := repository.GetFriendRequests(db, currentUserID.(uint))
+		requests, err := repository.GetFriendRequests(db, currentUserID)
 		if err != nil {
 			c.JSON(500, gin.H{"error": "failed to get friend requests"})
 			return
@@ -91,36 +83,31 @@ func GetFriendRequests(db *gorm.DB) gin.HandlerFunc {
 
 func AcceptFriendRequest(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		currentUserID, _ := c.Get("user_id")
-		friendshipID, err := strconv.ParseUint(c.Param("id"), 10, 32)
-		if err != nil {
-			c.JSON(400, gin.H{"error": "invalid friendship id"})
+		currentUserID, ok := authenticatedUserID(c)
+		if !ok {
+			return
+		}
+		friendshipID, ok := uintParam(c, "id", "invalid friendship id")
+		if !ok {
 			return
 		}
 
-		if err := repository.AcceptFriendRequest(db, uint(friendshipID), currentUserID.(uint)); err != nil {
+		if err := repository.AcceptFriendRequest(db, friendshipID, currentUserID); err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				c.JSON(404, gin.H{"error": "friend request not found"})
+				return
+			}
 			c.JSON(500, gin.H{"error": "failed to accept friend request"})
 			return
 		}
 
 		var friendship models.Friendship
-		db.First(&friendship, friendshipID)
-
-		if toConn, ok := clients.get(friendship.UserID); ok {
-			var currentUser models.User
-			db.First(&currentUser, currentUserID.(uint))
-
-			notification := map[string]interface{}{
-				"type": "friend:accepted",
-				"payload": gin.H{
-					"from_id":   currentUserID.(uint),
-					"from_name": currentUser.Name,
-					"message":   "accepted your friend request",
-				},
-			}
-			notificationBytes, _ := json.Marshal(notification)
-			_ = toConn.write(context.Background(), notificationBytes)
+		if err := db.First(&friendship, friendshipID).Error; err != nil {
+			c.JSON(500, gin.H{"error": "failed to load friend request"})
+			return
 		}
+
+		notifyFriendEvent(db, friendship.UserID, currentUserID, "friend:accepted", "accepted your friend request")
 
 		c.JSON(200, gin.H{"message": "friend request accepted"})
 	}
@@ -128,14 +115,16 @@ func AcceptFriendRequest(db *gorm.DB) gin.HandlerFunc {
 
 func RemoveFriend(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		currentUserID, _ := c.Get("user_id")
-		friendID, err := strconv.ParseUint(c.Param("id"), 10, 32)
-		if err != nil {
-			c.JSON(400, gin.H{"error": "invalid friend id"})
+		currentUserID, ok := authenticatedUserID(c)
+		if !ok {
+			return
+		}
+		friendID, ok := uintParam(c, "id", "invalid friend id")
+		if !ok {
 			return
 		}
 
-		if err := repository.RemoveFriend(db, currentUserID.(uint), uint(friendID)); err != nil {
+		if err := repository.RemoveFriend(db, currentUserID, friendID); err != nil {
 			c.JSON(500, gin.H{"error": "failed to remove friend"})
 			return
 		}
@@ -146,14 +135,16 @@ func RemoveFriend(db *gorm.DB) gin.HandlerFunc {
 
 func BlockUser(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		currentUserID, _ := c.Get("user_id")
-		friendID, err := strconv.ParseUint(c.Param("id"), 10, 32)
-		if err != nil {
-			c.JSON(400, gin.H{"error": "invalid user id"})
+		currentUserID, ok := authenticatedUserID(c)
+		if !ok {
+			return
+		}
+		friendID, ok := uintParam(c, "id", "invalid user id")
+		if !ok {
 			return
 		}
 
-		if err := repository.BlockUser(db, currentUserID.(uint), uint(friendID)); err != nil {
+		if err := repository.BlockUser(db, currentUserID, friendID); err != nil {
 			c.JSON(500, gin.H{"error": "failed to block user"})
 			return
 		}
@@ -164,14 +155,16 @@ func BlockUser(db *gorm.DB) gin.HandlerFunc {
 
 func GetFriendshipStatus(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		currentUserID, _ := c.Get("user_id")
-		userID, err := strconv.ParseUint(c.Param("id"), 10, 32)
-		if err != nil {
-			c.JSON(400, gin.H{"error": "invalid user id"})
+		currentUserID, ok := authenticatedUserID(c)
+		if !ok {
+			return
+		}
+		userID, ok := uintParam(c, "id", "invalid user id")
+		if !ok {
 			return
 		}
 
-		status, err := repository.GetFriendshipStatus(db, currentUserID.(uint), uint(userID))
+		status, err := repository.GetFriendshipStatus(db, currentUserID, userID)
 		if err != nil {
 			c.JSON(500, gin.H{"error": "failed to get friendship status"})
 			return

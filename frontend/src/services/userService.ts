@@ -1,4 +1,4 @@
-import api from '../api/axios.js';
+import { request } from '../api/axios.js';
 import type {User} from '../types.js';
 
 export type UpdateUserData = {
@@ -21,27 +21,23 @@ export const normalizeUser = (user: User): User => ({
 
 export const userService = {
     async getProfile(): Promise<User> {
-        const response = await api.get('/users/profile');
-        return normalizeUser(response.data);
+        return normalizeUser(await request.get<User>('/users/profile'));
     },
 
     async getUser(userId: number | string): Promise<User> {
-        const response = await api.get(`/users/${userId}`);
-        return normalizeUser(response.data);
+        return normalizeUser(await request.get<User>(`/users/${userId}`));
     },
 
     async searchUsers(query: string): Promise<User[]> {
-        const response = await api.get('/users/search', {params: {q: query}});
-        return response.data.map(normalizeUser);
+        return (await request.get<User[]>('/users/search', { params: { q: query } })).map(normalizeUser);
     },
 
     async updateUser(userId: number | string, data: UpdateUserData): Promise<User> {
-        const response = await api.patch(`/users/${userId}`, data);
-        return normalizeUser(response.data);
+        return normalizeUser(await request.patch<User>(`/users/${userId}`, data));
     },
 
     async changePassword(userId: number | string, data: ChangePasswordData): Promise<void> {
-        await api.patch(`/users/${userId}/password`, data);
+        await request.patch(`/users/${userId}/password`, data);
     },
 
     async uploadAvatar(userId: number, file: File,) {
@@ -49,7 +45,7 @@ export const userService = {
 
         formData.append('avatar', file,);
 
-        const res = await api.patch(
+        return request.patch(
             `/users/${userId}/avatar`,
             formData, {
                 headers: {
@@ -58,6 +54,5 @@ export const userService = {
                 },
             },
         );
-        return res.data;
     }
 };

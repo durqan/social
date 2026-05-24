@@ -7,10 +7,8 @@ import (
 	"gorm.io/gorm"
 )
 
-func NewDB() (*gorm.DB, error) {
-	dsn := config.Load().DatabaseURL
-
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+func NewDB(cfg config.Config) (*gorm.DB, error) {
+	db, err := gorm.Open(postgres.Open(cfg.DatabaseURL), &gorm.Config{
 		TranslateError: true,
 	})
 	if err != nil {

@@ -1,10 +1,10 @@
-import api from '../api/axios.js';
+import { request } from '../api/axios.js';
 import type { Comment, Post } from '../types.js';
 
 export const postService = {
     async getPosts(userId?: number): Promise<Post[]> {
-        const response = await api.get(userId ? `/posts/user/${userId}` : '/posts');
-        return response.data.map((post: Post) => ({
+        const posts = await request.get<Post[]>(userId ? `/posts/user/${userId}` : '/posts');
+        return posts.map((post: Post) => ({
             ...post,
             likes_count: Number(post.likes_count) || 0,
             comments_count: Number(post.comments_count) || 0,
@@ -12,32 +12,28 @@ export const postService = {
     },
 
     async createPost(content: string): Promise<Post> {
-        const response = await api.post('/posts', { content });
-        return response.data;
+        return request.post<Post>('/posts', { content });
     },
 
     async toggleCommentLike(postId: number, commentId: number): Promise<{ is_liked: boolean; likes_count: number }> {
-        const response = await api.post(`/posts/${postId}/comments/${commentId}/like`);
-        return response.data;
+        return request.post<{ is_liked: boolean; likes_count: number }>(`/posts/${postId}/comments/${commentId}/like`);
     },
 
     async updatePost(postId: number, content: string): Promise<Post> {
-        const response = await api.patch(`/posts/${postId}`, { content });
-        return response.data;
+        return request.patch<Post>(`/posts/${postId}`, { content });
     },
 
     async deletePost(postId: number): Promise<void> {
-        await api.delete(`/posts/${postId}`);
+        await request.delete(`/posts/${postId}`);
     },
 
     async toggleLike(postId: number): Promise<{ is_liked: boolean; likes_count: number }> {
-        const response = await api.post(`/posts/${postId}/like`);
-        return response.data;
+        return request.post<{ is_liked: boolean; likes_count: number }>(`/posts/${postId}/like`);
     },
 
     async getComments(postId: number): Promise<Comment[]> {
-        const response = await api.get(`/posts/${postId}/comments`);
-        return response.data.map((comment: Comment) => ({
+        const comments = await request.get<Comment[]>(`/posts/${postId}/comments`);
+        return comments.map((comment: Comment) => ({
             ...comment,
             id: Number(comment.id),
             post_id: Number(comment.post_id),
@@ -46,6 +42,6 @@ export const postService = {
     },
 
     async createComment(postId: number, content: string): Promise<void> {
-        await api.post(`/posts/${postId}/comments`, { content });
+        await request.post(`/posts/${postId}/comments`, { content });
     },
 };
