@@ -2,6 +2,13 @@ import { notificationService, type PushSubscriptionPayload } from './notificatio
 
 const vapidPublicKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
 
+export type PushNotificationStatus =
+    | 'unconfigured'
+    | 'unsupported'
+    | 'denied'
+    | 'prompt'
+    | 'granted';
+
 function base64URLToUint8Array(base64URL: string) {
     const padding = '='.repeat((4 - (base64URL.length % 4)) % 4);
     const base64 = `${base64URL}${padding}`.replace(/-/g, '+').replace(/_/g, '/');
@@ -72,4 +79,24 @@ export async function enablePushNotifications(userId: number) {
     }
 
     await notificationService.subscribePush(payload);
+}
+
+export function getPushNotificationStatus(): PushNotificationStatus {
+    if (!vapidPublicKey) {
+        return 'unconfigured';
+    }
+
+    if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+        return 'unsupported';
+    }
+
+    if (Notification.permission === 'denied') {
+        return 'denied';
+    }
+
+    if (Notification.permission === 'granted') {
+        return 'granted';
+    }
+
+    return 'prompt';
 }

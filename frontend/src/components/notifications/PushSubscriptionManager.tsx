@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 
 import { useAuth } from '../../contexts/AuthContext.js';
-import { enablePushNotifications } from '../../services/pushNotifications.js';
+import { enablePushNotifications, getPushNotificationStatus } from '../../services/pushNotifications.js';
 
 export function PushSubscriptionManager() {
     const { currentUser } = useAuth();
@@ -10,6 +10,9 @@ export function PushSubscriptionManager() {
     useEffect(() => {
         const userID = currentUser?.id;
         if (!userID || attemptedUserIDRef.current === userID) {
+            return;
+        }
+        if (getPushNotificationStatus() !== 'granted') {
             return;
         }
 

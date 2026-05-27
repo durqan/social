@@ -2,6 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { notificationService } from '../../services/notification.js';
+import {
+    enablePushNotifications,
+    getPushNotificationStatus,
+    type PushNotificationStatus,
+} from '../../services/pushNotifications.js';
 import { userService } from '../../services/userService.js';
 import type { SocialNotification } from '../../types.js';
 import { formatRelativeDate } from '../../utils/date.js';
@@ -64,6 +69,8 @@ export function NotificationBell({ userId }: NotificationBellProps) {
     const [open, setOpen] = useState(false);
     const [loading, setLoading] = useState(false);
     const [errorMessage, setErrorMessage] = useState('');
+    const [pushStatus, setPushStatus] = useState<PushNotificationStatus>(() => getPushNotificationStatus());
+    const [pushLoading, setPushLoading] = useState(false);
     const [actorNames, setActorNames] = useState<Record<number, string>>({});
     const rootRef = useRef<HTMLDivElement>(null);
 
@@ -167,6 +174,8 @@ export function NotificationBell({ userId }: NotificationBellProps) {
             return;
         }
 
+        setPushStatus(getPushNotificationStatus());
+
         const handlePointerDown = (event: PointerEvent) => {
             if (!rootRef.current?.contains(event.target as Node)) {
                 setOpen(false);
@@ -223,6 +232,28 @@ export function NotificationBell({ userId }: NotificationBellProps) {
         navigateToNotification(notification);
     };
 
+    const handleEnablePush = async () => {
+        if (!userId) {
+            return;
+        }
+
+        setPushLoading(true);
+        setErrorMessage('');
+
+        try {
+            await enablePushNotifications(userId);
+            setPushStatus(getPushNotificationStatus());
+        } catch (error) {
+            console.error('Ошибка подключения push-уведомлений:', error);
+            setErrorMessage('Не удалось включить push');
+            setPushStatus(getPushNotificationStatus());
+        } finally {
+            setPushLoading(false);
+        }
+    };
+
+    const showPushButton = pushStatus === 'prompt';
+
     return (
         <div ref={rootRef} className="relative">
             <button
@@ -247,6 +278,19 @@ export function NotificationBell({ userId }: NotificationBellProps) {
                             </span>
                         )}
                     </div>
+
+                    {showPushButton && (
+                        <div className="border-b border-gray-100 px-4 py-3">
+                            <button
+                                type="button"
+                                onClick={handleEnablePush}
+                                disabled={pushLoading}
+                                className="w-full rounded-lg bg-sky-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-sky-700 disabled:opacity-60"
+                            >
+                                {pushLoading ? 'Подключение...' : 'Включить push-уведомления'}
+                            </button>
+                        </div>
+                    )}
 
                     <div className="max-h-96 overflow-y-auto">
                         {errorMessage && notifications.length === 0 ? (
