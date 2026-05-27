@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useParams, useOutletContext } from 'react-router-dom';
+import { useNavigate, useOutletContext, useParams } from 'react-router-dom';
 import type { MessageAttachment, User } from '../types.js';
 import { messageService } from '../services/messageService.js';
 import { userService } from '../services/userService.js';
@@ -21,6 +21,7 @@ const optimisticMessageFloor = 10000000;
 
 function Chat() {
     const { userId } = useParams();
+    const navigate = useNavigate();
     const { currentUser } = useOutletContext<{ currentUser: User }>();
     const wsService = useWebSocket();
     const { status: callStatus, startCall, startVideoCall } = useAudioCall();
@@ -148,6 +149,7 @@ function Chat() {
                 recipientName={recipient?.name}
                 selectionMode={selectionMode}
                 selectedCount={selectedMessages.size}
+                onBack={() => navigate(`/users/${currentUser?.id}/conversations`)}
                 onExitSelection={exitSelectionMode}
                 onDeleteClick={openDeleteConfirm}
                 onStartAudioCall={

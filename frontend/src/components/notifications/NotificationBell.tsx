@@ -373,7 +373,7 @@ export function NotificationBell({ userId, compact = false }: NotificationBellPr
             </button>
 
             {open && (
-                <div className="absolute right-0 top-full z-50 mt-2 w-[min(360px,calc(100vw-24px))] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl shadow-gray-900/10">
+                <div className="fixed left-3 right-3 top-16 z-50 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl shadow-gray-900/10 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-[min(360px,calc(100vw-24px))]">
                     <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
                         <p className="font-semibold text-gray-950">Уведомления</p>
                         {unreadCount > 0 && (

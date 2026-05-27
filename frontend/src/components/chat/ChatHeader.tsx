@@ -5,6 +5,7 @@ interface ChatHeaderProps {
     recipientName?: string;
     selectionMode: boolean;
     selectedCount: number;
+    onBack?: () => void;
     onExitSelection: () => void;
     onDeleteClick: () => void;
     onStartAudioCall?: () => void;
@@ -15,6 +16,7 @@ export const ChatHeader = ({
                                recipientName,
                                selectionMode,
                                selectedCount,
+                               onBack,
                                onExitSelection,
                                onDeleteClick,
                                onStartAudioCall,
@@ -37,6 +39,17 @@ export const ChatHeader = ({
             ) : (
                 <div className="flex items-center justify-between w-full gap-2 sm:gap-3">
                     <div className="flex items-center gap-3 min-w-0">
+                        {onBack && (
+                            <button
+                                type="button"
+                                onClick={onBack}
+                                className="icon-button h-9 w-9 flex-shrink-0 text-gray-500 lg:hidden"
+                                aria-label="Назад к чатам"
+                                title="Назад"
+                            >
+                                <Icon name="arrowLeft" />
+                            </button>
+                        )}
                         <Avatar name={recipientName} />
                         <div className="min-w-0">
                             <h2 className="font-semibold text-gray-950 truncate text-sm sm:text-base">{recipientName || 'Пользователь'}</h2>
