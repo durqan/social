@@ -5,6 +5,7 @@ import { notificationService } from '../../services/notification.js';
 import {
     enablePushNotifications,
     getPushNotificationStatus,
+    hasPushSubscription,
     type PushNotificationStatus,
 } from '../../services/pushNotifications.js';
 import { userService } from '../../services/userService.js';
@@ -70,6 +71,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
     const [loading, setLoading] = useState(false);
     const [errorMessage, setErrorMessage] = useState('');
     const [pushStatus, setPushStatus] = useState<PushNotificationStatus>(() => getPushNotificationStatus());
+    const [pushSubscribed, setPushSubscribed] = useState(false);
     const [pushLoading, setPushLoading] = useState(false);
     const [actorNames, setActorNames] = useState<Record<number, string>>({});
     const rootRef = useRef<HTMLDivElement>(null);
@@ -174,7 +176,21 @@ export function NotificationBell({ userId }: NotificationBellProps) {
             return;
         }
 
+        let cancelled = false;
+
         setPushStatus(getPushNotificationStatus());
+        hasPushSubscription()
+            .then(isSubscribed => {
+                if (!cancelled) {
+                    setPushSubscribed(isSubscribed);
+                }
+            })
+            .catch(error => {
+                console.error('Ошибка проверки push-подписки:', error);
+                if (!cancelled) {
+                    setPushSubscribed(false);
+                }
+            });
 
         const handlePointerDown = (event: PointerEvent) => {
             if (!rootRef.current?.contains(event.target as Node)) {
@@ -183,7 +199,10 @@ export function NotificationBell({ userId }: NotificationBellProps) {
         };
 
         document.addEventListener('pointerdown', handlePointerDown);
-        return () => document.removeEventListener('pointerdown', handlePointerDown);
+        return () => {
+            cancelled = true;
+            document.removeEventListener('pointerdown', handlePointerDown);
+        };
     }, [open]);
 
     const navigateToNotification = (notification: SocialNotification) => {
@@ -243,16 +262,18 @@ export function NotificationBell({ userId }: NotificationBellProps) {
         try {
             await enablePushNotifications(userId);
             setPushStatus(getPushNotificationStatus());
+            setPushSubscribed(await hasPushSubscription());
         } catch (error) {
             console.error('Ошибка подключения push-уведомлений:', error);
             setErrorMessage('Не удалось включить push');
             setPushStatus(getPushNotificationStatus());
+            setPushSubscribed(await hasPushSubscription());
         } finally {
             setPushLoading(false);
         }
     };
 
-    const showPushButton = pushStatus === 'prompt';
+    const showPushButton = pushStatus === 'prompt' || (pushStatus === 'granted' && !pushSubscribed);
 
     return (
         <div ref={rootRef} className="relative">
