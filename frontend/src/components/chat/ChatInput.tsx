@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Icon } from '../ui/Icon.js';
 import EmojiPicker from 'emoji-picker-react';
-import type { EmojiClickData } from 'emoji-picker-react';
+import { EmojiStyle, type EmojiClickData } from 'emoji-picker-react';
 
 interface ChatInputProps {
     value: string;
@@ -111,6 +111,7 @@ export const ChatInput = ({ value, onChange, onSend }: ChatInputProps) => {
                         <EmojiPicker
                             width={300}
                             height={260}
+                            emojiStyle={EmojiStyle.NATIVE}
                             searchDisabled
                             previewConfig={{
                                 showPreview: false,
