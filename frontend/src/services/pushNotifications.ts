@@ -81,6 +81,20 @@ export async function enablePushNotifications(userId: number) {
     await notificationService.subscribePush(payload);
 }
 
+export async function hasPushSubscription() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        return false;
+    }
+
+    const registration = await navigator.serviceWorker.getRegistration();
+    if (!registration) {
+        return false;
+    }
+
+    const subscription = await registration.pushManager.getSubscription();
+    return Boolean(subscription);
+}
+
 export function getPushNotificationStatus(): PushNotificationStatus {
     if (!vapidPublicKey) {
         return 'unconfigured';
