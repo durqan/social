@@ -59,7 +59,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./backend/uploads:/app/uploads
+      - uploads_data:/app/uploads
     environment:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       PORT: ${PORT:-8080}
@@ -179,6 +179,8 @@ volumes:
     name: social_redis_data
   rabbit_data:
     name: social_rabbit_data
+  uploads_data:
+    name: social_uploads_data
 
 networks:
   social_network:
