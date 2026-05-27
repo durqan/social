@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"tester/internal/dto"
 	"tester/internal/repository"
 
 	"github.com/gin-gonic/gin"
@@ -18,7 +19,8 @@ func TogglePostLike(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		if _, err := repository.GetPostByID(db, postID); err != nil {
+		post, err := repository.GetPostByID(db, postID)
+		if err != nil {
 			c.JSON(404, gin.H{"error": "post not found"})
 			return
 		}
@@ -30,6 +32,10 @@ func TogglePostLike(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		likesCount, _ := repository.GetPostLikeCount(db, postID)
+
+		if isLiked {
+			publishNotification(post.UserID, userID, dto.NotificationTypePostLiked, postID)
+		}
 
 		c.JSON(200, gin.H{
 			"is_liked":    isLiked,

@@ -2,6 +2,10 @@ import { useState, useCallback } from 'react';
 import { messageService } from '../services/messageService.js';
 import type { Message } from '../types.js';
 
+const dispatchUnreadReset = () => {
+    window.dispatchEvent(new Event('reset-unread'));
+};
+
 export const useChatMessages = (userId: string | undefined, currentUserId: number | undefined) => {
     const [messages, setMessages] = useState<Message[]>([]);
     const [hasMore, setHasMore] = useState(true);
@@ -15,9 +19,12 @@ export const useChatMessages = (userId: string | undefined, currentUserId: numbe
         setInitialLoading(true);
         try {
             const res = await messageService.getMessagesWith(userId, {limit: 20});
-            setMessages(res.messages);
+            const otherUserID = Number(userId);
+            setMessages(res.messages.map(message =>
+                message.from_id === otherUserID ? { ...message, is_read: true } : message
+            ));
             setHasMore(res.has_more);
-            await messageService.markAsRead(userId);
+            dispatchUnreadReset();
         } catch (error) {
             console.error(error);
         } finally {
@@ -64,6 +71,7 @@ export const useChatMessages = (userId: string | undefined, currentUserId: numbe
         setMessages(prev => prev.map(m =>
             m.from_id === fromId ? { ...m, is_read: true } : m
         ));
+        dispatchUnreadReset();
     }, []);
 
     return {

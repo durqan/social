@@ -8,6 +8,7 @@ import { Icon } from './ui/Icon.js';
 import { Spinner } from './ui/Spinner.js';
 import { usePresence } from '../hooks/usePresence.js';
 import { UserSearch } from './profile/UserSearch.js';
+import { NotificationBell } from './notifications/NotificationBell.js';
 
 function Profile() {
     const { id } = useParams();
@@ -89,6 +90,7 @@ function Profile() {
                                 </h1>
                             </div>
                             <div className="flex items-center gap-2 sm:gap-3">
+                                <NotificationBell userId={currentUser?.id} />
                                 {currentUser?.id === user?.id && (
                                     <button
                                         onClick={() => navigate(`/users/${id}/edit`)}

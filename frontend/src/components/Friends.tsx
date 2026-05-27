@@ -32,6 +32,7 @@ function Friends() {
         try {
             await friendService.acceptFriendRequest(friendshipId);
             setRequests(prev => prev.filter(r => r.id !== friendshipId));
+            window.dispatchEvent(new Event('friend-requests:changed'));
             const newFriends = await friendService.getFriendsList();
             setFriends(newFriends);
         } catch (error) {

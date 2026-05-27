@@ -33,8 +33,20 @@ services:
       timeout: 5s
       retries: 5
 
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: social_rabbitmq_local
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+
 volumes:
   postgres_data:
     name: social_postgres_local_data
   redis_data:
     name: social_redis_local_data
+  rabbit_data:
+    name: social_rabbit_local_data

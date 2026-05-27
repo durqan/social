@@ -12,6 +12,7 @@ const (
 	defaultPort      = "8080"
 	defaultJWTSecret = "your-secret-key-change-in-production"
 	defaultDatabase  = "postgres://social:social@localhost:5433/social?sslmode=disable"
+	defaultRabbitURL = "amqp://guest:guest@localhost:5672/"
 
 	defaultRedisHost     = "localhost"
 	defaultRedisPort     = "6379"
@@ -25,6 +26,7 @@ type Config struct {
 	JWTSecret      string
 	CookieSecure   bool
 	AllowedOrigins []string
+	RabbitURL      string
 
 	RedisHost     string
 	RedisPort     string
@@ -42,6 +44,7 @@ func Load() Config {
 		JWTSecret:      getEnv("JWT_SECRET", defaultJWTSecret),
 		CookieSecure:   os.Getenv("COOKIE_SECURE") == "true",
 		AllowedOrigins: parseAllowedOrigins(os.Getenv("CORS_ALLOWED_ORIGINS")),
+		RabbitURL:      getEnv("RABBIT_URL", defaultRabbitURL),
 
 		RedisHost:     getEnv("REDIS_HOST", defaultRedisHost),
 		RedisPort:     getEnv("REDIS_PORT", defaultRedisPort),

@@ -6,6 +6,7 @@ import (
 	"tester/internal/cache"
 	"tester/internal/config"
 	"tester/internal/db"
+	"tester/internal/rabbit"
 	"tester/internal/server"
 )
 
@@ -22,6 +23,13 @@ func main() {
 	}
 
 	log.Println("Redis connected successfully")
+
+	if err := rabbit.Init(cfg.RabbitURL); err != nil {
+		log.Printf("failed to connect rabbitmq: %v", err)
+	} else {
+		log.Println("RabbitMQ connected successfully")
+	}
+	defer rabbit.Close()
 
 	if err := db.Migrate(database); err != nil {
 		log.Fatal("failed to migrate database:", err)

@@ -93,8 +93,12 @@ function Sidebar({
 
     useEffect(() => {
         window.addEventListener('reset-unread', refreshUnreadCount);
-        return () => window.removeEventListener('reset-unread', refreshUnreadCount);
-    }, [refreshUnreadCount]);
+        window.addEventListener('friend-requests:changed', refreshFriendRequestCount);
+        return () => {
+            window.removeEventListener('reset-unread', refreshUnreadCount);
+            window.removeEventListener('friend-requests:changed', refreshFriendRequestCount);
+        };
+    }, [refreshFriendRequestCount, refreshUnreadCount]);
 
     useEffect(() => {
         if (!userId) return;
@@ -110,6 +114,9 @@ function Sidebar({
 
                 case 'message:new':
                     if (event.payload.to_id === userId) {
+                        if (location.pathname.includes(`/chat/${event.payload.from_id}`)) {
+                            return;
+                        }
                         setUnreadCount(prev => prev + 1);
                     }
                     return;
@@ -127,7 +134,7 @@ function Sidebar({
 
         wsService.onMessage(handleMessage);
         return () => wsService.removeMessageHandler(handleMessage);
-    }, [refreshFriendRequestCount, refreshUnreadCount, userId, wsService]);
+    }, [location.pathname, refreshFriendRequestCount, refreshUnreadCount, userId, wsService]);
 
     const navItems = useMemo<SidebarItem[]>(() => [
         {

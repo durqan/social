@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"tester/internal/cache"
+	"tester/internal/dto"
 	"tester/internal/models"
 	"tester/internal/repository"
 
@@ -72,6 +73,8 @@ func SendMessage(db *gorm.DB) gin.HandlerFunc {
 			c.JSON(500, gin.H{"error": "failed to attach images"})
 			return
 		}
+
+		publishNotification(toID, userID, dto.NotificationTypeMessage, message.ID)
 
 		db.Preload("From").Preload("To").Preload("Attachments").First(&message, message.ID)
 		c.JSON(201, withPrivateAttachmentURLs(message))
@@ -275,6 +278,7 @@ func MarkMessagesAsRead(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 		invalidateMessageCaches()
+		sendMessageReadReceipt(c.Request.Context(), userID, fromID)
 
 		c.JSON(200, gin.H{"message": "marked as read"})
 	}

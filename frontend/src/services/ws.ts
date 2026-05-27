@@ -20,6 +20,7 @@ export class WebSocketService {
     private handlers = new Set<WsHandler>();
     private shouldReconnect = true;
     private reconnectTimer: number | null = null;
+    private pendingEvents: OutgoingEvent[] = [];
 
     connect() {
         this.shouldReconnect = true;
@@ -35,6 +36,7 @@ export class WebSocketService {
         this.ws = new WebSocket(websocketURL());
         this.ws.onopen = () => {
             this.shouldReconnect = true;
+            this.flushPendingEvents();
         };
         this.ws.onmessage = event => {
             const parsed = this.parseMessage(event.data);
@@ -72,11 +74,11 @@ export class WebSocketService {
     }
 
     sendTypingStart(toId: number) {
-        this.sendEventToUser('typing:start', toId);
+        this.sendEventToUser('typing:start', toId, {}, false);
     }
 
     sendTypingStop(toId: number) {
-        this.sendEventToUser('typing:stop', toId);
+        this.sendEventToUser('typing:stop', toId, {}, false);
     }
 
     sendReadReceipt(toId: number) {
@@ -113,6 +115,7 @@ export class WebSocketService {
     disconnect() {
         this.shouldReconnect = false;
         this.clearReconnectTimer();
+        this.pendingEvents = [];
         this.ws?.close();
         this.ws = null;
     }
@@ -131,16 +134,25 @@ export class WebSocketService {
         }
     }
 
-    private sendEvent(event: OutgoingEvent) {
+    private sendEvent(event: OutgoingEvent, queueIfClosed = true) {
         if (this.ws?.readyState === WebSocket.OPEN) {
             this.ws.send(JSON.stringify(event));
+            return;
         }
+
+        if (!queueIfClosed) {
+            return;
+        }
+
+        this.pendingEvents.push(event);
+        this.connect();
     }
 
     private sendEventToUser(
         type: string,
         toId: number,
         payload: Record<string, unknown> = {},
+        queueIfClosed = true,
     ) {
         this.sendEvent({
             type,
@@ -148,7 +160,7 @@ export class WebSocketService {
                 to_id: toId,
                 ...payload,
             },
-        });
+        }, queueIfClosed);
     }
 
     private scheduleReconnect() {
@@ -170,5 +182,14 @@ export class WebSocketService {
             window.clearTimeout(this.reconnectTimer);
             this.reconnectTimer = null;
         }
+    }
+
+    private flushPendingEvents() {
+        if (this.ws?.readyState !== WebSocket.OPEN || this.pendingEvents.length === 0) {
+            return;
+        }
+
+        const events = this.pendingEvents.splice(0);
+        events.forEach(event => this.ws?.send(JSON.stringify(event)));
     }
 }

@@ -88,6 +88,16 @@ export interface Conversation {
     unread_count: number;
 }
 
+export interface SocialNotification {
+    id: number;
+    recipient_id: number;
+    actor_id: number;
+    type: string;
+    entity_id: number;
+    is_read: boolean;
+    created_at: string;
+}
+
 export interface Friendship {
     id: number;
     user_id: number;

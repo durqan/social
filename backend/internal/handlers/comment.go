@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"tester/internal/dto"
 	"tester/internal/models"
 	"tester/internal/repository"
 
@@ -55,7 +56,8 @@ func CreateComment(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		if _, err := repository.GetPostByID(db, postID); err != nil {
+		post, err := repository.GetPostByID(db, postID)
+		if err != nil {
 			c.JSON(404, gin.H{"error": "post not found"})
 			return
 		}
@@ -76,6 +78,8 @@ func CreateComment(db *gorm.DB) gin.HandlerFunc {
 			c.JSON(500, gin.H{"error": "failed to create comment"})
 			return
 		}
+
+		publishNotification(post.UserID, userID, dto.NotificationTypeCommentCreated, comment.ID)
 
 		db.Preload("User").First(&comment, comment.ID)
 		c.JSON(201, comment)

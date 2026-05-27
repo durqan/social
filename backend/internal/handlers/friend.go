@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"tester/internal/dto"
 	"tester/internal/models"
 	"tester/internal/repository"
 
@@ -42,6 +43,7 @@ func SendFriendRequest(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		notifyFriendEvent(db, friendID, currentUserID, "friend:request", "sent you a friend request")
+		publishNotification(friendID, currentUserID, dto.NotificationTypeFriendRequest, currentUserID)
 
 		c.JSON(201, gin.H{"message": "friend request sent"})
 	}
@@ -108,6 +110,7 @@ func AcceptFriendRequest(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		notifyFriendEvent(db, friendship.UserID, currentUserID, "friend:accepted", "accepted your friend request")
+		publishNotification(friendship.UserID, currentUserID, dto.NotificationTypeFriendAccepted, friendship.ID)
 
 		c.JSON(200, gin.H{"message": "friend request accepted"})
 	}

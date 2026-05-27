@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 
 import { useWebSocket } from '../contexts/WebSocketContext.js';
 
@@ -23,20 +23,12 @@ export const useChatWebSocket = ({
                                      currentUserId,
                                      onTyping,
                                      onMessageDeleted,
-                                     onReadReceipt,
-                                     onNewMessage,
-                                 }: UseChatWebSocketProps) => {
-
-    const isSubscribed = useRef(false);
-
+                                 onReadReceipt,
+                                 onNewMessage,
+                             }: UseChatWebSocketProps) => {
     const wsService = useWebSocket();
 
     useEffect(() => {
-
-        if (isSubscribed.current) return;
-
-        isSubscribed.current = true;
-
         const handleMessage = (event: WsEvent) => {
 
             switch (event.type) {
@@ -88,8 +80,11 @@ export const useChatWebSocket = ({
 
                     const payload = event.payload;
 
-                    if (payload.to_id === currentUserId) {
-                        onReadReceipt(payload.to_id);
+                    if (
+                        payload.to_id === currentUserId &&
+                        payload.from_id === Number(userId)
+                    ) {
+                        onReadReceipt(currentUserId);
                     }
 
                     break;

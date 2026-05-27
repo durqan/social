@@ -6,6 +6,7 @@ import (
 	"log"
 	"strings"
 
+	"tester/internal/dto"
 	"tester/internal/models"
 	"tester/internal/repository"
 
@@ -76,6 +77,8 @@ func handleWebSocketSendMessage(ctx context.Context, userID uint, rawPayload jso
 		log.Println("Failed to save attachments:", err)
 		return
 	}
+
+	publishNotification(payload.ToID, userID, dto.NotificationTypeMessage, message.ID)
 
 	var fullMessage models.Message
 	dbInstance.
@@ -163,17 +166,27 @@ func handleWebSocketReadReceipt(ctx context.Context, userID uint, rawPayload jso
 		invalidateMessageCaches()
 	}
 
-	if toConn, ok := clients.get(payload.ToID); ok {
-		receiptBytes, _ := json.Marshal(gin.H{
-			"type": "message:read",
-			"payload": gin.H{
-				"from_id": userID,
-				"to_id":   payload.ToID,
-			},
-		})
+	sendMessageReadReceipt(ctx, userID, payload.ToID)
+}
 
-		if err := toConn.write(ctx, receiptBytes); err != nil {
-			log.Println("Failed to send read receipt:", err)
+func sendMessageReadReceipt(ctx context.Context, readerID uint, senderID uint) {
+	if senderID == 0 {
+		return
+	}
+
+	receiptBytes, _ := json.Marshal(gin.H{
+		"type": "message:read",
+		"payload": gin.H{
+			"from_id": readerID,
+			"to_id":   senderID,
+		},
+	})
+
+	for _, userID := range []uint{senderID, readerID} {
+		for _, toConn := range clients.getAll(userID) {
+			if err := toConn.write(ctx, receiptBytes); err != nil {
+				log.Println("Failed to send read receipt:", err)
+			}
 		}
 	}
 }

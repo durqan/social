@@ -69,6 +69,13 @@ function NotificationHandler() {
     const { currentUser } = useAuth();
 
     useEffect(() => {
+        if (!currentUser?.id) {
+            wsService.disconnect();
+            return;
+        }
+
+        wsService.connect();
+
         const shownMessageNotifications = new Set<number>();
 
         const handleMessage = async (event: WsEvent) => {

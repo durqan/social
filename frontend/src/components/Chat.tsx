@@ -86,7 +86,7 @@ function Chat() {
         if (!userId) return;
         wsService.sendReadReceipt(Number(userId));
         markAsRead(Number(userId));
-    }, [userId, wsService, markAsRead]);
+    }, [markAsRead, userId, wsService]);
 
     const uploadAttachments = useCallback(async (files: File[]): Promise<MessageAttachment[]> => {
         if (!files.length) return [];

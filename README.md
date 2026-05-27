@@ -31,7 +31,7 @@
 
 ### Локальная разработка без пересборки Docker
 
-Docker используется только для Postgres и Redis:
+Docker используется для Postgres, Redis и RabbitMQ:
 
 ```bash
 make dev-infra
