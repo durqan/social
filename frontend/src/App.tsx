@@ -15,6 +15,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext.js';
 import { WebSocketProvider } from './contexts/WebSocketContext.js';
 import { AudioCallProvider } from './contexts/AudioCallContext.js';
 import { RequireAuth } from './components/RequireAuth.js';
+import { PushSubscriptionManager } from './components/notifications/PushSubscriptionManager.js';
 
 function AppRoutes() {
     const { currentUser } = useAuth();
@@ -47,6 +48,7 @@ function App() {
                 <WebSocketProvider>
                     <AuthProvider>
                         <AudioCallProvider>
+                            <PushSubscriptionManager />
                             <NotificationHandler />
                             <AppRoutes />
                         </AudioCallProvider>

@@ -69,6 +69,21 @@ func (h *Handler) CreateNotification(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"status": "created"})
 }
 
+func (h *Handler) SubscribePush(c *gin.Context) {
+	req := dto.PushSubscriptionReq{}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := h.service.SavePushSubscription(&req); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": "subscribed"})
+}
+
 func (h *Handler) StreamNotifications(c *gin.Context) {
 	userIDParam := c.Param("user_id")
 	userID64, err := strconv.ParseUint(userIDParam, 10, 64)

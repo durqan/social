@@ -6,6 +6,7 @@ import (
 	"notifications/handlers"
 	"notifications/hub"
 	"notifications/models"
+	pushsvc "notifications/push"
 	"notifications/rabbit"
 	"notifications/repository"
 	"notifications/services"
@@ -23,14 +24,15 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	err = newDB.AutoMigrate(&models.Notification{})
+	err = newDB.AutoMigrate(&models.Notification{}, &models.PushSubscription{})
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	repo := repository.NewRepository(newDB)
 	notificationHub := hub.NewHub()
-	svc := services.NewService(repo, notificationHub)
+	pushService := pushsvc.NewServiceFromEnv()
+	svc := services.NewService(repo, notificationHub, pushService)
 	h := handlers.NewHandler(svc, notificationHub)
 
 	conn, ch, err := rabbit.NewRabbit()
@@ -61,6 +63,7 @@ func main() {
 	r.GET("/notifications/:user_id", h.GetUserNotifications)
 	r.PATCH("/notifications/:id/read", h.MarkAsRead)
 	r.POST("/notifications", h.CreateNotification)
+	r.POST("/push/subscribe", h.SubscribePush)
 
 	go func() {
 		if err := rabbit.StartConsumer(ch, svc); err != nil {

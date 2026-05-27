@@ -92,6 +92,7 @@ jobs:
             VITE_TURN_USERNAME=${{ vars.VITE_TURN_USERNAME }}
             VITE_TURN_CREDENTIAL=${{ secrets.VITE_TURN_CREDENTIAL }}
             VITE_NOTIFICATIONS_URL=${{ vars.VITE_NOTIFICATIONS_URL }}
+            VITE_VAPID_PUBLIC_KEY=${{ vars.VITE_VAPID_PUBLIC_KEY }}
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,scope=frontend,mode=max
 

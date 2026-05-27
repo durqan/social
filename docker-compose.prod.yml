@@ -109,6 +109,9 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       RABBIT_URL: ${RABBIT_URL:-amqp://guest:guest@rabbitmq:5672/}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:example@example.com}
     depends_on:
       postgres:
         condition: service_healthy

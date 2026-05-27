@@ -4,6 +4,7 @@ import (
 	"notifications/models"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type Repository struct {
@@ -15,7 +16,7 @@ func NewRepository(db *gorm.DB) *Repository {
 }
 
 func (r *Repository) Create(notification *models.Notification) error {
-	return r.db.Create(&notification).Error
+	return r.db.Create(notification).Error
 }
 
 func (r *Repository) FindByRecipientID(userID uint) ([]models.Notification, error) {
@@ -37,4 +38,28 @@ func (r *Repository) MarkAsRead(id uint) error {
 	return r.db.Model(&models.Notification{}).
 		Where("id = ?", id).
 		Update("is_read", true).Error
+}
+
+func (r *Repository) UpsertPushSubscription(subscription *models.PushSubscription) error {
+	return r.db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "endpoint"}},
+		DoUpdates: clause.AssignmentColumns([]string{"user_id", "p256dh", "auth"}),
+	}).Create(subscription).Error
+}
+
+func (r *Repository) FindPushSubscriptionsByUserID(userID uint) ([]models.PushSubscription, error) {
+	var subscriptions []models.PushSubscription
+
+	err := r.db.
+		Where("user_id = ?", userID).
+		Find(&subscriptions).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return subscriptions, nil
+}
+
+func (r *Repository) DeletePushSubscription(id uint) error {
+	return r.db.Delete(&models.PushSubscription{}, id).Error
 }

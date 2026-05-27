@@ -3,6 +3,15 @@ import type { SocialNotification } from '../types.js';
 
 const notificationsBaseURL = (import.meta.env.VITE_NOTIFICATIONS_URL || '/notifications-api').replace(/\/$/, '');
 
+export type PushSubscriptionPayload = {
+    user_id: number;
+    endpoint: string;
+    keys: {
+        p256dh: string;
+        auth: string;
+    };
+};
+
 export const showMessageNotification = (name: string, content: string) => {
     toast(`${name}: ${content.slice(0, 50)}${content.length > 50 ? '...' : ''}`, {
         duration: 5000,
@@ -31,5 +40,15 @@ export const notificationService = {
 
     streamNotifications(userId: number): EventSource {
         return new EventSource(`${notificationsBaseURL}/notifications/${userId}/stream`);
+    },
+
+    async subscribePush(subscription: PushSubscriptionPayload): Promise<void> {
+        await requestNotifications<{ status: string }>('/push/subscribe', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(subscription),
+        });
     },
 };
