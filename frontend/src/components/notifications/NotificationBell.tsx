@@ -15,6 +15,7 @@ import { Icon } from '../ui/Icon.js';
 
 type NotificationBellProps = {
     userId?: number;
+    compact?: boolean;
 };
 
 const fallbackActorName = 'Пользователь';
@@ -123,7 +124,7 @@ function NotificationBadge({ count }: { count: number }) {
     );
 }
 
-export function NotificationBell({ userId }: NotificationBellProps) {
+export function NotificationBell({ userId, compact = false }: NotificationBellProps) {
     const navigate = useNavigate();
     const [notifications, setNotifications] = useState<SocialNotification[]>([]);
     const [open, setOpen] = useState(false);
@@ -361,7 +362,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
         <div ref={rootRef} className="relative">
             <button
                 type="button"
-                className="icon-button relative h-10 w-10"
+                className={`icon-button relative ${compact ? 'h-9 w-9 sm:h-10 sm:w-10' : 'h-10 w-10'}`}
                 title="Уведомления"
                 aria-label="Уведомления"
                 aria-expanded={open}
