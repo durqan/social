@@ -27,6 +27,49 @@ const notificationText: Record<string, (actorName: string) => string> = {
     message_received: actorName => `${actorName} написал(а) вам`,
 };
 
+let notificationAudioContext: AudioContext | null = null;
+
+function getNotificationAudioContext() {
+    if (notificationAudioContext) {
+        return notificationAudioContext;
+    }
+
+    notificationAudioContext = new AudioContext();
+    return notificationAudioContext;
+}
+
+function unlockNotificationSound() {
+    const audioContext = getNotificationAudioContext();
+    if (audioContext.state === 'suspended') {
+        audioContext.resume().catch(error => {
+            console.error('Ошибка включения звука уведомлений:', error);
+        });
+    }
+}
+
+function playNotificationSound() {
+    try {
+        const audioContext = getNotificationAudioContext();
+        const oscillator = audioContext.createOscillator();
+        const gain = audioContext.createGain();
+        const now = audioContext.currentTime;
+
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(880, now);
+        oscillator.frequency.setValueAtTime(660, now + 0.11);
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(0.18, now + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.28);
+
+        oscillator.connect(gain);
+        gain.connect(audioContext.destination);
+        oscillator.start(now);
+        oscillator.stop(now + 0.3);
+    } catch (error) {
+        console.error('Ошибка проигрывания звука уведомления:', error);
+    }
+}
+
 function getNotificationTitle(notification: SocialNotification, actorName?: string) {
     const buildTitle = notificationText[notification.type];
     if (!buildTitle) {
@@ -49,6 +92,22 @@ function getNotificationDetails(notification: SocialNotification) {
             return 'Открыть стену';
         default:
             return 'Открыть';
+    }
+}
+
+function getNotificationURL(notification: SocialNotification, userId: number) {
+    switch (notification.type) {
+        case 'message_received':
+            return `/users/${userId}/chat/${notification.actor_id}`;
+        case 'friend_request':
+            return `/users/${userId}/friends`;
+        case 'friend_accepted':
+            return `/users/${notification.actor_id}`;
+        case 'post_liked':
+        case 'comment_created':
+            return `/users/${userId}/wall`;
+        default:
+            return `/users/${userId}`;
     }
 }
 
@@ -80,6 +139,27 @@ export function NotificationBell({ userId }: NotificationBellProps) {
         () => notifications.filter(notification => !notification.is_read).length,
         [notifications],
     );
+
+    useEffect(() => {
+        const baseTitle = 'Social';
+        document.title = unreadCount > 0 ? `(${unreadCount}) ${baseTitle}` : baseTitle;
+
+        return () => {
+            document.title = baseTitle;
+        };
+    }, [unreadCount]);
+
+    useEffect(() => {
+        const unlock = () => unlockNotificationSound();
+
+        window.addEventListener('pointerdown', unlock, { once: true });
+        window.addEventListener('keydown', unlock, { once: true });
+
+        return () => {
+            window.removeEventListener('pointerdown', unlock);
+            window.removeEventListener('keydown', unlock);
+        };
+    }, []);
 
     useEffect(() => {
         if (!userId) {
@@ -121,6 +201,24 @@ export function NotificationBell({ userId }: NotificationBellProps) {
                     }
                     return [notification, ...prev];
                 });
+
+                if (document.hidden) {
+                    playNotificationSound();
+
+                    if ('Notification' in window && Notification.permission === 'granted') {
+                        const browserNotification = new Notification(getNotificationTitle(notification), {
+                            body: getNotificationDetails(notification),
+                            icon: '/favicon.svg',
+                            tag: `notification-${notification.id}`,
+                        });
+
+                        browserNotification.onclick = () => {
+                            window.focus();
+                            navigate(getNotificationURL(notification, userId));
+                            browserNotification.close();
+                        };
+                    }
+                }
             } catch (error) {
                 console.error('Ошибка разбора уведомления:', error);
             }
@@ -134,7 +232,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
             cancelled = true;
             source.close();
         };
-    }, [userId]);
+    }, [navigate, userId]);
 
     useEffect(() => {
         const missingActorIds = Array.from(new Set(
@@ -210,23 +308,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
             return;
         }
 
-        switch (notification.type) {
-            case 'message_received':
-                navigate(`/users/${userId}/chat/${notification.actor_id}`);
-                return;
-            case 'friend_request':
-                navigate(`/users/${userId}/friends`);
-                return;
-            case 'friend_accepted':
-                navigate(`/users/${notification.actor_id}`);
-                return;
-            case 'post_liked':
-            case 'comment_created':
-                navigate(`/users/${userId}/wall`);
-                return;
-            default:
-                return;
-        }
+        navigate(getNotificationURL(notification, userId));
     };
 
     const handleNotificationClick = async (notification: SocialNotification) => {
