@@ -51,6 +51,20 @@ services:
     networks:
       - social_network
 
+  uploads-permissions:
+    image: alpine:3.20
+    container_name: social_uploads_permissions
+    restart: "no"
+    command:
+      - sh
+      - -c
+      - >
+        mkdir -p /uploads/avatars /uploads/chat &&
+        chown -R 1000:1000 /uploads &&
+        chmod -R u+rwX,g+rwX /uploads
+    volumes:
+      - uploads_data:/uploads
+
   backend:
     image: ${BACKEND_IMAGE:-ghcr.io/durqan/social-backend:latest}
     container_name: social_backend
@@ -82,6 +96,8 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      uploads-permissions:
+        condition: service_completed_successfully
     networks:
       - social_network
 
