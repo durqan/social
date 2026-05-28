@@ -142,7 +142,7 @@ export function NotificationBell({ userId, compact = false }: NotificationBellPr
     );
 
     useEffect(() => {
-        const baseTitle = 'Social';
+        const baseTitle = document.title.replace(/^\(\d+\)\s+/, '') || 'Durqan';
         document.title = unreadCount > 0 ? `(${unreadCount}) ${baseTitle}` : baseTitle;
 
         return () => {

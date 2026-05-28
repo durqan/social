@@ -17,6 +17,7 @@ import { WebSocketProvider } from './contexts/WebSocketContext.js';
 import { AudioCallProvider } from './contexts/AudioCallContext.js';
 import { RequireAuth, RequireGuest } from './components/RequireAuth.js';
 import { PushSubscriptionManager } from './components/notifications/PushSubscriptionManager.js';
+import { Seo } from './components/Seo.js';
 
 function AppRoutes() {
     const { currentUser } = useAuth();
@@ -49,6 +50,7 @@ function App() {
         <>
             <Toaster position="top-right" />
             <Router>
+                <Seo />
                 <WebSocketProvider>
                     <AuthProvider>
                         <AudioCallProvider>
