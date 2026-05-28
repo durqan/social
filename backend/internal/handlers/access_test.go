@@ -232,3 +232,31 @@ func TestDeleteMessagesBatchRejectsNonParticipant(t *testing.T) {
 		t.Fatalf("expected 403 for non-participant delete, got %d", w.Code)
 	}
 }
+
+func TestRegisterRejectsHoneypot(t *testing.T) {
+	db := testDB(t)
+
+	r := gin.New()
+	r.POST("/auth/register", Register(db))
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/auth/register",
+		strings.NewReader(`{"name":"Bot","email":"bot@example.com","password":"secret123","website":"https://spam.example"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for honeypot registration, got %d", w.Code)
+	}
+
+	var count int64
+	if err := db.Model(&models.User{}).Where("email = ?", "bot@example.com").Count(&count).Error; err != nil {
+		t.Fatalf("count users: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected honeypot registration to create no users, got %d", count)
+	}
+}

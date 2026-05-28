@@ -5,10 +5,9 @@ import (
 
 	"tester/internal/auth"
 	"tester/internal/dto"
-	"tester/internal/repository"
+	"tester/internal/services"
 
 	"github.com/gin-gonic/gin"
-	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -25,28 +24,16 @@ func ChangePassword(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		user, err := repository.GetUserById(db, id)
-		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				c.JSON(404, gin.H{"error": "user not found"})
-				return
-			}
-			c.JSON(500, gin.H{"error": "internal server error"})
-			return
-		}
-
-		if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.CurrentPassword)); err != nil {
+		err := services.ChangeUserPassword(db, id, req.CurrentPassword, req.NewPassword)
+		if errors.Is(err, services.ErrCurrentPassword) {
 			c.JSON(401, gin.H{"error": "incorrect current password"})
 			return
 		}
-
-		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
-		if err != nil {
-			c.JSON(500, gin.H{"error": "failed to hash password"})
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(404, gin.H{"error": "user not found"})
 			return
 		}
-
-		if err := repository.ChangePassword(db, id, string(hashedPassword)); err != nil {
+		if err != nil {
 			c.JSON(500, gin.H{"error": "failed to change password"})
 			return
 		}

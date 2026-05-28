@@ -4,6 +4,11 @@ import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
     envDir: '..',
+    resolve: {
+        alias: {
+            '@': '/src',
+        },
+    },
     plugins: [
         react(),
         tailwindcss(),

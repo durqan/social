@@ -3,14 +3,19 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log"
-	"strings"
+	"time"
 
 	"tester/internal/dto"
+	"tester/internal/middleware"
 	"tester/internal/models"
 	"tester/internal/repository"
+	"tester/internal/services"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type WSMessage struct {
@@ -34,10 +39,14 @@ func handleWebSocketMessage(ctx context.Context, userID uint, wsMsg WSMessage) {
 }
 
 func handleWebSocketSendMessage(ctx context.Context, userID uint, rawPayload json.RawMessage) {
+	if !canSendWebSocketMessage(ctx, userID) {
+		return
+	}
+
 	var payload struct {
-		ToID        uint                     `json:"to_id"`
-		Content     string                   `json:"content"`
-		Attachments []messageAttachmentInput `json:"attachments"`
+		ToID        uint                              `json:"to_id"`
+		Content     string                            `json:"content"`
+		Attachments []services.MessageAttachmentInput `json:"attachments"`
 	}
 
 	if err := json.Unmarshal(rawPayload, &payload); err != nil {
@@ -45,51 +54,32 @@ func handleWebSocketSendMessage(ctx context.Context, userID uint, rawPayload jso
 		return
 	}
 
-	content := strings.TrimSpace(payload.Content)
-	attachments, err := normalizeMessageAttachments(payload.Attachments, userID)
+	attachments, err := services.NormalizeMessageAttachments(payload.Attachments, userID)
 	if err != nil {
 		log.Println("Invalid attachments:", err)
 		return
 	}
 
-	if payload.ToID == 0 || (content == "" && len(attachments) == 0) {
+	if payload.ToID == 0 {
 		log.Println("Invalid message data")
 		return
 	}
 
-	message := models.Message{
-		FromID:  userID,
-		ToID:    payload.ToID,
-		Content: content,
-		IsRead:  false,
+	fullMessage, err := services.SendMessage(dbInstance, userID, payload.ToID, payload.Content, attachments)
+	if errors.Is(err, services.ErrMessageContentRequired) {
+		log.Println("Invalid message data")
+		return
 	}
-
-	if err := repository.CreateMessage(dbInstance, &message); err != nil {
+	if err != nil {
 		log.Println("Failed to save message:", err)
 		return
 	}
 
-	for i := range attachments {
-		attachments[i].MessageID = message.ID
-	}
-
-	if err := repository.CreateMessageAttachments(dbInstance, attachments); err != nil {
-		log.Println("Failed to save attachments:", err)
-		return
-	}
-
-	publishNotification(payload.ToID, userID, dto.NotificationTypeMessage, message.ID)
-
-	var fullMessage models.Message
-	dbInstance.
-		Preload("From").
-		Preload("To").
-		Preload("Attachments").
-		First(&fullMessage, message.ID)
+	publishNotification(payload.ToID, userID, dto.NotificationTypeMessage, fullMessage.ID)
 
 	messageBytes, err := json.Marshal(gin.H{
 		"type":    "message:new",
-		"payload": withPrivateAttachmentURLs(fullMessage),
+		"payload": services.WithPrivateAttachmentURLs(fullMessage),
 	})
 	if err != nil {
 		log.Println("Failed to marshal message:", err)
@@ -105,6 +95,49 @@ func handleWebSocketSendMessage(ctx context.Context, userID uint, rawPayload jso
 	for _, fromConn := range clients.getAll(userID) {
 		if err := fromConn.write(ctx, messageBytes); err != nil {
 			log.Println("Failed to send message to sender:", err)
+		}
+	}
+}
+
+func canSendWebSocketMessage(ctx context.Context, userID uint) bool {
+	user, err := repository.GetUserById(dbInstance, userID)
+	if err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Println("Failed to check email verification:", err)
+		}
+		sendWebSocketError(ctx, userID, "internal server error")
+		return false
+	}
+
+	if !user.IsEmailVerified {
+		sendWebSocketError(ctx, userID, middleware.EmailVerificationRequiredMessage)
+		return false
+	}
+
+	identity := fmt.Sprintf("user:%d", userID)
+	if !middleware.AllowRateLimit(identity, "message:send", 30, 10*time.Minute) {
+		sendWebSocketError(ctx, userID, "too many requests")
+		return false
+	}
+
+	return true
+}
+
+func sendWebSocketError(ctx context.Context, userID uint, message string) {
+	messageBytes, err := json.Marshal(gin.H{
+		"type": "message:error",
+		"payload": gin.H{
+			"error": message,
+		},
+	})
+	if err != nil {
+		log.Println("Failed to marshal websocket error:", err)
+		return
+	}
+
+	for _, conn := range clients.getAll(userID) {
+		if err := conn.write(ctx, messageBytes); err != nil {
+			log.Println("Failed to send websocket error:", err)
 		}
 	}
 }
@@ -163,7 +196,7 @@ func handleWebSocketReadReceipt(ctx context.Context, userID uint, rawPayload jso
 		return
 	}
 	if result.RowsAffected > 0 {
-		invalidateMessageCaches()
+		services.InvalidateMessageCaches()
 	}
 
 	sendMessageReadReceipt(ctx, userID, payload.ToID)

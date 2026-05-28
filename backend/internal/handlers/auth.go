@@ -5,10 +5,9 @@ import (
 	"tester/internal/auth"
 	"tester/internal/dto"
 	"tester/internal/models"
-	"tester/internal/repository"
+	"tester/internal/services"
 
 	"github.com/gin-gonic/gin"
-	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -21,30 +20,22 @@ func Register(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		_, err := repository.GetUserByEmail(db, req.Email)
-		if err == nil {
+		user, err := services.RegisterUser(db, services.RegisterUserInput{
+			Name:     req.Name,
+			Email:    req.Email,
+			Password: req.Password,
+			Website:  req.Website,
+		})
+		if errors.Is(err, services.ErrRegistrationRejected) {
+			c.JSON(400, gin.H{"error": "registration failed"})
+			return
+		}
+		if errors.Is(err, services.ErrEmailAlreadyExists) {
 			c.JSON(409, gin.H{"error": "user with this email already exists"})
 			return
 		}
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(500, gin.H{"error": "internal server error"})
-			return
-		}
-
-		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 		if err != nil {
-			c.JSON(500, gin.H{"error": "failed to hash password"})
-			return
-		}
-
-		user := models.User{
-			Name:     req.Name,
-			Email:    req.Email,
-			Password: string(hashedPassword),
-		}
-
-		if err := repository.CreateUser(db, &user); err != nil {
-			c.JSON(500, gin.H{"error": "failed to create user"})
+			c.JSON(500, gin.H{"error": "internal server error"})
 			return
 		}
 
@@ -71,18 +62,13 @@ func Login(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		user, err := repository.GetUserByEmail(db, req.Email)
-		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				c.JSON(401, gin.H{"error": "invalid email or password"})
-				return
-			}
-			c.JSON(500, gin.H{"error": "internal server error"})
+		user, err := services.AuthenticateUser(db, req.Email, req.Password)
+		if errors.Is(err, services.ErrInvalidCredentials) {
+			c.JSON(401, gin.H{"error": "invalid email or password"})
 			return
 		}
-
-		if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
-			c.JSON(401, gin.H{"error": "invalid email or password"})
+		if err != nil {
+			c.JSON(500, gin.H{"error": "internal server error"})
 			return
 		}
 

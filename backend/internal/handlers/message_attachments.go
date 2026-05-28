@@ -4,133 +4,18 @@ import (
 	"errors"
 	"fmt"
 	"image"
-	_ "image/jpeg"
-	_ "image/png"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"tester/internal/models"
 	"tester/internal/repository"
+	"tester/internal/services"
 
 	"github.com/gin-gonic/gin"
-	_ "golang.org/x/image/webp"
 	"gorm.io/gorm"
 )
-
-const (
-	chatImageMaxSize        = 10 << 20 // 10 MB
-	chatImageMaxRequestSize = chatImageMaxSize + 1<<20
-	chatImageMaxCount       = 5
-	chatUploadURLPrefix     = "/api/messages/uploads/"
-	chatAttachmentURLPrefix = "/api/messages/attachments/"
-	legacyChatUploadPrefix  = "/uploads/chat/"
-)
-
-type messageAttachmentInput struct {
-	ID        uint   `json:"id,omitempty"`
-	MessageID uint   `json:"message_id,omitempty"`
-	FileURL   string `json:"file_url"`
-	FileType  string `json:"file_type"`
-	Width     int    `json:"width"`
-	Height    int    `json:"height"`
-	Size      int64  `json:"size"`
-}
-
-var allowedChatImageTypes = map[string]string{
-	"image/jpeg": ".jpg",
-	"image/png":  ".png",
-	"image/webp": ".webp",
-}
-
-func normalizeMessageAttachments(input []messageAttachmentInput, userID uint) ([]models.MessageAttachment, error) {
-	if len(input) > chatImageMaxCount {
-		return nil, errors.New("too many images")
-	}
-
-	attachments := make([]models.MessageAttachment, 0, len(input))
-
-	for _, item := range input {
-		if item.FileType != "image" {
-			return nil, errors.New("only image attachments are supported")
-		}
-
-		if !strings.HasPrefix(item.FileURL, chatUploadURLPrefix) && !strings.HasPrefix(item.FileURL, legacyChatUploadPrefix) {
-			return nil, errors.New("invalid image url")
-		}
-
-		fileURL := filepath.ToSlash(filepath.Clean(item.FileURL))
-		if !strings.HasPrefix(fileURL, chatUploadURLPrefix) && !strings.HasPrefix(fileURL, legacyChatUploadPrefix) {
-			return nil, errors.New("invalid image url")
-		}
-
-		filename := filepath.Base(fileURL)
-		if !strings.HasPrefix(filename, fmt.Sprintf("%d_", userID)) {
-			return nil, errors.New("invalid image owner")
-		}
-
-		filePath := filepath.Join("uploads", "chat", filename)
-		info, err := os.Stat(filePath)
-		if err != nil || info.IsDir() {
-			return nil, errors.New("image not found")
-		}
-
-		file, err := os.Open(filePath)
-		if err != nil {
-			return nil, errors.New("failed to read image")
-		}
-
-		cfg, _, err := image.DecodeConfig(file)
-		_ = file.Close()
-		if err != nil {
-			return nil, errors.New("invalid image")
-		}
-
-		width := cfg.Width
-		height := cfg.Height
-
-		attachments = append(attachments, models.MessageAttachment{
-			FileURL:  "/" + filepath.ToSlash(filePath),
-			FileType: "image",
-			Width:    &width,
-			Height:   &height,
-			Size:     info.Size(),
-		})
-	}
-
-	return attachments, nil
-}
-
-func privateAttachmentURL(attachmentID uint) string {
-	return fmt.Sprintf("%s%d", chatAttachmentURLPrefix, attachmentID)
-}
-
-func privateUploadURL(filename string) string {
-	return chatUploadURLPrefix + filename
-}
-
-func withPrivateAttachmentURLs(message models.Message) models.Message {
-	for i := range message.Attachments {
-		message.Attachments[i].FileURL = privateAttachmentURL(message.Attachments[i].ID)
-	}
-	return message
-}
-
-func withPrivateAttachmentURLsForMessages(messages []models.Message) []models.Message {
-	for i := range messages {
-		messages[i] = withPrivateAttachmentURLs(messages[i])
-	}
-	return messages
-}
-
-func chatUploadPath(filename string) (string, bool) {
-	if filename == "" || filename != filepath.Base(filename) {
-		return "", false
-	}
-	return filepath.Join("uploads", "chat", filename), true
-}
 
 func UploadMessageImage(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -139,7 +24,7 @@ func UploadMessageImage(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, chatImageMaxRequestSize)
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, services.ChatImageMaxRequestSize)
 
 		file, err := c.FormFile("image")
 		if err != nil {
@@ -147,7 +32,7 @@ func UploadMessageImage(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		if file.Size > chatImageMaxSize {
+		if file.Size > services.ChatImageMaxSize {
 			c.JSON(413, gin.H{"error": "image is too large"})
 			return
 		}
@@ -167,7 +52,7 @@ func UploadMessageImage(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		contentType := http.DetectContentType(buf[:n])
-		ext, ok := allowedChatImageTypes[contentType]
+		ext, ok := services.ChatImageExtension(contentType)
 		if !ok {
 			c.JSON(415, gin.H{"error": "image must be jpeg, png or webp"})
 			return
@@ -198,8 +83,8 @@ func UploadMessageImage(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		c.JSON(201, messageAttachmentInput{
-			FileURL:  privateUploadURL(filename),
+		c.JSON(201, services.MessageAttachmentInput{
+			FileURL:  services.PrivateUploadURL(filename),
 			FileType: "image",
 			Width:    cfg.Width,
 			Height:   cfg.Height,
@@ -221,7 +106,7 @@ func GetUploadedMessageImage() gin.HandlerFunc {
 			return
 		}
 
-		filePath, ok := chatUploadPath(filename)
+		filePath, ok := services.ChatUploadPath(filename)
 		if !ok {
 			c.JSON(400, gin.H{"error": "invalid filename"})
 			return
@@ -258,7 +143,7 @@ func GetMessageAttachment(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		filePath, ok := chatUploadPath(filepath.Base(attachment.FileURL))
+		filePath, ok := services.ChatUploadPath(filepath.Base(attachment.FileURL))
 		if !ok {
 			c.JSON(500, gin.H{"error": "invalid attachment path"})
 			return

@@ -1,0 +1,93 @@
+import { useEffect, useState } from 'react';
+import { useWebSocket } from "@/app/providers/WebSocketContext.js";
+import { presenceService } from "@/shared/api/presenceService.js";
+
+import type { WsEvent } from "@/shared/types/ws.js";
+export const presenceMap = new Map<number, boolean>();
+export const usePresence = (
+    userId: number | undefined
+) => {
+
+    const wsService = useWebSocket();
+    const [online, setOnline] =
+        useState(false);
+
+    useEffect(() => {
+
+        if (!userId) return;
+
+        const cached =
+            presenceMap.get(userId);
+
+        if (cached !== undefined) {
+            setOnline(cached);
+        }
+
+        const loadPresence = async () => {
+
+            try {
+
+                const data =
+                    await presenceService.getPresence(
+                        userId
+                    );
+
+                presenceMap.set(
+                    userId,
+                    data.online
+                );
+
+                setOnline(data.online);
+
+            } catch (err) {
+
+                console.error(err);
+            }
+        };
+
+        loadPresence();
+
+        const handlePresence = (
+            event: WsEvent
+        ) => {
+
+            if (
+                event.type !==
+                'presence:update'
+            ) {
+                return;
+            }
+
+            if (
+                event.payload.user_id !==
+                userId
+            ) {
+                return;
+            }
+
+            presenceMap.set(
+                userId,
+                event.payload.online
+            );
+
+            setOnline(
+                event.payload.online
+            );
+        };
+
+        wsService.onMessage(
+            handlePresence
+        );
+
+        return () => {
+            wsService.removeMessageHandler(
+                handlePresence
+            );
+        };
+
+    }, [userId, wsService]);
+
+    return {
+        online,
+    };
+};

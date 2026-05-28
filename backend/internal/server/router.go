@@ -37,8 +37,8 @@ func NewRouter(database *gorm.DB, cfg config.Config) *gin.Engine {
 func registerAuthRoutes(router *gin.Engine, database *gorm.DB) {
 	auth := router.Group("/auth")
 
-	auth.POST("/register", middleware.RateLimitMiddleware(5, 15*time.Minute), handlers.Register(database))
-	auth.POST("/login", middleware.RateLimitMiddleware(10, 15*time.Minute), handlers.Login(database))
+	auth.POST("/register", middleware.RateLimitMiddleware(5, time.Hour), handlers.Register(database))
+	auth.POST("/login", middleware.RateLimitMiddleware(10, 10*time.Minute), handlers.Login(database))
 	auth.GET("/csrf", handlers.GetCSRFToken())
 	auth.POST("/logout", middleware.CSRFMiddleware(), handlers.Logout())
 	auth.GET("/verify-email/:token", handlers.VerifyEmailHandler(database))
@@ -95,11 +95,11 @@ func registerPostRoutes(router *gin.Engine, database *gorm.DB) {
 	posts.GET("", middleware.CacheMiddleware(2*time.Minute), handlers.GetPosts(database))
 	posts.GET("/user/:userId", middleware.CacheMiddleware(2*time.Minute), handlers.GetPostsByUserID(database))
 	posts.GET("/:id/comments", middleware.CacheMiddleware(5*time.Minute), handlers.GetComments(database))
-	posts.POST("", middleware.RateLimitMiddleware(30, time.Hour), handlers.CreatePost(database))
+	posts.POST("", middleware.RequireVerifiedEmail(database), middleware.RateLimitMiddleware(10, 10*time.Minute), handlers.CreatePost(database))
 	posts.PATCH("/:id", handlers.UpdatePost(database))
 	posts.DELETE("/:id", handlers.DeletePost(database))
 	posts.POST("/:id/like", middleware.RateLimitMiddleware(120, time.Minute), handlers.TogglePostLike(database))
-	posts.POST("/:id/comments", middleware.RateLimitMiddleware(60, time.Hour), handlers.CreateComment(database))
+	posts.POST("/:id/comments", middleware.RequireVerifiedEmail(database), middleware.RateLimitMiddleware(30, 10*time.Minute), handlers.CreateComment(database))
 	posts.POST("/:id/comments/:commentID/like", handlers.ToggleCommentLike(database))
 }
 
@@ -117,7 +117,7 @@ func registerMessageRoutes(router *gin.Engine, database *gorm.DB) {
 	messages.GET("/uploads/:filename", handlers.GetUploadedMessageImage())
 	messages.GET("/attachments/:id", handlers.GetMessageAttachment(database))
 	messages.POST("/upload", middleware.RateLimitMiddleware(60, time.Hour), handlers.UploadMessageImage(database))
-	messages.POST("/send/:toId", middleware.RateLimitMiddleware(120, time.Minute), handlers.SendMessage(database))
+	messages.POST("/send/:toId", middleware.RequireVerifiedEmail(database), middleware.RateLimitMiddleware(30, 10*time.Minute), handlers.SendMessage(database))
 	messages.PATCH("/:messageId", handlers.UpdateMessage(database))
 	messages.DELETE("/:messageId", handlers.DeleteMessage(database))
 	messages.DELETE("/batch", handlers.DeleteMessagesBatch(database))

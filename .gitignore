@@ -1,7 +1,7 @@
 # Environment files
 .env
-.env.production
-.env.local
+.env.*
+!.env.example
 
 # Docker
 postgres-data/
@@ -17,11 +17,14 @@ backend/*.dylib
 backend/bin/
 backend/dist/
 
-# Frontend
-frontend/node_modules/
-frontend/dist/
-frontend/.vite/
-frontend/*.local
+# Node/Vite build artifacts
+node_modules/
+dist/
+dist-ssr/
+.vite/
+web-build/
+*.tsbuildinfo
+*.local
 
 # IDE
 .vscode/
@@ -36,6 +39,12 @@ Thumbs.db
 webhook/
 
 # Uploaded files
-backend/upload/
-backend/uploads/*
+backend/uploads/**
+!backend/uploads/
 !backend/uploads/.gitkeep
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak

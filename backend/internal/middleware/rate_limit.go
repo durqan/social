@@ -3,19 +3,26 @@ package middleware
 import (
 	"fmt"
 	"net/http"
-	"tester/internal/cache"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
+type rateLimitEntry struct {
+	Count   int
+	ResetAt time.Time
+}
+
+var rateLimitStore = struct {
+	sync.Mutex
+	entries map[string]rateLimitEntry
+}{
+	entries: make(map[string]rateLimitEntry),
+}
+
 func RateLimitMiddleware(limit int, window time.Duration) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if cache.Redis == nil || cache.Redis.Client == nil {
-			c.Next()
-			return
-		}
-
 		identity := fmt.Sprintf("ip:%s", c.ClientIP())
 		if userID, exists := c.Get("user_id"); exists {
 			identity = fmt.Sprintf("user:%v", userID)
@@ -26,19 +33,7 @@ func RateLimitMiddleware(limit int, window time.Duration) gin.HandlerFunc {
 			path = c.Request.URL.Path
 		}
 
-		key := fmt.Sprintf("ratelimit:%s:%s", identity, path)
-
-		count, err := cache.Redis.Client.Incr(cache.Redis.Ctx, key).Result()
-		if err != nil {
-			c.Next()
-			return
-		}
-
-		if count == 1 {
-			cache.Redis.Client.Expire(cache.Redis.Ctx, key, window)
-		}
-
-		if count > int64(limit) {
+		if !AllowRateLimit(identity, path, limit, window) {
 			c.JSON(http.StatusTooManyRequests, gin.H{
 				"error": "too many requests",
 			})
@@ -47,5 +42,47 @@ func RateLimitMiddleware(limit int, window time.Duration) gin.HandlerFunc {
 		}
 
 		c.Next()
+	}
+}
+
+func AllowRateLimit(identity string, scope string, limit int, window time.Duration) bool {
+	if limit <= 0 || window <= 0 {
+		return true
+	}
+
+	now := time.Now()
+	key := fmt.Sprintf("%s:%s", identity, scope)
+
+	rateLimitStore.Lock()
+	defer rateLimitStore.Unlock()
+
+	entry, exists := rateLimitStore.entries[key]
+	if !exists || !now.Before(entry.ResetAt) {
+		rateLimitStore.entries[key] = rateLimitEntry{
+			Count:   1,
+			ResetAt: now.Add(window),
+		}
+		cleanupExpiredRateLimits(now)
+		return true
+	}
+
+	if entry.Count >= limit {
+		return false
+	}
+
+	entry.Count++
+	rateLimitStore.entries[key] = entry
+	return true
+}
+
+func cleanupExpiredRateLimits(now time.Time) {
+	if len(rateLimitStore.entries) < 1000 {
+		return
+	}
+
+	for key, entry := range rateLimitStore.entries {
+		if !now.Before(entry.ResetAt) {
+			delete(rateLimitStore.entries, key)
+		}
 	}
 }

@@ -1,0 +1,50 @@
+import { request } from "@/shared/api/axios.js";
+import type { Conversation, Message, MessageAttachment } from "@/shared/types/domain.js";
+
+export type PaginatedMessages = {
+    messages: Message[];
+    has_more: boolean;
+};
+
+export const messageService = {
+    async uploadImage(file: File): Promise<MessageAttachment> {
+        const formData = new FormData();
+        formData.append('image', file);
+        return request.post<MessageAttachment>('/messages/upload', formData);
+    },
+    async getConversations(): Promise<Conversation[]> {
+        const conversations = await request.get<Conversation[]>('/messages/conversations');
+        return Array.isArray(conversations) ? conversations : [];
+    },
+
+    async getMessagesWith(userId: string | undefined, params?: {
+        before?: number;
+        limit?: number
+    }): Promise<PaginatedMessages> {
+        const response = await request.get<PaginatedMessages>(`/messages/with/${userId}`, { params });
+        return {
+            messages: response.messages || [],
+            has_more: response.has_more !== false,
+        };
+    },
+
+    async markAsRead(userId: string | undefined): Promise<void> {
+        await request.patch(`/messages/read/${userId}`);
+    },
+
+    async getUnreadCount(): Promise<number> {
+        return (await request.get<{ unread_count: number }>('/messages/unread/count')).unread_count;
+    },
+
+    async updateMessage(messageId: number, content: string): Promise<Message> {
+        return request.patch<Message>(`/messages/${messageId}`, { content });
+    },
+
+    async deleteMessage(messageId: number): Promise<void> {
+        await request.delete(`/messages/${messageId}`);
+    },
+
+    async deleteMessagesBatch(messageIds: number[]): Promise<void> {
+        await request.delete('/messages/batch', { data: { message_ids: messageIds } });
+    },
+};

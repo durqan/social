@@ -1,25 +1,16 @@
 package handlers
 
 import (
+	"errors"
 	"strconv"
-	"strings"
 
-	"tester/internal/cache"
 	"tester/internal/dto"
-	"tester/internal/models"
 	"tester/internal/repository"
+	"tester/internal/services"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
-
-func invalidateMessageCaches() {
-	if cache.Redis == nil {
-		return
-	}
-
-	_ = cache.Redis.DeletePattern("cache:/messages*")
-}
 
 func SendMessage(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -33,8 +24,8 @@ func SendMessage(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		var req struct {
-			Content     string                   `json:"content"`
-			Attachments []messageAttachmentInput `json:"attachments"`
+			Content     string                            `json:"content"`
+			Attachments []services.MessageAttachmentInput `json:"attachments"`
 		}
 
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -42,42 +33,25 @@ func SendMessage(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		content := strings.TrimSpace(req.Content)
-		attachments, err := normalizeMessageAttachments(req.Attachments, userID)
+		attachments, err := services.NormalizeMessageAttachments(req.Attachments, userID)
 		if err != nil {
 			c.JSON(400, gin.H{"error": err.Error()})
 			return
 		}
 
-		if content == "" && len(attachments) == 0 {
+		message, err := services.SendMessage(db, userID, toID, req.Content, attachments)
+		if errors.Is(err, services.ErrMessageContentRequired) {
 			c.JSON(400, gin.H{"error": "message content or image is required"})
 			return
 		}
-
-		message := models.Message{
-			FromID:  userID,
-			ToID:    toID,
-			Content: content,
-		}
-
-		if err := repository.CreateMessage(db, &message); err != nil {
+		if err != nil {
 			c.JSON(500, gin.H{"error": "failed to send message"})
-			return
-		}
-
-		for i := range attachments {
-			attachments[i].MessageID = message.ID
-		}
-
-		if err := repository.CreateMessageAttachments(db, attachments); err != nil {
-			c.JSON(500, gin.H{"error": "failed to attach images"})
 			return
 		}
 
 		publishNotification(toID, userID, dto.NotificationTypeMessage, message.ID)
 
-		db.Preload("From").Preload("To").Preload("Attachments").First(&message, message.ID)
-		c.JSON(201, withPrivateAttachmentURLs(message))
+		c.JSON(201, services.WithPrivateAttachmentURLs(message))
 	}
 }
 
@@ -114,7 +88,7 @@ func GetMessagesWith(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		c.JSON(200, gin.H{
-			"messages": withPrivateAttachmentURLsForMessages(messages),
+			"messages": services.WithPrivateAttachmentURLsForMessages(messages),
 			"has_more": len(messages) == limit,
 		})
 	}
@@ -156,30 +130,26 @@ func UpdateMessage(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		message, err := repository.GetMessageByID(db, messageID)
-		if err != nil {
-			c.JSON(404, gin.H{"error": "message not found"})
-			return
-		}
-
-		if message.FromID != userID {
-			c.JSON(403, gin.H{"error": "can only edit your own messages"})
-			return
-		}
-
 		content, ok := trimAndValidateContent(req.Content, maxMessageContentLength)
 		if !ok {
 			c.JSON(400, gin.H{"error": "message content must be between 1 and 1000 characters"})
 			return
 		}
 
-		message.Content = content
-		if err := repository.UpdateMessage(db, message); err != nil {
+		message, err := services.UpdateMessage(db, userID, messageID, content)
+		if errors.Is(err, services.ErrMessageForbidden) {
+			c.JSON(403, gin.H{"error": "can only edit your own messages"})
+			return
+		}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(404, gin.H{"error": "message not found"})
+			return
+		}
+		if err != nil {
 			c.JSON(500, gin.H{"error": "failed to update message"})
 			return
 		}
 
-		db.Preload("From").Preload("To").First(&message, messageID)
 		c.JSON(200, message)
 	}
 }
@@ -195,18 +165,16 @@ func DeleteMessage(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		message, err := repository.GetMessageByID(db, messageID)
-		if err != nil {
-			c.JSON(404, gin.H{"error": "message not found"})
-			return
-		}
-
-		if message.FromID != userID && message.ToID != userID {
+		err := services.DeleteMessageForUser(db, userID, messageID)
+		if errors.Is(err, services.ErrMessageForbidden) {
 			c.JSON(403, gin.H{"error": "you are not a participant in this conversation"})
 			return
 		}
-
-		if err := repository.DeleteMessage(db, messageID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(404, gin.H{"error": "message not found"})
+			return
+		}
+		if err != nil {
 			c.JSON(500, gin.H{"error": "failed to delete message"})
 			return
 		}
@@ -273,11 +241,10 @@ func MarkMessagesAsRead(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		if err := repository.MarkMessagesAsRead(db, fromID, userID); err != nil {
+		if err := services.MarkConversationRead(db, fromID, userID); err != nil {
 			c.JSON(500, gin.H{"error": "failed to mark as read"})
 			return
 		}
-		invalidateMessageCaches()
 		sendMessageReadReceipt(c.Request.Context(), userID, fromID)
 
 		c.JSON(200, gin.H{"message": "marked as read"})
