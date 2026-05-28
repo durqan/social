@@ -20,3 +20,21 @@ export const RequireAuth = () => {
 
     return <Outlet />;
 };
+
+export const RequireGuest = () => {
+    const { currentUser, loading } = useAuth();
+
+    if (loading) {
+        return (
+            <div className="min-h-screen bg-[var(--app-bg)] flex items-center justify-center">
+                <Spinner size="lg" />
+            </div>
+        );
+    }
+
+    if (currentUser) {
+        return <Navigate to={`/users/${currentUser.id}`} replace />;
+    }
+
+    return <Outlet />;
+};

@@ -14,7 +14,7 @@ import NotificationHandler from './components/NotificationHandler.js';
 import { AuthProvider, useAuth } from './contexts/AuthContext.js';
 import { WebSocketProvider } from './contexts/WebSocketContext.js';
 import { AudioCallProvider } from './contexts/AudioCallContext.js';
-import { RequireAuth } from './components/RequireAuth.js';
+import { RequireAuth, RequireGuest } from './components/RequireAuth.js';
 import { PushSubscriptionManager } from './components/notifications/PushSubscriptionManager.js';
 
 function AppRoutes() {
@@ -22,8 +22,10 @@ function AppRoutes() {
 
     return (
         <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
+            <Route element={<RequireGuest />}>
+                <Route path="/login" element={<Login />} />
+                <Route path="/register" element={<Register />} />
+            </Route>
             <Route path="/verify-email/:token" element={<VerifyEmail />} />
             <Route element={<RequireAuth />}>
                 <Route path="/users/:id" element={<Profile />}>
