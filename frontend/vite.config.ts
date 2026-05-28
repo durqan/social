@@ -23,6 +23,17 @@ export default defineConfig({
                 target: 'http://localhost:8085',
                 changeOrigin: true,
                 rewrite: (path) => path.replace(/^\/notifications-api/, '')
+            },
+            '/watcher-api': {
+                target: 'http://localhost:8082',
+                changeOrigin: true,
+                rewrite: (path) => path.replace(/^\/watcher-api/, '')
+            },
+            '/watcher-ws': {
+                target: 'ws://localhost:8082',
+                changeOrigin: true,
+                ws: true,
+                rewrite: (path) => path.replace(/^\/watcher-ws/, '/ws')
             }
         }
     }

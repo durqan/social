@@ -11,6 +11,7 @@
     - Индикаторы печати
     - Галочки прочтения
     - Массовое удаление
+- 🎬 Совместный просмотр видео с комнатами и live-чатом
 - 🔔 Toast-уведомления
 - 📱 Полностью адаптивный дизайн
 
@@ -18,6 +19,7 @@
 
 **Frontend**: React 19 + TypeScript + Vite + Tailwind CSS  
 **Backend**: Go + Gin + GORM + WebSocket + **Redis**  
+**Watcher**: Go + Gin + WebSocket, in-memory комнаты совместного просмотра  
 **Database**: PostgreSQL  
 **Cache / Sessions**: **Redis**  
 **Deployment**: Docker + Docker Compose
@@ -31,7 +33,7 @@
 
 ### Локальная разработка без пересборки Docker
 
-Docker используется для Postgres, Redis и RabbitMQ:
+Docker используется для Postgres, Redis, RabbitMQ и watcher:
 
 ```bash
 make dev-infra

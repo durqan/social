@@ -120,6 +120,16 @@ services:
     networks:
       - social_network
 
+  watcher:
+    image: ${WATCHER_IMAGE:-ghcr.io/durqan/social-watcher:latest}
+    container_name: social_watcher
+    restart: unless-stopped
+    pull_policy: always
+    environment:
+      GIN_MODE: ${GIN_MODE:-release}
+    networks:
+      - social_network
+
   frontend:
     image: ${FRONTEND_IMAGE:-ghcr.io/durqan/social-frontend:latest}
     container_name: social_frontend
@@ -135,6 +145,7 @@ services:
     depends_on:
       - backend
       - notifications
+      - watcher
     healthcheck:
       test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1" ]
       interval: 30s

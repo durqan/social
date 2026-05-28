@@ -47,6 +47,7 @@ function Profile() {
         if (location.pathname.includes('/wall')) return 'Моя стена';
         if (location.pathname.includes('/conversations')) return 'Сообщения';
         if (location.pathname.includes('/chat')) return 'Чат';
+        if (location.pathname.includes('/watch')) return 'Совместный просмотр';
         return 'Моя страница';
     };
 
