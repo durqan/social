@@ -1,4 +1,5 @@
-import axios, { type AxiosRequestConfig } from 'axios';
+import axios, { AxiosHeaders, type AxiosRequestConfig } from 'axios';
+import { authTokenStore } from './authToken.js';
 
 const apiBaseURL = import.meta.env.VITE_API_BASE_URL || '/api';
 
@@ -40,10 +41,18 @@ const ensureCSRFToken = async () => {
 };
 
 api.interceptors.request.use(async (config) => {
-    const method = config.method?.toLowerCase();
-    if (method && unsafeMethods.has(method)) {
-        config.headers.set('X-CSRF-Token', await ensureCSRFToken());
+    const headers = AxiosHeaders.from(config.headers);
+    const token = authTokenStore.get();
+    if (token) {
+        headers.set('Authorization', `Bearer ${token}`);
     }
+
+    const method = config.method?.toLowerCase();
+    if (method && unsafeMethods.has(method) && !token) {
+        headers.set('X-CSRF-Token', await ensureCSRFToken());
+    }
+
+    config.headers = headers;
     return config;
 });
 
@@ -52,6 +61,7 @@ api.interceptors.response.use(
     (err) => {
         if (err.response?.status === 401 && !['/login', '/register', '/verify-email']
             .some(path => window.location.pathname.includes(path))) {
+            authTokenStore.clear();
             window.location.href = '/login';
         }
         return Promise.reject(err);

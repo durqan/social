@@ -1,4 +1,5 @@
 import { request } from '../api/axios.js';
+import { authTokenStore } from '../api/authToken.js';
 import type { User } from '../types.js';
 import { normalizeUser } from './userService.js';
 
@@ -15,12 +16,14 @@ export interface RegisterData {
 
 export interface AuthResponse {
     message: string;
+    token: string;
     user: User;
 }
 
 export const authService = {
     async login(data: LoginData): Promise<AuthResponse> {
         const response = await request.post<AuthResponse>('/auth/login', data);
+        authTokenStore.set(response.token);
         return {
             ...response,
             user: normalizeUser(response.user),
@@ -29,6 +32,7 @@ export const authService = {
 
     async register(data: RegisterData): Promise<AuthResponse> {
         const response = await request.post<AuthResponse>('/auth/register', data);
+        authTokenStore.set(response.token);
         return {
             ...response,
             user: normalizeUser(response.user),
@@ -36,7 +40,11 @@ export const authService = {
     },
 
     async logout() {
-        await request.post('/auth/logout');
+        try {
+            await request.post('/auth/logout');
+        } finally {
+            authTokenStore.clear();
+        }
     },
 
     async sendVerificationEmail(): Promise<string> {

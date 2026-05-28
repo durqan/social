@@ -1,3 +1,4 @@
+import { authTokenStore } from '../api/authToken.js';
 import type { MessageAttachment } from '../types.js';
 import type { CallType } from '../types/call.js';
 import type { WsEvent } from '../types/ws/events.js';
@@ -12,7 +13,12 @@ const reconnectDelayMs = 3000;
 
 function websocketURL() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    return `${protocol}//${window.location.host}/ws`;
+    const url = new URL(`${protocol}//${window.location.host}/ws`);
+    const token = authTokenStore.get();
+    if (token) {
+        url.searchParams.set('token', token);
+    }
+    return url.toString();
 }
 
 export class WebSocketService {
