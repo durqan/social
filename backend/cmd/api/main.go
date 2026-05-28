@@ -8,6 +8,7 @@ import (
 	"tester/internal/db"
 	"tester/internal/rabbit"
 	"tester/internal/server"
+	"tester/internal/services"
 )
 
 func main() {
@@ -34,6 +35,8 @@ func main() {
 	if err := db.Migrate(database); err != nil {
 		log.Fatal("failed to migrate database:", err)
 	}
+
+	services.StartUnverifiedUserCleanup(database)
 
 	router := server.NewRouter(database, cfg)
 

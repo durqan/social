@@ -11,7 +11,7 @@ export function EmailVerificationNotice({
         <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-sm text-yellow-700">
-                    Подтвердите почту, чтобы завершить настройку аккаунта.
+                    Подтвердите почту в течение 2 часов, чтобы аккаунт не был удален.
                 </p>
                 <button
                     type="button"

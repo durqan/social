@@ -2,6 +2,8 @@ package models
 
 import "time"
 
+const EmailVerificationTTL = 2 * time.Hour
+
 type EmailVerification struct {
 	ID        uint       `gorm:"primarykey"`
 	UserID    uint       `gorm:"not null;index"`

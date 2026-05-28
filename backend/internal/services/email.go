@@ -44,7 +44,7 @@ func SendVerificationEmail(db *gorm.DB, user *models.User) error {
 				<p>Спасибо за регистрацию.</p>
 				<p>Чтобы подтвердить email, перейдите по ссылке:</p>
 				<p><a href="%s">%s</a></p>
-				<p>Ссылка действует 24 часа.</p>`, user.Name, verifyURL, verifyURL)
+				<p>Ссылка действует 2 часа.</p>`, user.Name, verifyURL, verifyURL)
 
 	m.SetBodyString(mail.TypeTextHTML, htmlBody)
 	m.SetBodyString(mail.TypeTextPlain, "Привет, "+user.Name+"!\nПерейди по ссылке: "+verifyURL)

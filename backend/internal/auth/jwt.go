@@ -104,6 +104,25 @@ func RevokeUserSessionsExcept(userID uint, keepSessionID string) error {
 	return nil
 }
 
+func RevokeUserSessions(userID uint) error {
+	if cache.Redis == nil {
+		return errors.New("redis unavailable")
+	}
+
+	pattern := fmt.Sprintf("auth:session:%d:*", userID)
+	keys, err := scanSessionKeys(pattern)
+	if err != nil {
+		return err
+	}
+
+	for _, key := range keys {
+		if err := cache.Redis.Delete(key); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func jwtSecret() []byte {
 	return []byte(config.Load().JWTSecret)
 }

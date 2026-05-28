@@ -4,6 +4,7 @@ import (
 	"errors"
 	"tester/internal/dto"
 	"tester/internal/repository"
+	"tester/internal/services"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -69,7 +70,7 @@ func DeleteUser(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		err := repository.DeleteUser(db, id)
+		err := services.DeleteUserAccount(db, id)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				c.JSON(404, gin.H{"error": "user not found"})
@@ -78,6 +79,7 @@ func DeleteUser(db *gorm.DB) gin.HandlerFunc {
 			c.JSON(500, gin.H{"error": "internal server error"})
 			return
 		}
+		clearAuthSession(c)
 		c.JSON(200, gin.H{"message": "user deleted"})
 	}
 }

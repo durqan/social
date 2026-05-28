@@ -12,7 +12,7 @@ func CreateEmailVerification(db *gorm.DB, userID uint, token string) error {
 	verification := models.EmailVerification{
 		UserID:    userID,
 		Token:     token,
-		ExpiresAt: time.Now().Add(24 * time.Hour),
+		ExpiresAt: time.Now().Add(models.EmailVerificationTTL),
 		Used:      false,
 	}
 	return db.Create(&verification).Error
