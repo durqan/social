@@ -19,7 +19,236 @@ type WatcherChatMessage = {
     createdAt: string;
 };
 
+type MediaSource =
+    | { type: 'native'; url: string }
+    | { type: 'youtube'; videoID: string; url: string }
+    | { type: 'twitch'; url: string; embedURL: string; label: string }
+    | { type: 'rutube'; url: string; embedURL: string; label: string };
+
+type YouTubePlayerState = -1 | 0 | 1 | 2 | 3 | 5;
+
+type YouTubePlayer = {
+    destroy: () => void;
+    getCurrentTime: () => number;
+    getPlayerState: () => YouTubePlayerState;
+    pauseVideo: () => void;
+    playVideo: () => void;
+    seekTo: (seconds: number, allowSeekAhead: boolean) => void;
+};
+
+type YouTubePlayerConstructor = new (
+    element: HTMLElement,
+    options: {
+        videoId: string;
+        playerVars?: Record<string, number | string>;
+        events?: {
+            onReady?: () => void;
+            onStateChange?: (event: { data: YouTubePlayerState }) => void;
+        };
+    },
+) => YouTubePlayer;
+
+declare global {
+    interface Window {
+        YT?: {
+            Player: YouTubePlayerConstructor;
+            PlayerState: {
+                PLAYING: 1;
+                PAUSED: 2;
+                BUFFERING: 3;
+            };
+        };
+        onYouTubeIframeAPIReady?: () => void;
+    }
+}
+
+let youtubeAPILoader: Promise<void> | null = null;
+
 const randomID = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+
+function loadYouTubeAPI() {
+    if (window.YT?.Player) {
+        return Promise.resolve();
+    }
+
+    if (!youtubeAPILoader) {
+        youtubeAPILoader = new Promise<void>((resolve, reject) => {
+            const previousReady = window.onYouTubeIframeAPIReady;
+            window.onYouTubeIframeAPIReady = () => {
+                previousReady?.();
+                resolve();
+            };
+
+            const existingScript = document.querySelector<HTMLScriptElement>('script[src="https://www.youtube.com/iframe_api"]');
+            if (existingScript) {
+                existingScript.addEventListener('error', () => reject(new Error('Не удалось загрузить YouTube API')), { once: true });
+                return;
+            }
+
+            const script = document.createElement('script');
+            script.src = 'https://www.youtube.com/iframe_api';
+            script.async = true;
+            script.onerror = () => reject(new Error('Не удалось загрузить YouTube API'));
+            document.head.appendChild(script);
+        });
+    }
+
+    return youtubeAPILoader;
+}
+
+function parseYouTubeVideoID(value: string) {
+    try {
+        const url = new URL(value);
+        const hostname = url.hostname.replace(/^www\./, '').replace(/^m\./, '').replace(/^music\./, '');
+        const parts = url.pathname.split('/').filter(Boolean);
+
+        if (hostname === 'youtu.be') {
+            return normalizeYouTubeID(parts[0]);
+        }
+
+        if (hostname === 'youtube.com' || hostname === 'youtube-nocookie.com') {
+            if (url.pathname === '/watch') {
+                return normalizeYouTubeID(url.searchParams.get('v') || '');
+            }
+
+            if (['embed', 'shorts', 'live'].includes(parts[0] || '')) {
+                return normalizeYouTubeID(parts[1]);
+            }
+        }
+    } catch {
+        return null;
+    }
+
+    return null;
+}
+
+function parseTwitchSource(value: string) {
+    try {
+        const url = new URL(value);
+        const hostname = url.hostname.replace(/^www\./, '').replace(/^m\./, '');
+        const parts = url.pathname.split('/').filter(Boolean);
+        const parent = encodeURIComponent(window.location.hostname || 'localhost');
+
+        if (hostname === 'clips.twitch.tv') {
+            const clip = normalizeTwitchSlug(parts[0]);
+            return clip ? {
+                embedURL: `https://clips.twitch.tv/embed?clip=${encodeURIComponent(clip)}&parent=${parent}&autoplay=false`,
+                label: 'Twitch Clip',
+            } : null;
+        }
+
+        if (hostname !== 'twitch.tv') {
+            return null;
+        }
+
+        if (parts[0] === 'videos') {
+            const videoID = parts[1]?.match(/^\d+$/)?.[0];
+            return videoID ? {
+                embedURL: `https://player.twitch.tv/?video=${encodeURIComponent(videoID)}&parent=${parent}&autoplay=false`,
+                label: 'Twitch VOD',
+            } : null;
+        }
+
+        if (parts[1] === 'clip') {
+            const clip = normalizeTwitchSlug(parts[2]);
+            return clip ? {
+                embedURL: `https://clips.twitch.tv/embed?clip=${encodeURIComponent(clip)}&parent=${parent}&autoplay=false`,
+                label: 'Twitch Clip',
+            } : null;
+        }
+
+        const channel = normalizeTwitchSlug(parts[0]);
+        return channel ? {
+            embedURL: `https://player.twitch.tv/?channel=${encodeURIComponent(channel)}&parent=${parent}&autoplay=false`,
+            label: `Twitch: ${channel}`,
+        } : null;
+    } catch {
+        return null;
+    }
+}
+
+function parseRutubeSource(value: string) {
+    try {
+        const url = new URL(value);
+        const hostname = url.hostname.replace(/^www\./, '');
+        if (hostname !== 'rutube.ru') {
+            return null;
+        }
+
+        const parts = url.pathname.split('/').filter(Boolean);
+        const id = parts[0] === 'play' && parts[1] === 'embed'
+            ? normalizeRutubeID(parts[2])
+            : parts[0] === 'video'
+                ? normalizeRutubeID(parts[1])
+                : null;
+
+        return id ? {
+            embedURL: `https://rutube.ru/play/embed/${encodeURIComponent(id)}`,
+            label: 'Rutube',
+        } : null;
+    } catch {
+        return null;
+    }
+}
+
+function normalizeYouTubeID(value?: string) {
+    const normalized = value?.trim() || '';
+    return /^[\w-]{11}$/.test(normalized) ? normalized : null;
+}
+
+function normalizeTwitchSlug(value?: string) {
+    const normalized = value?.trim() || '';
+    return /^[\w-]+$/.test(normalized) ? normalized : null;
+}
+
+function normalizeRutubeID(value?: string) {
+    const normalized = value?.trim() || '';
+    return /^[\w-]+$/.test(normalized) ? normalized : null;
+}
+
+function getMediaSource(url: string): MediaSource {
+    const videoID = parseYouTubeVideoID(url);
+    if (videoID) {
+        return { type: 'youtube', videoID, url };
+    }
+
+    const twitch = parseTwitchSource(url);
+    if (twitch) {
+        return { type: 'twitch', url, ...twitch };
+    }
+
+    const rutube = parseRutubeSource(url);
+    if (rutube) {
+        return { type: 'rutube', url, ...rutube };
+    }
+
+    return { type: 'native', url };
+}
+
+function mediaSourceLabel(source: MediaSource) {
+    switch (source.type) {
+        case 'youtube':
+            return 'YouTube';
+        case 'twitch':
+        case 'rutube':
+            return source.label;
+        default:
+            return 'Видео';
+    }
+}
+
+function mediaSourceAccent(source: MediaSource) {
+    switch (source.type) {
+        case 'youtube':
+            return 'border-red-200 bg-red-50 text-red-700';
+        case 'twitch':
+            return 'border-violet-200 bg-violet-50 text-violet-700';
+        case 'rutube':
+            return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+        default:
+            return 'border-sky-200 bg-sky-50 text-sky-700';
+    }
+}
 
 function formatClock(value: string) {
     const date = new Date(value);
@@ -79,9 +308,17 @@ function Watcher() {
     const [clientCount, setClientCount] = useState(0);
     const [chatText, setChatText] = useState('');
     const [messages, setMessages] = useState<WatcherChatMessage[]>([]);
+    const [youtubeReady, setYoutubeReady] = useState(false);
+    const [embeddedFrameReady, setEmbeddedFrameReady] = useState(false);
     const videoRef = useRef<HTMLVideoElement>(null);
+    const youtubeContainerRef = useRef<HTMLDivElement>(null);
+    const youtubePlayerRef = useRef<YouTubePlayer | null>(null);
     const socketRef = useRef<WebSocket | null>(null);
     const applyingRemoteRef = useRef(false);
+    const lastYouTubeTimeRef = useRef(0);
+    const pendingRemoteMessageRef = useRef<WatcherWSMessage | null>(null);
+
+    const mediaSource = useMemo(() => (room ? getMediaSource(room.video_url) : null), [room]);
 
     const inviteURL = useMemo(() => {
         if (!room) {
@@ -103,6 +340,34 @@ function Watcher() {
     }, []);
 
     const applyRemoteVideoState = useCallback((message: WatcherWSMessage) => {
+        if (mediaSource?.type === 'youtube') {
+            const player = youtubePlayerRef.current;
+            if (!player || !youtubeReady) {
+                pendingRemoteMessageRef.current = message;
+                return;
+            }
+
+            pendingRemoteMessageRef.current = null;
+            applyingRemoteRef.current = true;
+
+            if (typeof message.time === 'number' && Math.abs(player.getCurrentTime() - message.time) > 0.6) {
+                player.seekTo(message.time, true);
+                lastYouTubeTimeRef.current = message.time;
+            }
+
+            if (message.type === 'play' || (message.type === 'sync' && message.paused === false)) {
+                player.playVideo();
+            }
+            if (message.type === 'pause' || (message.type === 'sync' && message.paused !== false)) {
+                player.pauseVideo();
+            }
+
+            window.setTimeout(() => {
+                applyingRemoteRef.current = false;
+            }, 500);
+            return;
+        }
+
         const video = videoRef.current;
         if (!video) {
             return;
@@ -124,7 +389,7 @@ function Watcher() {
         window.setTimeout(() => {
             applyingRemoteRef.current = false;
         }, 300);
-    }, []);
+    }, [mediaSource?.type, youtubeReady]);
 
     const loadRoom = useCallback(async (roomID: string) => {
         const normalizedID = roomID.trim();
@@ -295,6 +560,20 @@ function Watcher() {
             return;
         }
 
+        if (mediaSource?.type === 'youtube') {
+            const player = youtubePlayerRef.current;
+            if (!player) {
+                return;
+            }
+
+            sendWSMessage({
+                type,
+                time: player.getCurrentTime(),
+                paused: player.getPlayerState() !== window.YT?.PlayerState.PLAYING,
+            });
+            return;
+        }
+
         const video = videoRef.current;
         if (!video) {
             return;
@@ -329,6 +608,110 @@ function Watcher() {
         }
     };
 
+    useEffect(() => {
+        if (mediaSource?.type !== 'youtube') {
+            youtubePlayerRef.current?.destroy();
+            youtubePlayerRef.current = null;
+            setYoutubeReady(false);
+            return;
+        }
+
+        let cancelled = false;
+        setYoutubeReady(false);
+
+        loadYouTubeAPI()
+            .then(() => {
+                if (cancelled || !youtubeContainerRef.current || !window.YT?.Player) {
+                    return;
+                }
+
+                const player = new window.YT.Player(youtubeContainerRef.current, {
+                    videoId: mediaSource.videoID,
+                    playerVars: {
+                        autoplay: 0,
+                        controls: 1,
+                        modestbranding: 1,
+                        playsinline: 1,
+                        rel: 0,
+                    },
+                    events: {
+                        onReady: () => {
+                            if (!cancelled) {
+                                youtubePlayerRef.current = player;
+                                lastYouTubeTimeRef.current = 0;
+                                setYoutubeReady(true);
+                            }
+                        },
+                        onStateChange: event => {
+                            if (cancelled || applyingRemoteRef.current) {
+                                return;
+                            }
+
+                            if (event.data === window.YT?.PlayerState.PLAYING) {
+                                sendPlaybackState('play');
+                            }
+                            if (event.data === window.YT?.PlayerState.PAUSED) {
+                                sendPlaybackState('pause');
+                            }
+                        },
+                    },
+                });
+
+                youtubePlayerRef.current = player;
+            })
+            .catch(error => {
+                if (!cancelled) {
+                    setRoomError(error instanceof Error ? error.message : 'Не удалось загрузить YouTube API');
+                }
+            });
+
+        return () => {
+            cancelled = true;
+            setYoutubeReady(false);
+            youtubePlayerRef.current?.destroy();
+            youtubePlayerRef.current = null;
+        };
+    }, [mediaSource]);
+
+    useEffect(() => {
+        if (mediaSource?.type !== 'youtube' || !youtubeReady) {
+            return;
+        }
+
+        const timer = window.setInterval(() => {
+            const player = youtubePlayerRef.current;
+            if (!player || applyingRemoteRef.current) {
+                return;
+            }
+
+            const currentTime = player.getCurrentTime();
+            const delta = Math.abs(currentTime - lastYouTubeTimeRef.current);
+            const isPlaying = player.getPlayerState() === window.YT?.PlayerState.PLAYING;
+
+            if (delta > 2.2) {
+                sendPlaybackState('seek');
+            }
+
+            if (isPlaying || delta > 2.2) {
+                lastYouTubeTimeRef.current = currentTime;
+            }
+        }, 1000);
+
+        return () => window.clearInterval(timer);
+    }, [mediaSource?.type, youtubeReady]);
+
+    useEffect(() => {
+        if (mediaSource?.type !== 'youtube' || !youtubeReady || !pendingRemoteMessageRef.current) {
+            return;
+        }
+
+        applyRemoteVideoState(pendingRemoteMessageRef.current);
+    }, [applyRemoteVideoState, mediaSource?.type, youtubeReady]);
+
+    useEffect(() => {
+        setEmbeddedFrameReady(false);
+    }, [mediaSource]);
+
     return (
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-4">
             <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
@@ -352,10 +735,36 @@ function Watcher() {
                     </div>
 
                     <div className="bg-black">
-                        {room ? (
+                        {room && mediaSource?.type === 'youtube' ? (
+                            <div className="relative aspect-video w-full overflow-hidden bg-black">
+                                <div ref={youtubeContainerRef} className="absolute inset-0 h-full w-full" />
+                                {!youtubeReady && (
+                                    <div className="absolute inset-0 flex items-center justify-center bg-gray-950 text-sm text-gray-300">
+                                        Загрузка YouTube-плеера...
+                                    </div>
+                                )}
+                            </div>
+                        ) : room && (mediaSource?.type === 'twitch' || mediaSource?.type === 'rutube') ? (
+                            <div className="relative aspect-video w-full overflow-hidden bg-gray-950">
+                                <iframe
+                                    src={mediaSource.embedURL}
+                                    title={mediaSource.label}
+                                    allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
+                                    allowFullScreen
+                                    className={`h-full w-full transition duration-300 ${embeddedFrameReady ? 'opacity-100' : 'opacity-0'}`}
+                                    onLoad={() => setEmbeddedFrameReady(true)}
+                                />
+                                {!embeddedFrameReady && (
+                                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-gray-950 text-sm text-gray-300">
+                                        <Spinner size="sm" />
+                                        <span>Загрузка {mediaSource.label}...</span>
+                                    </div>
+                                )}
+                            </div>
+                        ) : room && mediaSource?.type === 'native' ? (
                             <video
                                 ref={videoRef}
-                                src={room.video_url}
+                                src={mediaSource.url}
                                 controls
                                 playsInline
                                 className="aspect-video w-full bg-black"
@@ -370,11 +779,16 @@ function Watcher() {
                         )}
                     </div>
 
-                    {room && (
+                    {room && mediaSource && (
                         <div className="grid gap-3 border-t border-gray-100 px-4 py-3 text-sm text-gray-600 sm:grid-cols-[1fr_auto] sm:px-5">
-                            <div className="min-w-0">
-                                <span className="font-semibold text-gray-800">ID комнаты: </span>
-                                <span className="break-all">{room.id}</span>
+                            <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${mediaSourceAccent(mediaSource)}`}>
+                                    {mediaSourceLabel(mediaSource)}
+                                </span>
+                                <span className="min-w-0 break-all">
+                                    <span className="font-semibold text-gray-800">ID комнаты: </span>
+                                    {room.id}
+                                </span>
                             </div>
                             <a
                                 href={room.video_url}
@@ -441,7 +855,7 @@ function Watcher() {
                             value={videoURL}
                             onChange={event => setVideoURL(event.target.value)}
                             className="app-input h-11 px-3"
-                            placeholder="https://example.com/video.mp4"
+                            placeholder="YouTube, Twitch, Rutube или прямая ссылка"
                         />
                         <button
                             type="submit"
