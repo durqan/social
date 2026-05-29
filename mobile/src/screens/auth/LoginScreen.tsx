@@ -6,6 +6,7 @@ import { AppButton } from '../../components/AppButton';
 import { ErrorBanner } from '../../components/Feedback';
 import { Screen } from '../../components/Screen';
 import { TextField } from '../../components/TextField';
+import { API_BASE_URL } from '../../config/env';
 import { useAuth } from '../../context/AuthContext';
 import { colors } from '../../theme/colors';
 import type { AuthStackParamList } from '../../navigation/types';
@@ -47,6 +48,9 @@ export default function LoginScreen({ navigation }: Props) {
         <Text style={styles.title}>Вход</Text>
         <Text style={styles.subtitle}>
           Используйте тот же аккаунт, что и в веб-версии.
+        </Text>
+        <Text style={styles.apiHint} numberOfLines={2}>
+          API: {API_BASE_URL}
         </Text>
 
         <ErrorBanner message={localError ?? authError} />
@@ -105,6 +109,12 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 15,
     lineHeight: 21,
+    textAlign: 'center',
+  },
+  apiHint: {
+    color: colors.soft,
+    fontSize: 12,
+    lineHeight: 16,
     textAlign: 'center',
   },
 });

@@ -64,7 +64,7 @@ Release APK/AAB требует собственного signing config и produc
 
 ```sh
 cd mobile
-npm run build:android:release
+SOCIAL_API_BASE_URL=https://example.com/api npm run build:android:release
 ```
 
 APK после сборки:
@@ -73,7 +73,9 @@ APK после сборки:
 mobile/android/app/build/outputs/apk/release/app-release.apk
 ```
 
-Release variant собирает JS bundle внутрь APK, поэтому установленное приложение запускается без Metro. Текущая CI-сборка подписывает release APK debug keystore из React Native template; для production публикации нужен отдельный signing config.
+Release variant собирает JS bundle внутрь APK, поэтому установленное приложение запускается без Metro. `SOCIAL_API_BASE_URL` встраивается в JS bundle во время сборки. Для production/release используйте публичный HTTPS backend URL, например `https://example.com/api` при reverse proxy или `https://api.example.com` при прямом backend API. Не используйте `localhost`, `127.0.0.1`, `10.0.2.2` или LAN IP.
+
+Текущая CI-сборка подписывает release APK debug keystore из React Native template; для production публикации нужен отдельный signing config.
 
 ## Build APK via GitHub Actions
 
@@ -82,6 +84,14 @@ Release variant собирает JS bundle внутрь APK, поэтому ус
 3. Нажмите `Run workflow`.
 4. После завершения job откройте run и скачайте artifact `social-mobile-debug-apk`.
 5. Для APK без Metro скачайте artifact `social-mobile-release-apk`.
+
+Перед release-сборкой задайте GitHub repository variable:
+
+```text
+SOCIAL_API_BASE_URL=https://example.com/api
+```
+
+Workflow проверяет, что release URL начинается с `https://`, не указывает на localhost/emulator/LAN/private IP и не содержит двойной путь `/api/api`.
 
 Artifact содержит debug APK:
 

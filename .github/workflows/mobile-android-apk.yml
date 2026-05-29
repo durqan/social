@@ -55,7 +55,26 @@ jobs:
           npm run build:android
 
       - name: Build release APK
-        run: npm run build:android:release
+        env:
+          SOCIAL_API_BASE_URL: ${{ vars.SOCIAL_API_BASE_URL }}
+        run: |
+          if [ -z "$SOCIAL_API_BASE_URL" ]; then
+            echo "SOCIAL_API_BASE_URL repository variable is required for release APK builds."
+            exit 1
+          fi
+
+          if ! printf '%s' "$SOCIAL_API_BASE_URL" | grep -Eq '^https://'; then
+            echo "SOCIAL_API_BASE_URL must be a public HTTPS URL for release APK builds."
+            exit 1
+          fi
+
+          if printf '%s' "$SOCIAL_API_BASE_URL" | grep -Eq '(^https://(localhost|127\.0\.0\.1|10\.0\.2\.2)(:|/|$))|(^https://192\.168\.)|(^https://10\.)|(^https://172\.(1[6-9]|2[0-9]|3[0-1])\.)|/api/api(/|$)'; then
+            echo "SOCIAL_API_BASE_URL must not point to localhost, emulator, LAN/private IP, or contain /api/api."
+            exit 1
+          fi
+
+          echo "Building release APK with SOCIAL_API_BASE_URL=$SOCIAL_API_BASE_URL"
+          npm run build:android:release
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
