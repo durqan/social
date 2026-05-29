@@ -6,7 +6,7 @@ import React from 'react';
 import ReactTestRenderer from 'react-test-renderer';
 import App from '../App';
 
-jest.mock('@react-native-cookies/cookies', () => ({
+jest.mock('@preeternal/react-native-cookie-manager', () => ({
   __esModule: true,
   default: {
     get: jest.fn(() => Promise.resolve({})),
