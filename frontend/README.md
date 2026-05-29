@@ -1,16 +1,40 @@
-# React + Vite
+# Social Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Веб-клиент социальной сети на React, TypeScript, Vite и Tailwind CSS.
 
-Currently, two official plugins are available:
+## Что есть в клиенте
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- Авторизация, регистрация, выход и CSRF-интеграция с backend.
+- Профили, поиск пользователей, друзья и заявки.
+- Лента постов, комментарии и лайки.
+- Реал-тайм чат через WebSocket.
+- Уведомления через notifications service, SSE и Web Push.
+- Аудиозвонки через WebRTC.
+- Комнаты совместного просмотра через watcher service.
 
-## React Compiler
+## Команды
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```bash
+npm install
+npm run dev
+npm run lint
+npm run build
+npm run preview
+```
 
-## Expanding the ESLint configuration
+## Переменные окружения
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Vite читает переменные с префиксом `VITE_`:
+
+```env
+VITE_API_BASE_URL=/api
+VITE_NOTIFICATIONS_URL=/notifications-api
+VITE_VAPID_PUBLIC_KEY=
+VITE_WATCHER_API_BASE_URL=/watcher-api
+VITE_WATCHER_WS_BASE_URL=
+VITE_TURN_URLS=turn:localhost:3478?transport=udp,turn:localhost:3478?transport=tcp
+VITE_TURN_USERNAME=social_turn
+VITE_TURN_CREDENTIAL=change_me_turn_password
+```
+
+В локальной разработке значения по умолчанию рассчитаны на Vite proxy и backend на `http://localhost:8080`. Для production маршрутизацию API, notifications и watcher выполняет nginx.
