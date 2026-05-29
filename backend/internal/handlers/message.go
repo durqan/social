@@ -44,6 +44,10 @@ func SendMessage(db *gorm.DB) gin.HandlerFunc {
 			c.JSON(400, gin.H{"error": "message content or image is required"})
 			return
 		}
+		if errors.Is(err, services.ErrMessageContentTooLong) {
+			c.JSON(400, gin.H{"error": "message content must be 1000 characters or less"})
+			return
+		}
 		if errors.Is(err, services.ErrMessageNotFriends) {
 			c.JSON(403, gin.H{"error": "can only message accepted friends"})
 			return

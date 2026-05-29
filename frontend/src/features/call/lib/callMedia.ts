@@ -8,6 +8,8 @@ import {
 import type { WebSocketService } from "@/shared/api/ws.js";
 import type { CallType } from "@/features/call/types.js";
 
+export type CameraFacingMode = 'user' | 'environment';
+
 type LocalCallStreamResult = {
     stream: MediaStream;
     callType: CallType;
@@ -83,6 +85,17 @@ export function createCallPeerConnection({
     return pc;
 }
 
+export function closePeerConnection(pc: RTCPeerConnection | null) {
+    if (!pc) {
+        return;
+    }
+
+    pc.onicecandidate = null;
+    pc.ontrack = null;
+    pc.onconnectionstatechange = null;
+    pc.close();
+}
+
 export async function applyVideoSenderQuality(pc: RTCPeerConnection) {
     const videoSender = pc.getSenders().find(sender => sender.track?.kind === 'video');
 
@@ -110,6 +123,83 @@ export function addStreamTracks(pc: RTCPeerConnection, stream: MediaStream) {
     stream.getTracks().forEach(track => {
         pc.addTrack(track, stream);
     });
+}
+
+export async function countVideoInputDevices() {
+    if (!navigator.mediaDevices?.enumerateDevices) {
+        return 0;
+    }
+
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices.filter(device => device.kind === 'videoinput').length;
+}
+
+export async function openReplacementVideoTrack(
+    stream: MediaStream,
+    facingMode: CameraFacingMode,
+) {
+    if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error('Браузер не поддерживает доступ к камере');
+    }
+
+    const devices = navigator.mediaDevices.enumerateDevices
+        ? await navigator.mediaDevices.enumerateDevices()
+        : [];
+    const videoInputs = devices.filter(device => device.kind === 'videoinput');
+    const currentDeviceID = stream.getVideoTracks()[0]?.getSettings().deviceId;
+    const currentIndex = videoInputs.findIndex(device => device.deviceId === currentDeviceID);
+    const nextDevice = currentIndex >= 0
+        ? videoInputs[(currentIndex + 1) % videoInputs.length]
+        : videoInputs[0];
+
+    const constraints: MediaTrackConstraints = { ...videoConstraints };
+
+    if (isMobileDevice()) {
+        constraints.facingMode = { ideal: facingMode };
+        delete constraints.deviceId;
+    } else if (nextDevice?.deviceId) {
+        constraints.deviceId = { exact: nextDevice.deviceId };
+        delete constraints.facingMode;
+    } else {
+        constraints.facingMode = { ideal: facingMode };
+        delete constraints.deviceId;
+    }
+
+    const replacementStream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: constraints,
+    });
+    const [track] = replacementStream.getVideoTracks();
+
+    if (!track) {
+        stopMediaStream(replacementStream);
+        throw new Error('Камера не найдена');
+    }
+
+    return track;
+}
+
+export async function replaceVideoSenderTrack(
+    pc: RTCPeerConnection | null,
+    stream: MediaStream,
+    newTrack: MediaStreamTrack,
+) {
+    const sender = pc?.getSenders().find(item => item.track?.kind === 'video');
+
+    if (!sender) {
+        newTrack.stop();
+        throw new Error('Видео дорожка звонка не найдена');
+    }
+
+    const [oldTrack] = stream.getVideoTracks();
+    await sender.replaceTrack(newTrack);
+
+    if (oldTrack) {
+        stream.removeTrack(oldTrack);
+        oldTrack.stop();
+    }
+
+    stream.addTrack(newTrack);
 }
 
 export async function addIceCandidates(
@@ -146,4 +236,9 @@ export function detachMediaElement(element: HTMLMediaElement | null) {
 
 export function stopMediaStream(stream: MediaStream | null) {
     stream?.getTracks().forEach(track => track.stop());
+}
+
+function isMobileDevice() {
+    return window.matchMedia('(pointer: coarse)').matches ||
+        /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 }

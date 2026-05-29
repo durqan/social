@@ -70,6 +70,10 @@ func handleWebSocketSendMessage(ctx context.Context, userID uint, rawPayload jso
 		log.Println("Invalid message data")
 		return
 	}
+	if errors.Is(err, services.ErrMessageContentTooLong) {
+		sendWebSocketError(ctx, userID, "message content must be 1000 characters or less")
+		return
+	}
 	if errors.Is(err, services.ErrMessageNotFriends) {
 		sendWebSocketError(ctx, userID, "can only message accepted friends")
 		return

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
 import { useNavigate, useOutletContext, useParams } from 'react-router-dom';
 import type { MessageAttachment, User } from "@/shared/types/domain.js";
 import { messageService } from "@/features/chat/api/messageService.js";
@@ -18,6 +18,12 @@ import { Spinner } from "@/shared/ui/Spinner.js";
 import { formatMonthDayDate, formatTime } from "@/shared/utils/date.js";
 import {usePresence} from "@/shared/hooks/usePresence.js";
 import { getUploadErrorMessage } from "@/shared/api/errors.js";
+import {
+    dataTransferHasFiles,
+    dataTransferHasImages,
+    filesFromDataTransfer,
+    imageFilesFromClipboard,
+} from "@/shared/utils/uploadValidation.js";
 
 const optimisticMessageFloor = 10000000;
 
@@ -30,6 +36,9 @@ function Chat() {
     const [recipient, setRecipient] = useState<User | null>(null);
     const [newMessage, setNewMessage] = useState('');
     const [uploadError, setUploadError] = useState('');
+    const [draggingImage, setDraggingImage] = useState(false);
+    const [incomingFiles, setIncomingFiles] = useState<{ id: number; files: File[] } | null>(null);
+    const dragDepthRef = useRef(0);
 
     const {
         messages,
@@ -152,10 +161,106 @@ function Chat() {
         }
     }, [currentUser, newMessage, sendMessageToStore, uploadAttachments, userId, wsService]);
 
+    const queueFilesForPreview = useCallback((files: File[]) => {
+        if (!files.length) {
+            return;
+        }
+
+        setUploadError('');
+        setIncomingFiles({
+            id: Date.now(),
+            files,
+        });
+    }, []);
+
+    const resetDragState = () => {
+        dragDepthRef.current = 0;
+        setDraggingImage(false);
+    };
+
+    const handleDragEnter = (event: DragEvent<HTMLDivElement>) => {
+        if (!dataTransferHasFiles(event.dataTransfer)) {
+            return;
+        }
+
+        event.preventDefault();
+        dragDepthRef.current += 1;
+
+        if (dataTransferHasImages(event.dataTransfer)) {
+            setDraggingImage(true);
+        }
+    };
+
+    const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
+        if (!dataTransferHasFiles(event.dataTransfer)) {
+            return;
+        }
+
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'copy';
+
+        if (dataTransferHasImages(event.dataTransfer)) {
+            setDraggingImage(true);
+        }
+    };
+
+    const handleDragLeave = (event: DragEvent<HTMLDivElement>) => {
+        if (!dataTransferHasFiles(event.dataTransfer) && dragDepthRef.current === 0) {
+            return;
+        }
+
+        dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+
+        if (dragDepthRef.current === 0) {
+            setDraggingImage(false);
+        }
+    };
+
+    const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+        if (!dataTransferHasFiles(event.dataTransfer)) {
+            return;
+        }
+
+        event.preventDefault();
+        resetDragState();
+        queueFilesForPreview(filesFromDataTransfer(event.dataTransfer));
+    };
+
+    const handlePaste = (event: ClipboardEvent<HTMLDivElement>) => {
+        const files = imageFilesFromClipboard(event.clipboardData);
+
+        if (!files.length) {
+            return;
+        }
+
+        event.preventDefault();
+        queueFilesForPreview(files);
+    };
+
     if (initialLoading) return <div className="flex h-full items-center justify-center sm:h-[calc(100vh-120px)]"><Spinner /></div>;
 
     return (
-        <div className="flex h-full flex-col overflow-hidden bg-[#f4f5f7] sm:h-[calc(100vh-120px)] sm:rounded-2xl sm:border sm:border-gray-200/80">
+        <div
+            className="relative flex h-full flex-col overflow-hidden bg-[#f4f5f7] sm:h-[calc(100vh-120px)] sm:rounded-2xl sm:border sm:border-gray-200/80"
+            onDragEnter={handleDragEnter}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            onPaste={handlePaste}
+        >
+            {draggingImage && (
+                <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-slate-950/35 p-4 backdrop-blur-[1px]">
+                    <div className="rounded-2xl border-2 border-dashed border-white/80 bg-white/90 px-6 py-5 text-center shadow-xl">
+                        <p className="text-sm font-semibold text-gray-900 sm:text-base">
+                            Отпустите изображение для отправки
+                        </p>
+                        <p className="mt-1 text-xs text-gray-500">
+                            Перед отправкой появится предпросмотр
+                        </p>
+                    </div>
+                </div>
+            )}
+
             <ChatHeader
                 recipientName={recipient?.name}
                 recipientStatus={online}
@@ -210,6 +315,8 @@ function Chat() {
                 onSend={sendMessage}
                 errorMessage={uploadError}
                 onErrorMessageChange={setUploadError}
+                incomingFiles={incomingFiles}
+                onIncomingFilesConsumed={() => setIncomingFiles(null)}
             />
             <DeleteConfirmModal isOpen={deleteConfirmOpen} onConfirm={handleBatchDelete} onCancel={closeDeleteConfirm} />
         </div>

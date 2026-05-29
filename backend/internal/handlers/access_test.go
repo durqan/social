@@ -300,6 +300,92 @@ func TestSendMessageAllowsAcceptedFriend(t *testing.T) {
 	}
 }
 
+func TestSendMessageRejectsTooLongContent(t *testing.T) {
+	db := testDB(t)
+	users := []models.User{
+		{ID: 1, Name: "Alice", Email: "alice@example.com", Password: "hash"},
+		{ID: 2, Name: "Bob", Email: "bob@example.com", Password: "hash"},
+	}
+	if err := db.Create(&users).Error; err != nil {
+		t.Fatalf("create users: %v", err)
+	}
+
+	friendship := models.Friendship{UserID: 1, FriendID: 2, Status: "accepted"}
+	if err := db.Create(&friendship).Error; err != nil {
+		t.Fatalf("create friendship: %v", err)
+	}
+
+	r := routerWithUser(1)
+	r.POST("/messages/send/:toId", SendMessage(db))
+
+	w := httptest.NewRecorder()
+	body := `{"content":"` + strings.Repeat("a", 1001) + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/messages/send/2", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for too long message, got %d", w.Code)
+	}
+
+	var count int64
+	if err := db.Model(&models.Message{}).Count(&count).Error; err != nil {
+		t.Fatalf("count messages: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected no messages to be created, got %d", count)
+	}
+}
+
+func TestPatchUserResetsEmailVerificationOnEmailChange(t *testing.T) {
+	db := testDB(t)
+	user := models.User{
+		ID:              1,
+		Name:            "Alice",
+		Email:           "alice@example.com",
+		Password:        "hash",
+		IsEmailVerified: true,
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	r := routerWithUser(1)
+	r.PATCH("/users/:id", PatchUser(db))
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPatch, "/users/1", strings.NewReader(`{"email":"alice-new@example.com"}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for email change, got %d", w.Code)
+	}
+
+	var updated models.User
+	if err := db.First(&updated, 1).Error; err != nil {
+		t.Fatalf("load user: %v", err)
+	}
+	if updated.IsEmailVerified {
+		t.Fatal("expected email verification to be reset")
+	}
+}
+
+func TestWebSocketRejectsQueryToken(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	r := gin.New()
+	r.GET("/ws", WebSocketHandler)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/ws?token=abc", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for query token, got %d", w.Code)
+	}
+}
+
 func TestRegisterRejectsHoneypot(t *testing.T) {
 	db := testDB(t)
 

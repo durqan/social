@@ -5,11 +5,13 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"notifications/auth"
 	"notifications/db"
 	"notifications/handlers"
 	"notifications/hub"
+	"notifications/middleware"
 	"notifications/models"
 	pushsvc "notifications/push"
 	"notifications/rabbit"
@@ -68,6 +70,8 @@ func main() {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 
+	r.POST("/notifications", middleware.RateLimit(30, time.Minute), auth.InternalMiddleware(), h.CreateNotification)
+
 	protected := r.Group("/", auth.Middleware())
 	protected.GET("/notifications/stream", h.StreamNotifications)
 	protected.GET("/notifications", h.GetUserNotifications)
@@ -75,7 +79,6 @@ func main() {
 	protected.GET("/notifications/:user_id", h.GetUserNotifications)
 	protected.PATCH("/notifications/read-matching", h.MarkMatchingAsRead)
 	protected.PATCH("/notifications/:id/read", h.MarkAsRead)
-	protected.POST("/notifications", h.CreateNotification)
 	protected.POST("/push/subscribe", h.SubscribePush)
 
 	go func() {

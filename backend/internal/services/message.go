@@ -13,14 +13,20 @@ import (
 
 var (
 	ErrMessageContentRequired = errors.New("message content or image is required")
+	ErrMessageContentTooLong  = errors.New("message content is too long")
 	ErrMessageForbidden       = errors.New("message forbidden")
 	ErrMessageNotFriends      = errors.New("message requires accepted friendship")
 )
+
+const MaxMessageContentLength = 1000
 
 func SendMessage(db *gorm.DB, fromID, toID uint, content string, attachments []models.MessageAttachment) (models.Message, error) {
 	content = strings.TrimSpace(content)
 	if content == "" && len(attachments) == 0 {
 		return models.Message{}, ErrMessageContentRequired
+	}
+	if len([]rune(content)) > MaxMessageContentLength {
+		return models.Message{}, ErrMessageContentTooLong
 	}
 
 	status, err := repository.GetFriendshipStatus(db, fromID, toID)

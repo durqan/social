@@ -32,11 +32,8 @@ func InitWebSocket(db *gorm.DB, originPatterns []string) {
 func WebSocketHandler(c *gin.Context) {
 	token, err := c.Cookie(middleware.AuthCookieName)
 	if err != nil {
-		token = c.Query("token")
-		if token == "" {
-			c.JSON(401, gin.H{"error": "no token"})
-			return
-		}
+		c.JSON(401, gin.H{"error": "no token"})
+		return
 	}
 
 	userID, _, err := auth.ValidateToken(token)

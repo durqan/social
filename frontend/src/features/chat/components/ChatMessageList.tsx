@@ -23,6 +23,7 @@ interface ChatMessageListProps {
     messagesEndRef: React.RefObject<HTMLDivElement | null>;
     formatDate: (date: string) => string;
     formatTime: (date: string) => string;
+    actionsEnabled?: boolean;
 }
 
 export const ChatMessageList = ({
@@ -45,6 +46,7 @@ export const ChatMessageList = ({
                                     messagesEndRef,
                                     formatDate,
                                     formatTime,
+                                    actionsEnabled = true,
                                 }: ChatMessageListProps) => {
     const containerRef = useRef<HTMLDivElement>(null);
 
@@ -96,6 +98,7 @@ export const ChatMessageList = ({
                             onCancelEdit={onCancelEdit}
                             formatTime={formatTime}
                             formatDate={formatDate}
+                            actionsEnabled={actionsEnabled}
                         />
                     );
                 })

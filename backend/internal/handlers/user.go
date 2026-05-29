@@ -102,7 +102,19 @@ func PatchUser(db *gorm.DB) gin.HandlerFunc {
 			updates["name"] = *req.Name
 		}
 		if req.Email != nil {
+			currentUser, err := repository.GetUserById(db, id)
+			if err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					c.JSON(404, gin.H{"error": "user not found"})
+					return
+				}
+				c.JSON(500, gin.H{"error": "internal server error"})
+				return
+			}
 			updates["email"] = *req.Email
+			if *req.Email != currentUser.Email {
+				updates["is_email_verified"] = false
+			}
 		}
 		if req.Age != nil {
 			updates["age"] = *req.Age

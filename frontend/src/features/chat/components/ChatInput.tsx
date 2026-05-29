@@ -1,7 +1,11 @@
-import { useEffect, useRef, useState, type ChangeEvent, type ReactElement } from 'react';
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type ReactElement } from 'react';
 import { Icon } from "@/shared/ui/Icon.js";
 import EmojiPickerModule, { EmojiStyle, type EmojiClickData, type Props as EmojiPickerProps } from 'emoji-picker-react';
-import { validateChatImages } from "@/shared/utils/uploadValidation.js";
+import {
+    formatFileSize,
+    imageFilesFromClipboard,
+    validateChatImages,
+} from "@/shared/utils/uploadValidation.js";
 
 const EmojiPicker = EmojiPickerModule as unknown as (props: EmojiPickerProps) => ReactElement | null;
 
@@ -11,9 +15,22 @@ interface ChatInputProps {
     onSend: (files?: File[]) => Promise<boolean> | boolean;
     errorMessage?: string;
     onErrorMessageChange?: (message: string) => void;
+    incomingFiles?: {
+        id: number;
+        files: File[];
+    } | null;
+    onIncomingFilesConsumed?: () => void;
 }
 
-export const ChatInput = ({ value, onChange, onSend, errorMessage = '', onErrorMessageChange }: ChatInputProps) => {
+export const ChatInput = ({
+    value,
+    onChange,
+    onSend,
+    errorMessage = '',
+    onErrorMessageChange,
+    incomingFiles,
+    onIncomingFilesConsumed,
+}: ChatInputProps) => {
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
     const [previews, setPreviews] = useState<string[]>([]);
@@ -29,6 +46,34 @@ export const ChatInput = ({ value, onChange, onSend, errorMessage = '', onErrorM
             urls.forEach(url => URL.revokeObjectURL(url));
         };
     }, [selectedFiles]);
+
+    const addFiles = useCallback((files: File[], replace = false) => {
+        if (!files.length) {
+            return;
+        }
+
+        setSelectedFiles(prev => {
+            const nextFiles = replace ? files : [...prev, ...files];
+            const validationError = validateChatImages(nextFiles);
+
+            if (validationError) {
+                onErrorMessageChange?.(validationError);
+                return replace ? [] : prev;
+            }
+
+            onErrorMessageChange?.('');
+            return nextFiles;
+        });
+    }, [onErrorMessageChange]);
+
+    useEffect(() => {
+        if (!incomingFiles) {
+            return;
+        }
+
+        addFiles(incomingFiles.files);
+        onIncomingFilesConsumed?.();
+    }, [addFiles, incomingFiles, onIncomingFilesConsumed]);
 
     const removeFile = (index: number) => {
         setSelectedFiles(prev => prev.filter((_, i) => i !== index));
@@ -52,27 +97,63 @@ export const ChatInput = ({ value, onChange, onSend, errorMessage = '', onErrorM
         }
     };
 
+    const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+        const files = imageFilesFromClipboard(event.clipboardData);
+
+        if (!files.length) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        addFiles(files);
+    };
+
     return (
         <div className="border-t border-gray-200/80 bg-white/95 p-3 backdrop-blur sm:p-4">
             {selectedFiles.length > 0 && (
-                <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
-                    {selectedFiles.map((file, index) => (
-                        <div key={`${file.name}-${index}`} className="relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-gray-100">
-                            <img
-                                src={previews[index]}
-                                alt={file.name}
-                                className="h-full w-full object-cover"
-                            />
-                            <button
-                                type="button"
-                                onClick={() => removeFile(index)}
-                                className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white"
-                                aria-label="Убрать картинку"
-                            >
-                                <Icon name="close" className="h-3 w-3" />
-                            </button>
-                        </div>
-                    ))}
+                <div className="mb-3 rounded-xl border border-gray-200 bg-gray-50 p-2 shadow-sm">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                        <span className="text-xs font-medium text-gray-600">
+                            {selectedFiles.length === 1 ? '1 изображение' : `${selectedFiles.length} изображений`}
+                        </span>
+
+                        <button
+                            type="button"
+                            onClick={() => void handleSend()}
+                            disabled={sending}
+                            className="inline-flex items-center gap-1 rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-sky-700 disabled:opacity-50"
+                        >
+                            <Icon name="send" className="h-3.5 w-3.5" />
+                            Отправить
+                        </button>
+                    </div>
+
+                    <div className="flex gap-2 overflow-x-auto pb-1">
+                        {selectedFiles.map((file, index) => (
+                            <div key={`${file.name}-${file.lastModified}-${index}`} className="relative h-20 w-20 flex-shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-gray-100">
+                                <img
+                                    src={previews[index]}
+                                    alt={file.name || 'Изображение'}
+                                    className="h-full w-full object-cover"
+                                />
+
+                                <div className="absolute inset-x-0 bottom-0 bg-black/60 px-1.5 py-1 text-[10px] font-medium leading-none text-white">
+                                    {formatFileSize(file.size)}
+                                </div>
+
+                                <button
+                                    type="button"
+                                    onClick={() => removeFile(index)}
+                                    className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/65 text-white"
+                                    aria-label="Убрать картинку"
+                                    title="Убрать картинку"
+                                >
+                                    <Icon name="close" className="h-3 w-3" />
+                                </button>
+                            </div>
+                        ))}
+                    </div>
                 </div>
             )}
 
@@ -85,16 +166,8 @@ export const ChatInput = ({ value, onChange, onSend, errorMessage = '', onErrorM
                     className="hidden"
                     onChange={e => {
                         const files = Array.from(e.target.files || []);
-                        const validationError = validateChatImages(files);
-                        if (validationError) {
-                            setSelectedFiles([]);
-                            onErrorMessageChange?.(validationError);
-                            e.target.value = '';
-                            return;
-                        }
-
-                        onErrorMessageChange?.('');
-                        setSelectedFiles(files);
+                        addFiles(files, true);
+                        e.target.value = '';
                     }}
                 />
 
@@ -110,6 +183,7 @@ export const ChatInput = ({ value, onChange, onSend, errorMessage = '', onErrorM
                 <textarea
                     value={value}
                     onChange={onChange}
+                    onPaste={handlePaste}
                     onKeyDown={e => {
                         if (e.key === 'Enter' && !e.shiftKey) {
                             e.preventDefault();

@@ -22,6 +22,7 @@ interface ChatMessageProps {
     onCancelEdit: () => void;
     formatTime: (date: string) => string;
     formatDate: (date: string) => string;
+    actionsEnabled?: boolean;
 }
 
 const ChatMessageComponent = ({
@@ -43,6 +44,7 @@ const ChatMessageComponent = ({
                                 onCancelEdit,
                                 formatTime,
                                 formatDate,
+                                actionsEnabled = true,
                             }: ChatMessageProps) => {
     const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -141,7 +143,7 @@ const ChatMessageComponent = ({
                         </div>
                     )}
 
-                    {!selectionMode && (
+                    {actionsEnabled && !selectionMode && (
                         <div className={`absolute top-1/2 hidden -translate-y-1/2 gap-1 opacity-0 transition-all duration-200 group-hover:opacity-100 sm:flex ${isOwn ? '-left-20' : '-right-20'}`}>
                             {isOwn && (
                                 <button

@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useAuth } from "@/app/providers/AuthContext.js";
 import { useWebSocket } from "@/app/providers/WebSocketContext.js";
 
+import { CallChatPanel } from "@/features/call/components/CallChatPanel.js";
 import { CallOverlay } from "@/features/call/components/CallOverlay.js";
 import { userService } from "@/shared/api/userService.js";
 import { getCallErrorMessage } from "@/features/call/lib/callConfig.js";
@@ -11,10 +12,15 @@ import {
     addStreamTracks,
     applyVideoSenderQuality,
     attachMediaStream,
+    closePeerConnection,
+    countVideoInputDevices,
     createCallPeerConnection,
     detachMediaElement,
     openLocalCallStream,
+    openReplacementVideoTrack,
+    replaceVideoSenderTrack,
     stopMediaStream,
+    type CameraFacingMode,
 } from "@/features/call/lib/callMedia.js";
 import { useRefState } from "@/shared/hooks/useRefState.js";
 
@@ -41,6 +47,14 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
     const [peerName, setPeerName] = useState('Пользователь');
     const [error, setError] = useState<string | null>(null);
     const [isExpanded, setIsExpanded] = useState(false);
+    const [isMicrophoneOn, isMicrophoneOnRef, setIsMicrophoneOn] = useRefState(true);
+    const [isCameraOn, isCameraOnRef, setIsCameraOn] = useRefState(true);
+    const [, cameraFacingModeRef, setCameraFacingMode] = useRefState<CameraFacingMode>('user');
+    const [hasLocalVideo, setHasLocalVideo] = useState(false);
+    const [canSwitchCamera, setCanSwitchCamera] = useState(false);
+    const [isSwitchingCamera, setIsSwitchingCamera] = useState(false);
+    const [isCallChatOpen, isCallChatOpenRef, setIsCallChatOpen] = useRefState(false);
+    const [callChatUnread, callChatUnreadRef, setCallChatUnread] = useRefState(0);
 
     const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
     const localStreamRef = useRef<MediaStream | null>(null);
@@ -57,18 +71,30 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
         localStreamRef.current = null;
     }, []);
 
+    const refreshVideoInputSupport = useCallback(async () => {
+        try {
+            setCanSwitchCamera(await countVideoInputDevices() > 1);
+        } catch {
+            setCanSwitchCamera(false);
+        }
+    }, []);
+
     const cleanupMediaSession = useCallback(() => {
         if (disconnectTimeoutRef.current) {
             window.clearTimeout(disconnectTimeoutRef.current);
             disconnectTimeoutRef.current = null;
         }
 
-        peerConnectionRef.current?.close();
+        closePeerConnection(peerConnectionRef.current);
         peerConnectionRef.current = null;
         incomingOfferRef.current = null;
         pendingIceRef.current = [];
+        stopMediaStream(remoteStreamRef.current);
         remoteStreamRef.current = null;
         stopLocalStream();
+        setHasLocalVideo(false);
+        setCanSwitchCamera(false);
+        setIsSwitchingCamera(false);
 
         detachMediaElement(remoteAudioRef.current);
         detachMediaElement(localVideoRef.current);
@@ -81,14 +107,36 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
         setPeerName('Пользователь');
         setCurrentCallType('audio');
         setIsExpanded(false);
+        setIsMicrophoneOn(true);
+        setIsCameraOn(true);
+        setCameraFacingMode('user');
+        setIsCallChatOpen(false);
+        setCallChatUnread(0);
         setCallStatus('idle');
-    }, [cleanupMediaSession, setCallPeer, setCallStatus, setCurrentCallType]);
+    }, [
+        cleanupMediaSession,
+        setCallChatUnread,
+        setCallPeer,
+        setCallStatus,
+        setCameraFacingMode,
+        setCurrentCallType,
+        setIsCallChatOpen,
+        setIsCameraOn,
+        setIsMicrophoneOn,
+    ]);
 
     const getLocalStream = useCallback(async (nextCallType: CallType) => {
         if (!localStreamRef.current) {
             const result = await openLocalCallStream(nextCallType);
+            const videoTrack = result.stream.getVideoTracks()[0];
+            const detectedFacingMode = videoTrack?.getSettings().facingMode;
 
             localStreamRef.current = result.stream;
+            setHasLocalVideo(Boolean(videoTrack));
+            setIsMicrophoneOn(true);
+            setIsCameraOn(Boolean(videoTrack));
+            setCameraFacingMode(detectedFacingMode === 'environment' ? 'environment' : 'user');
+            void refreshVideoInputSupport();
 
             if (result.warning) {
                 setError(result.warning);
@@ -100,7 +148,13 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
         }
 
         return localStreamRef.current;
-    }, [setCurrentCallType]);
+    }, [
+        refreshVideoInputSupport,
+        setCameraFacingMode,
+        setCurrentCallType,
+        setIsCameraOn,
+        setIsMicrophoneOn,
+    ]);
 
     const flushPendingIce = useCallback(async () => {
         const pc = peerConnectionRef.current;
@@ -215,6 +269,91 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
     const startVideoCall = useCallback((toId: number, name?: string) => (
         startCallWithType(toId, name, 'video')
     ), [startCallWithType]);
+
+    const toggleMicrophone = useCallback(() => {
+        const nextEnabled = !isMicrophoneOnRef.current;
+
+        localStreamRef.current?.getAudioTracks().forEach(track => {
+            track.enabled = nextEnabled;
+        });
+        setIsMicrophoneOn(nextEnabled);
+    }, [isMicrophoneOnRef, setIsMicrophoneOn]);
+
+    const toggleCamera = useCallback(() => {
+        const videoTracks = localStreamRef.current?.getVideoTracks() || [];
+
+        if (!videoTracks.length) {
+            return;
+        }
+
+        const nextEnabled = !isCameraOnRef.current;
+        videoTracks.forEach(track => {
+            track.enabled = nextEnabled;
+        });
+        setIsCameraOn(nextEnabled);
+    }, [isCameraOnRef, setIsCameraOn]);
+
+    const switchCamera = useCallback(async () => {
+        const stream = localStreamRef.current;
+
+        if (!stream || !hasLocalVideo || !canSwitchCamera || isSwitchingCamera) {
+            return;
+        }
+
+        const nextFacingMode = cameraFacingModeRef.current === 'user' ? 'environment' : 'user';
+        setIsSwitchingCamera(true);
+
+        try {
+            const newTrack = await openReplacementVideoTrack(stream, nextFacingMode);
+            newTrack.enabled = isCameraOnRef.current;
+            await replaceVideoSenderTrack(peerConnectionRef.current, stream, newTrack);
+
+            if (peerConnectionRef.current) {
+                await applyVideoSenderQuality(peerConnectionRef.current);
+            }
+
+            attachMediaStream(localVideoRef.current, stream);
+
+            const detectedFacingMode = newTrack.getSettings().facingMode;
+            setCameraFacingMode(detectedFacingMode === 'environment' ? 'environment' : nextFacingMode);
+            setHasLocalVideo(true);
+            void refreshVideoInputSupport();
+        } catch (e) {
+            console.error('Failed to switch camera:', e);
+            setError(getCallErrorMessage(e, 'Не удалось переключить камеру'));
+        } finally {
+            setIsSwitchingCamera(false);
+        }
+    }, [
+        cameraFacingModeRef,
+        canSwitchCamera,
+        hasLocalVideo,
+        isCameraOnRef,
+        isSwitchingCamera,
+        refreshVideoInputSupport,
+        setCameraFacingMode,
+    ]);
+
+    const toggleCallChat = useCallback(() => {
+        if (!peerUserIdRef.current) {
+            return;
+        }
+
+        const nextOpen = !isCallChatOpenRef.current;
+        setIsCallChatOpen(nextOpen);
+
+        if (nextOpen) {
+            setCallChatUnread(0);
+        }
+    }, [isCallChatOpenRef, peerUserIdRef, setCallChatUnread, setIsCallChatOpen]);
+
+    const closeCallChat = useCallback(() => {
+        setIsCallChatOpen(false);
+    }, [setIsCallChatOpen]);
+
+    const markCallChatSeen = useCallback(() => {
+        setCallChatUnread(0);
+    }, [setCallChatUnread]);
 
     const acceptCall = useCallback(async () => {
         const fromId = peerUserIdRef.current;
@@ -348,6 +487,21 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
                     return;
                 }
 
+                case 'message:new': {
+                    const message = event.payload;
+
+                    if (
+                        statusRef.current !== 'idle' &&
+                        !isCallChatOpenRef.current &&
+                        message.from_id === peerUserIdRef.current &&
+                        message.to_id === currentUser?.id
+                    ) {
+                        setCallChatUnread(callChatUnreadRef.current + 1);
+                    }
+
+                    return;
+                }
+
                 default:
                     return;
             }
@@ -360,9 +514,12 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
         };
     }, [
         cleanupCall,
+        callChatUnreadRef,
         currentUser?.id,
         flushPendingIce,
+        isCallChatOpenRef,
         loadPeerName,
+        setCallChatUnread,
         setCallPeer,
         setCallStatus,
         setCurrentCallType,
@@ -371,9 +528,26 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
 
     useEffect(() => {
         if (!currentUser && statusRef.current !== 'idle') {
+            const toId = peerUserIdRef.current;
+            if (toId) {
+                wsService.sendCallEnd(toId);
+            }
+
             cleanupCall();
         }
-    }, [cleanupCall, currentUser]);
+    }, [cleanupCall, currentUser, peerUserIdRef, statusRef, wsService]);
+
+    useEffect(() => {
+        const refreshDevices = () => {
+            void refreshVideoInputSupport();
+        };
+
+        navigator.mediaDevices?.addEventListener?.('devicechange', refreshDevices);
+
+        return () => {
+            navigator.mediaDevices?.removeEventListener?.('devicechange', refreshDevices);
+        };
+    }, [refreshVideoInputSupport]);
 
     useEffect(() => {
         if (callType !== 'video') {
@@ -384,7 +558,29 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
         attachMediaStream(remoteVideoRef.current, remoteStreamRef.current);
     }, [callType, status]);
 
-    useEffect(() => cleanupCall, [cleanupCall]);
+    useEffect(() => {
+        const endCurrentCall = () => {
+            if (statusRef.current === 'idle') {
+                return;
+            }
+
+            const toId = peerUserIdRef.current;
+            if (toId) {
+                wsService.sendCallEnd(toId);
+            }
+
+            cleanupCall();
+        };
+
+        window.addEventListener('pagehide', endCurrentCall);
+        window.addEventListener('beforeunload', endCurrentCall);
+
+        return () => {
+            window.removeEventListener('pagehide', endCurrentCall);
+            window.removeEventListener('beforeunload', endCurrentCall);
+            endCurrentCall();
+        };
+    }, [cleanupCall, peerUserIdRef, statusRef, wsService]);
 
     const value = useMemo(() => ({
         status,
@@ -406,13 +602,35 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
                 peerName={peerName}
                 error={error}
                 isExpanded={isExpanded}
+                peerUserId={peerUserId}
+                isMicrophoneOn={isMicrophoneOn}
+                isCameraOn={isCameraOn}
+                hasLocalVideo={hasLocalVideo}
+                canSwitchCamera={canSwitchCamera}
+                isSwitchingCamera={isSwitchingCamera}
+                isChatOpen={isCallChatOpen}
+                unreadChatCount={callChatUnread}
                 localVideoRef={localVideoRef}
                 remoteVideoRef={remoteVideoRef}
                 onToggleExpanded={() => setIsExpanded(prev => !prev)}
+                onToggleMicrophone={toggleMicrophone}
+                onToggleCamera={toggleCamera}
+                onSwitchCamera={switchCamera}
+                onToggleChat={toggleCallChat}
                 onAccept={acceptCall}
                 onReject={rejectCall}
                 onEnd={endCall}
             />
+
+            {isCallChatOpen && peerUserId && currentUser && (
+                <CallChatPanel
+                    peerUserId={peerUserId}
+                    peerName={peerName}
+                    currentUser={currentUser}
+                    onClose={closeCallChat}
+                    onSeen={markCallChatSeen}
+                />
+            )}
         </AudioCallContext.Provider>
     );
 };
