@@ -1,6 +1,6 @@
 declare const process:
   | {
-      env?: {
+      env: {
         SOCIAL_API_BASE_URL?: string;
       };
     }
@@ -9,7 +9,7 @@ declare const process:
 const defaultApiBaseURL = 'http://10.0.2.2:8080';
 const configuredApiBaseURL =
   typeof process !== 'undefined'
-    ? process.env?.SOCIAL_API_BASE_URL
+    ? process.env.SOCIAL_API_BASE_URL
     : undefined;
 
 export const API_BASE_URL = (
