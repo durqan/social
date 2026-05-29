@@ -82,16 +82,11 @@ Release variant собирает JS bundle внутрь APK, поэтому ус
 1. Откройте GitHub -> Actions.
 2. Выберите workflow `mobile-android-apk`.
 3. Нажмите `Run workflow`.
-4. После завершения job откройте run и скачайте artifact `social-mobile-debug-apk`.
-5. Для APK без Metro скачайте artifact `social-mobile-release-apk`.
+4. В поле `api_base_url` введите публичный HTTPS backend URL, например `https://example.com/api`.
+5. После завершения job откройте run и скачайте artifact `social-mobile-debug-apk`.
+6. Для APK без Metro скачайте artifact `social-mobile-release-apk`.
 
-Перед release-сборкой задайте GitHub repository variable:
-
-```text
-SOCIAL_API_BASE_URL=https://example.com/api
-```
-
-Workflow проверяет, что release URL начинается с `https://`, не указывает на localhost/emulator/LAN/private IP и не содержит двойной путь `/api/api`.
+Workflow передает `api_base_url` в `SOCIAL_API_BASE_URL` для всей сборки, проверяет, что URL начинается с `https://`, не указывает на localhost/emulator/LAN/private IP, не содержит двойной путь `/api/api`, и отдельно проверяет, что старая зависимость `@react-native-cookies/cookies` не установлена.
 
 Artifact содержит debug APK:
 
