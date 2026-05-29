@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"notifications/auth"
 	"notifications/dto"
 	"notifications/hub"
 	"notifications/services"
@@ -22,14 +23,12 @@ func NewHandler(service *services.Service, hub *hub.Hub) *Handler {
 }
 
 func (h *Handler) GetUserNotifications(c *gin.Context) {
-	userIDParam := c.Param("user_id")
-	userID64, err := strconv.ParseUint(userIDParam, 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user_id"})
+	userID, ok := auth.UserID(c)
+	if !ok {
 		return
 	}
 
-	userNotifications, err := h.service.GetUserNotifications(uint(userID64))
+	userNotifications, err := h.service.GetUserNotifications(userID)
 	if err != nil {
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
@@ -45,7 +44,12 @@ func (h *Handler) MarkAsRead(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
-	err = h.service.MarkAsRead(uint(noteID64))
+	userID, ok := auth.UserID(c)
+	if !ok {
+		return
+	}
+
+	err = h.service.MarkAsRead(uint(noteID64), userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -75,6 +79,11 @@ func (h *Handler) SubscribePush(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	userID, ok := auth.UserID(c)
+	if !ok {
+		return
+	}
+	req.UserID = userID
 
 	if err := h.service.SavePushSubscription(&req); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -85,10 +94,8 @@ func (h *Handler) SubscribePush(c *gin.Context) {
 }
 
 func (h *Handler) StreamNotifications(c *gin.Context) {
-	userIDParam := c.Param("user_id")
-	userID64, err := strconv.ParseUint(userIDParam, 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user_id"})
+	userID, ok := auth.UserID(c)
+	if !ok {
 		return
 	}
 
@@ -98,7 +105,7 @@ func (h *Handler) StreamNotifications(c *gin.Context) {
 		return
 	}
 
-	notifications, cleanup := h.hub.AddClient(uint(userID64))
+	notifications, cleanup := h.hub.AddClient(userID)
 	defer cleanup()
 
 	c.Header("Content-Type", "text/event-stream")

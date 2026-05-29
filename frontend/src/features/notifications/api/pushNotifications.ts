@@ -22,7 +22,7 @@ function base64URLToUint8Array(base64URL: string) {
     return outputArray;
 }
 
-function serializeSubscription(userId: number, subscription: PushSubscription): PushSubscriptionPayload | null {
+function serializeSubscription(subscription: PushSubscription): PushSubscriptionPayload | null {
     const json = subscription.toJSON();
     const p256dh = json.keys?.p256dh;
     const auth = json.keys?.auth;
@@ -32,7 +32,6 @@ function serializeSubscription(userId: number, subscription: PushSubscription): 
     }
 
     return {
-        user_id: userId,
         endpoint: json.endpoint,
         keys: {
             p256dh,
@@ -41,7 +40,7 @@ function serializeSubscription(userId: number, subscription: PushSubscription): 
     };
 }
 
-export async function enablePushNotifications(userId: number) {
+export async function enablePushNotifications() {
     if (!vapidPublicKey) {
         return;
     }
@@ -73,7 +72,7 @@ export async function enablePushNotifications(userId: number) {
         });
     }
 
-    const payload = serializeSubscription(userId, subscription);
+    const payload = serializeSubscription(subscription);
     if (!payload) {
         return;
     }

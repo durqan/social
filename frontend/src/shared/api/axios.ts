@@ -1,5 +1,4 @@
-import axios, { AxiosHeaders, type AxiosRequestConfig } from 'axios';
-import { authTokenStore } from "@/shared/api/authToken.js";
+import axios, { AxiosHeaders, type AxiosRequestConfig, type InternalAxiosRequestConfig } from 'axios';
 
 const apiBaseURL = import.meta.env.VITE_API_BASE_URL || '/api';
 
@@ -11,6 +10,7 @@ const api = axios.create({
 
 const unsafeMethods = new Set(['post', 'put', 'patch', 'delete']);
 let csrfRefresh: Promise<string> | null = null;
+let sessionRefresh: Promise<void> | null = null;
 
 const readCookie = (name: string) => {
     const prefix = `${name}=`;
@@ -42,13 +42,9 @@ const ensureCSRFToken = async () => {
 
 api.interceptors.request.use(async (config) => {
     const headers = AxiosHeaders.from(config.headers);
-    const token = authTokenStore.get();
-    if (token) {
-        headers.set('Authorization', `Bearer ${token}`);
-    }
 
     const method = config.method?.toLowerCase();
-    if (method && unsafeMethods.has(method) && !token) {
+    if (method && unsafeMethods.has(method)) {
         headers.set('X-CSRF-Token', await ensureCSRFToken());
     }
 
@@ -56,12 +52,51 @@ api.interceptors.request.use(async (config) => {
     return config;
 });
 
+type RetriableRequestConfig = InternalAxiosRequestConfig & {
+    _retry?: boolean;
+};
+
+const refreshSession = async () => {
+    sessionRefresh ??= ensureCSRFToken()
+        .then(token => axios.post(`${apiBaseURL}/auth/refresh`, undefined, {
+            withCredentials: true,
+            headers: {
+                'X-CSRF-Token': token,
+            },
+        }))
+        .then(() => undefined)
+        .finally(() => {
+            sessionRefresh = null;
+        });
+
+    return sessionRefresh;
+};
+
 api.interceptors.response.use(
     (res) => res,
-    (err) => {
+    async (err) => {
+        const originalRequest = err.config as RetriableRequestConfig | undefined;
+        const requestURL = originalRequest?.url || '';
+        const canRefresh = err.response?.status === 401
+            && originalRequest
+            && !originalRequest._retry
+            && !requestURL.includes('/auth/login')
+            && !requestURL.includes('/auth/register')
+            && !requestURL.includes('/auth/refresh')
+            && !requestURL.includes('/auth/verify-email');
+
+        if (canRefresh) {
+            originalRequest._retry = true;
+            try {
+                await refreshSession();
+                return api(originalRequest);
+            } catch {
+                // Fall through to the existing unauthenticated handling.
+            }
+        }
+
         if (err.response?.status === 401 && !['/login', '/register', '/verify-email']
             .some(path => window.location.pathname.includes(path))) {
-            authTokenStore.clear();
             window.location.href = '/login';
         }
         return Promise.reject(err);

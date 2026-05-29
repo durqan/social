@@ -2,13 +2,12 @@ package handlers
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
-	"time"
 
 	"tester/internal/repository"
+	"tester/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -72,7 +71,12 @@ func UploadAvatar(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		filename := fmt.Sprintf("%d_%d%s", id, time.Now().UnixNano(), ext)
+		randomName, err := utils.GenerateSecureToken()
+		if err != nil {
+			c.JSON(500, gin.H{"error": "failed to create avatar filename"})
+			return
+		}
+		filename := randomName + ext
 		savePath := filepath.Join(uploadDir, filename)
 
 		if err := c.SaveUploadedFile(file, savePath); err != nil {

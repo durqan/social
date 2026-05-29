@@ -34,9 +34,9 @@ func (r *Repository) FindByRecipientID(userID uint) ([]models.Notification, erro
 	return notifications, nil
 }
 
-func (r *Repository) MarkAsRead(id uint) error {
+func (r *Repository) MarkAsRead(id uint, userID uint) error {
 	return r.db.Model(&models.Notification{}).
-		Where("id = ?", id).
+		Where("id = ? AND recipient_id = ?", id, userID).
 		Update("is_read", true).Error
 }
 

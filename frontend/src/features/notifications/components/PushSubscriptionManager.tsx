@@ -17,7 +17,7 @@ export function PushSubscriptionManager() {
         }
 
         attemptedUserIDRef.current = userID;
-        enablePushNotifications(userID).catch(error => {
+        enablePushNotifications().catch(error => {
             console.error('Ошибка подключения push-уведомлений:', error);
         });
     }, [currentUser?.id]);

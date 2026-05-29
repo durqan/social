@@ -1,10 +1,10 @@
 import { toast } from 'react-hot-toast';
+import { request } from "@/shared/api/axios.js";
 import type { SocialNotification } from "@/shared/types/domain.js";
 
 const notificationsBaseURL = (import.meta.env.VITE_NOTIFICATIONS_URL || '/notifications-api').replace(/\/$/, '');
 
 export type PushSubscriptionPayload = {
-    user_id: number;
     endpoint: string;
     keys: {
         p256dh: string;
@@ -19,8 +19,15 @@ export const showMessageNotification = (name: string, content: string) => {
     });
 };
 
-const requestNotifications = async <T>(path: string, init?: RequestInit): Promise<T> => {
-    const response = await fetch(`${notificationsBaseURL}${path}`, init);
+const requestNotifications = async <T>(path: string, init?: RequestInit, retry = true): Promise<T> => {
+    const response = await fetch(`${notificationsBaseURL}${path}`, {
+        ...init,
+        credentials: 'include',
+    });
+    if (response.status === 401 && retry) {
+        await request.post('/auth/refresh');
+        return requestNotifications<T>(path, init, false);
+    }
     if (!response.ok) {
         throw new Error(`Notifications request failed: ${response.status}`);
     }
@@ -28,8 +35,8 @@ const requestNotifications = async <T>(path: string, init?: RequestInit): Promis
 };
 
 export const notificationService = {
-    getNotifications(userId: number): Promise<SocialNotification[]> {
-        return requestNotifications<SocialNotification[]>(`/notifications/${userId}`);
+    getNotifications(): Promise<SocialNotification[]> {
+        return requestNotifications<SocialNotification[]>('/notifications');
     },
 
     async markAsRead(notificationId: number): Promise<void> {
@@ -38,8 +45,10 @@ export const notificationService = {
         });
     },
 
-    streamNotifications(userId: number): EventSource {
-        return new EventSource(`${notificationsBaseURL}/notifications/${userId}/stream`);
+    streamNotifications(): EventSource {
+        return new EventSource(`${notificationsBaseURL}/notifications/stream`, {
+            withCredentials: true,
+        });
     },
 
     async subscribePush(subscription: PushSubscriptionPayload): Promise<void> {

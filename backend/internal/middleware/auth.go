@@ -8,8 +8,9 @@ import (
 )
 
 const (
-	AuthCookieName = "token"
-	BearerPrefix   = "Bearer "
+	AuthCookieName    = "token"
+	RefreshCookieName = "refresh_token"
+	BearerPrefix      = "Bearer "
 )
 
 func AuthMiddleware() gin.HandlerFunc {

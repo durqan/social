@@ -173,7 +173,7 @@ export function NotificationBell({ userId, compact = false }: NotificationBellPr
         setLoading(true);
         setErrorMessage('');
 
-        notificationService.getNotifications(userId)
+        notificationService.getNotifications()
             .then(data => {
                 if (!cancelled) {
                     setNotifications(Array.isArray(data) ? data : []);
@@ -191,7 +191,7 @@ export function NotificationBell({ userId, compact = false }: NotificationBellPr
                 }
             });
 
-        const source = notificationService.streamNotifications(userId);
+        const source = notificationService.streamNotifications();
         source.onmessage = event => {
             try {
                 const notification = JSON.parse(event.data) as SocialNotification;

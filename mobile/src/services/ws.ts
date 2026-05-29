@@ -1,5 +1,4 @@
 import { API_BASE_URL } from '../config/api';
-import { tokenStore } from '../api/client';
 import type { WsEvent } from '../types';
 
 type WsHandler = (event: WsEvent) => void;
@@ -32,10 +31,7 @@ class MobileWebSocketService {
       return;
     }
 
-    const token = await tokenStore.get();
-    if (!token) return;
-
-    const wsURL = `${API_BASE_URL.replace(/^http/, 'ws')}/ws?token=${encodeURIComponent(token)}`;
+    const wsURL = `${API_BASE_URL.replace(/^http/, 'ws')}/ws`;
     this.ws = new WebSocket(wsURL);
 
     this.ws.onmessage = event => {

@@ -7,6 +7,7 @@ import {
     type WatcherRoom,
     type WatcherWSMessage,
 } from "@/features/watcher/api/watcherService.js";
+import { request } from "@/shared/api/axios.js";
 import { Icon } from "@/shared/ui/Icon.js";
 import { Spinner } from "@/shared/ui/Spinner.js";
 
@@ -460,48 +461,69 @@ function Watcher() {
             return;
         }
 
+        let cancelled = false;
+        let socket: WebSocket | null = null;
         setConnectionStatus('connecting');
-        const socket = new WebSocket(watcherService.webSocketURL(room.id));
-        socketRef.current = socket;
 
-        socket.onopen = () => {
-            setConnectionStatus('connected');
-        };
-
-        socket.onmessage = event => {
+        const connect = async () => {
             try {
-                const message = JSON.parse(event.data) as WatcherWSMessage;
-
-                if (message.type === 'message') {
-                    const chatMessage = parseChatMessage(message.text);
-                    if (chatMessage) {
-                        setMessages(prev => [...prev, chatMessage]);
-                    }
-                    return;
+                await request.post('/auth/refresh');
+            } catch {
+                if (!cancelled) {
+                    setConnectionStatus('disconnected');
                 }
-
-                applyRemoteVideoState(message);
-            } catch (error) {
-                console.error('Ошибка watcher-сообщения:', error);
+                return;
             }
-        };
 
-        socket.onclose = () => {
-            if (socketRef.current === socket) {
+            if (cancelled) {
+                return;
+            }
+
+            socket = new WebSocket(watcherService.webSocketURL(room.id));
+            socketRef.current = socket;
+
+            socket.onopen = () => {
+                setConnectionStatus('connected');
+            };
+
+            socket.onmessage = event => {
+                try {
+                    const message = JSON.parse(event.data) as WatcherWSMessage;
+
+                    if (message.type === 'message') {
+                        const chatMessage = parseChatMessage(message.text);
+                        if (chatMessage) {
+                            setMessages(prev => [...prev, chatMessage]);
+                        }
+                        return;
+                    }
+
+                    applyRemoteVideoState(message);
+                } catch (error) {
+                    console.error('Ошибка watcher-сообщения:', error);
+                }
+            };
+
+            socket.onclose = () => {
+                if (socketRef.current === socket) {
+                    setConnectionStatus('disconnected');
+                    socketRef.current = null;
+                }
+            };
+
+            socket.onerror = () => {
                 setConnectionStatus('disconnected');
-                socketRef.current = null;
-            }
+            };
         };
 
-        socket.onerror = () => {
-            setConnectionStatus('disconnected');
-        };
+        void connect();
 
         return () => {
+            cancelled = true;
             if (socketRef.current === socket) {
                 socketRef.current = null;
             }
-            socket.close();
+            socket?.close();
         };
     }, [applyRemoteVideoState, room]);
 

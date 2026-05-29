@@ -6,7 +6,7 @@ type PushSubscriptionKeys struct {
 }
 
 type PushSubscriptionReq struct {
-	UserID   uint                 `json:"user_id" binding:"required"`
+	UserID   uint                 `json:"user_id"`
 	Endpoint string               `json:"endpoint" binding:"required"`
 	Keys     PushSubscriptionKeys `json:"keys" binding:"required"`
 }

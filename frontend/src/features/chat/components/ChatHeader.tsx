@@ -3,6 +3,7 @@ import { Icon } from "@/shared/ui/Icon.js";
 
 interface ChatHeaderProps {
     recipientName?: string;
+    recipientStatus?: boolean;
     selectionMode: boolean;
     selectedCount: number;
     onBack?: () => void;
@@ -14,6 +15,7 @@ interface ChatHeaderProps {
 
 export const ChatHeader = ({
                                recipientName,
+                               recipientStatus,
                                selectionMode,
                                selectedCount,
                                onBack,
@@ -53,7 +55,9 @@ export const ChatHeader = ({
                         <Avatar name={recipientName} />
                         <div className="min-w-0">
                             <h2 className="font-semibold text-gray-950 truncate text-sm sm:text-base">{recipientName || 'Пользователь'}</h2>
-                            <p className="text-xs text-emerald-600">● Онлайн</p>
+                            <p className={recipientStatus ? 'text-xs text-emerald-600' : 'text-xs text-gray-400'}>
+                                {recipientStatus ? 'Online' : 'Offline'}
+                            </p>
                         </div>
                     </div>
 

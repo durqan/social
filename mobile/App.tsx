@@ -2,7 +2,6 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { Alert, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 
-import { tokenStore } from './src/api/client';
 import { userApi } from './src/api/services';
 import { Loading } from './src/components/ui';
 import { AuthScreen } from './src/screens/AuthScreen';
@@ -31,12 +30,9 @@ export default function App() {
   useEffect(() => {
     const bootstrap = async () => {
       try {
-        const token = await tokenStore.get();
-        if (token) {
-          setCurrentUser(await userApi.profile());
-        }
+        setCurrentUser(await userApi.profile());
       } catch {
-        await tokenStore.clear();
+        setCurrentUser(null);
       } finally {
         setBooting(false);
       }
@@ -56,7 +52,6 @@ export default function App() {
   }, [currentUser]);
 
   const logout = async () => {
-    await tokenStore.clear();
     setCurrentUser(null);
     setActiveTab('feed');
   };

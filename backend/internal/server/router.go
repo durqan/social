@@ -15,6 +15,9 @@ import (
 func NewRouter(database *gorm.DB, cfg config.Config) *gin.Engine {
 	router := gin.Default()
 	router.Static("/uploads/avatars", "./uploads/avatars")
+	router.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "ok"})
+	})
 
 	router.Use(cors.New(cors.Config{
 		AllowOrigins:     cfg.AllowedOrigins,
@@ -40,6 +43,7 @@ func registerAuthRoutes(router *gin.Engine, database *gorm.DB) {
 	auth.POST("/register", middleware.RateLimitMiddleware(5, time.Hour), handlers.Register(database))
 	auth.POST("/login", middleware.RateLimitMiddleware(10, 10*time.Minute), handlers.Login(database))
 	auth.GET("/csrf", handlers.GetCSRFToken())
+	auth.POST("/refresh", middleware.CSRFMiddleware(), handlers.Refresh())
 	auth.POST("/logout", middleware.CSRFMiddleware(), handlers.Logout())
 	auth.GET("/verify-email/:token", handlers.VerifyEmailHandler(database))
 
@@ -68,7 +72,7 @@ func registerUserRoutes(router *gin.Engine, database *gorm.DB) {
 	users.GET("/:id", middleware.CacheMiddleware(5*time.Minute), handlers.GetUser(database))
 	users.GET("/:id/presence", handlers.GetPresence)
 	users.PATCH("/:id", handlers.PatchUser(database))
-	users.PATCH("/:id/avatar", handlers.UploadAvatar(database))
+	users.PATCH("/:id/avatar", middleware.RateLimitMiddleware(20, time.Hour), handlers.UploadAvatar(database))
 	users.DELETE("/:id", handlers.DeleteUser(database))
 	users.PATCH("/:id/password", handlers.ChangePassword(database))
 }

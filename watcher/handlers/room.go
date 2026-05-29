@@ -15,9 +15,7 @@ import (
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
+	CheckOrigin:     originAllowed,
 }
 
 func CreateRoom() gin.HandlerFunc {
@@ -50,6 +48,11 @@ func CreateRoom() gin.HandlerFunc {
 
 func JoinRoom() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if _, err := userIDFromRequest(c.Request); err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "authorization required"})
+			return
+		}
+
 		roomId := c.Param("roomId")
 		_, ok := store.GetRoom(roomId)
 		if !ok {

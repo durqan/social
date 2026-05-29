@@ -53,8 +53,8 @@ func (s *Service) GetUserNotifications(userID uint) ([]models.Notification, erro
 	return s.repo.FindByRecipientID(userID)
 }
 
-func (s *Service) MarkAsRead(id uint) error {
-	return s.repo.MarkAsRead(id)
+func (s *Service) MarkAsRead(id uint, userID uint) error {
+	return s.repo.MarkAsRead(id, userID)
 }
 
 func (s *Service) sendPushNotifications(notification models.Notification) {

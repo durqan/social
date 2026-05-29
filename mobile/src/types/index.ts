@@ -74,7 +74,6 @@ export type Message = {
 
 export type AuthResponse = {
   message: string;
-  token: string;
   user: User;
 };
 

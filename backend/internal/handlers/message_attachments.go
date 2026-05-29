@@ -2,16 +2,14 @@ package handlers
 
 import (
 	"errors"
-	"fmt"
 	"image"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
-	"time"
 
 	"tester/internal/repository"
 	"tester/internal/services"
+	"tester/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -75,13 +73,19 @@ func UploadMessageImage(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		filename := fmt.Sprintf("%d_%d%s", userID, time.Now().UnixNano(), ext)
+		randomName, err := utils.GenerateSecureToken()
+		if err != nil {
+			c.JSON(500, gin.H{"error": "failed to create image filename"})
+			return
+		}
+		filename := randomName + ext
 		savePath := filepath.Join(uploadDir, filename)
 
 		if err := c.SaveUploadedFile(file, savePath); err != nil {
 			c.JSON(500, gin.H{"error": "failed to save image"})
 			return
 		}
+		services.RememberChatUploadOwner(filename, userID)
 
 		c.JSON(201, services.MessageAttachmentInput{
 			FileURL:  services.PrivateUploadURL(filename),
@@ -101,7 +105,7 @@ func GetUploadedMessageImage() gin.HandlerFunc {
 		}
 
 		filename := c.Param("filename")
-		if !strings.HasPrefix(filename, fmt.Sprintf("%d_", userID)) {
+		if !services.ChatUploadOwnedBy(filename, userID) {
 			c.JSON(403, gin.H{"error": "forbidden"})
 			return
 		}

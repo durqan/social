@@ -1,4 +1,4 @@
-import { apiRequest, tokenStore } from './client';
+import { apiRequest } from './client';
 import type { AuthResponse, Comment, Conversation, Friendship, Message, MessageAttachment, Post, User } from '../types';
 
 const normalizeUser = (user: User): User => ({
@@ -7,20 +7,12 @@ const normalizeUser = (user: User): User => ({
   isEmailVerified: user.isEmailVerified ?? user.is_email_verified ?? false,
 });
 
-const persistAuthToken = async (response: AuthResponse) => {
-  if (!response.token) {
-    throw new Error('Backend did not return auth token. Rebuild and restart backend.');
-  }
-  await tokenStore.set(response.token);
-};
-
 export const authApi = {
   async login(email: string, password: string) {
     const response = await apiRequest<AuthResponse>('/auth/login', {
       method: 'POST',
       body: { email, password },
     });
-    await persistAuthToken(response);
     return { ...response, user: normalizeUser(response.user) };
   },
   async register(name: string, email: string, password: string) {
@@ -28,15 +20,10 @@ export const authApi = {
       method: 'POST',
       body: { name, email, password },
     });
-    await persistAuthToken(response);
     return { ...response, user: normalizeUser(response.user) };
   },
   async logout() {
-    try {
-      await apiRequest('/auth/logout', { method: 'POST' });
-    } finally {
-      await tokenStore.clear();
-    }
+    await apiRequest('/auth/logout', { method: 'POST' });
   },
   sendVerificationEmail: () => apiRequest<{ message: string }>('/auth/send-verification', { method: 'POST' }),
 };

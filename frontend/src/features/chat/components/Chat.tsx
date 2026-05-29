@@ -16,6 +16,7 @@ import { useWebSocket } from "@/app/providers/WebSocketContext.js";
 import { useAudioCall } from "@/features/call/AudioCallContext.js";
 import { Spinner } from "@/shared/ui/Spinner.js";
 import { formatMonthDayDate, formatTime } from "@/shared/utils/date.js";
+import {usePresence} from "@/shared/hooks/usePresence.js";
 
 const optimisticMessageFloor = 10000000;
 
@@ -47,6 +48,7 @@ function Chat() {
     const { otherTyping, setOtherTyping, handleTyping } = useChatTyping(Number(userId));
     const { selectionMode, selectedMessages, deleteConfirmOpen, toggleSelect, enterSelectionMode, exitSelectionMode, openDeleteConfirm, closeDeleteConfirm } = useChatSelection();
     const { messagesEndRef, handleScroll } = useChatScroll([messages]);
+    const { online } = usePresence(recipient?.id);
 
     useChatWebSocket({
         userId,
@@ -151,6 +153,7 @@ function Chat() {
         <div className="flex h-full flex-col overflow-hidden bg-[#f4f5f7] sm:h-[calc(100vh-120px)] sm:rounded-2xl sm:border sm:border-gray-200/80">
             <ChatHeader
                 recipientName={recipient?.name}
+                recipientStatus={online}
                 selectionMode={selectionMode}
                 selectedCount={selectedMessages.size}
                 onBack={() => navigate(`/users/${currentUser?.id}/conversations`)}

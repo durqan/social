@@ -8,8 +8,11 @@ import (
 	_ "image/png"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
+	"tester/internal/cache"
 	"tester/internal/models"
 
 	_ "golang.org/x/image/webp"
@@ -22,6 +25,7 @@ const (
 	chatUploadURLPrefix     = "/api/messages/uploads/"
 	chatAttachmentURLPrefix = "/api/messages/attachments/"
 	legacyChatUploadPrefix  = "/uploads/chat/"
+	chatUploadOwnerTTL      = 24 * time.Hour
 )
 
 type MessageAttachmentInput struct {
@@ -67,7 +71,7 @@ func NormalizeMessageAttachments(input []MessageAttachmentInput, userID uint) ([
 		}
 
 		filename := filepath.Base(fileURL)
-		if !strings.HasPrefix(filename, fmt.Sprintf("%d_", userID)) {
+		if !ChatUploadOwnedBy(filename, userID) {
 			return nil, errors.New("invalid image owner")
 		}
 
@@ -109,6 +113,35 @@ func PrivateAttachmentURL(attachmentID uint) string {
 
 func PrivateUploadURL(filename string) string {
 	return chatUploadURLPrefix + filename
+}
+
+func RememberChatUploadOwner(filename string, userID uint) {
+	if cache.Redis == nil || filename == "" {
+		return
+	}
+	_ = cache.Redis.Client.Set(cache.Redis.Ctx, chatUploadOwnerKey(filename), strconv.FormatUint(uint64(userID), 10), chatUploadOwnerTTL).Err()
+}
+
+func ChatUploadOwnedBy(filename string, userID uint) bool {
+	if filename == "" || filename != filepath.Base(filename) {
+		return false
+	}
+	if strings.HasPrefix(filename, fmt.Sprintf("%d_", userID)) {
+		return true
+	}
+	if cache.Redis == nil {
+		return false
+	}
+	value, err := cache.Redis.Client.Get(cache.Redis.Ctx, chatUploadOwnerKey(filename)).Result()
+	if err != nil {
+		return false
+	}
+	ownerID, err := strconv.ParseUint(value, 10, 32)
+	return err == nil && uint(ownerID) == userID
+}
+
+func chatUploadOwnerKey(filename string) string {
+	return "upload:chat:" + filename
 }
 
 func WithPrivateAttachmentURLs(message models.Message) models.Message {

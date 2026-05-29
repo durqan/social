@@ -1,34 +1,47 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
 import { API_BASE_URL } from '../config/api';
-
-const tokenKey = 'social.auth.token';
-
-export const tokenStore = {
-  get: () => AsyncStorage.getItem(tokenKey),
-  set: (token: string) => AsyncStorage.setItem(tokenKey, token),
-  clear: () => AsyncStorage.removeItem(tokenKey),
-};
-
-export const authHeaders = async () => {
-  const token = await tokenStore.get();
-  return token ? { Authorization: `Bearer ${token}` } : undefined;
-};
 
 type RequestOptions = Omit<RequestInit, 'body'> & {
   body?: unknown;
   timeoutMs?: number;
+  skipAuthRefresh?: boolean;
 };
 
+const unsafeMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+async function ensureCSRFToken() {
+  const response = await fetch(`${API_BASE_URL}/auth/csrf`, {
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    throw new Error('Failed to get CSRF token');
+  }
+
+  const data = await response.json() as { csrf_token?: string };
+  if (!data.csrf_token) {
+    throw new Error('CSRF token was not issued');
+  }
+
+  return data.csrf_token;
+}
+
+async function refreshSession() {
+  const token = await ensureCSRFToken();
+  const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'X-CSRF-Token': token,
+    },
+  });
+  if (!response.ok) {
+    throw new Error('Session refresh failed');
+  }
+}
+
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const token = await tokenStore.get();
   const headers = new Headers(options.headers);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 10000);
-
-  if (token) {
-    headers.set('Authorization', `Bearer ${token}`);
-  }
 
   let body: BodyInit | undefined;
   if (options.body instanceof FormData) {
@@ -38,12 +51,18 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     body = JSON.stringify(options.body);
   }
 
+  const method = (options.method || 'GET').toUpperCase();
+  if (unsafeMethods.has(method)) {
+    headers.set('X-CSRF-Token', await ensureCSRFToken());
+  }
+
   let response: Response;
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...options,
       headers,
       body,
+      credentials: 'include',
       signal: controller.signal,
     });
   } catch (error) {
@@ -53,6 +72,14 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     throw error;
   } finally {
     clearTimeout(timeout);
+  }
+
+  const isAuthEndpoint = path.startsWith('/auth/login')
+    || path.startsWith('/auth/register')
+    || path.startsWith('/auth/refresh');
+  if (response.status === 401 && !options.skipAuthRefresh && !isAuthEndpoint) {
+    await refreshSession();
+    return apiRequest<T>(path, { ...options, skipAuthRefresh: true });
   }
 
   const contentType = response.headers.get('content-type') || '';

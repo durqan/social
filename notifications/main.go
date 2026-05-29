@@ -2,6 +2,11 @@ package main
 
 import (
 	"log"
+	"net/http"
+	"os"
+	"strings"
+
+	"notifications/auth"
 	"notifications/db"
 	"notifications/handlers"
 	"notifications/hub"
@@ -44,12 +49,15 @@ func main() {
 
 	r := gin.Default()
 	r.Use(func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", "*")
+		if origin := c.GetHeader("Origin"); originAllowed(origin) {
+			c.Header("Access-Control-Allow-Origin", origin)
+			c.Header("Access-Control-Allow-Credentials", "true")
+		}
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Content-Type")
+		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token")
 
 		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(204)
+			c.AbortWithStatus(http.StatusNoContent)
 			return
 		}
 
@@ -57,13 +65,17 @@ func main() {
 	})
 
 	r.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"health": "OK"})
+		c.JSON(200, gin.H{"status": "ok"})
 	})
-	r.GET("/notifications/:user_id/stream", h.StreamNotifications)
-	r.GET("/notifications/:user_id", h.GetUserNotifications)
-	r.PATCH("/notifications/:id/read", h.MarkAsRead)
-	r.POST("/notifications", h.CreateNotification)
-	r.POST("/push/subscribe", h.SubscribePush)
+
+	protected := r.Group("/", auth.Middleware())
+	protected.GET("/notifications/stream", h.StreamNotifications)
+	protected.GET("/notifications", h.GetUserNotifications)
+	protected.GET("/notifications/:user_id/stream", h.StreamNotifications)
+	protected.GET("/notifications/:user_id", h.GetUserNotifications)
+	protected.PATCH("/notifications/:id/read", h.MarkAsRead)
+	protected.POST("/notifications", h.CreateNotification)
+	protected.POST("/push/subscribe", h.SubscribePush)
 
 	go func() {
 		if err := rabbit.StartConsumer(ch, svc); err != nil {
@@ -74,4 +86,36 @@ func main() {
 	if err = r.Run(":8085"); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func originAllowed(origin string) bool {
+	if origin == "" {
+		return false
+	}
+	for _, allowed := range allowedOrigins() {
+		if origin == allowed {
+			return true
+		}
+	}
+	return false
+}
+
+func allowedOrigins() []string {
+	raw := os.Getenv("CORS_ALLOWED_ORIGINS")
+	if raw == "" {
+		raw = os.Getenv("FRONTEND_URL")
+	}
+	if raw == "" {
+		return []string{"http://localhost:5173", "http://localhost:5174", "http://localhost:5175"}
+	}
+
+	parts := strings.Split(raw, ",")
+	origins := make([]string, 0, len(parts))
+	for _, part := range parts {
+		origin := strings.TrimSpace(part)
+		if origin != "" {
+			origins = append(origins, origin)
+		}
+	}
+	return origins
 }

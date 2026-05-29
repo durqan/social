@@ -1,4 +1,4 @@
-import { authTokenStore } from "@/shared/api/authToken.js";
+import { request } from "@/shared/api/axios.js";
 import type { MessageAttachment } from "@/shared/types/domain.js";
 import type { CallType } from "@/features/call/types.js";
 import type { WsEvent } from "@/shared/types/ws.js";
@@ -13,12 +13,7 @@ const reconnectDelayMs = 3000;
 
 function websocketURL() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = new URL(`${protocol}//${window.location.host}/ws`);
-    const token = authTokenStore.get();
-    if (token) {
-        url.searchParams.set('token', token);
-    }
-    return url.toString();
+    return `${protocol}//${window.location.host}/ws`;
 }
 
 export class WebSocketService {
@@ -27,6 +22,7 @@ export class WebSocketService {
     private shouldReconnect = true;
     private reconnectTimer: number | null = null;
     private pendingEvents: OutgoingEvent[] = [];
+    private opening = false;
 
     connect() {
         this.shouldReconnect = true;
@@ -34,13 +30,33 @@ export class WebSocketService {
 
         if (
             this.ws?.readyState === WebSocket.OPEN ||
-            this.ws?.readyState === WebSocket.CONNECTING
+            this.ws?.readyState === WebSocket.CONNECTING ||
+            this.opening
         ) {
+            return;
+        }
+
+        void this.openConnection();
+    }
+
+    private async openConnection() {
+        this.opening = true;
+        try {
+            await request.post('/auth/refresh');
+        } catch {
+            this.opening = false;
+            this.scheduleReconnect();
+            return;
+        }
+
+        if (!this.shouldReconnect) {
+            this.opening = false;
             return;
         }
 
         this.ws = new WebSocket(websocketURL());
         this.ws.onopen = () => {
+            this.opening = false;
             this.shouldReconnect = true;
             this.flushPendingEvents();
         };
@@ -52,12 +68,14 @@ export class WebSocketService {
             }
         };
         this.ws.onclose = () => {
+            this.opening = false;
             this.ws = null;
             this.scheduleReconnect();
         };
         this.ws.onerror = error => {
             console.error('WebSocket error:', error);
         };
+        this.opening = false;
     }
 
     onMessage(handler: WsHandler) {

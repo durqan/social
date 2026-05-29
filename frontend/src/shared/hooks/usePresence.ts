@@ -14,7 +14,12 @@ export const usePresence = (
 
     useEffect(() => {
 
-        if (!userId) return;
+        if (!userId) {
+            setOnline(false);
+            return;
+        }
+
+        let cancelled = false;
 
         const cached =
             presenceMap.get(userId);
@@ -37,11 +42,15 @@ export const usePresence = (
                     data.online
                 );
 
-                setOnline(data.online);
+                if (!cancelled) {
+                    setOnline(data.online);
+                }
 
             } catch (err) {
 
-                console.error(err);
+                if (!cancelled) {
+                    console.error(err);
+                }
             }
         };
 
@@ -80,6 +89,7 @@ export const usePresence = (
         );
 
         return () => {
+            cancelled = true;
             wsService.removeMessageHandler(
                 handlePresence
             );
