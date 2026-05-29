@@ -233,6 +233,73 @@ func TestDeleteMessagesBatchRejectsNonParticipant(t *testing.T) {
 	}
 }
 
+func TestSendMessageRejectsNonFriend(t *testing.T) {
+	db := testDB(t)
+	users := []models.User{
+		{ID: 1, Name: "Alice", Email: "alice@example.com", Password: "hash"},
+		{ID: 2, Name: "Bob", Email: "bob@example.com", Password: "hash"},
+	}
+	if err := db.Create(&users).Error; err != nil {
+		t.Fatalf("create users: %v", err)
+	}
+
+	r := routerWithUser(1)
+	r.POST("/messages/send/:toId", SendMessage(db))
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/messages/send/2", strings.NewReader(`{"content":"hello"}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for non-friend message, got %d", w.Code)
+	}
+
+	var count int64
+	if err := db.Model(&models.Message{}).Count(&count).Error; err != nil {
+		t.Fatalf("count messages: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected no messages to be created, got %d", count)
+	}
+}
+
+func TestSendMessageAllowsAcceptedFriend(t *testing.T) {
+	db := testDB(t)
+	users := []models.User{
+		{ID: 1, Name: "Alice", Email: "alice@example.com", Password: "hash"},
+		{ID: 2, Name: "Bob", Email: "bob@example.com", Password: "hash"},
+	}
+	if err := db.Create(&users).Error; err != nil {
+		t.Fatalf("create users: %v", err)
+	}
+
+	friendship := models.Friendship{UserID: 1, FriendID: 2, Status: "accepted"}
+	if err := db.Create(&friendship).Error; err != nil {
+		t.Fatalf("create friendship: %v", err)
+	}
+
+	r := routerWithUser(1)
+	r.POST("/messages/send/:toId", SendMessage(db))
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/messages/send/2", strings.NewReader(`{"content":"hello"}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for accepted friend message, got %d", w.Code)
+	}
+
+	var count int64
+	if err := db.Model(&models.Message{}).Count(&count).Error; err != nil {
+		t.Fatalf("count messages: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected one message to be created, got %d", count)
+	}
+}
+
 func TestRegisterRejectsHoneypot(t *testing.T) {
 	db := testDB(t)
 

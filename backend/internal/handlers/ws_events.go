@@ -70,6 +70,10 @@ func handleWebSocketSendMessage(ctx context.Context, userID uint, rawPayload jso
 		log.Println("Invalid message data")
 		return
 	}
+	if errors.Is(err, services.ErrMessageNotFriends) {
+		sendWebSocketError(ctx, userID, "can only message accepted friends")
+		return
+	}
 	if err != nil {
 		log.Println("Failed to save message:", err)
 		return

@@ -14,12 +14,21 @@ import (
 var (
 	ErrMessageContentRequired = errors.New("message content or image is required")
 	ErrMessageForbidden       = errors.New("message forbidden")
+	ErrMessageNotFriends      = errors.New("message requires accepted friendship")
 )
 
 func SendMessage(db *gorm.DB, fromID, toID uint, content string, attachments []models.MessageAttachment) (models.Message, error) {
 	content = strings.TrimSpace(content)
 	if content == "" && len(attachments) == 0 {
 		return models.Message{}, ErrMessageContentRequired
+	}
+
+	status, err := repository.GetFriendshipStatus(db, fromID, toID)
+	if err != nil {
+		return models.Message{}, err
+	}
+	if status != "accepted" {
+		return models.Message{}, ErrMessageNotFriends
 	}
 
 	message := models.Message{
