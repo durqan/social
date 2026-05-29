@@ -35,6 +35,12 @@ func UploadAvatar(db *gorm.DB) gin.HandlerFunc {
 
 		file, err := c.FormFile("avatar")
 		if err != nil {
+			var maxBytesError *http.MaxBytesError
+			if errors.As(err, &maxBytesError) {
+				c.JSON(413, gin.H{"error": "avatar is too large"})
+				return
+			}
+
 			c.JSON(400, gin.H{"error": "avatar is required"})
 			return
 		}

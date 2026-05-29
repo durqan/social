@@ -1,10 +1,20 @@
 import { useEffect, useState } from 'react';
 import { friendService } from "@/features/friends/api/friendService.js";
+import {
+    notificationService,
+    type MarkNotificationsReadPayload,
+} from "@/features/notifications/api/notificationService.js";
 import type { User, Friendship } from "@/shared/types/domain.js";
 import { FriendItem } from "@/features/friends/components/FriendItem.js";
 import { FriendRequestItem } from "@/features/friends/components/FriendRequestItem.js";
 
 type FriendsTab = 'friends' | 'requests';
+
+const dispatchNotificationsRead = (payload: MarkNotificationsReadPayload) => {
+    window.dispatchEvent(new CustomEvent('notifications:read-matching', {
+        detail: payload,
+    }));
+};
 
 const tabClass = (active: boolean) => (
     `flex-1 px-4 py-3 text-sm font-medium transition-colors ${
@@ -26,15 +36,35 @@ function Friends() {
             setFriends(friendsData);
             setRequests(requestsData);
         }).catch(console.error).finally(() => setLoading(false));
+
+        const payload: MarkNotificationsReadPayload = {
+            types: ['friend_accepted'],
+        };
+
+        void notificationService.markMatchingAsRead(payload)
+            .then(() => dispatchNotificationsRead(payload))
+            .catch(error => {
+                console.error('Ошибка отметки уведомлений друзей:', error);
+            });
     }, []);
 
-    const acceptRequest = async (friendshipId: number) => {
+    const acceptRequest = async (friendshipId: number, actorId: number) => {
         try {
             await friendService.acceptFriendRequest(friendshipId);
             setRequests(prev => prev.filter(r => r.id !== friendshipId));
             window.dispatchEvent(new Event('friend-requests:changed'));
             const newFriends = await friendService.getFriendsList();
             setFriends(newFriends);
+
+            const payload = {
+                types: ['friend_request'],
+                actor_id: actorId,
+            };
+            void notificationService.markMatchingAsRead(payload)
+                .then(() => dispatchNotificationsRead(payload))
+                .catch(error => {
+                    console.error('Ошибка отметки уведомлений заявок:', error);
+                });
         } catch (error) {
             console.error(error);
         }

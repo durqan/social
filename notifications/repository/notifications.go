@@ -40,6 +40,23 @@ func (r *Repository) MarkAsRead(id uint, userID uint) error {
 		Update("is_read", true).Error
 }
 
+func (r *Repository) MarkMatchingAsRead(userID uint, types []string, actorID *uint, entityID *uint) error {
+	query := r.db.Model(&models.Notification{}).
+		Where("recipient_id = ? AND is_read = false", userID)
+
+	if len(types) > 0 {
+		query = query.Where("type IN ?", types)
+	}
+	if actorID != nil {
+		query = query.Where("actor_id = ?", *actorID)
+	}
+	if entityID != nil {
+		query = query.Where("entity_id = ?", *entityID)
+	}
+
+	return query.Update("is_read", true).Error
+}
+
 func (r *Repository) UpsertPushSubscription(subscription *models.PushSubscription) error {
 	return r.db.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "endpoint"}},

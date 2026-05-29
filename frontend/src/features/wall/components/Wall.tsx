@@ -2,6 +2,10 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useOutletContext } from 'react-router-dom';
 
 import { postService } from "@/features/wall/api/postService.js";
+import {
+    notificationService,
+    type MarkNotificationsReadPayload,
+} from "@/features/notifications/api/notificationService.js";
 import type { Comment, Post, ProfileContextType } from "@/shared/types/domain.js";
 import { Spinner } from "@/shared/ui/Spinner.js";
 import { PostCard } from "@/features/wall/components/PostCard.js";
@@ -22,6 +26,26 @@ function Wall() {
     useEffect(() => {
         fetchPosts();
     }, [user?.id]);
+
+    useEffect(() => {
+        if (!isOwner || !currentUser?.id) {
+            return;
+        }
+
+        const payload: MarkNotificationsReadPayload = {
+            types: ['post_liked', 'comment_created'],
+        };
+
+        void notificationService.markMatchingAsRead(payload)
+            .then(() => {
+                window.dispatchEvent(new CustomEvent('notifications:read-matching', {
+                    detail: payload,
+                }));
+            })
+            .catch(error => {
+                console.error('Ошибка отметки уведомлений стены:', error);
+            });
+    }, [currentUser?.id, isOwner]);
 
     const fetchPosts = async () => {
         if (!user?.id) {

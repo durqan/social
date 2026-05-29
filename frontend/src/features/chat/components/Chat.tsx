@@ -17,6 +17,7 @@ import { useAudioCall } from "@/features/call/AudioCallContext.js";
 import { Spinner } from "@/shared/ui/Spinner.js";
 import { formatMonthDayDate, formatTime } from "@/shared/utils/date.js";
 import {usePresence} from "@/shared/hooks/usePresence.js";
+import { getUploadErrorMessage } from "@/shared/api/errors.js";
 
 const optimisticMessageFloor = 10000000;
 
@@ -28,6 +29,7 @@ function Chat() {
     const { status: callStatus, startCall, startVideoCall } = useAudioCall();
     const [recipient, setRecipient] = useState<User | null>(null);
     const [newMessage, setNewMessage] = useState('');
+    const [uploadError, setUploadError] = useState('');
 
     const {
         messages,
@@ -118,13 +120,14 @@ function Chat() {
 
     const sendMessage = useCallback(async (files: File[] = []) => {
         const content = newMessage.trim();
-        if (!content && files.length === 0) return;
+        if (!content && files.length === 0) return false;
         if (!(currentUser?.isEmailVerified ?? currentUser?.is_email_verified ?? false)) {
-            alert('Подтвердите email, чтобы продолжить');
-            return;
+            setUploadError('Подтвердите email, чтобы продолжить');
+            return false;
         }
 
         try {
+            setUploadError('');
             const attachments = await uploadAttachments(files);
 
             const tempMessage = {
@@ -141,9 +144,11 @@ function Chat() {
             sendMessageToStore(content, tempMessage);
             wsService.send(Number(userId), content, attachments);
             setNewMessage('');
+            return true;
         } catch (error) {
             console.error(error);
-            alert(error instanceof Error ? error.message : 'Не удалось отправить картинку');
+            setUploadError(getUploadErrorMessage(error, 'Не удалось загрузить картинку'));
+            return false;
         }
     }, [currentUser, newMessage, sendMessageToStore, uploadAttachments, userId, wsService]);
 
@@ -195,7 +200,17 @@ function Chat() {
                 formatTime={formatTime}
             />
             {otherTyping && <div className="px-4 pb-2 text-sm text-gray-500">{recipient?.name} печатает...</div>}
-            <ChatInput value={newMessage} onChange={e => { setNewMessage(e.target.value); handleTyping(); }} onSend={sendMessage} />
+            <ChatInput
+                value={newMessage}
+                onChange={e => {
+                    setNewMessage(e.target.value);
+                    setUploadError('');
+                    handleTyping();
+                }}
+                onSend={sendMessage}
+                errorMessage={uploadError}
+                onErrorMessageChange={setUploadError}
+            />
             <DeleteConfirmModal isOpen={deleteConfirmOpen} onConfirm={handleBatchDelete} onCancel={closeDeleteConfirm} />
         </div>
     );

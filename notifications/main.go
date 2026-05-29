@@ -73,6 +73,7 @@ func main() {
 	protected.GET("/notifications", h.GetUserNotifications)
 	protected.GET("/notifications/:user_id/stream", h.StreamNotifications)
 	protected.GET("/notifications/:user_id", h.GetUserNotifications)
+	protected.PATCH("/notifications/read-matching", h.MarkMatchingAsRead)
 	protected.PATCH("/notifications/:id/read", h.MarkAsRead)
 	protected.POST("/notifications", h.CreateNotification)
 	protected.POST("/push/subscribe", h.SubscribePush)

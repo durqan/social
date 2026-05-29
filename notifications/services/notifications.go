@@ -57,6 +57,10 @@ func (s *Service) MarkAsRead(id uint, userID uint) error {
 	return s.repo.MarkAsRead(id, userID)
 }
 
+func (s *Service) MarkMatchingAsRead(userID uint, req dto.MarkNotificationsReadReq) error {
+	return s.repo.MarkMatchingAsRead(userID, req.Types, req.ActorID, req.EntityID)
+}
+
 func (s *Service) sendPushNotifications(notification models.Notification) {
 	if s.push == nil || !s.push.Enabled() {
 		return

@@ -1,9 +1,10 @@
 import { useState, type ChangeEvent, type FormEvent } from 'react';
 import { useNavigate, useOutletContext, useParams } from 'react-router-dom';
 
-import { getApiError, getApiStatus } from "@/shared/api/errors.js";
+import { getApiError, getApiStatus, getUploadErrorMessage } from "@/shared/api/errors.js";
 import { userService } from "@/shared/api/userService.js";
 import type { PasswordChangeData, ProfileContextType } from "@/shared/types/domain.js";
+import { avatarMaxSize, validateImageFile } from "@/shared/utils/uploadValidation.js";
 import {
     PasswordForm,
     ProfileEditStatus,
@@ -54,6 +55,15 @@ function ProfileEdit() {
         const file = event.target.files?.[0];
         if (!file) return;
 
+        const validationError = validateImageFile(file, avatarMaxSize);
+        if (validationError) {
+            setAvatarFile(null);
+            setError(validationError);
+            event.target.value = '';
+            return;
+        }
+
+        setMessage(null);
         setAvatarFile(file);
         setAvatarPreview(URL.createObjectURL(file));
     };
@@ -75,12 +85,14 @@ function ProfileEdit() {
             const status = getApiStatus(err);
             const apiError = getApiError(err);
 
-            if (status === 409) {
+            if (avatarFile && [400, 413, 415].includes(status || 0)) {
+                setError(getUploadErrorMessage(err, 'Не удалось загрузить аватар'));
+            } else if (status === 409) {
                 setError('Пользователь с таким email уже существует');
             } else if (status === 400) {
-                setError('Некорректные данные');
+                setError(apiError.error || apiError.message || 'Некорректные данные');
             } else {
-                setError(apiError.message || 'Ошибка при обновлении');
+                setError(apiError.error || apiError.message || 'Ошибка при обновлении');
             }
         } finally {
             setLoading(false);

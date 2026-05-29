@@ -93,10 +93,11 @@ export function ProfileForm({
                     <label className="block text-sm font-medium text-gray-700 mb-1">Аватар</label>
                     <input
                         type="file"
-                        accept="image/*"
+                        accept="image/jpeg,image/png,image/webp"
                         onChange={onAvatarChange}
                         className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-gray-100 file:px-3 file:py-2 file:text-sm file:text-gray-700"
                     />
+                    <p className="mt-1 text-xs text-gray-500">JPG, PNG или WebP, максимум 5 МБ.</p>
                 </div>
             </div>
 

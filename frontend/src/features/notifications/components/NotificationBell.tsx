@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import { notificationService } from "@/features/notifications/api/notificationService.js";
+import {
+    notificationService,
+    type MarkNotificationsReadPayload,
+} from "@/features/notifications/api/notificationService.js";
 import {
     enablePushNotifications,
     getPushNotificationStatus,
@@ -124,6 +127,20 @@ function NotificationBadge({ count }: { count: number }) {
     );
 }
 
+function matchesReadPayload(notification: SocialNotification, payload: MarkNotificationsReadPayload) {
+    if (payload.types.length > 0 && !payload.types.includes(notification.type)) {
+        return false;
+    }
+    if (payload.actor_id !== undefined && notification.actor_id !== payload.actor_id) {
+        return false;
+    }
+    if (payload.entity_id !== undefined && notification.entity_id !== payload.entity_id) {
+        return false;
+    }
+
+    return true;
+}
+
 export function NotificationBell({ userId, compact = false }: NotificationBellProps) {
     const navigate = useNavigate();
     const [notifications, setNotifications] = useState<SocialNotification[]>([]);
@@ -159,6 +176,26 @@ export function NotificationBell({ userId, compact = false }: NotificationBellPr
         return () => {
             window.removeEventListener('pointerdown', unlock);
             window.removeEventListener('keydown', unlock);
+        };
+    }, []);
+
+    useEffect(() => {
+        const handleNotificationsRead = (event: Event) => {
+            const payload = (event as CustomEvent<MarkNotificationsReadPayload>).detail;
+            if (!payload) {
+                return;
+            }
+
+            setNotifications(prev => prev.map(notification =>
+                matchesReadPayload(notification, payload)
+                    ? { ...notification, is_read: true }
+                    : notification
+            ));
+        };
+
+        window.addEventListener('notifications:read-matching', handleNotificationsRead);
+        return () => {
+            window.removeEventListener('notifications:read-matching', handleNotificationsRead);
         };
     }, []);
 

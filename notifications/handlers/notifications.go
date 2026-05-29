@@ -57,6 +57,28 @@ func (h *Handler) MarkAsRead(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "OK"})
 }
 
+func (h *Handler) MarkMatchingAsRead(c *gin.Context) {
+	req := dto.MarkNotificationsReadReq{}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if len(req.Types) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "types are required"})
+		return
+	}
+	userID, ok := auth.UserID(c)
+	if !ok {
+		return
+	}
+
+	if err := h.service.MarkMatchingAsRead(userID, req); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "OK"})
+}
+
 func (h *Handler) CreateNotification(c *gin.Context) {
 	req := dto.CreateNotificationReq{}
 	if err := c.ShouldBindJSON(&req); err != nil {

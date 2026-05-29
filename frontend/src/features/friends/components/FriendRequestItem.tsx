@@ -6,7 +6,7 @@ import { Button } from "@/shared/ui/Button.js";
 
 type FriendRequestItemProps = {
     request: Friendship;
-    onAccept: (id: number) => void;
+    onAccept: (id: number, actorId: number) => void;
 };
 
 export function FriendRequestItem({ request, onAccept }: FriendRequestItemProps) {
@@ -36,7 +36,7 @@ export function FriendRequestItem({ request, onAccept }: FriendRequestItemProps)
             </button>
 
             <Button
-                onClick={() => onAccept(request.id)}
+                onClick={() => onAccept(request.id, user.id)}
                 className="w-full py-2 sm:w-auto sm:py-1"
             >
                 Принять

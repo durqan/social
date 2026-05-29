@@ -12,6 +12,12 @@ export type PushSubscriptionPayload = {
     };
 };
 
+export type MarkNotificationsReadPayload = {
+    types: string[];
+    actor_id?: number;
+    entity_id?: number;
+};
+
 export const showMessageNotification = (name: string, content: string) => {
     toast(`${name}: ${content.slice(0, 50)}${content.length > 50 ? '...' : ''}`, {
         duration: 5000,
@@ -42,6 +48,16 @@ export const notificationService = {
     async markAsRead(notificationId: number): Promise<void> {
         await requestNotifications<{ status: string }>(`/notifications/${notificationId}/read`, {
             method: 'PATCH',
+        });
+    },
+
+    async markMatchingAsRead(payload: MarkNotificationsReadPayload): Promise<void> {
+        await requestNotifications<{ status: string }>('/notifications/read-matching', {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
         });
     },
 

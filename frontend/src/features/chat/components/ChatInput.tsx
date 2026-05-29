@@ -1,21 +1,25 @@
 import { useEffect, useRef, useState, type ChangeEvent, type ReactElement } from 'react';
 import { Icon } from "@/shared/ui/Icon.js";
 import EmojiPickerModule, { EmojiStyle, type EmojiClickData, type Props as EmojiPickerProps } from 'emoji-picker-react';
+import { validateChatImages } from "@/shared/utils/uploadValidation.js";
 
 const EmojiPicker = EmojiPickerModule as unknown as (props: EmojiPickerProps) => ReactElement | null;
 
 interface ChatInputProps {
     value: string;
     onChange: (e: ChangeEvent<HTMLTextAreaElement>) => void;
-    onSend: (files?: File[]) => void;
+    onSend: (files?: File[]) => Promise<boolean> | boolean;
+    errorMessage?: string;
+    onErrorMessageChange?: (message: string) => void;
 }
 
-export const ChatInput = ({ value, onChange, onSend }: ChatInputProps) => {
+export const ChatInput = ({ value, onChange, onSend, errorMessage = '', onErrorMessageChange }: ChatInputProps) => {
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
     const [previews, setPreviews] = useState<string[]>([]);
     const canSend = Boolean(value.trim()) || selectedFiles.length > 0;
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+    const [sending, setSending] = useState(false);
 
     useEffect(() => {
         const urls = selectedFiles.map(file => URL.createObjectURL(file));
@@ -30,9 +34,17 @@ export const ChatInput = ({ value, onChange, onSend }: ChatInputProps) => {
         setSelectedFiles(prev => prev.filter((_, i) => i !== index));
     };
 
-    const handleSend = () => {
-        if (!canSend) return;
-        onSend(selectedFiles);
+    const handleSend = async () => {
+        if (!canSend || sending) return;
+        onErrorMessageChange?.('');
+        setSending(true);
+        const sent = await onSend(selectedFiles);
+        setSending(false);
+
+        if (!sent) {
+            return;
+        }
+
         setSelectedFiles([]);
 
         if (fileInputRef.current) {
@@ -72,7 +84,16 @@ export const ChatInput = ({ value, onChange, onSend }: ChatInputProps) => {
                     multiple
                     className="hidden"
                     onChange={e => {
-                        const files = Array.from(e.target.files || []).slice(0, 5);
+                        const files = Array.from(e.target.files || []);
+                        const validationError = validateChatImages(files);
+                        if (validationError) {
+                            setSelectedFiles([]);
+                            onErrorMessageChange?.(validationError);
+                            e.target.value = '';
+                            return;
+                        }
+
+                        onErrorMessageChange?.('');
                         setSelectedFiles(files);
                     }}
                 />
@@ -92,7 +113,7 @@ export const ChatInput = ({ value, onChange, onSend }: ChatInputProps) => {
                     onKeyDown={e => {
                         if (e.key === 'Enter' && !e.shiftKey) {
                             e.preventDefault();
-                            handleSend();
+                            void handleSend();
                         }
                     }}
                     placeholder="Сообщение..."
@@ -130,12 +151,17 @@ export const ChatInput = ({ value, onChange, onSend }: ChatInputProps) => {
                     </div>
                 )}
                 <button
-                    onClick={handleSend}
-                    disabled={!canSend}
+                    onClick={() => void handleSend()}
+                    disabled={!canSend || sending}
                     className="w-10 h-10 bg-sky-600 text-white rounded-full hover:bg-sky-700 transition disabled:opacity-50 flex items-center justify-center flex-shrink-0">
                     <Icon name="send" />
                 </button>
             </div>
+            {errorMessage && (
+                <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {errorMessage}
+                </div>
+            )}
         </div>
     );
 };

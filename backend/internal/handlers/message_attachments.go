@@ -26,6 +26,12 @@ func UploadMessageImage(db *gorm.DB) gin.HandlerFunc {
 
 		file, err := c.FormFile("image")
 		if err != nil {
+			var maxBytesError *http.MaxBytesError
+			if errors.As(err, &maxBytesError) {
+				c.JSON(413, gin.H{"error": "image is too large"})
+				return
+			}
+
 			c.JSON(400, gin.H{"error": "image is required"})
 			return
 		}
