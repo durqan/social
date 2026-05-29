@@ -54,9 +54,19 @@ jobs:
           chmod +x android/gradlew
           npm run build:android
 
+      - name: Build release APK
+        run: npm run build:android:release
+
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: social-mobile-debug-apk
           path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: social-mobile-release-apk
+          path: mobile/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error

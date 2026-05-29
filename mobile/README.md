@@ -60,17 +60,39 @@ mobile/android/app/build/outputs/apk/debug/app-debug.apk
 
 Release APK/AAB требует собственного signing config и production keystore. Фейковые release-ключи здесь не настраивались.
 
+## Release APK
+
+```sh
+cd mobile
+npm run build:android:release
+```
+
+APK после сборки:
+
+```text
+mobile/android/app/build/outputs/apk/release/app-release.apk
+```
+
+Release variant собирает JS bundle внутрь APK, поэтому установленное приложение запускается без Metro. Текущая CI-сборка подписывает release APK debug keystore из React Native template; для production публикации нужен отдельный signing config.
+
 ## Build APK via GitHub Actions
 
 1. Откройте GitHub -> Actions.
 2. Выберите workflow `mobile-android-apk`.
 3. Нажмите `Run workflow`.
 4. После завершения job откройте run и скачайте artifact `social-mobile-debug-apk`.
+5. Для APK без Metro скачайте artifact `social-mobile-release-apk`.
 
 Artifact содержит debug APK:
 
 ```text
 mobile/android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+Release artifact содержит:
+
+```text
+mobile/android/app/build/outputs/apk/release/app-release.apk
 ```
 
 ## Реализованные экраны
