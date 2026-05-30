@@ -5,10 +5,6 @@ export type AuthStackParamList = {
   Register: undefined;
 };
 
-export type VerificationStackParamList = {
-  EmailVerificationNotice: undefined;
-};
-
 export type ChatStackParamList = {
   ChatList: undefined;
   Chat: {
@@ -23,4 +19,13 @@ export type MainTabParamList = {
   Friends: undefined;
   Chats: NavigatorScreenParams<ChatStackParamList>;
   Settings: undefined;
+};
+
+export type MainStackParamList = {
+  MainTabs: NavigatorScreenParams<MainTabParamList> | undefined;
+  UserProfile: {
+    userId: number;
+    name?: string;
+  };
+  UserSearch: undefined;
 };

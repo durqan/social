@@ -115,6 +115,45 @@ func (h *Handler) SubscribePush(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "subscribed"})
 }
 
+func (h *Handler) RegisterMobilePushToken(c *gin.Context) {
+	req := dto.MobilePushTokenReq{}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid mobile push token"})
+		return
+	}
+	userID, ok := auth.UserID(c)
+	if !ok {
+		return
+	}
+	req.UserID = userID
+
+	if err := h.service.SaveMobilePushToken(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid mobile push token"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": "registered"})
+}
+
+func (h *Handler) RevokeMobilePushToken(c *gin.Context) {
+	req := dto.MobilePushTokenReq{}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid mobile push token"})
+		return
+	}
+	userID, ok := auth.UserID(c)
+	if !ok {
+		return
+	}
+
+	if err := h.service.RevokeMobilePushToken(userID, req); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to revoke mobile push token"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": "revoked"})
+}
+
 func (h *Handler) StreamNotifications(c *gin.Context) {
 	userID, ok := auth.UserID(c)
 	if !ok {

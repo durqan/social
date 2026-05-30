@@ -4,11 +4,13 @@ import (
 	"errors"
 	"image"
 	"net/http"
-	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"tester/internal/repository"
 	"tester/internal/services"
+	"tester/internal/storage"
 	"tester/internal/utils"
 
 	"github.com/gin-gonic/gin"
@@ -73,9 +75,8 @@ func UploadMessageImage(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		uploadDir := filepath.Join("uploads", "chat")
-		if err := os.MkdirAll(uploadDir, 0755); err != nil {
-			c.JSON(500, gin.H{"error": "failed to prepare upload directory"})
+		if _, err := src.Seek(0, 0); err != nil {
+			c.JSON(400, gin.H{"error": "failed to read image"})
 			return
 		}
 
@@ -85,9 +86,13 @@ func UploadMessageImage(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 		filename := randomName + ext
-		savePath := filepath.Join(uploadDir, filename)
+		store, err := storage.Default()
+		if err != nil {
+			c.JSON(500, gin.H{"error": "failed to prepare upload storage"})
+			return
+		}
 
-		if err := c.SaveUploadedFile(file, savePath); err != nil {
+		if _, err := store.Upload(c.Request.Context(), services.ChatUploadKey(filename), src, file.Size, contentType); err != nil {
 			c.JSON(500, gin.H{"error": "failed to save image"})
 			return
 		}
@@ -116,18 +121,18 @@ func GetUploadedMessageImage() gin.HandlerFunc {
 			return
 		}
 
-		filePath, ok := services.ChatUploadPath(filename)
+		key, ok := services.ChatUploadKeyFromFilename(filename)
 		if !ok {
 			c.JSON(400, gin.H{"error": "invalid filename"})
 			return
 		}
-
-		if _, err := os.Stat(filePath); err != nil {
-			c.JSON(404, gin.H{"error": "image not found"})
+		store, err := storage.Default()
+		if err != nil {
+			c.JSON(500, gin.H{"error": "failed to load storage"})
 			return
 		}
 
-		c.File(filePath)
+		serveStoredObject(c, store, key)
 	}
 }
 
@@ -153,17 +158,32 @@ func GetMessageAttachment(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		filePath, ok := services.ChatUploadPath(filepath.Base(attachment.FileURL))
+		filename := filepath.Base(strings.Split(attachment.FileURL, "?")[0])
+		key, ok := services.ChatUploadKeyFromFilename(filename)
 		if !ok {
 			c.JSON(500, gin.H{"error": "invalid attachment path"})
 			return
 		}
-
-		if _, err := os.Stat(filePath); err != nil {
-			c.JSON(404, gin.H{"error": "attachment file not found"})
+		store, err := storage.Default()
+		if err != nil {
+			c.JSON(500, gin.H{"error": "failed to load storage"})
 			return
 		}
 
-		c.File(filePath)
+		serveStoredObject(c, store, key)
 	}
+}
+
+func serveStoredObject(c *gin.Context, store storage.Storage, key string) {
+	if filePath, ok := storage.LocalPath(store, key); ok {
+		c.File(filePath)
+		return
+	}
+
+	signedURL, err := store.SignedURL(c.Request.Context(), key, 15*time.Minute)
+	if err != nil {
+		c.JSON(404, gin.H{"error": "attachment file not found"})
+		return
+	}
+	c.Redirect(http.StatusTemporaryRedirect, signedURL)
 }

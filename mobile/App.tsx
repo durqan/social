@@ -1,26 +1,29 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { API_BASE_URL, WS_URL } from './src/config/env';
+import { AppLifecycleProvider } from './src/context/AppLifecycleContext';
 import { AuthProvider } from './src/context/AuthContext';
+import { CallProvider } from './src/context/CallContext';
+import { NotificationsProvider } from './src/context/NotificationsContext';
+import { UnreadProvider } from './src/context/UnreadContext';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { colors } from './src/theme/colors';
 
 function App() {
-  useEffect(() => {
-    console.info(`[SocialMobile] API_BASE_URL=${API_BASE_URL}`);
-    console.info(`[SocialMobile] WS_URL=${WS_URL}`);
-  }, []);
-
   return (
     <SafeAreaProvider>
-      <StatusBar
-        barStyle="dark-content"
-        backgroundColor={colors.background}
-      />
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
       <AuthProvider>
-        <AppNavigator />
+        <AppLifecycleProvider>
+          <UnreadProvider>
+            <NotificationsProvider>
+              <CallProvider>
+                <AppNavigator />
+              </CallProvider>
+            </NotificationsProvider>
+          </UnreadProvider>
+        </AppLifecycleProvider>
       </AuthProvider>
     </SafeAreaProvider>
   );

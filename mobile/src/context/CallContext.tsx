@@ -1,0 +1,859 @@
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
+import {
+  ActivityIndicator,
+  Modal,
+  PermissionsAndroid,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import {
+  mediaDevices,
+  RTCIceCandidate,
+  RTCPeerConnection,
+  RTCSessionDescription,
+  RTCView,
+  type MediaStream,
+} from 'react-native-webrtc';
+
+import { userApi } from '../api/users';
+import {
+  chatSocket,
+  type CallIceCandidate,
+  type CallSessionDescription,
+  type CallType,
+  type WsEvent,
+} from '../api/ws';
+import { TURN_CREDENTIAL, TURN_URLS, TURN_USERNAME } from '../config/env';
+import { useAppLifecycle } from './AppLifecycleContext';
+import { useAuth } from './AuthContext';
+import { colors } from '../theme/colors';
+import { warnDev } from '../utils/logger';
+
+type CallStatus =
+  | 'idle'
+  | 'incoming'
+  | 'connecting'
+  | 'ringing'
+  | 'active'
+  | 'ended'
+  | 'error';
+
+type CallContextValue = {
+  status: CallStatus;
+  peerUserId: number | null;
+  startAudioCall: (toId: number, peerName?: string) => Promise<void>;
+  startVideoCall: (toId: number, peerName?: string) => Promise<void>;
+};
+
+type PendingOffer = {
+  fromId: number;
+  offer: CallSessionDescription;
+  callType: CallType;
+};
+
+type PeerConnection = InstanceType<typeof RTCPeerConnection>;
+type PeerConnectionEventTarget = {
+  addEventListener: (type: string, handler: (event: unknown) => void) => void;
+};
+
+const CallContext = createContext<CallContextValue | undefined>(undefined);
+
+function iceServers() {
+  const servers: Array<{
+    urls: string | string[];
+    username?: string;
+    credential?: string;
+  }> = [{ urls: 'stun:stun.l.google.com:19302' }];
+
+  if (TURN_URLS.length > 0) {
+    servers.push({
+      urls: TURN_URLS,
+      username: TURN_USERNAME,
+      credential: TURN_CREDENTIAL,
+    });
+  }
+
+  return servers;
+}
+
+async function requestCallPermissions(callType: CallType) {
+  if (Platform.OS !== 'android') {
+    return true;
+  }
+
+  const permissions = [PermissionsAndroid.PERMISSIONS.RECORD_AUDIO];
+  if (callType === 'video') {
+    permissions.push(PermissionsAndroid.PERMISSIONS.CAMERA);
+  }
+
+  const result = await PermissionsAndroid.requestMultiple(permissions);
+  return permissions.every(
+    permission => result[permission] === PermissionsAndroid.RESULTS.GRANTED,
+  );
+}
+
+function stopStream(stream: MediaStream | null) {
+  stream?.getTracks().forEach(track => track.stop());
+  stream?.release?.(true);
+}
+
+function statusText(status: CallStatus, callType: CallType) {
+  if (status === 'incoming') {
+    return callType === 'video' ? 'Входящий видеозвонок' : 'Входящий звонок';
+  }
+  if (status === 'connecting') {
+    return 'Соединяем звонок';
+  }
+  if (status === 'ringing') {
+    return 'Ждем ответа';
+  }
+  if (status === 'active') {
+    return callType === 'video' ? 'Видеозвонок идет' : 'Звонок идет';
+  }
+  if (status === 'ended') {
+    return 'Звонок завершен';
+  }
+  if (status === 'error') {
+    return 'Не удалось выполнить звонок';
+  }
+  return '';
+}
+
+function callErrorMessage(error: unknown) {
+  if (!(error instanceof Error)) {
+    return 'Не удалось выполнить звонок. Попробуйте позже.';
+  }
+
+  if (error.name === 'NotAllowedError') {
+    return 'Нет доступа к камере или микрофону.';
+  }
+
+  if (error.name === 'NotFoundError') {
+    return 'Камера или микрофон не найдены.';
+  }
+
+  if (error.message === 'call permissions denied') {
+    return 'Разрешите доступ к микрофону и камере, чтобы начать звонок.';
+  }
+
+  if (error.message === 'WebSocket is not connected') {
+    return 'Не удалось подключиться к серверу. Проверьте интернет или попробуйте позже.';
+  }
+
+  return 'Не удалось выполнить звонок. Попробуйте позже.';
+}
+
+export function CallProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
+  const { isForeground } = useAppLifecycle();
+  const [status, setStatus] = useState<CallStatus>('idle');
+  const [callType, setCallType] = useState<CallType>('audio');
+  const [peerUserId, setPeerUserId] = useState<number | null>(null);
+  const [peerName, setPeerName] = useState('Пользователь');
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [microphoneOn, setMicrophoneOn] = useState(true);
+  const [cameraOn, setCameraOn] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const statusRef = useRef(status);
+  const peerUserIdRef = useRef(peerUserId);
+  const callTypeRef = useRef(callType);
+  const pcRef = useRef<PeerConnection | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const pendingOfferRef = useRef<PendingOffer | null>(null);
+  const pendingIceRef = useRef<CallIceCandidate[]>([]);
+  const endTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
+
+  useEffect(() => {
+    peerUserIdRef.current = peerUserId;
+  }, [peerUserId]);
+
+  useEffect(() => {
+    callTypeRef.current = callType;
+  }, [callType]);
+
+  const clearEndTimer = useCallback(() => {
+    if (endTimerRef.current) {
+      clearTimeout(endTimerRef.current);
+      endTimerRef.current = null;
+    }
+  }, []);
+
+  const resetCall = useCallback(() => {
+    clearEndTimer();
+    pcRef.current?.close();
+    pcRef.current = null;
+    stopStream(localStreamRef.current);
+    localStreamRef.current = null;
+    pendingOfferRef.current = null;
+    pendingIceRef.current = [];
+    setLocalStream(null);
+    setRemoteStream(null);
+    setMicrophoneOn(true);
+    setCameraOn(true);
+    setCallType('audio');
+    setPeerUserId(null);
+    setPeerName('Пользователь');
+    setError(null);
+    setStatus('idle');
+  }, [clearEndTimer]);
+
+  const finishCall = useCallback(
+    (nextStatus: CallStatus = 'ended', message?: string) => {
+      clearEndTimer();
+      pcRef.current?.close();
+      pcRef.current = null;
+      stopStream(localStreamRef.current);
+      localStreamRef.current = null;
+      pendingOfferRef.current = null;
+      pendingIceRef.current = [];
+      setLocalStream(null);
+      setRemoteStream(null);
+      setMicrophoneOn(true);
+      setCameraOn(true);
+      setError(message ?? null);
+      setStatus(nextStatus);
+      endTimerRef.current = setTimeout(resetCall, 1800);
+    },
+    [clearEndTimer, resetCall],
+  );
+
+  const loadPeerName = useCallback(
+    async (userId: number, fallback?: string) => {
+      if (fallback) {
+        setPeerName(fallback);
+        return;
+      }
+
+      try {
+        const profile = await userApi.getUser(userId);
+        setPeerName(profile.name || profile.email || 'Пользователь');
+      } catch {
+        setPeerName('Пользователь');
+      }
+    },
+    [],
+  );
+
+  const openLocalStream = useCallback(async (nextCallType: CallType) => {
+    const permissionsGranted = await requestCallPermissions(nextCallType);
+    if (!permissionsGranted) {
+      throw new Error('call permissions denied');
+    }
+
+    const stream = await mediaDevices.getUserMedia({
+      audio: true,
+      video:
+        nextCallType === 'video'
+          ? {
+              facingMode: 'user',
+              width: 1280,
+              height: 720,
+              frameRate: 30,
+            }
+          : false,
+    });
+
+    localStreamRef.current = stream;
+    setLocalStream(stream);
+    setMicrophoneOn(true);
+    setCameraOn(stream.getVideoTracks().length > 0);
+    return stream;
+  }, []);
+
+  const flushPendingIce = useCallback(async () => {
+    const pc = pcRef.current;
+    if (!pc?.remoteDescription) {
+      return;
+    }
+
+    const pending = pendingIceRef.current;
+    pendingIceRef.current = [];
+    for (const candidate of pending) {
+      await pc.addIceCandidate(new RTCIceCandidate(candidate));
+    }
+  }, []);
+
+  const createPeerConnection = useCallback(
+    (toId: number) => {
+      const pc = new RTCPeerConnection({
+        iceServers: iceServers(),
+      });
+      const eventTarget = pc as unknown as PeerConnectionEventTarget;
+
+      eventTarget.addEventListener('icecandidate', event => {
+        const candidate = (
+          event as {
+            candidate?: { toJSON: () => CallIceCandidate } | null;
+          }
+        ).candidate;
+        if (!candidate) {
+          return;
+        }
+
+        try {
+          chatSocket.sendCallIce(toId, candidate.toJSON());
+        } catch (sendError) {
+          warnDev('[SocialMobile] Failed to send ICE candidate', sendError);
+        }
+      });
+
+      eventTarget.addEventListener('track', event => {
+        const [stream] = (event as { streams?: MediaStream[] }).streams ?? [];
+        if (stream) {
+          setRemoteStream(stream);
+        }
+      });
+
+      eventTarget.addEventListener('connectionstatechange', () => {
+        if (pc.connectionState === 'connected') {
+          setStatus('active');
+        }
+        if (
+          pc.connectionState === 'failed' ||
+          pc.connectionState === 'closed'
+        ) {
+          finishCall('error', 'Соединение звонка прервано.');
+        }
+      });
+
+      pcRef.current = pc;
+      return pc;
+    },
+    [finishCall],
+  );
+
+  const startCall = useCallback(
+    async (toId: number, name: string | undefined, nextCallType: CallType) => {
+      if (!user?.id || statusRef.current !== 'idle') {
+        return;
+      }
+
+      clearEndTimer();
+      setError(null);
+      setPeerUserId(toId);
+      setPeerName(name || 'Пользователь');
+      setCallType(nextCallType);
+      setStatus('connecting');
+
+      try {
+        chatSocket.connect();
+        const stream = await openLocalStream(nextCallType);
+        const pc = createPeerConnection(toId);
+        stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+        const offer = (await pc.createOffer()) as CallSessionDescription;
+        await pc.setLocalDescription(new RTCSessionDescription(offer));
+        chatSocket.sendCallOffer(toId, offer, nextCallType);
+        setStatus('ringing');
+      } catch (callError) {
+        finishCall('error', callErrorMessage(callError));
+      }
+    },
+    [
+      clearEndTimer,
+      createPeerConnection,
+      finishCall,
+      openLocalStream,
+      user?.id,
+    ],
+  );
+
+  const startAudioCall = useCallback(
+    (toId: number, name?: string) => startCall(toId, name, 'audio'),
+    [startCall],
+  );
+
+  const startVideoCall = useCallback(
+    (toId: number, name?: string) => startCall(toId, name, 'video'),
+    [startCall],
+  );
+
+  const acceptCall = useCallback(async () => {
+    const pendingOffer = pendingOfferRef.current;
+    if (!pendingOffer) {
+      return;
+    }
+
+    setStatus('connecting');
+    setError(null);
+
+    try {
+      const stream = await openLocalStream(pendingOffer.callType);
+      const pc = createPeerConnection(pendingOffer.fromId);
+      stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+      await pc.setRemoteDescription(
+        new RTCSessionDescription(pendingOffer.offer),
+      );
+      await flushPendingIce();
+
+      const answer = (await pc.createAnswer()) as CallSessionDescription;
+      await pc.setLocalDescription(new RTCSessionDescription(answer));
+      chatSocket.sendCallAnswer(pendingOffer.fromId, answer);
+    } catch (callError) {
+      try {
+        chatSocket.sendCallReject(pendingOffer.fromId);
+      } catch {
+        // Ignore socket failures while leaving the failed call state.
+      }
+      finishCall('error', callErrorMessage(callError));
+    }
+  }, [createPeerConnection, finishCall, flushPendingIce, openLocalStream]);
+
+  const rejectCall = useCallback(() => {
+    const targetId = peerUserIdRef.current ?? pendingOfferRef.current?.fromId;
+    if (targetId) {
+      try {
+        chatSocket.sendCallReject(targetId);
+      } catch {
+        // Socket can already be closed; local cleanup still matters.
+      }
+    }
+    finishCall('ended');
+  }, [finishCall]);
+
+  const endCall = useCallback(() => {
+    const targetId = peerUserIdRef.current;
+    if (targetId) {
+      try {
+        chatSocket.sendCallEnd(targetId);
+      } catch {
+        // Socket can already be closed; local cleanup still matters.
+      }
+    }
+    finishCall('ended');
+  }, [finishCall]);
+
+  const toggleMicrophone = useCallback(() => {
+    const next = !microphoneOn;
+    localStreamRef.current?.getAudioTracks().forEach(track => {
+      track.enabled = next;
+    });
+    setMicrophoneOn(next);
+  }, [microphoneOn]);
+
+  const toggleCamera = useCallback(() => {
+    const next = !cameraOn;
+    localStreamRef.current?.getVideoTracks().forEach(track => {
+      track.enabled = next;
+    });
+    setCameraOn(next);
+  }, [cameraOn]);
+
+  const switchCamera = useCallback(() => {
+    localStreamRef.current?.getVideoTracks()[0]?._switchCamera();
+  }, []);
+
+  const handleSocketEvent = useCallback(
+    (event: WsEvent) => {
+      if (
+        event.type !== 'call:offer' &&
+        event.type !== 'call:answer' &&
+        event.type !== 'call:ice' &&
+        event.type !== 'call:end' &&
+        event.type !== 'call:reject'
+      ) {
+        return;
+      }
+
+      if (event.type === 'call:offer') {
+        const payload = event.payload as {
+          from_id: number;
+          offer: CallSessionDescription;
+          call_type?: CallType;
+        };
+        const { from_id: fromId, offer, call_type: incomingType } = payload;
+
+        if (statusRef.current !== 'idle') {
+          try {
+            chatSocket.sendCallReject(fromId);
+          } catch {
+            // Ignore busy reject failures.
+          }
+          return;
+        }
+
+        pendingOfferRef.current = {
+          fromId,
+          offer,
+          callType: incomingType === 'video' ? 'video' : 'audio',
+        };
+        setPeerUserId(fromId);
+        setCallType(incomingType === 'video' ? 'video' : 'audio');
+        setStatus('incoming');
+        loadPeerName(fromId).catch(() => undefined);
+        return;
+      }
+
+      const payload = event.payload as {
+        from_id: number;
+        answer?: CallSessionDescription;
+        candidate?: CallIceCandidate;
+      };
+
+      if (payload.from_id !== peerUserIdRef.current) {
+        return;
+      }
+
+      if (event.type === 'call:answer') {
+        if (!payload.answer) {
+          return;
+        }
+        pcRef.current
+          ?.setRemoteDescription(new RTCSessionDescription(payload.answer))
+          .then(flushPendingIce)
+          .catch(callError => {
+            finishCall('error', callErrorMessage(callError));
+          });
+        return;
+      }
+
+      if (event.type === 'call:ice') {
+        const candidate = payload.candidate;
+        if (!candidate) {
+          return;
+        }
+        if (!pcRef.current?.remoteDescription) {
+          pendingIceRef.current.push(candidate);
+          return;
+        }
+
+        pcRef.current
+          .addIceCandidate(new RTCIceCandidate(candidate))
+          .catch(callError => {
+            warnDev('[SocialMobile] Failed to add ICE candidate', callError);
+          });
+        return;
+      }
+
+      finishCall('ended');
+    },
+    [finishCall, flushPendingIce, loadPeerName],
+  );
+
+  useEffect(() => {
+    if (!user?.id) {
+      resetCall();
+      return undefined;
+    }
+
+    const unsubscribe = chatSocket.onMessage(handleSocketEvent);
+    chatSocket.connect();
+    return () => {
+      unsubscribe();
+    };
+  }, [handleSocketEvent, resetCall, user?.id]);
+
+  useEffect(() => {
+    if (!isForeground && statusRef.current !== 'idle') {
+      endCall();
+    }
+  }, [endCall, isForeground]);
+
+  useEffect(
+    () => () => {
+      resetCall();
+    },
+    [resetCall],
+  );
+
+  const value = useMemo(
+    () => ({
+      status,
+      peerUserId,
+      startAudioCall,
+      startVideoCall,
+    }),
+    [peerUserId, startAudioCall, startVideoCall, status],
+  );
+
+  return (
+    <CallContext.Provider value={value}>
+      {children}
+      <CallOverlay
+        status={status}
+        callType={callType}
+        peerName={peerName}
+        localStream={localStream}
+        remoteStream={remoteStream}
+        microphoneOn={microphoneOn}
+        cameraOn={cameraOn}
+        error={error}
+        onAccept={acceptCall}
+        onReject={rejectCall}
+        onEnd={endCall}
+        onToggleMicrophone={toggleMicrophone}
+        onToggleCamera={toggleCamera}
+        onSwitchCamera={switchCamera}
+      />
+    </CallContext.Provider>
+  );
+}
+
+function CallOverlay({
+  status,
+  callType,
+  peerName,
+  localStream,
+  remoteStream,
+  microphoneOn,
+  cameraOn,
+  error,
+  onAccept,
+  onReject,
+  onEnd,
+  onToggleMicrophone,
+  onToggleCamera,
+  onSwitchCamera,
+}: {
+  status: CallStatus;
+  callType: CallType;
+  peerName: string;
+  localStream: MediaStream | null;
+  remoteStream: MediaStream | null;
+  microphoneOn: boolean;
+  cameraOn: boolean;
+  error: string | null;
+  onAccept: () => void;
+  onReject: () => void;
+  onEnd: () => void;
+  onToggleMicrophone: () => void;
+  onToggleCamera: () => void;
+  onSwitchCamera: () => void;
+}) {
+  if (status === 'idle') {
+    return null;
+  }
+
+  const showVideo = callType === 'video' && remoteStream;
+  const showLocalPreview = callType === 'video' && localStream;
+  const showActiveControls =
+    status === 'connecting' || status === 'ringing' || status === 'active';
+
+  return (
+    <Modal visible animationType="slide" presentationStyle="fullScreen">
+      <View style={styles.callRoot}>
+        <View style={styles.remoteStage}>
+          {showVideo ? (
+            <RTCView
+              streamURL={remoteStream.toURL()}
+              style={styles.remoteVideo}
+              objectFit="cover"
+            />
+          ) : (
+            <View style={styles.audioStage}>
+              {status === 'connecting' ? (
+                <ActivityIndicator color="#ffffff" size="large" />
+              ) : null}
+              <Text style={styles.peerInitial}>
+                {peerName.slice(0, 1).toUpperCase()}
+              </Text>
+            </View>
+          )}
+
+          <View style={styles.callHeader}>
+            <Text style={styles.callName} numberOfLines={1}>
+              {peerName}
+            </Text>
+            <Text style={styles.callStatus}>
+              {error ?? statusText(status, callType)}
+            </Text>
+          </View>
+
+          {showLocalPreview ? (
+            <View style={styles.localPreview}>
+              <RTCView
+                streamURL={localStream.toURL()}
+                style={styles.localVideo}
+                mirror
+                objectFit="cover"
+              />
+            </View>
+          ) : null}
+        </View>
+
+        <View style={styles.callControls}>
+          {status === 'incoming' ? (
+            <>
+              <CallButton title="Отклонить" danger onPress={onReject} />
+              <CallButton title="Ответить" onPress={onAccept} />
+            </>
+          ) : null}
+
+          {showActiveControls ? (
+            <>
+              <CallButton
+                title={microphoneOn ? 'Микрофон' : 'Включить микрофон'}
+                muted={!microphoneOn}
+                onPress={onToggleMicrophone}
+              />
+              {callType === 'video' ? (
+                <>
+                  <CallButton
+                    title={cameraOn ? 'Камера' : 'Включить камеру'}
+                    muted={!cameraOn}
+                    onPress={onToggleCamera}
+                  />
+                  <CallButton title="Сменить" onPress={onSwitchCamera} />
+                </>
+              ) : null}
+              <CallButton title="Завершить" danger onPress={onEnd} />
+            </>
+          ) : null}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function CallButton({
+  title,
+  danger,
+  muted,
+  onPress,
+}: {
+  title: string;
+  danger?: boolean;
+  muted?: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      style={[
+        styles.callButton,
+        danger && styles.callButtonDanger,
+        muted && styles.callButtonMuted,
+      ]}
+      onPress={onPress}
+    >
+      <Text style={styles.callButtonText}>{title}</Text>
+    </Pressable>
+  );
+}
+
+export function useCall() {
+  const value = useContext(CallContext);
+  if (!value) {
+    throw new Error('useCall must be used inside CallProvider');
+  }
+  return value;
+}
+
+const styles = StyleSheet.create({
+  callRoot: {
+    flex: 1,
+    backgroundColor: '#111827',
+  },
+  remoteStage: {
+    flex: 1,
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  remoteVideo: {
+    ...StyleSheet.absoluteFill,
+  },
+  audioStage: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 20,
+  },
+  peerInitial: {
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    overflow: 'hidden',
+    backgroundColor: colors.accent,
+    color: '#ffffff',
+    fontSize: 52,
+    lineHeight: 112,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  callHeader: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    top: 48,
+    alignItems: 'center',
+    gap: 6,
+  },
+  callName: {
+    color: '#ffffff',
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: '800',
+  },
+  callStatus: {
+    color: 'rgba(255,255,255,0.78)',
+    fontSize: 15,
+    lineHeight: 21,
+    textAlign: 'center',
+  },
+  localPreview: {
+    position: 'absolute',
+    right: 18,
+    bottom: 18,
+    width: 112,
+    height: 160,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.35)',
+    borderRadius: 14,
+    backgroundColor: '#020617',
+  },
+  localVideo: {
+    flex: 1,
+  },
+  callControls: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 10,
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    paddingBottom: 32,
+    backgroundColor: '#111827',
+  },
+  callButton: {
+    minWidth: 92,
+    minHeight: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent,
+    paddingHorizontal: 14,
+  },
+  callButtonDanger: {
+    backgroundColor: colors.danger,
+  },
+  callButtonMuted: {
+    backgroundColor: '#374151',
+  },
+  callButtonText: {
+    color: '#ffffff',
+    fontSize: 13,
+    lineHeight: 17,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+});

@@ -1,9 +1,11 @@
-import {
-  CHAT_IMAGE_MAX_BYTES,
-  CHAT_IMAGE_MIME_TYPES,
-} from '../config/env';
+import { CHAT_IMAGE_MAX_BYTES, CHAT_IMAGE_MIME_TYPES } from '../config/env';
 import { apiRequest, toQueryString } from './http';
-import type { Conversation, Message, MessageAttachment, PaginatedMessages } from './types';
+import type {
+  Conversation,
+  Message,
+  MessageAttachment,
+  PaginatedMessages,
+} from './types';
 
 export type LocalChatImage = {
   id: string;
@@ -25,12 +27,25 @@ export function validateLocalChatImage(image: LocalChatImage) {
   return null;
 }
 
+function normalizeConversation(conversation: Conversation): Conversation {
+  return {
+    ...conversation,
+    user_id: Number(conversation.user_id),
+    name: conversation.name || 'Пользователь',
+    last_message: conversation.last_message || '',
+    last_message_at: conversation.last_message_at || '',
+    unread_count: Number(conversation.unread_count) || 0,
+  };
+}
+
 export const messageApi = {
   async getConversations() {
     const conversations = await apiRequest<Conversation[]>(
       '/messages/conversations',
     );
-    return Array.isArray(conversations) ? conversations : [];
+    return Array.isArray(conversations)
+      ? conversations.map(normalizeConversation)
+      : [];
   },
 
   async getMessagesWith(

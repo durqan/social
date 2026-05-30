@@ -1,24 +1,48 @@
 import React, { useCallback, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import {
+  FlatList,
+  Image,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import {
+  useFocusEffect,
+  useNavigation,
+  type CompositeNavigationProp,
+} from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { friendsApi } from '../../api/friends';
 import { getApiErrorMessage } from '../../api/http';
 import type { Friendship, User } from '../../api/types';
+import { assetURL } from '../../config/env';
 import { AppButton } from '../../components/AppButton';
-import { ErrorBanner, Notice } from '../../components/Feedback';
+import {
+  EmptyState,
+  ErrorBanner,
+  LoadingState,
+} from '../../components/Feedback';
 import { Screen } from '../../components/Screen';
 import { colors } from '../../theme/colors';
-import type { MainTabParamList } from '../../navigation/types';
+import type {
+  MainStackParamList,
+  MainTabParamList,
+} from '../../navigation/types';
 
-type FriendsNavigation = BottomTabNavigationProp<MainTabParamList, 'Friends'>;
+type FriendsNavigation = CompositeNavigationProp<
+  BottomTabNavigationProp<MainTabParamList, 'Friends'>,
+  NativeStackNavigationProp<MainStackParamList>
+>;
 
 export default function FriendsScreen() {
   const navigation = useNavigation<FriendsNavigation>();
   const [friends, setFriends] = useState<User[]>([]);
   const [requests, setRequests] = useState<Friendship[]>([]);
   const [loading, setLoading] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,6 +59,7 @@ export default function FriendsScreen() {
     } catch (apiError) {
       setError(getApiErrorMessage(apiError));
     } finally {
+      setHasLoaded(true);
       setLoading(false);
     }
   }, []);
@@ -71,6 +96,30 @@ export default function FriendsScreen() {
     }
   }
 
+  async function rejectRequest(request: Friendship) {
+    setBusyId(request.id);
+    setError(null);
+    try {
+      await friendsApi.rejectFriendRequest(request.user_id);
+      await load();
+    } catch (apiError) {
+      setError(getApiErrorMessage(apiError));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  function openProfile(target: User) {
+    if (!target.id) {
+      return;
+    }
+
+    navigation.navigate('UserProfile', {
+      userId: target.id,
+      name: target.name || target.email,
+    });
+  }
+
   function openChat(friend: User) {
     if (!friend.id) {
       return;
@@ -90,67 +139,149 @@ export default function FriendsScreen() {
       <ErrorBanner message={error} />
 
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Заявки</Text>
-        <AppButton
-          title="Обновить"
-          variant="ghost"
-          loading={loading}
-          onPress={load}
-        />
+        <Text style={styles.sectionTitle}>Друзья</Text>
+        <View style={styles.headerActions}>
+          <AppButton
+            title="Поиск"
+            variant="secondary"
+            onPress={() => navigation.navigate('UserSearch')}
+          />
+          <AppButton
+            title="Обновить"
+            variant="ghost"
+            loading={loading}
+            onPress={load}
+          />
+        </View>
       </View>
 
-      {requests.length === 0 ? (
-        <Notice title="Новых заявок нет" />
+      {loading && !hasLoaded ? (
+        <LoadingState text="Загружаем друзей" />
       ) : (
-        <View style={styles.listCard}>
-          {requests.map(request => (
-            <View key={request.id} style={styles.requestRow}>
-              <View style={styles.userMeta}>
-                <Text style={styles.userName}>
-                  {request.user?.name || request.user?.email || 'Пользователь'}
-                </Text>
-                <Text style={styles.userEmail}>{request.user?.email}</Text>
+        <>
+          <View style={styles.subsection}>
+            <Text style={styles.subsectionTitle}>Заявки в друзья</Text>
+            {requests.length === 0 ? (
+              <EmptyState
+                title="Заявок пока нет"
+                text="Когда кто-то отправит вам заявку, она появится здесь."
+              />
+            ) : (
+              <View style={styles.listCard}>
+                {requests.map(request => (
+                  <View key={request.id} style={styles.requestRow}>
+                    <Pressable
+                      style={styles.requestUser}
+                      onPress={() => request.user && openProfile(request.user)}
+                    >
+                      <UserAvatar user={request.user} />
+                      <View style={styles.userMeta}>
+                        <Text style={styles.userName}>
+                          {request.user?.name ||
+                            request.user?.email ||
+                            'Пользователь'}
+                        </Text>
+                        {request.user?.email ? (
+                          <Text style={styles.userEmail}>
+                            {request.user.email}
+                          </Text>
+                        ) : null}
+                      </View>
+                    </Pressable>
+                    <View style={styles.requestActions}>
+                      <AppButton
+                        title="Профиль"
+                        variant="secondary"
+                        style={styles.actionButton}
+                        onPress={() =>
+                          request.user && openProfile(request.user)
+                        }
+                      />
+                      <AppButton
+                        title="Принять"
+                        style={styles.actionButton}
+                        loading={busyId === request.id}
+                        onPress={() => acceptRequest(request.id)}
+                      />
+                      <AppButton
+                        title="Отклонить"
+                        variant="ghost"
+                        style={styles.actionButton}
+                        loading={busyId === request.id}
+                        onPress={() => rejectRequest(request)}
+                      />
+                    </View>
+                  </View>
+                ))}
               </View>
-              <AppButton
-                title="Принять"
-                loading={busyId === request.id}
-                onPress={() => acceptRequest(request.id)}
-              />
-            </View>
-          ))}
-        </View>
+            )}
+          </View>
+
+          <View style={styles.subsection}>
+            <Text style={styles.subsectionTitle}>Мои друзья</Text>
+            <FlatList
+              data={friends}
+              keyExtractor={item => String(item.id ?? item.email)}
+              scrollEnabled={false}
+              ListEmptyComponent={
+                <EmptyState
+                  title="У вас пока нет друзей"
+                  text="Добавьте друзей через поиск или примите входящую заявку."
+                />
+              }
+              renderItem={({ item }) => (
+                <Pressable
+                  style={styles.friendRow}
+                  onPress={() => openChat(item)}
+                >
+                  <UserAvatar user={item} />
+                  <View style={styles.userMeta}>
+                    <Text style={styles.userName}>
+                      {item.name || item.email}
+                    </Text>
+                    <Text style={styles.userEmail}>{item.email}</Text>
+                  </View>
+                  {item.id ? (
+                    <AppButton
+                      title="Профиль"
+                      variant="ghost"
+                      style={styles.friendAction}
+                      onPress={() => openProfile(item)}
+                    />
+                  ) : null}
+                  {item.id ? (
+                    <AppButton
+                      title="Удалить"
+                      variant="secondary"
+                      style={styles.friendAction}
+                      loading={busyId === item.id}
+                      onPress={() => removeFriend(item.id as number)}
+                    />
+                  ) : null}
+                </Pressable>
+              )}
+            />
+          </View>
+        </>
       )}
-
-      <Text style={styles.sectionTitle}>Друзья</Text>
-
-      <FlatList
-        data={friends}
-        keyExtractor={item => String(item.id ?? item.email)}
-        scrollEnabled={false}
-        ListEmptyComponent={<Notice title="Список друзей пуст" />}
-        renderItem={({ item }) => (
-          <Pressable style={styles.friendRow} onPress={() => openChat(item)}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>
-                {(item.name || item.email).slice(0, 1).toUpperCase()}
-              </Text>
-            </View>
-            <View style={styles.userMeta}>
-              <Text style={styles.userName}>{item.name || item.email}</Text>
-              <Text style={styles.userEmail}>{item.email}</Text>
-            </View>
-            {item.id ? (
-              <AppButton
-                title="Удалить"
-                variant="secondary"
-                loading={busyId === item.id}
-                onPress={() => removeFriend(item.id as number)}
-              />
-            ) : null}
-          </Pressable>
-        )}
-      />
     </Screen>
+  );
+}
+
+function UserAvatar({ user }: { user?: User }) {
+  return (
+    <View style={styles.avatar}>
+      {user?.avatar ? (
+        <Image
+          source={{ uri: assetURL(user.avatar) }}
+          style={styles.avatarImage}
+        />
+      ) : (
+        <Text style={styles.avatarText}>
+          {(user?.name || user?.email || '?').slice(0, 1).toUpperCase()}
+        </Text>
+      )}
+    </View>
   );
 }
 
@@ -161,10 +292,23 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12,
   },
+  headerActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
   sectionTitle: {
     color: colors.text,
     fontSize: 20,
     lineHeight: 26,
+    fontWeight: '800',
+  },
+  subsection: {
+    gap: 10,
+  },
+  subsectionTitle: {
+    color: colors.text,
+    fontSize: 17,
+    lineHeight: 23,
     fontWeight: '800',
   },
   listCard: {
@@ -179,6 +323,18 @@ const styles = StyleSheet.create({
     gap: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
+  },
+  requestUser: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  requestActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  actionButton: {
+    flex: 1,
   },
   friendRow: {
     flexDirection: 'row',
@@ -198,6 +354,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.surfaceMuted,
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: 44,
+    height: 44,
   },
   avatarText: {
     color: colors.accentStrong,
@@ -216,5 +377,8 @@ const styles = StyleSheet.create({
   userEmail: {
     color: colors.muted,
     fontSize: 13,
+  },
+  friendAction: {
+    paddingHorizontal: 10,
   },
 });

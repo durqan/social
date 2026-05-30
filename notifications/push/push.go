@@ -1,20 +1,29 @@
 package push
 
 import (
+	"bytes"
+	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
+	"golang.org/x/oauth2/google"
 
 	"notifications/models"
 )
 
 var ErrSubscriptionInvalid = errors.New("push subscription invalid")
+var ErrMobileTokenInvalid = errors.New("mobile push token invalid")
+
+const firebaseMessagingScope = "https://www.googleapis.com/auth/firebase.messaging"
 
 type Payload struct {
 	Title          string `json:"title"`
@@ -28,11 +37,14 @@ type Payload struct {
 }
 
 type Service struct {
-	publicKey  string
-	privateKey string
-	subject    string
-	httpClient *http.Client
-	enabled    bool
+	publicKey     string
+	privateKey    string
+	subject       string
+	httpClient    *http.Client
+	webEnabled    bool
+	fcmProjectID  string
+	fcmHTTPClient *http.Client
+	fcmEnabled    bool
 }
 
 func NewServiceFromEnv() *Service {
@@ -43,26 +55,43 @@ func NewServiceFromEnv() *Service {
 		subject = "mailto:example@example.com"
 	}
 
-	enabled := publicKey != "" && privateKey != ""
-	if !enabled {
+	webEnabled := publicKey != "" && privateKey != ""
+	if !webEnabled {
 		log.Println("web push disabled: VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY are required")
 	}
 
+	fcmProjectID, fcmHTTPClient := newFCMClientFromEnv()
+	fcmEnabled := fcmProjectID != "" && fcmHTTPClient != nil
+	if !fcmEnabled {
+		log.Println("FCM push disabled: set FCM_PROJECT_ID and Firebase service account credentials")
+	}
+
 	return &Service{
-		publicKey:  publicKey,
-		privateKey: privateKey,
-		subject:    subject,
-		httpClient: &http.Client{Timeout: 10 * time.Second},
-		enabled:    enabled,
+		publicKey:     publicKey,
+		privateKey:    privateKey,
+		subject:       subject,
+		httpClient:    &http.Client{Timeout: 10 * time.Second},
+		webEnabled:    webEnabled,
+		fcmProjectID:  fcmProjectID,
+		fcmHTTPClient: fcmHTTPClient,
+		fcmEnabled:    fcmEnabled,
 	}
 }
 
 func (s *Service) Enabled() bool {
-	return s != nil && s.enabled
+	return s != nil && (s.webEnabled || s.fcmEnabled)
+}
+
+func (s *Service) WebPushEnabled() bool {
+	return s != nil && s.webEnabled
+}
+
+func (s *Service) FCMEnabled() bool {
+	return s != nil && s.fcmEnabled
 }
 
 func (s *Service) Send(subscription models.PushSubscription, payload Payload) error {
-	if !s.Enabled() {
+	if !s.WebPushEnabled() {
 		return nil
 	}
 
@@ -102,6 +131,147 @@ func (s *Service) Send(subscription models.PushSubscription, payload Payload) er
 	return nil
 }
 
+func (s *Service) SendMobile(token models.MobilePushToken, payload Payload) error {
+	if !s.FCMEnabled() {
+		return nil
+	}
+
+	body, err := json.Marshal(fcmSendRequest{
+		Message: fcmMessage{
+			Token: token.Token,
+			Notification: fcmNotification{
+				Title: payload.Title,
+				Body:  payload.Body,
+			},
+			Data: map[string]string{
+				"type":            payload.Type,
+				"url":             payload.URL,
+				"tag":             payload.Tag,
+				"notification_id": fmt.Sprintf("%d", payload.NotificationID),
+				"entity_id":       fmt.Sprintf("%d", payload.EntityID),
+				"actor_id":        fmt.Sprintf("%d", payload.ActorID),
+			},
+			Android: fcmAndroidConfig{
+				Priority: "HIGH",
+				Notification: fcmAndroidNotification{
+					ChannelID: "social_notifications",
+				},
+			},
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("https://fcm.googleapis.com/v1/projects/%s/messages:send", s.fcmProjectID)
+	resp, err := s.fcmHTTPClient.Post(url, "application/json", bytes.NewReader(body))
+	if resp != nil {
+		defer resp.Body.Close()
+	}
+	if err != nil {
+		return err
+	}
+
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if resp.StatusCode >= http.StatusBadRequest {
+		if isInvalidFCMResponse(resp.StatusCode, string(respBody)) {
+			return fmt.Errorf("%w: status %d", ErrMobileTokenInvalid, resp.StatusCode)
+		}
+		return fmt.Errorf("FCM push failed with status %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
 func isInvalidStatus(status int) bool {
 	return status == http.StatusGone || status == http.StatusNotFound
+}
+
+type fcmSendRequest struct {
+	Message fcmMessage `json:"message"`
+}
+
+type fcmMessage struct {
+	Token        string            `json:"token"`
+	Notification fcmNotification   `json:"notification"`
+	Data         map[string]string `json:"data"`
+	Android      fcmAndroidConfig  `json:"android"`
+}
+
+type fcmNotification struct {
+	Title string `json:"title"`
+	Body  string `json:"body"`
+}
+
+type fcmAndroidConfig struct {
+	Priority     string                 `json:"priority"`
+	Notification fcmAndroidNotification `json:"notification"`
+}
+
+type fcmAndroidNotification struct {
+	ChannelID string `json:"channel_id"`
+}
+
+func newFCMClientFromEnv() (string, *http.Client) {
+	credentials, err := firebaseCredentialsFromEnv()
+	if err != nil {
+		log.Printf("FCM credentials unavailable: %v", err)
+		return "", nil
+	}
+	if len(credentials) == 0 {
+		return "", nil
+	}
+
+	projectID := strings.TrimSpace(os.Getenv("FCM_PROJECT_ID"))
+	if projectID == "" {
+		projectID = projectIDFromCredentials(credentials)
+	}
+	if projectID == "" {
+		return "", nil
+	}
+
+	cfg, err := google.JWTConfigFromJSON(credentials, firebaseMessagingScope)
+	if err != nil {
+		log.Printf("FCM credentials invalid: %v", err)
+		return "", nil
+	}
+
+	return projectID, cfg.Client(context.Background())
+}
+
+func firebaseCredentialsFromEnv() ([]byte, error) {
+	if encoded := strings.TrimSpace(os.Getenv("FIREBASE_SERVICE_ACCOUNT_JSON_BASE64")); encoded != "" {
+		return base64.StdEncoding.DecodeString(encoded)
+	}
+
+	if raw := strings.TrimSpace(os.Getenv("FIREBASE_SERVICE_ACCOUNT_JSON")); raw != "" {
+		return []byte(raw), nil
+	}
+
+	if path := strings.TrimSpace(os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")); path != "" {
+		return os.ReadFile(path)
+	}
+
+	return nil, nil
+}
+
+func projectIDFromCredentials(credentials []byte) string {
+	var payload struct {
+		ProjectID string `json:"project_id"`
+	}
+	if err := json.Unmarshal(credentials, &payload); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(payload.ProjectID)
+}
+
+func isInvalidFCMResponse(status int, body string) bool {
+	if status == http.StatusNotFound {
+		return true
+	}
+
+	body = strings.ToUpper(body)
+	return strings.Contains(body, "UNREGISTERED") ||
+		strings.Contains(body, "REGISTRATION_TOKEN_NOT_REGISTERED") ||
+		strings.Contains(body, "NOT A VALID FCM REGISTRATION TOKEN")
 }

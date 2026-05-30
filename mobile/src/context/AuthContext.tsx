@@ -13,6 +13,7 @@ import { getApiErrorMessage } from '../api/http';
 import type { LoginPayload, RegisterPayload, User } from '../api/types';
 import { userApi } from '../api/users';
 import { chatSocket } from '../api/ws';
+import { revokeRegisteredPushToken } from '../notifications/pushNotifications';
 
 type AuthContextValue = {
   user: User | null;
@@ -90,7 +91,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     chatSocket.disconnect();
-    await authApi.logout();
+    await revokeRegisteredPushToken().catch(() => undefined);
+    try {
+      await authApi.logout();
+    } catch {
+      // Local session state is cleared even if the server is temporarily unavailable.
+    }
+    setAuthError(null);
     setUser(null);
   }, []);
 

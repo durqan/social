@@ -12,9 +12,13 @@ import {
 import { launchImageLibrary } from 'react-native-image-picker';
 import type { Asset } from 'react-native-image-picker';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 
-import { assetURL, CHAT_IMAGE_MAX_COUNT, CHAT_IMAGE_MIME_TYPES } from '../../config/env';
+import {
+  assetURL,
+  CHAT_IMAGE_MAX_COUNT,
+  CHAT_IMAGE_MIME_TYPES,
+} from '../../config/env';
 import { getApiErrorMessage } from '../../api/http';
 import {
   messageApi,
@@ -24,42 +28,98 @@ import {
 import type { Message, MessageAttachment } from '../../api/types';
 import { chatSocket, type WsEvent } from '../../api/ws';
 import { AppButton } from '../../components/AppButton';
-import { ErrorBanner } from '../../components/Feedback';
+import {
+  EmptyState,
+  ErrorBanner,
+  LoadingState,
+} from '../../components/Feedback';
 import { Screen } from '../../components/Screen';
+import { useAppLifecycle } from '../../context/AppLifecycleContext';
 import { useAuth } from '../../context/AuthContext';
+import { useCall } from '../../context/CallContext';
+import { useUnread } from '../../context/UnreadContext';
 import { colors } from '../../theme/colors';
 import { formatDateTime } from '../../utils/format';
 import type { ChatStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'Chat'>;
+type LoadMode = 'initial' | 'refresh' | 'silent';
 
 export default function ChatScreen({ route }: Props) {
   const { user } = useAuth();
+  const { startAudioCall, startVideoCall, status: callStatus } = useCall();
+  const isFocused = useIsFocused();
+  const { networkConnected, resumeCount } = useAppLifecycle();
+  const { refreshUnreadCount, signalChatDataChanged } = useUnread();
   const otherUserId = route.params.userId;
   const listRef = useRef<FlatList<Message>>(null);
+  const hasLoadedRef = useRef(false);
+  const draftRef = useRef<{
+    input: string;
+    pendingImages: LocalChatImage[];
+  } | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [pendingImages, setPendingImages] = useState<LocalChatImage[]>([]);
   const [loading, setLoading] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [wsConnected, setWsConnected] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const [sending, setSending] = useState<'uploading' | 'sending' | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<{
+    current: number;
+    total: number;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const loadMessages = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await messageApi.getMessagesWith(otherUserId, {
-        limit: 50,
-      });
-      setMessages(response.messages);
-      await messageApi.markAsRead(otherUserId);
-    } catch (apiError) {
-      setError(getApiErrorMessage(apiError));
-    } finally {
-      setLoading(false);
-    }
-  }, [otherUserId]);
+  const markConversationRead = useCallback(async () => {
+    await messageApi.markAsRead(otherUserId);
+    refreshUnreadCount().catch(() => undefined);
+    signalChatDataChanged();
+    setMessages(previous =>
+      previous.map(message =>
+        message.from_id === otherUserId && message.to_id === user?.id
+          ? {
+              ...message,
+              is_read: true,
+            }
+          : message,
+      ),
+    );
+  }, [otherUserId, refreshUnreadCount, signalChatDataChanged, user?.id]);
+
+  const loadMessages = useCallback(
+    async (mode: LoadMode = 'initial') => {
+      const showInitialLoading = mode === 'initial' && !hasLoadedRef.current;
+
+      if (showInitialLoading) {
+        setLoading(true);
+      }
+      if (mode === 'refresh') {
+        setRefreshing(true);
+      }
+
+      setError(null);
+      try {
+        const response = await messageApi.getMessagesWith(otherUserId, {
+          limit: 50,
+        });
+        setMessages(response.messages);
+        markConversationRead().catch(() => undefined);
+      } catch (apiError) {
+        setError(getApiErrorMessage(apiError));
+      } finally {
+        hasLoadedRef.current = true;
+        setHasLoaded(true);
+        if (showInitialLoading) {
+          setLoading(false);
+        }
+        if (mode === 'refresh') {
+          setRefreshing(false);
+        }
+      }
+    },
+    [markConversationRead, otherUserId],
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -67,11 +127,55 @@ export default function ChatScreen({ route }: Props) {
     }, [loadMessages]),
   );
 
+  useEffect(() => {
+    if (!isFocused || resumeCount === 0) {
+      return;
+    }
+
+    loadMessages('silent').catch(() => undefined);
+  }, [isFocused, loadMessages, resumeCount]);
+
+  useEffect(() => {
+    if (!isFocused || !networkConnected) {
+      return;
+    }
+
+    loadMessages('silent').catch(() => undefined);
+  }, [isFocused, loadMessages, networkConnected]);
+
+  const restoreDraftAfterSendError = useCallback(() => {
+    if (!draftRef.current) {
+      return;
+    }
+
+    setInput(draftRef.current.input);
+    setPendingImages(draftRef.current.pendingImages);
+    draftRef.current = null;
+  }, []);
+
   const handleSocketEvent = useCallback(
     (event: WsEvent) => {
       if (event.type === 'message:error') {
         const payload = event.payload as { error: string };
+        restoreDraftAfterSendError();
         setError(getApiErrorMessage(new Error(payload.error)));
+        return;
+      }
+
+      if (event.type === 'message:read') {
+        const payload = event.payload as { from_id: number; to_id: number };
+        refreshUnreadCount().catch(() => undefined);
+        setMessages(previous =>
+          previous.map(message =>
+            message.from_id === payload.to_id &&
+            message.to_id === payload.from_id
+              ? {
+                  ...message,
+                  is_read: true,
+                }
+              : message,
+          ),
+        );
         return;
       }
 
@@ -88,6 +192,10 @@ export default function ChatScreen({ route }: Props) {
         return;
       }
 
+      if (message.from_id === user?.id && message.to_id === otherUserId) {
+        draftRef.current = null;
+      }
+
       setMessages(previous => {
         if (previous.some(item => item.id === message.id)) {
           return previous;
@@ -96,34 +204,41 @@ export default function ChatScreen({ route }: Props) {
       });
 
       if (message.from_id === otherUserId) {
-        messageApi.markAsRead(otherUserId).catch(() => undefined);
-        chatSocket.sendReadReceipt(otherUserId);
+        markConversationRead().catch(() => undefined);
       }
     },
-    [otherUserId, user?.id],
+    [
+      markConversationRead,
+      otherUserId,
+      refreshUnreadCount,
+      restoreDraftAfterSendError,
+      user?.id,
+    ],
   );
 
   useEffect(() => {
     const unsubscribeMessages = chatSocket.onMessage(handleSocketEvent);
-    const unsubscribeStatus = chatSocket.onStatus(setWsConnected);
     chatSocket.connect();
 
     return () => {
       unsubscribeMessages();
-      unsubscribeStatus();
     };
   }, [handleSocketEvent]);
 
   useEffect(() => {
     if (messages.length > 0) {
-      requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+      requestAnimationFrame(() =>
+        listRef.current?.scrollToEnd({ animated: true }),
+      );
     }
   }, [messages.length]);
 
   async function pickImages() {
     const remaining = CHAT_IMAGE_MAX_COUNT - pendingImages.length;
     if (remaining <= 0) {
-      setError(`Можно прикрепить не больше ${CHAT_IMAGE_MAX_COUNT} изображений`);
+      setError(
+        `Можно прикрепить не больше ${CHAT_IMAGE_MAX_COUNT} изображений`,
+      );
       return;
     }
 
@@ -139,7 +254,7 @@ export default function ChatScreen({ route }: Props) {
     }
 
     if (result.errorMessage) {
-      setError(result.errorMessage);
+      setError('Не удалось выбрать изображение. Попробуйте еще раз.');
       return;
     }
 
@@ -166,27 +281,65 @@ export default function ChatScreen({ route }: Props) {
       return;
     }
 
-    setSending(true);
+    let uploadFailed = false;
+    setSending(pendingImages.length > 0 ? 'uploading' : 'sending');
+    setUploadProgress(
+      pendingImages.length > 0
+        ? {
+            current: 0,
+            total: pendingImages.length,
+          }
+        : null,
+    );
     setError(null);
     try {
       const attachments: MessageAttachment[] = [];
-      for (const image of pendingImages) {
-        attachments.push(await messageApi.uploadImage(image));
+      for (const [index, image] of pendingImages.entries()) {
+        try {
+          attachments.push(await messageApi.uploadImage(image));
+          setUploadProgress({
+            current: index + 1,
+            total: pendingImages.length,
+          });
+        } catch (apiError) {
+          uploadFailed = true;
+          throw apiError;
+        }
       }
+
+      setSending('sending');
+      setUploadProgress(null);
+
+      draftRef.current = {
+        input,
+        pendingImages,
+      };
 
       if (chatSocket.isConnected()) {
         chatSocket.sendMessage(otherUserId, trimmed, attachments);
       } else {
-        const sent = await messageApi.sendMessage(otherUserId, trimmed, attachments);
+        const sent = await messageApi.sendMessage(
+          otherUserId,
+          trimmed,
+          attachments,
+        );
+        draftRef.current = null;
         setMessages(previous => [...previous, sent]);
+        signalChatDataChanged();
       }
 
       setInput('');
       setPendingImages([]);
     } catch (apiError) {
-      setError(getApiErrorMessage(apiError));
+      const message = getApiErrorMessage(apiError);
+      setError(
+        uploadFailed
+          ? `${message} Удалите изображение из предпросмотра или попробуйте отправить снова.`
+          : message,
+      );
     } finally {
-      setSending(false);
+      setSending(null);
+      setUploadProgress(null);
     }
   }
 
@@ -196,35 +349,53 @@ export default function ChatScreen({ route }: Props) {
 
   return (
     <Screen scroll={false} contentContainerStyle={styles.container}>
-      <View style={styles.socketBar}>
-        <Text style={styles.socketText}>
-          {wsConnected ? 'Realtime подключен' : 'REST режим, realtime недоступен'}
-        </Text>
-      </View>
-
       <ErrorBanner message={error} />
 
-      {loading ? (
+      <View style={styles.callActions}>
+        <AppButton
+          title="Аудио"
+          variant="secondary"
+          disabled={callStatus !== 'idle'}
+          onPress={() => startAudioCall(otherUserId, route.params.name)}
+        />
+        <AppButton
+          title="Видео"
+          variant="secondary"
+          disabled={callStatus !== 'idle'}
+          onPress={() => startVideoCall(otherUserId, route.params.name)}
+        />
+      </View>
+
+      {loading && !hasLoaded ? (
         <View style={styles.loading}>
-          <ActivityIndicator color={colors.accent} />
+          <LoadingState text="Загружаем сообщения" />
         </View>
       ) : (
         <FlatList
           ref={listRef}
           data={messages}
           keyExtractor={item => String(item.id)}
+          refreshing={refreshing}
+          onRefresh={() => loadMessages('refresh')}
+          keyboardShouldPersistTaps="handled"
           renderItem={({ item }) => (
             <MessageBubble
               message={item}
               outgoing={item.from_id === user?.id}
             />
           )}
-          contentContainerStyle={styles.messageList}
+          contentContainerStyle={[
+            styles.messageList,
+            messages.length === 0 && styles.emptyMessageList,
+          ]}
           onContentSizeChange={() =>
             listRef.current?.scrollToEnd({ animated: true })
           }
           ListEmptyComponent={
-            <Text style={styles.emptyText}>Сообщений пока нет</Text>
+            <EmptyState
+              title="Сообщений пока нет"
+              text="Напишите первым или отправьте изображение."
+            />
           }
         />
       )}
@@ -237,7 +408,8 @@ export default function ChatScreen({ route }: Props) {
               <Pressable
                 accessibilityRole="button"
                 style={styles.previewRemove}
-                onPress={() => removePendingImage(image.id)}>
+                onPress={() => removePendingImage(image.id)}
+              >
                 <Text style={styles.previewRemoveText}>×</Text>
               </Pressable>
             </View>
@@ -245,8 +417,26 @@ export default function ChatScreen({ route }: Props) {
         </View>
       ) : null}
 
+      {sending ? (
+        <View style={styles.sendStatus}>
+          <ActivityIndicator color={colors.accent} />
+          <Text style={styles.sendStatusText}>
+            {sending === 'uploading'
+              ? uploadProgress
+                ? `Загружаем изображения: ${uploadProgress.current} из ${uploadProgress.total}`
+                : 'Загружаем изображение'
+              : 'Отправляем сообщение'}
+          </Text>
+        </View>
+      ) : null}
+
       <View style={styles.composer}>
-        <AppButton title="Фото" variant="secondary" onPress={pickImages} />
+        <AppButton
+          title="Фото"
+          variant="secondary"
+          disabled={Boolean(sending)}
+          onPress={pickImages}
+        />
         <TextInput
           value={input}
           onChangeText={setInput}
@@ -254,9 +444,17 @@ export default function ChatScreen({ route }: Props) {
           placeholderTextColor={colors.soft}
           multiline
           maxLength={1000}
+          editable={!sending}
           style={styles.input}
         />
-        <AppButton title="Отпр." loading={sending} onPress={sendMessage} />
+        <AppButton
+          title="Отправить"
+          disabled={
+            Boolean(sending) || (!input.trim() && pendingImages.length === 0)
+          }
+          loading={Boolean(sending)}
+          onPress={sendMessage}
+        />
       </View>
     </Screen>
   );
@@ -285,7 +483,9 @@ function MessageBubble({
 }) {
   return (
     <View style={[styles.bubbleRow, outgoing && styles.bubbleRowOutgoing]}>
-      <View style={[styles.bubble, outgoing ? styles.outgoing : styles.incoming]}>
+      <View
+        style={[styles.bubble, outgoing ? styles.outgoing : styles.incoming]}
+      >
         {message.content ? (
           <Text style={[styles.messageText, outgoing && styles.outgoingText]}>
             {message.content}
@@ -304,6 +504,11 @@ function MessageBubble({
         <Text style={[styles.messageDate, outgoing && styles.outgoingDate]}>
           {formatDateTime(message.created_at)}
         </Text>
+        {outgoing ? (
+          <Text style={styles.outgoingStatus}>
+            {message.is_read ? 'Прочитано' : 'Отправлено'}
+          </Text>
+        ) : null}
       </View>
     </View>
   );
@@ -314,32 +519,25 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 0,
   },
-  socketBar: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: colors.surface,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-  },
-  socketText: {
-    color: colors.muted,
-    fontSize: 12,
-    textAlign: 'center',
-  },
   loading: {
     flex: 1,
-    alignItems: 'center',
     justifyContent: 'center',
+    padding: 16,
+  },
+  callActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingTop: 10,
   },
   messageList: {
     padding: 16,
     gap: 8,
     flexGrow: 1,
   },
-  emptyText: {
-    color: colors.muted,
-    textAlign: 'center',
-    marginTop: 24,
+  emptyMessageList: {
+    justifyContent: 'center',
   },
   bubbleRow: {
     flexDirection: 'row',
@@ -377,6 +575,12 @@ const styles = StyleSheet.create({
   },
   outgoingDate: {
     color: 'rgba(255, 255, 255, 0.78)',
+  },
+  outgoingStatus: {
+    color: 'rgba(255, 255, 255, 0.78)',
+    fontSize: 11,
+    lineHeight: 14,
+    alignSelf: 'flex-end',
   },
   messageImage: {
     width: 210,
@@ -419,6 +623,21 @@ const styles = StyleSheet.create({
     fontSize: 18,
     lineHeight: 20,
     fontWeight: '800',
+  },
+  sendStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  sendStatusText: {
+    color: colors.muted,
+    fontSize: 13,
+    lineHeight: 18,
   },
   composer: {
     flexDirection: 'row',

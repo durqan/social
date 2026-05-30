@@ -1,18 +1,19 @@
 # Social Mobile
 
-React Native Android client для существующего backend API. Приложение живет отдельно от `frontend` и `backend` и не требует изменений web-клиента.
+React Native Android client для существующего backend API. Приложение живет отдельно от `frontend` и `backend`; мобильные изменения не требуют изменений web-клиента.
 
 ## Требования
 
 - Node.js 22.11+.
 - npm.
 - Android Studio с Android SDK, platform 36, build tools 36.
-- JDK 17+ в `PATH`.
+- JDK 17+ в `PATH` для локальной Android-сборки.
 - Запущенный backend API.
+- Для реальных FCM push notifications: Firebase проект и `mobile/android/app/google-services.json`.
 
 ## API base URL
 
-По умолчанию Android emulator ходит в backend по адресу:
+В dev-сборке Android emulator по умолчанию ходит в backend по адресу:
 
 ```sh
 http://10.0.2.2:8080
@@ -30,6 +31,8 @@ SOCIAL_API_BASE_URL=http://192.168.1.10:8080 npm run start
 SOCIAL_API_BASE_URL=https://example.com/api npm run start
 ```
 
+В пользовательском UI API URL не показывается.
+
 ## Установка и запуск
 
 ```sh
@@ -45,60 +48,48 @@ cd mobile
 npm run android
 ```
 
-## Debug APK
+## Локальная APK-сборка
+
+Debug APK:
 
 ```sh
 cd mobile
 npm run build:android
 ```
 
-APK после сборки:
-
-```text
-mobile/android/app/build/outputs/apk/debug/app-debug.apk
-```
-
-Release APK/AAB требует собственного signing config и production keystore. Фейковые release-ключи здесь не настраивались.
-
-## Release APK
+Release APK:
 
 ```sh
 cd mobile
-SOCIAL_API_BASE_URL=https://example.com/api npm run build:android:release
+SOCIAL_API_BASE_URL=https://example.com/api \
+SOCIAL_NOTIFICATIONS_BASE_URL=https://example.com/notifications-api \
+npm run build:android:release
 ```
+
+Release variant собирает JS bundle внутрь APK, поэтому установленное приложение запускается без Metro. Для release используйте публичный HTTPS backend URL; не используйте `localhost`, `127.0.0.1`, `10.0.2.2` или LAN/private IP.
 
 APK после сборки:
 
 ```text
+mobile/android/app/build/outputs/apk/debug/app-debug.apk
 mobile/android/app/build/outputs/apk/release/app-release.apk
 ```
 
-Release variant собирает JS bundle внутрь APK, поэтому установленное приложение запускается без Metro. `SOCIAL_API_BASE_URL` встраивается в JS bundle во время сборки. Для production/release используйте публичный HTTPS backend URL, например `https://example.com/api` при reverse proxy или `https://api.example.com` при прямом backend API. Не используйте `localhost`, `127.0.0.1`, `10.0.2.2` или LAN IP.
-
-Текущая CI-сборка подписывает release APK debug keystore из React Native template; для production публикации нужен отдельный signing config.
+Текущая CI-сборка подписывает release APK debug keystore из React Native template. Для production публикации нужен отдельный signing config и production keystore.
 
 ## Build APK via GitHub Actions
 
-1. Откройте GitHub -> Actions.
-2. Выберите workflow `mobile-android-apk`.
-3. Нажмите `Run workflow`.
-4. В поле `api_base_url` введите публичный HTTPS backend URL, например `https://example.com/api`.
-5. После завершения job откройте run и скачайте artifact `social-mobile-debug-apk`.
-6. Для APK без Metro скачайте artifact `social-mobile-release-apk`.
+1. Откройте GitHub repository settings.
+2. Перейдите в `Secrets and variables` -> `Actions` -> `Variables`.
+3. Добавьте repository variable `SOCIAL_API_BASE_URL`, например `https://example.com/api`.
+4. При отдельном notifications route добавьте `SOCIAL_NOTIFICATIONS_BASE_URL`, например `https://example.com/notifications-api`.
+5. Для FCM добавьте GitHub Secret `GOOGLE_SERVICES_JSON_BASE64`.
+6. Откройте GitHub -> Actions.
+7. Выберите workflow `mobile-android-apk`.
+8. Нажмите `Run workflow`. Поле `api_base_url` можно оставить пустым; оно нужно только как временный override.
+9. После завершения job скачайте artifacts `social-mobile-debug-apk` и `social-mobile-release-apk`.
 
-Workflow передает `api_base_url` в `SOCIAL_API_BASE_URL` для всей сборки, проверяет, что URL начинается с `https://`, не указывает на localhost/emulator/LAN/private IP, не содержит двойной путь `/api/api`, и отдельно проверяет, что старая зависимость `@react-native-cookies/cookies` не установлена.
-
-Artifact содержит debug APK:
-
-```text
-mobile/android/app/build/outputs/apk/debug/app-debug.apk
-```
-
-Release artifact содержит:
-
-```text
-mobile/android/app/build/outputs/apk/release/app-release.apk
-```
+Workflow проверяет, что `SOCIAL_API_BASE_URL` начинается с `https://`, не указывает на localhost/emulator/LAN/private IP, не содержит двойной путь `/api/api`, прогоняет `tsc`, `lint`, `jest`, а затем собирает debug и release APK.
 
 ## Реализованные экраны
 
@@ -106,8 +97,10 @@ mobile/android/app/build/outputs/apk/release/app-release.apk
 - Register.
 - Email verification notice.
 - Home.
-- Profile.
-- Friends.
+- Profile и редактирование поддержанных backend полей.
+- Public user profile.
+- Friends и входящие заявки.
+- User search.
 - Chat list.
 - Chat screen.
 - Settings / Logout.
@@ -121,8 +114,13 @@ mobile/android/app/build/outputs/apk/release/app-release.apk
 - `POST /auth/refresh`
 - `POST /auth/send-verification`
 - `GET /users/profile`
+- `PATCH /users/:id`
+- `PATCH /users/:id/avatar`
+- `GET /users/search?q=...`
 - `GET /users/friends/list`
 - `GET /users/friends/requests`
+- `GET /users/friends/status/:id`
+- `POST /users/friends/request/:id`
 - `PATCH /users/friends/:id/accept`
 - `DELETE /users/friends/:id`
 - `GET /messages/conversations`
@@ -131,26 +129,93 @@ mobile/android/app/build/outputs/apk/release/app-release.apk
 - `GET /messages/unread/count`
 - `POST /messages/upload`
 - `POST /messages/send/:toId`
-- `GET /ws` for realtime chat events when cookie auth works in React Native.
+- `GET /ws`
+- `POST /push/mobile-token` в notifications service
+- `DELETE /push/mobile-token` в notifications service
 
 ## Auth и хранение сессии
 
-Backend уже использует httpOnly cookies для access/refresh session и CSRF cookie/header. Mobile client не сохраняет access token в AsyncStorage или localStorage-подобном хранилище. Cookies хранятся в native cookie jar через cookie manager, CSRF token читается из cookie и отправляется в `X-CSRF-Token`.
+Backend использует httpOnly cookies для access/refresh session и CSRF cookie/header. Mobile client не сохраняет access token в AsyncStorage или localStorage-подобном хранилище. Cookies хранятся в native cookie jar через cookie manager, CSRF token читается из cookie и отправляется в `X-CSRF-Token`.
 
 REST refresh flow:
 
 1. Unsafe requests получают CSRF через `/auth/csrf`.
 2. При `401` клиент вызывает `/auth/refresh`.
 3. Исходный запрос повторяется один раз.
-4. При logout cookies очищаются локально.
+4. При logout локальная сессия очищается даже если сервер временно недоступен.
+
+## Профиль, друзья и поиск
+
+- Профиль показывает имя, email, статус email verification, аватар или placeholder, bio, age и дату регистрации, если поле пришло от API.
+- Редактируются только поля, которые поддерживает backend: `name`, `email`, `age`, `bio`.
+- При смене email показывается предупреждение о повторном подтверждении.
+- Аватар загружается через существующий avatar endpoint.
+- Friends screen показывает друзей и входящие заявки, поддерживает принять, отклонить, открыть профиль, открыть чат и удалить из друзей.
+- Search screen использует backend search API с debounce и показывает состояния: добавить, заявка отправлена, уже друг, недоступно.
 
 ## Чат и изображения
 
-- Диалоги загружаются через REST.
-- Сообщения загружаются через REST.
-- Отправка текста и изображений работает через WebSocket при активном соединении, иначе fallback через REST.
+- Диалоги и сообщения загружаются через REST.
+- Chat list показывает собеседника, последний текст или `Изображение`, время и unread indicator.
+- Chat screen показывает bubble UI: мои сообщения справа, сообщения собеседника слева, время, изображения внутри bubble и статус прочтения/отправки, если данные есть.
+- Отправка текста и изображений работает через WebSocket при активном соединении, иначе используется REST fallback.
 - Image picker поддерживает JPEG, PNG, WebP, максимум 10 MB на файл и максимум 5 изображений.
-- Перед отправкой показывается preview выбранных изображений.
+- Перед отправкой показывается preview, загрузка имеет состояние progress/error и возможность удалить изображение.
+- При открытии чата вызывается mark as read, если API доступен.
+
+## 1-на-1 звонки
+
+- Используется `react-native-webrtc`.
+- Signaling идет через существующий backend WebSocket: `call:offer`, `call:answer`, `call:ice`, `call:end`, `call:reject`.
+- Поддержаны исходящий и входящий звонок, принять, отклонить, завершить, mute/unmute microphone, camera on/off, switch camera.
+- UI звонка mobile-first: remote video на весь экран, local preview, нижняя панель кнопок и состояния connecting/ringing/active/ended/error.
+- При logout/background локальные tracks очищаются.
+
+## Lifecycle, сеть и realtime
+
+- Приложение отслеживает foreground/background/resume через `AppState`.
+- При возврате в приложение обновляется unread count, chat list и восстанавливается WebSocket при необходимости.
+- WebSocket имеет reconnect с backoff, лимитом попыток и восстановлением после возврата сети.
+- Сетевые ошибки показываются пользовательским текстом без raw JSON, endpoint URL или stack trace.
+- Технические логи оставлены только в dev mode.
+
+## Push notifications через FCM
+
+Подготовлено и подключено:
+
+- `@react-native-firebase/app` и `@react-native-firebase/messaging`.
+- Foreground/background/opened notification handlers.
+- Normalization payload для `new_message`, `friend_request`, `friend_request_accepted`, `system`.
+- Safe navigation fallback при открытии уведомления.
+- Android permission `POST_NOTIFICATIONS`.
+- Conditional `google-services` Gradle plugin: сборка не ломается без `google-services.json`.
+- Регистрация FCM token после login через `POST /push/mobile-token`.
+- Отвязка FCM token перед logout через `DELETE /push/mobile-token`.
+
+Для CI не коммитьте production `google-services.json`. Закодируйте файл в base64 и сохраните в GitHub Secret `GOOGLE_SERVICES_JSON_BASE64`:
+
+```sh
+base64 -w 0 mobile/android/app/google-services.json
+```
+
+Workflow декодирует secret в `mobile/android/app/google-services.json` перед сборкой и не печатает содержимое в лог.
+
+### Firebase setup
+
+1. Создайте Firebase project в Firebase Console.
+2. Добавьте Android app с package name `com.socialmobile`.
+3. Скачайте `google-services.json`.
+4. Для локальной проверки положите файл в `mobile/android/app/google-services.json`.
+5. Для GitHub Actions сохраните base64 файла в secret `GOOGLE_SERVICES_JSON_BASE64`.
+6. Для server-side отправки FCM добавьте в production env notifications service `FCM_PROJECT_ID` и service account credentials через `FIREBASE_SERVICE_ACCOUNT_JSON_BASE64`, `FIREBASE_SERVICE_ACCOUNT_JSON` или `GOOGLE_APPLICATION_CREDENTIALS`.
+
+Ручная проверка push:
+
+1. Соберите APK с `google-services.json`.
+2. Войдите в приложение и разрешите уведомления.
+3. Отправьте этому пользователю сообщение или заявку в друзья с другого аккаунта.
+4. Сверните приложение и проверьте системное уведомление.
+5. Нажмите уведомление: message открывает чат, friend request открывает экран друзей, generic открывает главную.
 
 ## Android permissions
 
@@ -159,17 +224,18 @@ REST refresh flow:
 - `INTERNET`
 - `READ_MEDIA_IMAGES`
 - `READ_EXTERNAL_STORAGE` с `maxSdkVersion=32`
+- `POST_NOTIFICATIONS`
+- `CAMERA`
+- `RECORD_AUDIO`
+- `MODIFY_AUDIO_SETTINGS`
 
-Camera и microphone permissions не добавлены, потому что звонки в первом этапе не реализуются и runtime permissions раньше времени не запрашиваются.
+Camera и microphone runtime permissions запрашиваются только при запуске звонка.
 
 ## TODO
 
-- Полноценная мобильная стратегия auth, если cookie/WebSocket auth окажется нестабильной на production: отдельный mobile login/refresh flow с refresh token rotation и хранением refresh token в Android Keystore/iOS Keychain, не ломая web cookies.
-- Realtime hardening: проверить `Origin`, cookies и proxy для `/ws` на production и при необходимости добавить bearer/session auth для WebSocket.
-- Лента постов и создание постов.
-- Редактирование профиля, аватара и пароля.
-- Поиск пользователей и отправка новых friend requests.
-- Deep link для `/auth/verify-email/:token`, если email-подтверждение нужно открывать прямо в mobile app.
-- Push notifications.
-- Dark/light theme provider.
-- Звонки: отдельная интеграция `react-native-webrtc`, permissions camera/microphone, native setup и проверка совместимости текущего signaling.
+- Production Firebase config: добавить настоящий `google-services.json` в secure delivery process.
+- Production signing config и keystore для публикации.
+- Deep link для `/auth/verify-email/:token`, если email-подтверждение должно открываться прямо в mobile app.
+- Полноценная мобильная стратегия auth, только если cookie/WebSocket auth окажется нестабильной на production.
+- TURN production config для стабильных звонков в сложных сетях.
+- Лента постов и dark/light theme provider остаются отдельными этапами.

@@ -1,14 +1,16 @@
 import React, { useCallback, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 
-import { messageApi } from '../../api/messages';
+import { isEmailVerified } from '../../api/auth';
 import { AppButton } from '../../components/AppButton';
-import { ErrorBanner, Notice } from '../../components/Feedback';
+import { EmailVerificationNotice } from '../../components/EmailVerificationNotice';
+import { ErrorBanner } from '../../components/Feedback';
 import { Screen } from '../../components/Screen';
 import { getApiErrorMessage } from '../../api/http';
 import { useAuth } from '../../context/AuthContext';
+import { useUnread } from '../../context/UnreadContext';
 import { colors } from '../../theme/colors';
 import type { MainTabParamList } from '../../navigation/types';
 
@@ -17,7 +19,8 @@ type HomeNavigation = BottomTabNavigationProp<MainTabParamList, 'Home'>;
 export default function HomeScreen() {
   const navigation = useNavigation<HomeNavigation>();
   const { user, refreshUser } = useAuth();
-  const [unreadCount, setUnreadCount] = useState(0);
+  const { unreadCount, refreshUnreadCount } = useUnread();
+  const emailVerified = isEmailVerified(user);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -25,17 +28,18 @@ export default function HomeScreen() {
     setLoading(true);
     setError(null);
     try {
-      const [count] = await Promise.all([
-        messageApi.getUnreadCount(),
-        refreshUser(),
-      ]);
-      setUnreadCount(count);
+      if (!emailVerified) {
+        await refreshUser();
+        return;
+      }
+
+      await Promise.all([refreshUnreadCount(), refreshUser()]);
     } catch (apiError) {
       setError(getApiErrorMessage(apiError));
     } finally {
       setLoading(false);
     }
-  }, [refreshUser]);
+  }, [emailVerified, refreshUnreadCount, refreshUser]);
 
   useFocusEffect(
     useCallback(() => {
@@ -44,52 +48,83 @@ export default function HomeScreen() {
   );
 
   return (
-    <Screen
-      contentContainerStyle={styles.content}
-      scroll
-      style={styles.screen}>
+    <Screen contentContainerStyle={styles.content} scroll style={styles.screen}>
       <View style={styles.hero}>
-        <Text style={styles.kicker}>Social mobile</Text>
-        <Text style={styles.title}>{user?.name || user?.email}</Text>
+        <Text style={styles.kicker}>Главная</Text>
+        <Text style={styles.title}>
+          Здравствуйте, {user?.name || user?.email}
+        </Text>
         <Text style={styles.subtitle}>
-          Мобильный клиент подключен к существующему backend API.
+          Быстрый доступ к профилю, друзьям и сообщениям.
         </Text>
       </View>
 
       <ErrorBanner message={error} />
 
+      {!emailVerified ? <EmailVerificationNotice /> : null}
+
       <View style={styles.grid}>
         <View style={styles.statCard}>
           <Text style={styles.statValue}>{unreadCount}</Text>
-          <Text style={styles.statLabel}>непрочитанных</Text>
+          <Text style={styles.statLabel}>непрочитанных сообщений</Text>
         </View>
         <View style={styles.statCard}>
           <Text style={styles.statValue}>
-            {user?.isEmailVerified ? 'Да' : 'Нет'}
+            {emailVerified ? 'Готов' : 'Ждет'}
           </Text>
-          <Text style={styles.statLabel}>email подтвержден</Text>
+          <Text style={styles.statLabel}>статус email</Text>
         </View>
       </View>
 
-      <View style={styles.actions}>
-        <AppButton
-          title="Открыть чаты"
+      <View style={styles.quickGrid}>
+        <QuickAction
+          title="Профиль"
+          text="Данные аккаунта"
+          onPress={() => navigation.navigate('Profile')}
+        />
+        <QuickAction
+          title="Друзья"
+          text="Список и заявки"
+          onPress={() => navigation.navigate('Friends')}
+        />
+        <QuickAction
+          title="Чаты"
+          text="Сообщения"
           onPress={() => navigation.navigate('Chats', { screen: 'ChatList' })}
         />
-        <AppButton
-          title="Друзья"
-          variant="secondary"
-          onPress={() => navigation.navigate('Friends')}
+        <QuickAction
+          title="Настройки"
+          text="Аккаунт и выход"
+          onPress={() => navigation.navigate('Settings')}
         />
       </View>
 
-      <Notice
-        title="Лента постов"
-        text="Для первого этапа мобильный клиент не переносит весь web frontend. Лента и редактирование профиля оставлены TODO, чтобы не расширять API и не ломать web."
-      />
-
       <RefreshControlView loading={loading} onRefresh={load} />
     </Screen>
+  );
+}
+
+function QuickAction({
+  title,
+  text,
+  onPress,
+}: {
+  title: string;
+  text: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      style={({ pressed }) => [
+        styles.quickAction,
+        pressed && styles.quickActionPressed,
+      ]}
+      onPress={onPress}
+    >
+      <Text style={styles.quickTitle}>{title}</Text>
+      <Text style={styles.quickText}>{text}</Text>
+    </Pressable>
   );
 }
 
@@ -167,8 +202,35 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 13,
   },
-  actions: {
-    gap: 10,
+  quickGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  quickAction: {
+    flexBasis: '47%',
+    flexGrow: 1,
+    minHeight: 96,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+    padding: 14,
+    justifyContent: 'space-between',
+  },
+  quickActionPressed: {
+    backgroundColor: colors.surfaceMuted,
+  },
+  quickTitle: {
+    color: colors.text,
+    fontSize: 17,
+    lineHeight: 23,
+    fontWeight: '800',
+  },
+  quickText: {
+    color: colors.muted,
+    fontSize: 13,
+    lineHeight: 18,
   },
   refreshBox: {
     alignItems: 'center',

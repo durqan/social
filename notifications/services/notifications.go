@@ -9,6 +9,7 @@ import (
 	"notifications/models"
 	pushsvc "notifications/push"
 	"notifications/repository"
+	"strings"
 )
 
 type Service struct {
@@ -49,6 +50,31 @@ func (s *Service) SavePushSubscription(req *dto.PushSubscriptionReq) error {
 	return s.repo.UpsertPushSubscription(subscription)
 }
 
+func (s *Service) SaveMobilePushToken(req *dto.MobilePushTokenReq) error {
+	req.Provider = strings.ToLower(strings.TrimSpace(req.Provider))
+	req.Platform = strings.ToLower(strings.TrimSpace(req.Platform))
+	req.Token = strings.TrimSpace(req.Token)
+
+	if req.Provider != "fcm" || req.Platform != "android" || req.Token == "" {
+		return errors.New("invalid mobile push token")
+	}
+
+	return s.repo.UpsertMobilePushToken(&models.MobilePushToken{
+		UserID:   req.UserID,
+		Provider: req.Provider,
+		Platform: req.Platform,
+		Token:    req.Token,
+	})
+}
+
+func (s *Service) RevokeMobilePushToken(userID uint, req dto.MobilePushTokenReq) error {
+	provider := strings.ToLower(strings.TrimSpace(req.Provider))
+	if provider == "" {
+		provider = "fcm"
+	}
+	return s.repo.RevokeMobilePushToken(userID, provider, strings.TrimSpace(req.Token))
+}
+
 func (s *Service) GetUserNotifications(userID uint) ([]models.Notification, error) {
 	return s.repo.FindByRecipientID(userID)
 }
@@ -66,20 +92,42 @@ func (s *Service) sendPushNotifications(notification models.Notification) {
 		return
 	}
 
-	subscriptions, err := s.repo.FindPushSubscriptionsByUserID(notification.RecipientID)
-	if err != nil {
-		log.Printf("failed to load push subscriptions: %v", err)
-		return
+	payload := buildPushPayload(notification)
+
+	if s.push.WebPushEnabled() {
+		subscriptions, err := s.repo.FindPushSubscriptionsByUserID(notification.RecipientID)
+		if err != nil {
+			log.Printf("failed to load push subscriptions: %v", err)
+		} else {
+			for _, subscription := range subscriptions {
+				if err := s.push.Send(subscription, payload); err != nil {
+					log.Printf("failed to send web push notification to subscription %d: %v", subscription.ID, err)
+
+					if errors.Is(err, pushsvc.ErrSubscriptionInvalid) {
+						if deleteErr := s.repo.DeletePushSubscription(subscription.ID); deleteErr != nil {
+							log.Printf("failed to delete invalid push subscription %d: %v", subscription.ID, deleteErr)
+						}
+					}
+				}
+			}
+		}
 	}
 
-	payload := buildPushPayload(notification)
-	for _, subscription := range subscriptions {
-		if err := s.push.Send(subscription, payload); err != nil {
-			log.Printf("failed to send push notification to subscription %d: %v", subscription.ID, err)
+	if s.push.FCMEnabled() {
+		tokens, err := s.repo.FindMobilePushTokensByUserID(notification.RecipientID)
+		if err != nil {
+			log.Printf("failed to load mobile push tokens: %v", err)
+			return
+		}
 
-			if errors.Is(err, pushsvc.ErrSubscriptionInvalid) {
-				if deleteErr := s.repo.DeletePushSubscription(subscription.ID); deleteErr != nil {
-					log.Printf("failed to delete invalid push subscription %d: %v", subscription.ID, deleteErr)
+		for _, token := range tokens {
+			if err := s.push.SendMobile(token, payload); err != nil {
+				log.Printf("failed to send FCM push notification to token %d: %v", token.ID, err)
+
+				if errors.Is(err, pushsvc.ErrMobileTokenInvalid) {
+					if revokeErr := s.repo.RevokeMobilePushTokenByID(token.ID); revokeErr != nil {
+						log.Printf("failed to revoke invalid FCM token %d: %v", token.ID, revokeErr)
+					}
 				}
 			}
 		}

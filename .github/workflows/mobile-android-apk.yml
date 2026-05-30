@@ -4,16 +4,20 @@ on:
   workflow_dispatch:
     inputs:
       api_base_url:
-        description: 'Public HTTPS backend API base URL, for example https://example.com/api'
-        required: true
+        description: "Optional override for vars.SOCIAL_API_BASE_URL, for example https://example.com/api"
+        required: false
         type: string
 
 jobs:
   build:
-    name: Build Android debug APK
+    name: Build Android APKs
     runs-on: ubuntu-latest
     env:
-      SOCIAL_API_BASE_URL: ${{ inputs.api_base_url }}
+      SOCIAL_API_BASE_URL: ${{ inputs.api_base_url || vars.SOCIAL_API_BASE_URL }}
+      SOCIAL_NOTIFICATIONS_BASE_URL: ${{ vars.SOCIAL_NOTIFICATIONS_BASE_URL }}
+      SOCIAL_TURN_URLS: ${{ vars.SOCIAL_TURN_URLS }}
+      SOCIAL_TURN_USERNAME: ${{ vars.SOCIAL_TURN_USERNAME }}
+      SOCIAL_TURN_CREDENTIAL: ${{ secrets.SOCIAL_TURN_CREDENTIAL }}
 
     defaults:
       run:
@@ -26,7 +30,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: "22"
           cache: npm
           cache-dependency-path: mobile/package-lock.json
 
@@ -34,7 +38,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
@@ -56,20 +60,28 @@ jobs:
 
           npm ls @preeternal/react-native-cookie-manager
 
+      - name: Configure Firebase Android
+        if: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 != '' }}
+        env:
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          set +x
+          printf '%s' "$GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > android/app/google-services.json
+
       - name: Validate API base URL
         run: |
           if [ -z "$SOCIAL_API_BASE_URL" ]; then
-            echo "api_base_url workflow input is required."
+            echo "Set repository variable SOCIAL_API_BASE_URL or provide api_base_url workflow input."
             exit 1
           fi
 
           if ! printf '%s' "$SOCIAL_API_BASE_URL" | grep -Eq '^https://'; then
-            echo "api_base_url must be a public HTTPS URL."
+            echo "SOCIAL_API_BASE_URL must be a public HTTPS URL."
             exit 1
           fi
 
           if printf '%s' "$SOCIAL_API_BASE_URL" | grep -Eq '(^https://(localhost|127\.0\.0\.1|10\.0\.2\.2)(:|/|$))|(^https://192\.168\.)|(^https://10\.)|(^https://172\.(1[6-9]|2[0-9]|3[0-1])\.)|/api/api(/|$)'; then
-            echo "api_base_url must not point to localhost, emulator, LAN/private IP, or contain /api/api."
+            echo "SOCIAL_API_BASE_URL must not point to localhost, emulator, LAN/private IP, or contain /api/api."
             exit 1
           fi
 

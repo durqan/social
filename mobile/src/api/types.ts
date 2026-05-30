@@ -2,6 +2,7 @@ export interface User {
   id?: number;
   email: string;
   name?: string;
+  age?: number;
   bio?: string;
   avatar?: string | null;
   createdAt?: string;
@@ -75,11 +76,17 @@ export interface PaginatedMessages {
   has_more: boolean;
 }
 
+export interface UpdateProfilePayload {
+  name?: string;
+  email?: string;
+  age?: number;
+  bio?: string;
+}
+
 export function normalizeUser(user: User): User {
   return {
     ...user,
     createdAt: user.createdAt ?? user.created_at,
-    isEmailVerified:
-      user.isEmailVerified ?? user.is_email_verified ?? false,
+    isEmailVerified: user.isEmailVerified ?? user.is_email_verified ?? false,
   };
 }

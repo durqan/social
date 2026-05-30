@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"time"
+
 	"notifications/models"
 
 	"gorm.io/gorm"
@@ -79,4 +81,54 @@ func (r *Repository) FindPushSubscriptionsByUserID(userID uint) ([]models.PushSu
 
 func (r *Repository) DeletePushSubscription(id uint) error {
 	return r.db.Delete(&models.PushSubscription{}, id).Error
+}
+
+func (r *Repository) UpsertMobilePushToken(token *models.MobilePushToken) error {
+	now := time.Now()
+	token.LastSeenAt = now
+
+	return r.db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "token"}},
+		DoUpdates: clause.Assignments(map[string]interface{}{
+			"user_id":      token.UserID,
+			"provider":     token.Provider,
+			"platform":     token.Platform,
+			"revoked_at":   nil,
+			"last_seen_at": now,
+			"updated_at":   now,
+		}),
+	}).Create(token).Error
+}
+
+func (r *Repository) FindMobilePushTokensByUserID(userID uint) ([]models.MobilePushToken, error) {
+	var tokens []models.MobilePushToken
+
+	err := r.db.
+		Where("user_id = ? AND revoked_at IS NULL", userID).
+		Find(&tokens).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return tokens, nil
+}
+
+func (r *Repository) RevokeMobilePushToken(userID uint, provider string, token string) error {
+	now := time.Now()
+	return r.db.Model(&models.MobilePushToken{}).
+		Where("user_id = ? AND provider = ? AND token = ?", userID, provider, token).
+		Updates(map[string]interface{}{
+			"revoked_at": now,
+			"updated_at": now,
+		}).Error
+}
+
+func (r *Repository) RevokeMobilePushTokenByID(id uint) error {
+	now := time.Now()
+	return r.db.Model(&models.MobilePushToken{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"revoked_at": now,
+			"updated_at": now,
+		}).Error
 }

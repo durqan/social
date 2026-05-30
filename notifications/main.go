@@ -31,7 +31,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	err = newDB.AutoMigrate(&models.Notification{}, &models.PushSubscription{})
+	err = newDB.AutoMigrate(&models.Notification{}, &models.PushSubscription{}, &models.MobilePushToken{})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func main() {
 			c.Header("Access-Control-Allow-Origin", origin)
 			c.Header("Access-Control-Allow-Credentials", "true")
 		}
-		c.Header("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
+		c.Header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token")
 
 		if c.Request.Method == "OPTIONS" {
@@ -80,6 +80,8 @@ func main() {
 	protected.PATCH("/notifications/read-matching", h.MarkMatchingAsRead)
 	protected.PATCH("/notifications/:id/read", h.MarkAsRead)
 	protected.POST("/push/subscribe", h.SubscribePush)
+	protected.POST("/push/mobile-token", middleware.RateLimit(20, time.Hour), h.RegisterMobilePushToken)
+	protected.DELETE("/push/mobile-token", middleware.RateLimit(20, time.Hour), h.RevokeMobilePushToken)
 
 	go func() {
 		if err := rabbit.StartConsumer(ch, svc); err != nil {

@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"image"
@@ -14,6 +15,7 @@ import (
 
 	"tester/internal/cache"
 	"tester/internal/models"
+	"tester/internal/storage"
 
 	_ "golang.org/x/image/webp"
 )
@@ -75,32 +77,18 @@ func NormalizeMessageAttachments(input []MessageAttachmentInput, userID uint) ([
 			return nil, errors.New("invalid image owner")
 		}
 
-		filePath := filepath.Join("uploads", "chat", filename)
-		info, err := os.Stat(filePath)
-		if err != nil || info.IsDir() {
-			return nil, errors.New("image not found")
-		}
-
-		file, err := os.Open(filePath)
+		key := ChatUploadKey(filename)
+		objectURL, width, height, size, err := attachmentStorageMetadata(key, item)
 		if err != nil {
-			return nil, errors.New("failed to read image")
+			return nil, err
 		}
-
-		cfg, _, err := image.DecodeConfig(file)
-		_ = file.Close()
-		if err != nil {
-			return nil, errors.New("invalid image")
-		}
-
-		width := cfg.Width
-		height := cfg.Height
 
 		attachments = append(attachments, models.MessageAttachment{
-			FileURL:  "/" + filepath.ToSlash(filePath),
+			FileURL:  objectURL,
 			FileType: "image",
 			Width:    &width,
 			Height:   &height,
-			Size:     info.Size(),
+			Size:     size,
 		})
 	}
 
@@ -163,4 +151,53 @@ func ChatUploadPath(filename string) (string, bool) {
 		return "", false
 	}
 	return filepath.Join("uploads", "chat", filename), true
+}
+
+func ChatUploadKey(filename string) string {
+	return filepath.ToSlash(filepath.Join("chat", filename))
+}
+
+func ChatUploadKeyFromFilename(filename string) (string, bool) {
+	if filename == "" || filename != filepath.Base(filename) {
+		return "", false
+	}
+	return ChatUploadKey(filename), true
+}
+
+func attachmentStorageMetadata(key string, item MessageAttachmentInput) (string, int, int, int64, error) {
+	store, err := storage.Default()
+	if err != nil {
+		return "", 0, 0, 0, errors.New("failed to load storage")
+	}
+
+	objectURL, err := store.GetURL(context.Background(), key)
+	if err != nil {
+		return "", 0, 0, 0, errors.New("invalid image url")
+	}
+
+	if filePath, ok := storage.LocalPath(store, key); ok {
+		info, err := os.Stat(filePath)
+		if err != nil || info.IsDir() {
+			return "", 0, 0, 0, errors.New("image not found")
+		}
+
+		file, err := os.Open(filePath)
+		if err != nil {
+			return "", 0, 0, 0, errors.New("failed to read image")
+		}
+
+		cfg, _, err := image.DecodeConfig(file)
+		_ = file.Close()
+		if err != nil {
+			return "", 0, 0, 0, errors.New("invalid image")
+		}
+
+		return objectURL, cfg.Width, cfg.Height, info.Size(), nil
+	}
+
+	if item.Width <= 0 || item.Height <= 0 || item.Size <= 0 || item.Size > ChatImageMaxSize {
+		return "", 0, 0, 0, errors.New("invalid image")
+	}
+
+	return objectURL, item.Width, item.Height, item.Size, nil
 }

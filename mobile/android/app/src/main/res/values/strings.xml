@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Social Mobile</string>
+    <string name="default_notification_channel_id">social_mobile_default</string>
 </resources>

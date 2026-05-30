@@ -187,11 +187,7 @@ export async function apiRequest<T>(
     credentials: 'include',
   });
 
-  if (
-    response.status === 401 &&
-    !options.retry &&
-    !shouldSkipRefresh(path)
-  ) {
+  if (response.status === 401 && !options.retry && !shouldSkipRefresh(path)) {
     try {
       await refreshSession();
       return apiRequest<T>(path, {
@@ -215,9 +211,13 @@ export async function apiRequest<T>(
   return payload as T;
 }
 
-export function toQueryString(params: Record<string, string | number | undefined>) {
+export function toQueryString(
+  params: Record<string, string | number | undefined>,
+) {
   const parts = Object.entries(params)
-    .filter((entry): entry is [string, string | number] => entry[1] !== undefined)
+    .filter(
+      (entry): entry is [string, string | number] => entry[1] !== undefined,
+    )
     .map(
       ([key, value]) =>
         `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`,
@@ -227,16 +227,64 @@ export function toQueryString(params: Record<string, string | number | undefined
 }
 
 export function getApiErrorMessage(error: unknown) {
-  const message = error instanceof Error ? error.message : 'Неизвестная ошибка';
+  const message = error instanceof Error ? error.message.trim() : '';
+  const normalized = message.toLowerCase();
 
   const translations: Record<string, string> = {
     'invalid email or password': 'Неверный email или пароль',
-    'user with this email already exists': 'Пользователь с таким email уже есть',
+    'user with this email already exists':
+      'Пользователь с таким email уже есть',
     'registration failed': 'Регистрация отклонена',
+    unauthorized: 'Нужно войти в аккаунт',
     'authorization required': 'Нужно войти в аккаунт',
     'invalid or expired token': 'Сессия истекла, войдите снова',
     'csrf token required': 'Не удалось подтвердить сессию. Повторите запрос',
     'invalid csrf token': 'Сессия устарела. Повторите запрос',
+    'не удалось получить csrf token':
+      'Не удалось подтвердить сессию. Повторите запрос',
+    'backend не выдал csrf token':
+      'Не удалось подтвердить сессию. Повторите запрос',
+    'network request failed':
+      'Не удалось подключиться к серверу. Проверьте интернет или попробуйте позже.',
+    'failed to fetch':
+      'Не удалось подключиться к серверу. Проверьте интернет или попробуйте позже.',
+    'load failed':
+      'Не удалось подключиться к серверу. Проверьте интернет или попробуйте позже.',
+    'the internet connection appears to be offline':
+      'Не удалось подключиться к серверу. Проверьте интернет или попробуйте позже.',
+    'internal server error': 'Сервер временно недоступен. Попробуйте позже.',
+    'too many requests': 'Слишком много попыток. Попробуйте позже.',
+    'failed to get conversations':
+      'Не удалось загрузить список чатов. Попробуйте обновить экран.',
+    'failed to get messages':
+      'Не удалось загрузить сообщения. Попробуйте обновить экран.',
+    'failed to send message':
+      'Не удалось отправить сообщение. Попробуйте позже.',
+    'failed to mark as read':
+      'Не удалось обновить статус прочтения. Попробуйте позже.',
+    'failed to update message':
+      'Не удалось обновить сообщение. Попробуйте позже.',
+    'failed to delete message':
+      'Не удалось удалить сообщение. Попробуйте позже.',
+    'failed to get friends list':
+      'Не удалось загрузить список друзей. Попробуйте обновить экран.',
+    'failed to get friend requests':
+      'Не удалось загрузить заявки в друзья. Попробуйте обновить экран.',
+    'friend request not found': 'Заявка уже недоступна.',
+    'failed to accept friend request':
+      'Не удалось принять заявку. Попробуйте позже.',
+    'failed to remove friend':
+      'Не удалось обновить список друзей. Попробуйте позже.',
+    'friend request already sent or you are already friends':
+      'Заявка уже отправлена или пользователь уже в друзьях.',
+    'failed to send friend request':
+      'Не удалось отправить заявку. Попробуйте позже.',
+    'you cannot add yourself as a friend': 'Нельзя добавить себя в друзья.',
+    'failed to search users':
+      'Не удалось найти пользователей. Попробуйте позже.',
+    'query parameter is required': 'Введите имя или email для поиска.',
+    'Подтвердите email, чтобы продолжить':
+      'Подтвердите email, чтобы пользоваться всеми возможностями',
     'can only message accepted friends':
       'Сообщения можно отправлять только друзьям',
     'message content or image is required':
@@ -244,9 +292,60 @@ export function getApiErrorMessage(error: unknown) {
     'message content must be 1000 characters or less':
       'Сообщение должно быть не длиннее 1000 символов',
     'image is too large': 'Изображение должно быть не больше 10 МБ',
-    'image must be jpeg, png or webp':
+    'image must be jpeg, png or webp': 'Поддерживаются только JPEG, PNG и WebP',
+    'avatar is too large': 'Аватар должен быть не больше 5 МБ',
+    'avatar is required': 'Выберите изображение для аватара',
+    'avatar must be jpeg, png or webp':
       'Поддерживаются только JPEG, PNG и WebP',
+    'failed to save avatar': 'Не удалось сохранить аватар. Попробуйте позже.',
+    'email already exists': 'Пользователь с таким email уже есть',
+    'no valid fields to update': 'Измените хотя бы одно поле',
+    'failed to fetch updated user':
+      'Профиль сохранен, но не удалось обновить данные на экране.',
   };
 
-  return translations[message] ?? message;
+  const translated = translations[message] ?? translations[normalized];
+  if (translated) {
+    return translated;
+  }
+
+  if (!message) {
+    return 'Что-то пошло не так. Попробуйте позже.';
+  }
+
+  if (error instanceof ApiError) {
+    if (error.status === 401) {
+      return 'Сессия истекла, войдите снова';
+    }
+
+    if (error.status === 403) {
+      return 'Недостаточно прав для этого действия';
+    }
+
+    if (error.status === 404) {
+      return 'Данные не найдены';
+    }
+
+    if (error.status >= 500) {
+      return 'Сервер временно недоступен. Попробуйте позже.';
+    }
+  }
+
+  if (looksTechnical(message)) {
+    return 'Что-то пошло не так. Попробуйте позже.';
+  }
+
+  return message;
+}
+
+function looksTechnical(message: string) {
+  return (
+    /^HTTP \d{3}$/i.test(message) ||
+    /^https?:\/\//i.test(message) ||
+    /\/api\//i.test(message) ||
+    /(?:Type|Syntax|Reference)Error/i.test(message) ||
+    /JSON|stack|endpoint/i.test(message) ||
+    message.trim().startsWith('{') ||
+    message.trim().startsWith('[')
+  );
 }

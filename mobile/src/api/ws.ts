@@ -1,6 +1,22 @@
+import NetInfo from '@react-native-community/netinfo';
+
 import { WS_URL } from '../config/env';
 import { getCookieHeader, refreshSession } from './http';
 import type { Message, MessageAttachment } from './types';
+import { logDev } from '../utils/logger';
+
+export type CallType = 'audio' | 'video';
+
+export type CallSessionDescription = {
+  type: string | null;
+  sdp: string;
+};
+
+export type CallIceCandidate = {
+  candidate: string;
+  sdpMLineIndex?: number | null;
+  sdpMid?: string | null;
+};
 
 export type WsEvent =
   | {
@@ -27,6 +43,34 @@ export type WsEvent =
       };
     }
   | {
+      type: 'call:offer';
+      payload: {
+        from_id: number;
+        call_type?: CallType;
+        offer: CallSessionDescription;
+      };
+    }
+  | {
+      type: 'call:answer';
+      payload: {
+        from_id: number;
+        answer: CallSessionDescription;
+      };
+    }
+  | {
+      type: 'call:ice';
+      payload: {
+        from_id: number;
+        candidate: CallIceCandidate;
+      };
+    }
+  | {
+      type: 'call:end' | 'call:reject';
+      payload: {
+        from_id: number;
+      };
+    }
+  | {
       type: string;
       payload: unknown;
     };
@@ -42,13 +86,40 @@ type RNWebSocketConstructor = new (
 ) => WebSocket;
 
 class ChatSocket {
+  private readonly maxReconnectAttempts = 8;
+  private readonly minReconnectDelay = 1000;
+  private readonly maxReconnectDelay = 30000;
   private ws: WebSocket | null = null;
   private handlers = new Set<WsHandler>();
   private statusHandlers = new Set<StatusHandler>();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectAttempts = 0;
   private shouldReconnect = false;
   private opening = false;
   private connected = false;
+  private networkOnline = true;
+
+  constructor() {
+    NetInfo.addEventListener(state => {
+      const online =
+        state.isConnected !== false && state.isInternetReachable !== false;
+
+      if (this.networkOnline === online) {
+        return;
+      }
+
+      this.networkOnline = online;
+      if (!online) {
+        this.clearReconnectTimer();
+        this.setConnected(false);
+        return;
+      }
+
+      if (this.shouldReconnect) {
+        this.recover();
+      }
+    });
+  }
 
   onMessage(handler: WsHandler) {
     this.handlers.add(handler);
@@ -67,6 +138,9 @@ class ChatSocket {
 
   connect() {
     this.shouldReconnect = true;
+    if (!this.networkOnline) {
+      return;
+    }
     if (
       this.opening ||
       this.ws?.readyState === WebSocket.OPEN ||
@@ -78,9 +152,16 @@ class ChatSocket {
     this.open().catch(() => undefined);
   }
 
+  recover() {
+    this.reconnectAttempts = 0;
+    this.clearReconnectTimer();
+    this.connect();
+  }
+
   disconnect() {
     this.shouldReconnect = false;
     this.clearReconnectTimer();
+    this.reconnectAttempts = 0;
     this.setConnected(false);
     this.ws?.close();
     this.ws = null;
@@ -106,6 +187,59 @@ class ChatSocket {
     });
   }
 
+  sendCallOffer(
+    toId: number,
+    offer: CallSessionDescription,
+    callType: CallType,
+  ) {
+    this.sendEvent({
+      type: 'call:offer',
+      payload: {
+        to_id: toId,
+        offer,
+        call_type: callType,
+      },
+    });
+  }
+
+  sendCallAnswer(toId: number, answer: CallSessionDescription) {
+    this.sendEvent({
+      type: 'call:answer',
+      payload: {
+        to_id: toId,
+        answer,
+      },
+    });
+  }
+
+  sendCallIce(toId: number, candidate: CallIceCandidate) {
+    this.sendEvent({
+      type: 'call:ice',
+      payload: {
+        to_id: toId,
+        candidate,
+      },
+    });
+  }
+
+  sendCallEnd(toId: number) {
+    this.sendEvent({
+      type: 'call:end',
+      payload: {
+        to_id: toId,
+      },
+    });
+  }
+
+  sendCallReject(toId: number) {
+    this.sendEvent({
+      type: 'call:reject',
+      payload: {
+        to_id: toId,
+      },
+    });
+  }
+
   private async open() {
     this.opening = true;
 
@@ -124,6 +258,7 @@ class ChatSocket {
 
       this.ws.onopen = () => {
         this.opening = false;
+        this.reconnectAttempts = 0;
         this.setConnected(true);
       };
       this.ws.onmessage = event => this.handleRawMessage(event.data);
@@ -168,16 +303,27 @@ class ChatSocket {
   }
 
   private scheduleReconnect() {
-    if (!this.shouldReconnect || this.reconnectTimer) {
+    if (!this.shouldReconnect || !this.networkOnline || this.reconnectTimer) {
       return;
     }
+
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      logDev('[SocialMobile] WebSocket reconnect paused after max attempts');
+      return;
+    }
+
+    this.reconnectAttempts += 1;
+    const delay = Math.min(
+      this.maxReconnectDelay,
+      this.minReconnectDelay * 2 ** (this.reconnectAttempts - 1),
+    );
 
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       if (this.shouldReconnect) {
         this.connect();
       }
-    }, 3000);
+    }, delay);
   }
 
   private clearReconnectTimer() {

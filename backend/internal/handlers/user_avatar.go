@@ -3,10 +3,9 @@ package handlers
 import (
 	"errors"
 	"net/http"
-	"os"
-	"path/filepath"
 
 	"tester/internal/repository"
+	"tester/internal/storage"
 	"tester/internal/utils"
 
 	"github.com/gin-gonic/gin"
@@ -71,9 +70,8 @@ func UploadAvatar(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		uploadDir := filepath.Join("uploads", "avatars")
-		if err := os.MkdirAll(uploadDir, 0755); err != nil {
-			c.JSON(500, gin.H{"error": "failed to prepare upload directory"})
+		if _, err := src.Seek(0, 0); err != nil {
+			c.JSON(400, gin.H{"error": "failed to read avatar"})
 			return
 		}
 
@@ -83,15 +81,19 @@ func UploadAvatar(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 		filename := randomName + ext
-		savePath := filepath.Join(uploadDir, filename)
+		store, err := storage.Default()
+		if err != nil {
+			c.JSON(500, gin.H{"error": "failed to prepare upload storage"})
+			return
+		}
 
-		if err := c.SaveUploadedFile(file, savePath); err != nil {
+		object, err := store.Upload(c.Request.Context(), "avatars/"+filename, src, file.Size, contentType)
+		if err != nil {
 			c.JSON(500, gin.H{"error": "failed to save avatar"})
 			return
 		}
 
-		avatarURL := "/" + filepath.ToSlash(savePath)
-		if err := repository.UpdateUserAvatar(db, id, avatarURL); err != nil {
+		if err := repository.UpdateUserAvatar(db, id, object.URL); err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				c.JSON(404, gin.H{"error": "user not found"})
 				return
@@ -101,6 +103,6 @@ func UploadAvatar(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		c.JSON(200, gin.H{"avatar": avatarURL})
+		c.JSON(200, gin.H{"avatar": object.URL})
 	}
 }

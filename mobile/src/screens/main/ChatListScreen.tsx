@@ -1,42 +1,87 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { getApiErrorMessage } from '../../api/http';
 import { messageApi } from '../../api/messages';
 import type { Conversation } from '../../api/types';
-import { ErrorBanner, Notice } from '../../components/Feedback';
+import {
+  EmptyState,
+  ErrorBanner,
+  LoadingState,
+} from '../../components/Feedback';
 import { Screen } from '../../components/Screen';
+import { useUnread } from '../../context/UnreadContext';
 import { colors } from '../../theme/colors';
 import { formatDateTime } from '../../utils/format';
 import type { ChatStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'ChatList'>;
+type LoadMode = 'refresh' | 'silent';
 
 export default function ChatListScreen({ navigation }: Props) {
+  const isFocused = useIsFocused();
+  const { chatRefreshVersion, refreshUnreadCount } = useUnread();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const nextConversations = await messageApi.getConversations();
-      setConversations(nextConversations);
-    } catch (apiError) {
-      setError(getApiErrorMessage(apiError));
-    } finally {
-      setLoading(false);
+  const load = useCallback(
+    async (mode: LoadMode = 'refresh') => {
+      if (mode !== 'silent') {
+        setLoading(true);
+      }
+      setError(null);
+      try {
+        const nextConversations = await messageApi.getConversations();
+        setConversations(nextConversations);
+        refreshUnreadCount().catch(() => undefined);
+      } catch (apiError) {
+        setError(getApiErrorMessage(apiError));
+      } finally {
+        setHasLoaded(true);
+        if (mode !== 'silent') {
+          setLoading(false);
+        }
+      }
+    },
+    [refreshUnreadCount],
+  );
+
+  const scheduleRealtimeRefresh = useCallback(() => {
+    if (refreshTimer.current) {
+      clearTimeout(refreshTimer.current);
     }
-  }, []);
+
+    refreshTimer.current = setTimeout(() => {
+      refreshTimer.current = null;
+      load('silent').catch(() => undefined);
+    }, 250);
+  }, [load]);
 
   useFocusEffect(
     useCallback(() => {
       load().catch(() => undefined);
+
+      return () => {
+        if (refreshTimer.current) {
+          clearTimeout(refreshTimer.current);
+          refreshTimer.current = null;
+        }
+      };
     }, [load]),
   );
+
+  React.useEffect(() => {
+    if (!isFocused || chatRefreshVersion === 0) {
+      return;
+    }
+
+    scheduleRealtimeRefresh();
+  }, [chatRefreshVersion, isFocused, scheduleRealtimeRefresh]);
 
   function openConversation(conversation: Conversation) {
     navigation.navigate('Chat', {
@@ -52,47 +97,67 @@ export default function ChatListScreen({ navigation }: Props) {
       <FlatList
         data={conversations}
         keyExtractor={item => String(item.user_id)}
-        refreshing={loading}
+        refreshing={loading && hasLoaded}
         onRefresh={load}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[
+          styles.listContent,
+          conversations.length === 0 && styles.emptyListContent,
+        ]}
         ListEmptyComponent={
-          <Notice
-            title="Диалогов пока нет"
-            text="Начать новый диалог можно из вкладки Друзья."
-          />
+          loading && !hasLoaded ? (
+            <LoadingState text="Загружаем чаты" />
+          ) : (
+            <EmptyState
+              title="Чатов пока нет"
+              text="Откройте вкладку Друзья, чтобы начать диалог."
+            />
+          )
         }
-        renderItem={({ item }) => (
-          <Pressable
-            style={({ pressed }) => [
-              styles.row,
-              pressed && styles.rowPressed,
-            ]}
-            onPress={() => openConversation(item)}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>
-                {item.name.slice(0, 1).toUpperCase()}
-              </Text>
-            </View>
-            <View style={styles.meta}>
-              <View style={styles.rowHeader}>
-                <Text style={styles.name} numberOfLines={1}>
-                  {item.name}
-                </Text>
-                <Text style={styles.date}>
-                  {formatDateTime(item.last_message_at)}
+        renderItem={({ item }) => {
+          const isUnread = item.unread_count > 0;
+          const preview = item.last_message.trim() || 'Изображение';
+
+          return (
+            <Pressable
+              style={({ pressed }) => [
+                styles.row,
+                isUnread && styles.rowUnread,
+                pressed && styles.rowPressed,
+              ]}
+              onPress={() => openConversation(item)}
+            >
+              <View style={[styles.avatar, isUnread && styles.avatarUnread]}>
+                <Text style={styles.avatarText}>
+                  {item.name.slice(0, 1).toUpperCase()}
                 </Text>
               </View>
-              <Text style={styles.preview} numberOfLines={1}>
-                {item.last_message || 'Изображение'}
-              </Text>
-            </View>
-            {item.unread_count > 0 ? (
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>{item.unread_count}</Text>
+              <View style={styles.meta}>
+                <View style={styles.rowHeader}>
+                  <Text
+                    style={[styles.name, isUnread && styles.nameUnread]}
+                    numberOfLines={1}
+                  >
+                    {item.name}
+                  </Text>
+                  <Text style={styles.date} numberOfLines={1}>
+                    {formatDateTime(item.last_message_at)}
+                  </Text>
+                </View>
+                <Text
+                  style={[styles.preview, isUnread && styles.previewUnread]}
+                  numberOfLines={1}
+                >
+                  {preview}
+                </Text>
               </View>
-            ) : null}
-          </Pressable>
-        )}
+              {isUnread ? (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>{item.unread_count}</Text>
+                </View>
+              ) : null}
+            </Pressable>
+          );
+        }}
       />
     </Screen>
   );
@@ -106,6 +171,10 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 10,
   },
+  emptyListContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -115,6 +184,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     padding: 12,
     gap: 12,
+  },
+  rowUnread: {
+    borderColor: 'rgba(34, 158, 217, 0.36)',
+    backgroundColor: '#f8fcff',
   },
   rowPressed: {
     backgroundColor: colors.surfaceMuted,
@@ -126,6 +199,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.accent,
+  },
+  avatarUnread: {
+    backgroundColor: colors.accentStrong,
   },
   avatarText: {
     color: '#ffffff',
@@ -147,6 +223,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
   },
+  nameUnread: {
+    color: colors.accentStrong,
+  },
   date: {
     color: colors.soft,
     fontSize: 12,
@@ -154,6 +233,10 @@ const styles = StyleSheet.create({
   preview: {
     color: colors.muted,
     fontSize: 14,
+  },
+  previewUnread: {
+    color: colors.text,
+    fontWeight: '700',
   },
   badge: {
     minWidth: 24,
