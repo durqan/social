@@ -1,7 +1,72 @@
-import { memo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import type { Message } from "@/shared/types/domain.js";
 import { Avatar } from "@/shared/ui/Avatar.js";
 import { Icon } from "@/shared/ui/Icon.js";
+
+const urlPattern = /(https?:\/\/[^\s<]+|www\.[^\s<]+)/gi;
+
+function cleanUrl(value: string) {
+    return value.replace(/[),.!?;:]+$/, '');
+}
+
+function normalizeUrl(value: string) {
+    return value.startsWith('www.') ? `https://${value}` : value;
+}
+
+function firstUrl(value: string) {
+    const match = value.match(urlPattern)?.[0];
+    return match ? normalizeUrl(cleanUrl(match)) : '';
+}
+
+function linkifyText(value: string, isOwn: boolean) {
+    const parts: Array<{ type: 'text' | 'link'; value: string; href?: string }> = [];
+    let lastIndex = 0;
+
+    for (const match of value.matchAll(urlPattern)) {
+        const rawUrl = match[0];
+        const index = match.index ?? 0;
+        const cleanedUrl = cleanUrl(rawUrl);
+
+        if (index > lastIndex) {
+            parts.push({ type: 'text', value: value.slice(lastIndex, index) });
+        }
+
+        parts.push({
+            type: 'link',
+            value: cleanedUrl,
+            href: normalizeUrl(cleanedUrl),
+        });
+
+        if (cleanedUrl.length < rawUrl.length) {
+            parts.push({ type: 'text', value: rawUrl.slice(cleanedUrl.length) });
+        }
+
+        lastIndex = index + rawUrl.length;
+    }
+
+    if (lastIndex < value.length) {
+        parts.push({ type: 'text', value: value.slice(lastIndex) });
+    }
+
+    return parts.map((part, index) => {
+        if (part.type === 'link') {
+            return (
+                <a
+                    key={`${part.value}-${index}`}
+                    href={part.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={`underline decoration-1 underline-offset-2 ${isOwn ? 'text-sky-700 hover:text-sky-900' : 'text-sky-600 hover:text-sky-800'}`}
+                    onClick={event => event.stopPropagation()}
+                >
+                    {part.value}
+                </a>
+            );
+        }
+
+        return part.value;
+    });
+}
 
 interface ChatMessageProps {
     message: Message;
@@ -48,6 +113,32 @@ const ChatMessageComponent = ({
                             }: ChatMessageProps) => {
     const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+    const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+    const messageUrl = useMemo(() => firstUrl(message.content || ''), [message.content]);
+    const hasText = Boolean(message.content.trim());
+
+    useEffect(() => {
+        if (!contextMenu) {
+            return;
+        }
+
+        const closeMenu = () => setContextMenu(null);
+        const closeOnEscape = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                closeMenu();
+            }
+        };
+
+        window.addEventListener('click', closeMenu);
+        window.addEventListener('scroll', closeMenu, true);
+        window.addEventListener('keydown', closeOnEscape);
+
+        return () => {
+            window.removeEventListener('click', closeMenu);
+            window.removeEventListener('scroll', closeMenu, true);
+            window.removeEventListener('keydown', closeOnEscape);
+        };
+    }, [contextMenu]);
 
     const handleTouchStart = () => {
         longPressTimer.current = setTimeout(() => {
@@ -62,14 +153,47 @@ const ChatMessageComponent = ({
         }
     };
 
+    const openContextMenu = (event: MouseEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const menuWidth = 224;
+        const menuHeight = hasText && messageUrl ? 150 : hasText || messageUrl ? 106 : 62;
+
+        setContextMenu({
+            x: Math.max(8, Math.min(event.clientX, window.innerWidth - menuWidth - 8)),
+            y: Math.max(8, Math.min(event.clientY, window.innerHeight - menuHeight - 8)),
+        });
+    };
+
+    const copyToClipboard = async (value: string) => {
+        if (!value) {
+            return;
+        }
+
+        try {
+            await navigator.clipboard.writeText(value);
+        } catch {
+            const textarea = document.createElement('textarea');
+            textarea.value = value;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            textarea.remove();
+        } finally {
+            setContextMenu(null);
+        }
+    };
+
     return (
         <div
             id={isFirst ? 'msg-first' : `msg-${message.id}`}
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
             onContextMenu={(e) => {
-                e.preventDefault();
-                onLongPress();
+                openContextMenu(e);
             }}
         >
             {showDate && (
@@ -135,7 +259,11 @@ const ChatMessageComponent = ({
                                 </div>
                             ) : null}
 
-                            {message.content && <p className="text-sm break-words">{message.content}</p>}
+                            {message.content && (
+                                <p className="select-text text-sm break-words">
+                                    {linkifyText(message.content, isOwn)}
+                                </p>
+                            )}
 
                             <div className={`text-xs mt-1 ${isOwn ? 'text-black text-right' : 'text-gray-400 text-left'}`}>
                                 {formatTime(message.created_at)}
@@ -166,6 +294,48 @@ const ChatMessageComponent = ({
                     )}
                 </div>
             </div>
+            {contextMenu && (
+                <div
+                    className="fixed z-50 w-56 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl shadow-slate-900/10"
+                    style={{ left: contextMenu.x, top: contextMenu.y }}
+                    onClick={event => event.stopPropagation()}
+                    onContextMenu={event => event.preventDefault()}
+                >
+                    {hasText && (
+                        <button
+                            type="button"
+                            className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm text-gray-800 transition hover:bg-gray-50"
+                            onClick={() => void copyToClipboard(message.content)}
+                        >
+                            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-600">T</span>
+                            Скопировать текст
+                        </button>
+                    )}
+                    {messageUrl && (
+                        <button
+                            type="button"
+                            className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm text-gray-800 transition hover:bg-gray-50"
+                            onClick={() => void copyToClipboard(messageUrl)}
+                        >
+                            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-sky-50 text-xs font-semibold text-sky-700">L</span>
+                            Скопировать ссылку
+                        </button>
+                    )}
+                    <button
+                        type="button"
+                        className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm text-red-600 transition hover:bg-red-50"
+                        onClick={() => {
+                            setContextMenu(null);
+                            onDelete();
+                        }}
+                    >
+                        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-red-50">
+                            <Icon name="delete" className="h-3.5 w-3.5" />
+                        </span>
+                        Удалить сообщение
+                    </button>
+                </div>
+            )}
             {previewUrl && (
                 <div
                     className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4"

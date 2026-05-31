@@ -106,4 +106,10 @@ export const messageApi = {
       },
     });
   },
+
+  async deleteMessage(messageId: number) {
+    await apiRequest<{ message: string }>(`/messages/${messageId}`, {
+      method: 'DELETE',
+    });
+  },
 };

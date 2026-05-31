@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Clipboard,
   FlatList,
   Image,
+  Linking,
   Modal,
   Pressable,
   StyleSheet,
@@ -33,6 +35,7 @@ import {
   EmptyState,
   ErrorBanner,
   LoadingState,
+  SuccessBanner,
 } from '../../components/Feedback';
 import { Screen } from '../../components/Screen';
 import { useAppLifecycle } from '../../context/AppLifecycleContext';
@@ -45,6 +48,55 @@ import type { ChatStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'Chat'>;
 type LoadMode = 'initial' | 'refresh' | 'silent';
+
+const urlPattern = /(https?:\/\/[^\s<]+|www\.[^\s<]+)/gi;
+
+function cleanUrl(value: string) {
+  return value.replace(/[),.!?;:]+$/, '');
+}
+
+function normalizeUrl(value: string) {
+  return value.startsWith('www.') ? `https://${value}` : value;
+}
+
+function firstUrl(value: string) {
+  const match = value.match(urlPattern)?.[0];
+  return match ? normalizeUrl(cleanUrl(match)) : '';
+}
+
+function linkParts(value: string) {
+  const parts: Array<{ type: 'text' | 'link'; value: string; href?: string }> =
+    [];
+  let lastIndex = 0;
+
+  for (const match of value.matchAll(urlPattern)) {
+    const rawUrl = match[0];
+    const index = match.index ?? 0;
+    const cleanedUrl = cleanUrl(rawUrl);
+
+    if (index > lastIndex) {
+      parts.push({ type: 'text', value: value.slice(lastIndex, index) });
+    }
+
+    parts.push({
+      type: 'link',
+      value: cleanedUrl,
+      href: normalizeUrl(cleanedUrl),
+    });
+
+    if (cleanedUrl.length < rawUrl.length) {
+      parts.push({ type: 'text', value: rawUrl.slice(cleanedUrl.length) });
+    }
+
+    lastIndex = index + rawUrl.length;
+  }
+
+  if (lastIndex < value.length) {
+    parts.push({ type: 'text', value: value.slice(lastIndex) });
+  }
+
+  return parts;
+}
 
 export default function ChatScreen({ route }: Props) {
   const { user } = useAuth();
@@ -63,6 +115,7 @@ export default function ChatScreen({ route }: Props) {
   const [input, setInput] = useState('');
   const [pendingImages, setPendingImages] = useState<LocalChatImage[]>([]);
   const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
+  const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
@@ -72,6 +125,16 @@ export default function ChatScreen({ route }: Props) {
     total: number;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [copyNotice, setCopyNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!copyNotice) {
+      return undefined;
+    }
+
+    const timer = setTimeout(() => setCopyNotice(null), 1600);
+    return () => clearTimeout(timer);
+  }, [copyNotice]);
 
   const markConversationRead = useCallback(async () => {
     await messageApi.markAsRead(otherUserId);
@@ -352,9 +415,30 @@ export default function ChatScreen({ route }: Props) {
     setPendingImages(previous => previous.filter(image => image.id !== id));
   }
 
+  function copyValue(value: string, notice: string) {
+    Clipboard.setString(value);
+    setSelectedMessage(null);
+    setCopyNotice(notice);
+  }
+
+  async function deleteSelectedMessage(message: Message) {
+    setSelectedMessage(null);
+
+    try {
+      if (message.id > 0 && message.id < 10000000) {
+        await messageApi.deleteMessage(message.id);
+      }
+      setMessages(previous => previous.filter(item => item.id !== message.id));
+      signalChatDataChanged();
+    } catch (apiError) {
+      setError(getApiErrorMessage(apiError));
+    }
+  }
+
   return (
     <Screen scroll={false} contentContainerStyle={styles.container}>
       <ErrorBanner message={error} />
+      <SuccessBanner message={copyNotice} />
 
       <View style={styles.callActions}>
         <AppButton
@@ -388,6 +472,7 @@ export default function ChatScreen({ route }: Props) {
               message={item}
               outgoing={item.from_id === user?.id}
               onImagePress={setSelectedImageUrl}
+              onLongPress={() => setSelectedMessage(item)}
             />
           )}
           contentContainerStyle={[
@@ -489,6 +574,18 @@ export default function ChatScreen({ route }: Props) {
           </Pressable>
         </Pressable>
       </Modal>
+
+      <MessageActionSheet
+        message={selectedMessage}
+        onClose={() => setSelectedMessage(null)}
+        onCopyText={message =>
+          copyValue(message.content.trim(), 'Текст скопирован')
+        }
+        onCopyLink={url => copyValue(url, 'Ссылка скопирована')}
+        onDelete={message => {
+          deleteSelectedMessage(message).catch(() => undefined);
+        }}
+      />
     </Screen>
   );
 }
@@ -511,19 +608,47 @@ function MessageBubble({
   message,
   outgoing,
   onImagePress,
+  onLongPress,
 }: {
   message: Message;
   outgoing: boolean;
   onImagePress: (url: string) => void;
+  onLongPress: () => void;
 }) {
   return (
-    <View style={[styles.bubbleRow, outgoing && styles.bubbleRowOutgoing]}>
+    <Pressable
+      style={[styles.bubbleRow, outgoing && styles.bubbleRowOutgoing]}
+      delayLongPress={280}
+      onLongPress={onLongPress}
+    >
       <View
         style={[styles.bubble, outgoing ? styles.outgoing : styles.incoming]}
       >
         {message.content ? (
-          <Text style={[styles.messageText, outgoing && styles.outgoingText]}>
-            {message.content}
+          <Text
+            selectable
+            style={[styles.messageText, outgoing && styles.outgoingText]}
+          >
+            {linkParts(message.content).map((part, index) => {
+              if (part.type === 'link' && part.href) {
+                return (
+                  <Text
+                    key={`${part.href}-${index}`}
+                    style={[
+                      styles.messageLink,
+                      outgoing && styles.outgoingLink,
+                    ]}
+                    onPress={() =>
+                      Linking.openURL(part.href ?? '').catch(() => undefined)
+                    }
+                  >
+                    {part.value}
+                  </Text>
+                );
+              }
+
+              return part.value;
+            })}
           </Text>
         ) : null}
 
@@ -534,6 +659,7 @@ function MessageBubble({
               key={attachment.id ?? attachment.file_url}
               accessibilityRole="imagebutton"
               onPress={() => onImagePress(imageUrl)}
+              onLongPress={onLongPress}
             >
               <Image
                 source={{ uri: imageUrl }}
@@ -553,7 +679,77 @@ function MessageBubble({
           </Text>
         ) : null}
       </View>
-    </View>
+    </Pressable>
+  );
+}
+
+function MessageActionSheet({
+  message,
+  onClose,
+  onCopyText,
+  onCopyLink,
+  onDelete,
+}: {
+  message: Message | null;
+  onClose: () => void;
+  onCopyText: (message: Message) => void;
+  onCopyLink: (url: string) => void;
+  onDelete: (message: Message) => void;
+}) {
+  const trimmedText = message?.content.trim() ?? '';
+  const messageUrl = message ? firstUrl(message.content) : '';
+
+  return (
+    <Modal
+      visible={Boolean(message)}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <Pressable style={styles.sheetBackdrop} onPress={onClose}>
+        <Pressable style={styles.sheet} onPress={event => event.stopPropagation()}>
+          <View style={styles.sheetHandle} />
+          <Text style={styles.sheetTitle}>Сообщение</Text>
+
+          {trimmedText ? (
+            <Pressable
+              accessibilityRole="button"
+              style={styles.sheetAction}
+              onPress={() => message && onCopyText(message)}
+            >
+              <Text style={styles.sheetActionIcon}>T</Text>
+              <Text style={styles.sheetActionText}>Скопировать текст</Text>
+            </Pressable>
+          ) : null}
+
+          {messageUrl ? (
+            <Pressable
+              accessibilityRole="button"
+              style={styles.sheetAction}
+              onPress={() => onCopyLink(messageUrl)}
+            >
+              <Text style={styles.sheetActionIcon}>L</Text>
+              <Text style={styles.sheetActionText}>Скопировать ссылку</Text>
+            </Pressable>
+          ) : null}
+
+          {message ? (
+            <Pressable
+              accessibilityRole="button"
+              style={[styles.sheetAction, styles.sheetDangerAction]}
+              onPress={() => onDelete(message)}
+            >
+              <Text style={[styles.sheetActionIcon, styles.sheetDangerIcon]}>
+                D
+              </Text>
+              <Text style={[styles.sheetActionText, styles.sheetDangerText]}>
+                Удалить сообщение
+              </Text>
+            </Pressable>
+          ) : null}
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -610,6 +806,14 @@ const styles = StyleSheet.create({
   },
   outgoingText: {
     color: '#ffffff',
+  },
+  messageLink: {
+    color: colors.accent,
+    textDecorationLine: 'underline',
+  },
+  outgoingLink: {
+    color: '#ffffff',
+    textDecorationLine: 'underline',
   },
   messageDate: {
     color: colors.soft,
@@ -731,5 +935,71 @@ const styles = StyleSheet.create({
     fontSize: 30,
     lineHeight: 32,
     fontWeight: '600',
+  },
+  sheetBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(15, 23, 42, 0.35)',
+  },
+  sheet: {
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 22,
+    gap: 4,
+  },
+  sheetHandle: {
+    alignSelf: 'center',
+    width: 42,
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: colors.border,
+    marginBottom: 8,
+  },
+  sheetTitle: {
+    color: colors.muted,
+    fontSize: 13,
+    fontWeight: '700',
+    paddingHorizontal: 6,
+    paddingBottom: 4,
+    textTransform: 'uppercase',
+  },
+  sheetAction: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+  },
+  sheetActionIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: colors.surfaceMuted,
+    color: colors.muted,
+    fontSize: 13,
+    lineHeight: 32,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  sheetActionText: {
+    color: colors.text,
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: '600',
+  },
+  sheetDangerAction: {
+    marginTop: 2,
+  },
+  sheetDangerIcon: {
+    backgroundColor: colors.dangerSoft,
+    color: colors.danger,
+  },
+  sheetDangerText: {
+    color: colors.danger,
   },
 });
