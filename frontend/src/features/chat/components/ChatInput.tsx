@@ -20,6 +20,7 @@ interface ChatInputProps {
         files: File[];
     } | null;
     onIncomingFilesConsumed?: () => void;
+    sendStatus?: string;
 }
 
 export const ChatInput = ({
@@ -30,6 +31,7 @@ export const ChatInput = ({
     onErrorMessageChange,
     incomingFiles,
     onIncomingFilesConsumed,
+    sendStatus,
 }: ChatInputProps) => {
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -117,16 +119,6 @@ export const ChatInput = ({
                         <span className="text-xs font-medium text-gray-600">
                             {selectedFiles.length === 1 ? '1 изображение' : `${selectedFiles.length} изображений`}
                         </span>
-
-                        <button
-                            type="button"
-                            onClick={() => void handleSend()}
-                            disabled={sending}
-                            className="inline-flex items-center gap-1 rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-sky-700 disabled:opacity-50"
-                        >
-                            <Icon name="send" className="h-3.5 w-3.5" />
-                            Отправить
-                        </button>
                     </div>
 
                     <div className="flex gap-2 overflow-x-auto pb-1">
@@ -234,6 +226,12 @@ export const ChatInput = ({
             {errorMessage && (
                 <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                     {errorMessage}
+                </div>
+            )}
+            {sendStatus && !errorMessage && (
+                <div className="mt-2 flex items-center gap-2 rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-sm text-sky-700">
+                    <span className="h-3 w-3 animate-spin rounded-full border-2 border-sky-200 border-t-sky-600" />
+                    {sendStatus}
                 </div>
             )}
         </div>

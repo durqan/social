@@ -1,4 +1,4 @@
-import { memo, useRef } from 'react';
+import { memo, useRef, useState } from 'react';
 import type { Message } from "@/shared/types/domain.js";
 import { Avatar } from "@/shared/ui/Avatar.js";
 import { Icon } from "@/shared/ui/Icon.js";
@@ -47,6 +47,7 @@ const ChatMessageComponent = ({
                                 actionsEnabled = true,
                             }: ChatMessageProps) => {
     const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
     const handleTouchStart = () => {
         longPressTimer.current = setTimeout(() => {
@@ -116,12 +117,12 @@ const ChatMessageComponent = ({
                             {message.attachments?.length ? (
                                 <div className={`grid gap-2 ${message.attachments.length > 1 ? 'grid-cols-2' : 'grid-cols-1'} ${message.content ? 'mb-2' : ''}`}>
                                     {message.attachments.map(attachment => (
-                                        <a
+                                        <button
+                                            type="button"
                                             key={attachment.file_url}
-                                            href={attachment.file_url}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            className="block overflow-hidden rounded-xl bg-black/5"
+                                            onClick={() => setPreviewUrl(attachment.file_url)}
+                                            className="block overflow-hidden rounded-xl bg-black/5 text-left"
+                                            aria-label="Открыть изображение"
                                         >
                                             <img
                                                 src={attachment.file_url}
@@ -129,7 +130,7 @@ const ChatMessageComponent = ({
                                                 className="max-h-72 w-full object-cover"
                                                 loading="lazy"
                                             />
-                                        </a>
+                                        </button>
                                     ))}
                                 </div>
                             ) : null}
@@ -165,6 +166,29 @@ const ChatMessageComponent = ({
                     )}
                 </div>
             </div>
+            {previewUrl && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4"
+                    onClick={() => setPreviewUrl(null)}
+                    role="dialog"
+                    aria-modal="true"
+                >
+                    <button
+                        type="button"
+                        className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/20"
+                        onClick={() => setPreviewUrl(null)}
+                        aria-label="Закрыть изображение"
+                    >
+                        <Icon name="close" className="h-5 w-5" />
+                    </button>
+                    <img
+                        src={previewUrl}
+                        alt="Вложение"
+                        className="max-h-[88vh] max-w-[92vw] rounded-xl object-contain shadow-2xl"
+                        onClick={event => event.stopPropagation()}
+                    />
+                </div>
+            )}
         </div>
     );
 };

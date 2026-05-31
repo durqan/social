@@ -23,6 +23,7 @@ import {
     dataTransferHasImages,
     filesFromDataTransfer,
     imageFilesFromClipboard,
+    compressChatImage,
 } from "@/shared/utils/uploadValidation.js";
 
 const optimisticMessageFloor = 10000000;
@@ -36,6 +37,7 @@ function Chat() {
     const [recipient, setRecipient] = useState<User | null>(null);
     const [newMessage, setNewMessage] = useState('');
     const [uploadError, setUploadError] = useState('');
+    const [sendStatus, setSendStatus] = useState('');
     const [draggingImage, setDraggingImage] = useState(false);
     const [incomingFiles, setIncomingFiles] = useState<{ id: number; files: File[] } | null>(null);
     const dragDepthRef = useRef(0);
@@ -109,9 +111,16 @@ function Chat() {
             throw new Error('Можно отправить максимум 5 картинок за раз');
         }
 
-        return Promise.all(
-            files.map(file => messageService.uploadImage(file))
-        );
+        const attachments: MessageAttachment[] = [];
+
+        for (const [index, file] of files.entries()) {
+            setSendStatus(`Подготавливаем изображение ${index + 1} из ${files.length}`);
+            const compressedFile = await compressChatImage(file);
+            setSendStatus(`Загружаем изображение ${index + 1} из ${files.length}`);
+            attachments.push(await messageService.uploadImage(compressedFile));
+        }
+
+        return attachments;
     }, []);
 
     const handleBatchDelete = async () => {
@@ -137,7 +146,9 @@ function Chat() {
 
         try {
             setUploadError('');
+            setSendStatus(files.length ? 'Подготавливаем изображения' : 'Отправляем сообщение');
             const attachments = await uploadAttachments(files);
+            setSendStatus('Отправляем сообщение');
 
             const tempMessage = {
                 id: Date.now(),
@@ -158,6 +169,8 @@ function Chat() {
             console.error(error);
             setUploadError(getUploadErrorMessage(error, 'Не удалось загрузить картинку'));
             return false;
+        } finally {
+            setSendStatus('');
         }
     }, [currentUser, newMessage, sendMessageToStore, uploadAttachments, userId, wsService]);
 
@@ -317,6 +330,7 @@ function Chat() {
                 onErrorMessageChange={setUploadError}
                 incomingFiles={incomingFiles}
                 onIncomingFilesConsumed={() => setIncomingFiles(null)}
+                sendStatus={sendStatus}
             />
             <DeleteConfirmModal isOpen={deleteConfirmOpen} onConfirm={handleBatchDelete} onCancel={closeDeleteConfirm} />
         </div>

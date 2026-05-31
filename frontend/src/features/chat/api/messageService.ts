@@ -10,7 +10,9 @@ export const messageService = {
     async uploadImage(file: File): Promise<MessageAttachment> {
         const formData = new FormData();
         formData.append('image', file);
-        return request.post<MessageAttachment>('/messages/upload', formData);
+        return request.post<MessageAttachment>('/messages/upload', formData, {
+            timeout: 300000,
+        });
     },
     async getConversations(): Promise<Conversation[]> {
         const conversations = await request.get<Conversation[]>('/messages/conversations');

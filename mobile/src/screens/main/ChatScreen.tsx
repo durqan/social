@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
+  Modal,
   Pressable,
   StyleSheet,
   Text,
@@ -61,6 +62,7 @@ export default function ChatScreen({ route }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [pendingImages, setPendingImages] = useState<LocalChatImage[]>([]);
+  const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
@@ -247,6 +249,9 @@ export default function ChatScreen({ route }: Props) {
       selectionLimit: remaining,
       restrictMimeTypes: [...CHAT_IMAGE_MIME_TYPES],
       includeExtra: true,
+      maxWidth: 1600,
+      maxHeight: 1600,
+      quality: 0.8,
     });
 
     if (result.didCancel) {
@@ -382,6 +387,7 @@ export default function ChatScreen({ route }: Props) {
             <MessageBubble
               message={item}
               outgoing={item.from_id === user?.id}
+              onImagePress={setSelectedImageUrl}
             />
           )}
           contentContainerStyle={[
@@ -456,6 +462,33 @@ export default function ChatScreen({ route }: Props) {
           onPress={sendMessage}
         />
       </View>
+
+      <Modal
+        visible={Boolean(selectedImageUrl)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedImageUrl(null)}
+      >
+        <Pressable
+          style={styles.lightbox}
+          onPress={() => setSelectedImageUrl(null)}
+        >
+          {selectedImageUrl ? (
+            <Image
+              source={{ uri: selectedImageUrl }}
+              style={styles.lightboxImage}
+              resizeMode="contain"
+            />
+          ) : null}
+          <Pressable
+            accessibilityRole="button"
+            style={styles.lightboxClose}
+            onPress={() => setSelectedImageUrl(null)}
+          >
+            <Text style={styles.lightboxCloseText}>×</Text>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </Screen>
   );
 }
@@ -477,9 +510,11 @@ function assetToLocalImage(asset: Asset): LocalChatImage | null {
 function MessageBubble({
   message,
   outgoing,
+  onImagePress,
 }: {
   message: Message;
   outgoing: boolean;
+  onImagePress: (url: string) => void;
 }) {
   return (
     <View style={[styles.bubbleRow, outgoing && styles.bubbleRowOutgoing]}>
@@ -492,14 +527,22 @@ function MessageBubble({
           </Text>
         ) : null}
 
-        {message.attachments?.map(attachment => (
-          <Image
-            key={attachment.id ?? attachment.file_url}
-            source={{ uri: assetURL(attachment.file_url) }}
-            style={styles.messageImage}
-            resizeMode="cover"
-          />
-        ))}
+        {message.attachments?.map(attachment => {
+          const imageUrl = assetURL(attachment.file_url);
+          return (
+            <Pressable
+              key={attachment.id ?? attachment.file_url}
+              accessibilityRole="imagebutton"
+              onPress={() => onImagePress(imageUrl)}
+            >
+              <Image
+                source={{ uri: imageUrl }}
+                style={styles.messageImage}
+                resizeMode="cover"
+              />
+            </Pressable>
+          );
+        })}
 
         <Text style={[styles.messageDate, outgoing && styles.outgoingDate]}>
           {formatDateTime(message.created_at)}
@@ -660,5 +703,33 @@ const styles = StyleSheet.create({
     backgroundColor: colors.input,
     color: colors.text,
     fontSize: 15,
+  },
+  lightbox: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    padding: 14,
+  },
+  lightboxImage: {
+    width: '100%',
+    height: '86%',
+  },
+  lightboxClose: {
+    position: 'absolute',
+    right: 18,
+    top: 18,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
+  },
+  lightboxCloseText: {
+    color: '#ffffff',
+    fontSize: 30,
+    lineHeight: 32,
+    fontWeight: '600',
   },
 });

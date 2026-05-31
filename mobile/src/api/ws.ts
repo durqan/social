@@ -77,6 +77,7 @@ export type WsEvent =
 
 type WsHandler = (event: WsEvent) => void;
 type StatusHandler = (connected: boolean) => void;
+type OutgoingEvent = { type: string; payload: unknown };
 type RNWebSocketConstructor = new (
   url: string,
   protocols?: string | string[] | null,
@@ -98,6 +99,7 @@ class ChatSocket {
   private opening = false;
   private connected = false;
   private networkOnline = true;
+  private pendingEvents: OutgoingEvent[] = [];
 
   constructor() {
     NetInfo.addEventListener(state => {
@@ -162,6 +164,7 @@ class ChatSocket {
     this.shouldReconnect = false;
     this.clearReconnectTimer();
     this.reconnectAttempts = 0;
+    this.pendingEvents = [];
     this.setConnected(false);
     this.ws?.close();
     this.ws = null;
@@ -260,6 +263,7 @@ class ChatSocket {
         this.opening = false;
         this.reconnectAttempts = 0;
         this.setConnected(true);
+        this.flushPendingEvents();
       };
       this.ws.onmessage = event => this.handleRawMessage(event.data);
       this.ws.onerror = () => {
@@ -279,12 +283,25 @@ class ChatSocket {
     }
   }
 
-  private sendEvent(event: { type: string; payload: unknown }) {
+  private sendEvent(event: OutgoingEvent) {
     if (!this.isConnected()) {
-      throw new Error('WebSocket is not connected');
+      this.pendingEvents.push(event);
+      this.connect();
+      return;
     }
 
     this.ws?.send(JSON.stringify(event));
+  }
+
+  private flushPendingEvents() {
+    if (!this.isConnected() || this.pendingEvents.length === 0) {
+      return;
+    }
+
+    const events = this.pendingEvents.splice(0);
+    events.forEach(event => {
+      this.ws?.send(JSON.stringify(event));
+    });
   }
 
   private handleRawMessage(raw: WebSocketMessageEvent['data']) {
