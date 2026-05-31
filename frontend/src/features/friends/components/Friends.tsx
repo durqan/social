@@ -7,8 +7,15 @@ import {
 import type { User, Friendship } from "@/shared/types/domain.js";
 import { FriendItem } from "@/features/friends/components/FriendItem.js";
 import { FriendRequestItem } from "@/features/friends/components/FriendRequestItem.js";
+import { Icon } from "@/shared/ui/Icon.js";
 
 type FriendsTab = 'friends' | 'requests';
+type FriendMenuState = {
+    friendId: number;
+    mode: 'desktop' | 'mobile';
+    x: number;
+    y: number;
+};
 
 const dispatchNotificationsRead = (payload: MarkNotificationsReadPayload) => {
     window.dispatchEvent(new CustomEvent('notifications:read-matching', {
@@ -27,6 +34,16 @@ function Friends() {
     const [requests, setRequests] = useState<Friendship[]>([]);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<FriendsTab>('friends');
+    const [menu, setMenu] = useState<FriendMenuState | null>(null);
+    const [confirmFriendId, setConfirmFriendId] = useState<number | null>(null);
+    const [deletingFriendId, setDeletingFriendId] = useState<number | null>(null);
+
+    const selectedFriend = menu
+        ? friends.find(friend => friend.id === menu.friendId) ?? null
+        : null;
+    const confirmFriend = confirmFriendId
+        ? friends.find(friend => friend.id === confirmFriendId) ?? null
+        : null;
 
     useEffect(() => {
         Promise.all([
@@ -47,6 +64,31 @@ function Friends() {
                 console.error('Ошибка отметки уведомлений друзей:', error);
             });
     }, []);
+
+    useEffect(() => {
+        if (!menu) {
+            return;
+        }
+
+        const close = () => setMenu(null);
+        const closeOnEscape = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                close();
+            }
+        };
+
+        window.addEventListener('click', close);
+        window.addEventListener('contextmenu', close);
+        window.addEventListener('scroll', close, true);
+        window.addEventListener('keydown', closeOnEscape);
+
+        return () => {
+            window.removeEventListener('click', close);
+            window.removeEventListener('contextmenu', close);
+            window.removeEventListener('scroll', close, true);
+            window.removeEventListener('keydown', closeOnEscape);
+        };
+    }, [menu]);
 
     const acceptRequest = async (friendshipId: number, actorId: number) => {
         try {
@@ -70,13 +112,42 @@ function Friends() {
         }
     };
 
-    const removeFriend = async (friendId: number) => {
-        if (!confirm('Удалить из друзей?')) return;
+    const openFriendMenu = (friend: User, position: { x: number; y: number }, mode: 'desktop' | 'mobile') => {
+        if (!friend.id) {
+            return;
+        }
+
+        const menuWidth = mode === 'mobile' ? 240 : 208;
+        const menuHeight = 58;
+
+        setMenu({
+            friendId: friend.id,
+            mode,
+            x: Math.max(8, Math.min(position.x, window.innerWidth - menuWidth - 8)),
+            y: Math.max(8, Math.min(position.y, window.innerHeight - menuHeight - 8)),
+        });
+    };
+
+    const requestRemoveFriend = (friendId: number) => {
+        setMenu(null);
+        setConfirmFriendId(friendId);
+    };
+
+    const confirmRemoveFriend = async () => {
+        if (!confirmFriendId) {
+            return;
+        }
+
+        setDeletingFriendId(confirmFriendId);
         try {
-            await friendService.removeFriend(friendId);
-            setFriends(prev => prev.filter(f => f.id !== friendId));
+            await friendService.removeFriend(confirmFriendId);
+            setFriends(prev => prev.filter(f => f.id !== confirmFriendId));
+            setConfirmFriendId(null);
         } catch (error) {
             console.error(error);
+            alert('Не удалось удалить из друзей');
+        } finally {
+            setDeletingFriendId(null);
         }
     };
 
@@ -90,14 +161,20 @@ function Friends() {
                 <div className="flex border-b border-gray-200/80 bg-gray-50/70">
                     <button
                         type="button"
-                        onClick={() => setActiveTab('friends')}
+                        onClick={() => {
+                            setMenu(null);
+                            setActiveTab('friends');
+                        }}
                         className={tabClass(activeTab === 'friends')}
                     >
                         Друзья ({friends.length})
                     </button>
                     <button
                         type="button"
-                        onClick={() => setActiveTab('requests')}
+                        onClick={() => {
+                            setMenu(null);
+                            setActiveTab('requests');
+                        }}
                         className={tabClass(activeTab === 'requests')}
                     >
                         Заявки ({requests.length})
@@ -114,7 +191,8 @@ function Friends() {
                                     <FriendItem
                                         key={friend.id}
                                         friend={friend}
-                                        onRemove={removeFriend}
+                                        active={menu?.mode === 'mobile' && menu.friendId === friend.id}
+                                        onOpenMenu={openFriendMenu}
                                     />
                                 ))}
                             </div>
@@ -137,6 +215,65 @@ function Friends() {
                     )}
                 </div>
             </div>
+            {menu?.mode === 'mobile' && selectedFriend && (
+                <button
+                    type="button"
+                    className="fixed inset-0 z-40 cursor-default bg-slate-950/35 backdrop-blur-[1px]"
+                    aria-label="Закрыть меню друга"
+                    onClick={() => setMenu(null)}
+                    onContextMenu={event => {
+                        event.preventDefault();
+                        setMenu(null);
+                    }}
+                />
+            )}
+            {menu && selectedFriend && (
+                <div
+                    className="fixed z-50 w-52 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl shadow-slate-900/10"
+                    style={{ left: menu.x, top: menu.y }}
+                    onClick={event => event.stopPropagation()}
+                    onContextMenu={event => event.preventDefault()}
+                >
+                    <button
+                        type="button"
+                        className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm text-red-600 transition hover:bg-red-50"
+                        onClick={() => requestRemoveFriend(selectedFriend.id!)}
+                    >
+                        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-red-50">
+                            <Icon name="delete" className="h-3.5 w-3.5" />
+                        </span>
+                        Удалить из друзей
+                    </button>
+                </div>
+            )}
+            {confirmFriend && (
+                <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 px-4">
+                    <div className="app-card w-full max-w-sm p-5 shadow-xl sm:p-6">
+                        <h2 className="mb-2 text-lg font-semibold text-gray-950">Удалить из друзей?</h2>
+                        <p className="mb-4 text-sm leading-5 text-gray-600">
+                            {confirmFriend.name || confirmFriend.email || 'Пользователь'} будет удалён из списка друзей.
+                        </p>
+                        <div className="flex gap-3">
+                            <button
+                                type="button"
+                                onClick={confirmRemoveFriend}
+                                disabled={deletingFriendId === confirmFriend.id}
+                                className="flex-1 rounded-xl bg-red-500 px-4 py-2 text-white transition hover:bg-red-600 disabled:opacity-60"
+                            >
+                                {deletingFriendId === confirmFriend.id ? 'Удаляем...' : 'Удалить'}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setConfirmFriendId(null)}
+                                disabled={Boolean(deletingFriendId)}
+                                className="flex-1 rounded-xl bg-gray-100 px-4 py-2 text-gray-800 transition hover:bg-gray-200 disabled:opacity-60"
+                            >
+                                Отмена
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
