@@ -1,4 +1,4 @@
-import type { ChangeEvent, FormEvent } from 'react';
+import { useRef, type ChangeEvent, type FormEvent, type PointerEvent, type WheelEvent } from 'react';
 
 import type { PasswordChangeData } from "@/shared/types/domain.js";
 import { Avatar } from "@/shared/ui/Avatar.js";
@@ -18,6 +18,15 @@ export type ProfileEditMessage = {
     type: 'success' | 'error';
     text: string;
 };
+
+const avatarPositionMin = 0;
+const avatarPositionMax = 100;
+const avatarScaleMin = 1;
+const avatarScaleMax = 3;
+
+function clamp(value: number, min: number, max: number) {
+    return Math.min(max, Math.max(min, value));
+}
 
 type TabsProps = {
     activeTab: ProfileEditTab;
@@ -87,17 +96,14 @@ export function ProfileForm({
     return (
         <form onSubmit={onSubmit} className="space-y-4">
             <div className="space-y-3">
-                <div className="flex justify-center">
-                    <Avatar
-                        name={data.name}
-                        src={avatarPreview || '/default-avatar.png'}
-                        positionX={data.avatarPositionX}
-                        positionY={data.avatarPositionY}
-                        scale={data.avatarScale}
-                        size="xl"
-                        className="border border-gray-200"
-                    />
-                </div>
+                <AvatarPositionEditor
+                    name={data.name}
+                    src={avatarPreview || '/default-avatar.png'}
+                    positionX={data.avatarPositionX}
+                    positionY={data.avatarPositionY}
+                    scale={data.avatarScale}
+                    onChange={onAvatarSettingChange}
+                />
 
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Аватар</label>
@@ -110,28 +116,12 @@ export function ProfileForm({
                     <p className="mt-1 text-xs text-gray-500">JPG, PNG или WebP, максимум 5 МБ.</p>
                 </div>
 
-                <div className="grid gap-3 rounded-xl border border-gray-100 bg-gray-50 p-3 sm:grid-cols-3">
-                    <RangeControl
-                        label="Горизонталь"
-                        value={data.avatarPositionX}
-                        min={0}
-                        max={100}
-                        step={1}
-                        onChange={value => onAvatarSettingChange('avatarPositionX', value)}
-                    />
-                    <RangeControl
-                        label="Вертикаль"
-                        value={data.avatarPositionY}
-                        min={0}
-                        max={100}
-                        step={1}
-                        onChange={value => onAvatarSettingChange('avatarPositionY', value)}
-                    />
+                <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
                     <RangeControl
                         label="Масштаб"
                         value={data.avatarScale}
-                        min={1}
-                        max={3}
+                        min={avatarScaleMin}
+                        max={avatarScaleMax}
                         step={0.05}
                         onChange={value => onAvatarSettingChange('avatarScale', value)}
                     />
@@ -173,6 +163,159 @@ export function ProfileForm({
                 </button>
             </div>
         </form>
+    );
+}
+
+function AvatarPositionEditor({
+    name,
+    src,
+    positionX,
+    positionY,
+    scale,
+    onChange,
+}: {
+    name: string;
+    src: string;
+    positionX: number;
+    positionY: number;
+    scale: number;
+    onChange: (name: 'avatarPositionX' | 'avatarPositionY' | 'avatarScale', value: number) => void;
+}) {
+    const pointersRef = useRef(new Map<number, { x: number; y: number }>());
+    const dragStartRef = useRef<{
+        x: number;
+        y: number;
+        positionX: number;
+        positionY: number;
+    } | null>(null);
+    const pinchStartRef = useRef<{
+        distance: number;
+        scale: number;
+    } | null>(null);
+
+    const setPosition = (nextX: number, nextY: number) => {
+        onChange('avatarPositionX', clamp(nextX, avatarPositionMin, avatarPositionMax));
+        onChange('avatarPositionY', clamp(nextY, avatarPositionMin, avatarPositionMax));
+    };
+
+    const setScale = (nextScale: number) => {
+        onChange('avatarScale', Number(clamp(nextScale, avatarScaleMin, avatarScaleMax).toFixed(2)));
+    };
+
+    const pointerDistance = () => {
+        const points = Array.from(pointersRef.current.values());
+        if (points.length < 2) {
+            return 0;
+        }
+
+        return Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+    };
+
+    const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        event.currentTarget.setPointerCapture(event.pointerId);
+        pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+        if (pointersRef.current.size === 1) {
+            dragStartRef.current = {
+                x: event.clientX,
+                y: event.clientY,
+                positionX,
+                positionY,
+            };
+            pinchStartRef.current = null;
+        }
+
+        if (pointersRef.current.size === 2) {
+            pinchStartRef.current = {
+                distance: pointerDistance(),
+                scale,
+            };
+        }
+    };
+
+    const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
+        if (!pointersRef.current.has(event.pointerId)) {
+            return;
+        }
+
+        event.preventDefault();
+        pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+        if (pointersRef.current.size >= 2 && pinchStartRef.current) {
+            const distance = pointerDistance();
+            if (distance > 0 && pinchStartRef.current.distance > 0) {
+                setScale(pinchStartRef.current.scale * (distance / pinchStartRef.current.distance));
+            }
+            return;
+        }
+
+        const dragStart = dragStartRef.current;
+        const rect = event.currentTarget.getBoundingClientRect();
+        if (!dragStart || rect.width === 0 || rect.height === 0) {
+            return;
+        }
+
+        const deltaX = ((event.clientX - dragStart.x) / rect.width) * 100;
+        const deltaY = ((event.clientY - dragStart.y) / rect.height) * 100;
+
+        setPosition(
+            dragStart.positionX - deltaX,
+            dragStart.positionY - deltaY,
+        );
+    };
+
+    const handlePointerEnd = (event: PointerEvent<HTMLDivElement>) => {
+        pointersRef.current.delete(event.pointerId);
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+        }
+
+        const remaining = Array.from(pointersRef.current.values());
+        pinchStartRef.current = null;
+
+        if (remaining.length === 1) {
+            dragStartRef.current = {
+                x: remaining[0].x,
+                y: remaining[0].y,
+                positionX,
+                positionY,
+            };
+        } else {
+            dragStartRef.current = null;
+        }
+    };
+
+    const handleWheel = (event: WheelEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        const direction = event.deltaY > 0 ? -1 : 1;
+        setScale(scale + direction * 0.08);
+    };
+
+    return (
+        <div className="flex justify-center">
+            <div
+                role="application"
+                tabIndex={0}
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerEnd}
+                onPointerCancel={handlePointerEnd}
+                onWheel={handleWheel}
+                className="cursor-grab touch-none rounded-full active:cursor-grabbing"
+                aria-label="Настройка области аватара"
+            >
+                <Avatar
+                    name={name}
+                    src={src}
+                    positionX={positionX}
+                    positionY={positionY}
+                    scale={scale}
+                    size="xl"
+                    className="border border-gray-200 shadow-sm"
+                />
+            </div>
+        </div>
     );
 }
 
