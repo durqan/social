@@ -2,6 +2,7 @@ import { memo, useRef, useState, type MouseEvent, type TouchEvent } from 'react'
 import type { Message } from "@/shared/types/domain.js";
 import { Avatar } from "@/shared/ui/Avatar.js";
 import { Icon } from "@/shared/ui/Icon.js";
+import { messageAuthorName, messagePreviewText } from "@/features/chat/lib/messagePreview.js";
 
 const urlPattern = /(https?:\/\/[^\s<]+|www\.[^\s<]+)/gi;
 
@@ -69,12 +70,17 @@ interface ChatMessageProps {
     showDate: boolean;
     isFirst: boolean;
     recipientName?: string;
+    recipientAvatar?: string | null;
+    recipientAvatarPositionX?: number;
+    recipientAvatarPositionY?: number;
+    recipientAvatarScale?: number;
     selectionMode: boolean;
     isSelected: boolean;
     isContextActive: boolean;
     canSelect: boolean;
     onToggleSelect: () => void;
     onSelectMessage: () => void;
+    onReplyPreviewClick: (messageId: number) => void;
     onOpenContextMenu: (message: Message, options: {
         position: { x: number; y: number };
         source: 'mouse' | 'touch';
@@ -94,12 +100,17 @@ const ChatMessageComponent = ({
                                 showDate,
                                 isFirst,
                                 recipientName,
+                                recipientAvatar,
+                                recipientAvatarPositionX,
+                                recipientAvatarPositionY,
+                                recipientAvatarScale,
                                 selectionMode,
                                 isSelected,
                                 isContextActive,
                                 canSelect,
                                 onToggleSelect,
                                 onSelectMessage,
+                                onReplyPreviewClick,
                                 onOpenContextMenu,
                                 editingMessageId,
                                 editContent,
@@ -235,7 +246,15 @@ const ChatMessageComponent = ({
                     </div>
                 )}
                 {!isOwn && !selectionMode && (
-                    <Avatar name={recipientName} size="sm" className="flex-shrink-0 mr-2" />
+                    <Avatar
+                        name={recipientName}
+                        src={recipientAvatar}
+                        positionX={recipientAvatarPositionX}
+                        positionY={recipientAvatarPositionY}
+                        scale={recipientAvatarScale}
+                        size="sm"
+                        className="flex-shrink-0 mr-2"
+                    />
                 )}
                 <div className="relative max-w-[82%] sm:max-w-[70%]">
                     {editingMessageId === message.id ? (
@@ -261,6 +280,40 @@ const ChatMessageComponent = ({
                             onClick={handleMessageClick}
                             className={`rounded-2xl px-3 py-2 transition-shadow sm:px-4 ${selectionMode ? canSelect ? 'cursor-pointer' : 'opacity-60' : ''} ${isContextActive ? 'shadow-2xl ring-2 ring-white/80' : ''} ${isOwn ? 'bg-sky-50 text-slate-900 border border-sky-100 rounded-br-md' : 'bg-white text-gray-900 rounded-bl-md border border-gray-200/70'}`}
                         >
+                            {message.forwarded_from_message_id && (
+                                <div className={`mb-1 text-xs font-medium ${isOwn ? 'text-sky-700' : 'text-gray-500'}`}>
+                                    {message.forwarded_from_user?.name
+                                        ? `Переслано от ${message.forwarded_from_user.name}`
+                                        : 'Пересланное сообщение'}
+                                </div>
+                            )}
+
+                            {message.reply_to_message_id && (
+                                <button
+                                    type="button"
+                                    onClick={event => {
+                                        event.stopPropagation();
+                                        if (message.reply_to_message_id) {
+                                            onReplyPreviewClick(message.reply_to_message_id);
+                                        }
+                                    }}
+                                    className={`mb-2 block w-full rounded-lg border-l-2 px-2 py-1.5 text-left transition ${isOwn ? 'border-sky-400 bg-white/65 hover:bg-white' : 'border-gray-300 bg-gray-50 hover:bg-gray-100'}`}
+                                >
+                                    {message.reply_to_message ? (
+                                        <>
+                                            <span className="block truncate text-xs font-semibold text-gray-700">
+                                                {messageAuthorName(message.reply_to_message)}
+                                            </span>
+                                            <span className="block truncate text-xs text-gray-500">
+                                                {messagePreviewText(message.reply_to_message)}
+                                            </span>
+                                        </>
+                                    ) : (
+                                        <span className="block truncate text-xs text-gray-500">Сообщение недоступно</span>
+                                    )}
+                                </button>
+                            )}
+
                             {message.attachments?.length ? (
                                 <div className={`grid gap-2 ${message.attachments.length > 1 ? 'grid-cols-2' : 'grid-cols-1'} ${message.content ? 'mb-2' : ''}`}>
                                     {message.attachments.map(attachment => (

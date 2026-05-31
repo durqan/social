@@ -6,6 +6,9 @@ export type UpdateUserData = {
     email?: string;
     age?: number;
     bio?: string;
+    avatar_position_x?: number;
+    avatar_position_y?: number;
+    avatar_scale?: number;
 };
 
 export type ChangePasswordData = {
@@ -17,6 +20,9 @@ export const normalizeUser = (user: User): User => ({
     ...user,
     createdAt: user.createdAt ?? user.created_at,
     isEmailVerified: user.isEmailVerified ?? user.is_email_verified ?? false,
+    avatarPositionX: user.avatarPositionX ?? user.avatar_position_x ?? 50,
+    avatarPositionY: user.avatarPositionY ?? user.avatar_position_y ?? 50,
+    avatarScale: user.avatarScale ?? user.avatar_scale ?? 1,
 });
 
 export const userService = {

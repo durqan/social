@@ -19,6 +19,18 @@ func CreateMessageAttachments(db *gorm.DB, attachments []models.MessageAttachmen
 	return db.Create(&attachments).Error
 }
 
+func preloadMessageRelations(db *gorm.DB) *gorm.DB {
+	return db.
+		Preload("From").
+		Preload("To").
+		Preload("Attachments").
+		Preload("ReplyToMessage.From").
+		Preload("ReplyToMessage.Attachments").
+		Preload("ForwardedFromUser").
+		Preload("ForwardedFromMessage.From").
+		Preload("ForwardedFromMessage.Attachments")
+}
+
 func GetMessageAttachmentForUser(db *gorm.DB, attachmentID, userID uint) (*models.MessageAttachment, error) {
 	var attachment models.MessageAttachment
 	err := db.
@@ -35,6 +47,10 @@ func GetConversations(db *gorm.DB, userID uint) ([]map[string]interface{}, error
         SELECT 
             user_id,
             name,
+            avatar,
+            avatar_position_x,
+            avatar_position_y,
+            avatar_scale,
             last_message,
             last_message_at,
             unread_count
@@ -45,12 +61,17 @@ func GetConversations(db *gorm.DB, userID uint) ([]map[string]interface{}, error
                     ELSE m.from_id
                 END as user_id,
                 u.name,
+                u.avatar,
+                u.avatar_position_x,
+                u.avatar_position_y,
+                u.avatar_scale,
                 m.content as last_message,
                 m.created_at as last_message_at,
                 (
                     SELECT COUNT(*) FROM messages 
                     WHERE to_id = ? AND from_id = CASE WHEN m.from_id = ? THEN m.to_id ELSE m.from_id END 
                     AND is_read = false
+                    AND deleted_at IS NULL
                 ) as unread_count,
                 ROW_NUMBER() OVER (
                     PARTITION BY CASE WHEN m.from_id = ? THEN m.to_id ELSE m.from_id END 
@@ -58,7 +79,8 @@ func GetConversations(db *gorm.DB, userID uint) ([]map[string]interface{}, error
                 ) as rn
             FROM messages m
             JOIN users u ON u.id = CASE WHEN m.from_id = ? THEN m.to_id ELSE m.from_id END
-            WHERE m.from_id = ? OR m.to_id = ?
+            WHERE (m.from_id = ? OR m.to_id = ?)
+            AND m.deleted_at IS NULL
         ) subq
         WHERE rn = 1
         ORDER BY last_message_at DESC
@@ -76,7 +98,30 @@ func MarkMessagesAsRead(db *gorm.DB, fromID, toID uint) error {
 
 func GetMessageByID(db *gorm.DB, id uint) (*models.Message, error) {
 	var message models.Message
-	err := db.Preload("From").Preload("To").Preload("Attachments").Preload("Attachments").First(&message, id).Error
+	err := preloadMessageRelations(db).First(&message, id).Error
+	return &message, err
+}
+
+func GetMessageByIDForUser(db *gorm.DB, id, userID uint) (*models.Message, error) {
+	var message models.Message
+	err := preloadMessageRelations(db).
+		Where("id = ? AND (from_id = ? OR to_id = ?)", id, userID, userID).
+		First(&message).Error
+	return &message, err
+}
+
+func GetMessageInConversation(db *gorm.DB, id, userID1, userID2 uint) (*models.Message, error) {
+	var message models.Message
+	err := preloadMessageRelations(db).
+		Where(
+			"id = ? AND ((from_id = ? AND to_id = ?) OR (from_id = ? AND to_id = ?))",
+			id,
+			userID1,
+			userID2,
+			userID2,
+			userID1,
+		).
+		First(&message).Error
 	return &message, err
 }
 
@@ -91,7 +136,7 @@ func DeleteMessage(db *gorm.DB, id uint) error {
 func GetMessagesBetweenPaginated(db *gorm.DB, userID1, userID2 uint, limit int, beforeID *uint) ([]models.Message, error) {
 	var messages []models.Message
 
-	query := db.Preload("From").Preload("To").Preload("Attachments").Preload("Attachments").
+	query := preloadMessageRelations(db).
 		Where("(from_id = ? AND to_id = ?) OR (from_id = ? AND to_id = ?)", userID1, userID2, userID2, userID1).
 		Order("created_at DESC")
 

@@ -32,6 +32,9 @@ function ProfileMain() {
                             <Avatar
                                 name={user?.name}
                                 src={user?.avatar}
+                                positionX={user?.avatarPositionX}
+                                positionY={user?.avatarPositionY}
+                                scale={user?.avatarScale}
                                 size="lg"
                                 className="w-full h-full text-xl sm:text-2xl"
                             />

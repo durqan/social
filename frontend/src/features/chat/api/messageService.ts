@@ -42,6 +42,13 @@ export const messageService = {
         return request.patch<Message>(`/messages/${messageId}`, { content });
     },
 
+    async forwardMessage(messageId: number, toUserIds: number[]): Promise<Message[]> {
+        const response = await request.post<{ messages: Message[] }>(`/messages/${messageId}/forward`, {
+            toUserIds,
+        });
+        return response.messages || [];
+    },
+
     async deleteMessage(messageId: number): Promise<void> {
         await request.delete(`/messages/${messageId}`);
     },

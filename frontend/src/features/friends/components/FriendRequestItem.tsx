@@ -24,7 +24,14 @@ export function FriendRequestItem({ request, onAccept }: FriendRequestItemProps)
                 className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
                 onClick={() => navigate(`/users/${user.id}`)}
             >
-                <Avatar name={user.name} src={user.avatar} size="list" />
+                <Avatar
+                    name={user.name}
+                    src={user.avatar}
+                    positionX={user.avatarPositionX ?? user.avatar_position_x}
+                    positionY={user.avatarPositionY ?? user.avatar_position_y}
+                    scale={user.avatarScale ?? user.avatar_scale}
+                    size="list"
+                />
                 <span className="min-w-0">
                     <span className="block truncate font-semibold text-gray-800">
                         {user.name || 'Пользователь'}

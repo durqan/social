@@ -3,6 +3,10 @@ import { Icon } from "@/shared/ui/Icon.js";
 
 interface ChatHeaderProps {
     recipientName?: string;
+    recipientAvatar?: string | null;
+    recipientAvatarPositionX?: number;
+    recipientAvatarPositionY?: number;
+    recipientAvatarScale?: number;
     recipientStatus?: boolean;
     selectionMode: boolean;
     selectedCount: number;
@@ -15,6 +19,10 @@ interface ChatHeaderProps {
 
 export const ChatHeader = ({
                                recipientName,
+                               recipientAvatar,
+                               recipientAvatarPositionX,
+                               recipientAvatarPositionY,
+                               recipientAvatarScale,
                                recipientStatus,
                                selectionMode,
                                selectedCount,
@@ -52,7 +60,13 @@ export const ChatHeader = ({
                                 <Icon name="arrowLeft" />
                             </button>
                         )}
-                        <Avatar name={recipientName} />
+                        <Avatar
+                            name={recipientName}
+                            src={recipientAvatar}
+                            positionX={recipientAvatarPositionX}
+                            positionY={recipientAvatarPositionY}
+                            scale={recipientAvatarScale}
+                        />
                         <div className="min-w-0">
                             <h2 className="font-semibold text-gray-950 truncate text-sm sm:text-base">{recipientName || 'Пользователь'}</h2>
                             <p className={recipientStatus ? 'text-xs text-emerald-600' : 'text-xs text-gray-400'}>

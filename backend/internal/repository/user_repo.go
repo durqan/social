@@ -82,7 +82,12 @@ func UpdateUserAvatar(db *gorm.DB, userID uint, avatar string) error {
 
 	result := db.Model(&models.User{}).
 		Where("id = ?", userID).
-		Update("avatar", avatar)
+		Updates(map[string]interface{}{
+			"avatar":            avatar,
+			"avatar_position_x": 50,
+			"avatar_position_y": 50,
+			"avatar_scale":      1,
+		})
 
 	if result.Error != nil {
 		return result.Error

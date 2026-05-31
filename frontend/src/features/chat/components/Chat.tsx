@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
 import { useNavigate, useOutletContext, useParams } from 'react-router-dom';
-import type { MessageAttachment, User } from "@/shared/types/domain.js";
+import type { Message, MessageAttachment, User } from "@/shared/types/domain.js";
 import { messageService } from "@/features/chat/api/messageService.js";
+import { friendService } from "@/features/friends/api/friendService.js";
 import { userService } from "@/shared/api/userService.js";
 import { useChatMessages } from "@/features/chat/hooks/useChatMessages.js";
 import { useChatWebSocket } from "@/features/chat/hooks/useChatWebSocket.js";
@@ -18,6 +19,8 @@ import { Spinner } from "@/shared/ui/Spinner.js";
 import { formatMonthDayDate, formatTime } from "@/shared/utils/date.js";
 import {usePresence} from "@/shared/hooks/usePresence.js";
 import { getUploadErrorMessage } from "@/shared/api/errors.js";
+import { Avatar } from "@/shared/ui/Avatar.js";
+import { messageAuthorName, messagePreviewText } from "@/features/chat/lib/messagePreview.js";
 import {
     dataTransferHasFiles,
     dataTransferHasImages,
@@ -40,6 +43,12 @@ function Chat() {
     const [sendStatus, setSendStatus] = useState('');
     const [draggingImage, setDraggingImage] = useState(false);
     const [incomingFiles, setIncomingFiles] = useState<{ id: number; files: File[] } | null>(null);
+    const [replyToMessage, setReplyToMessage] = useState<Message | null>(null);
+    const [forwardMessage, setForwardMessage] = useState<Message | null>(null);
+    const [forwardFriends, setForwardFriends] = useState<User[]>([]);
+    const [forwardSelectedIds, setForwardSelectedIds] = useState<Set<number>>(new Set());
+    const [forwardLoading, setForwardLoading] = useState(false);
+    const [forwardError, setForwardError] = useState('');
     const dragDepthRef = useRef(0);
 
     const {
@@ -79,7 +88,8 @@ function Chat() {
                     m.id >= optimisticMessageFloor &&
                     m.from_id === msg.from_id &&
                     m.to_id === msg.to_id &&
-                    m.content === msg.content
+                    m.content === msg.content &&
+                    (m.reply_to_message_id ?? null) === (msg.reply_to_message_id ?? null)
                 );
                 if (optimisticIndex !== -1) {
                     return prev.map((m, index) => index === optimisticIndex ? msg : m);
@@ -125,6 +135,17 @@ function Chat() {
         return attachments;
     }, []);
 
+    const replyPreview = useMemo(() => {
+        if (!replyToMessage) {
+            return null;
+        }
+
+        return {
+            author: messageAuthorName(replyToMessage),
+            text: messagePreviewText(replyToMessage),
+        };
+    }, [replyToMessage]);
+
     const handleBatchDelete = async () => {
         const realIds = messages
             .filter(message => selectedMessages.has(message.id))
@@ -163,13 +184,20 @@ function Chat() {
                 content,
                 created_at: new Date().toISOString(),
                 is_read: false,
+                reply_to_message_id: replyToMessage?.id ?? null,
+                reply_to_message: replyToMessage,
+                forwarded_from_message_id: null,
+                forwarded_from_user_id: null,
+                forwarded_from_message: null,
+                forwarded_from_user: null,
                 from: { id: currentUser?.id || 0, name: currentUser?.name || '', email: currentUser?.email || '' },
                 attachments,
             };
 
             sendMessageToStore(content, tempMessage);
-            wsService.send(Number(userId), content, attachments);
+            wsService.send(Number(userId), content, attachments, replyToMessage?.id);
             setNewMessage('');
+            setReplyToMessage(null);
             return true;
         } catch (error) {
             console.error(error);
@@ -178,7 +206,76 @@ function Chat() {
         } finally {
             setSendStatus('');
         }
-    }, [currentUser, newMessage, sendMessageToStore, uploadAttachments, userId, wsService]);
+    }, [currentUser, newMessage, replyToMessage, sendMessageToStore, uploadAttachments, userId, wsService]);
+
+    const openForwardDialog = useCallback((message: Message) => {
+        setForwardMessage(message);
+        setForwardSelectedIds(new Set());
+        setForwardError('');
+        setForwardLoading(true);
+        friendService.getFriendsList()
+            .then(setForwardFriends)
+            .catch(error => {
+                console.error(error);
+                setForwardError('Не удалось загрузить список друзей');
+            })
+            .finally(() => setForwardLoading(false));
+    }, []);
+
+    const closeForwardDialog = () => {
+        if (forwardLoading) {
+            return;
+        }
+
+        setForwardMessage(null);
+        setForwardSelectedIds(new Set());
+        setForwardError('');
+    };
+
+    const toggleForwardRecipient = (friendId?: number) => {
+        if (!friendId) {
+            return;
+        }
+
+        setForwardSelectedIds(prev => {
+            const next = new Set(prev);
+            if (next.has(friendId)) {
+                next.delete(friendId);
+            } else {
+                next.add(friendId);
+            }
+            return next;
+        });
+    };
+
+    const submitForward = async () => {
+        if (!forwardMessage || forwardSelectedIds.size === 0) {
+            return;
+        }
+
+        setForwardLoading(true);
+        setForwardError('');
+
+        try {
+            const forwarded = await messageService.forwardMessage(forwardMessage.id, Array.from(forwardSelectedIds));
+            setMessages(prev => {
+                const existingIds = new Set(prev.map(message => message.id));
+                const currentChatMessages = forwarded.filter(message =>
+                    !existingIds.has(message.id) &&
+                    (message.from_id === Number(userId) || message.to_id === Number(userId))
+                );
+
+                return currentChatMessages.length ? [...prev, ...currentChatMessages] : prev;
+            });
+            setForwardMessage(null);
+            setForwardSelectedIds(new Set());
+        } catch (error) {
+            console.error(error);
+            setForwardError('Не удалось переслать сообщение');
+        } finally {
+            setForwardLoading(false);
+        }
+    };
 
     const queueFilesForPreview = useCallback((files: File[]) => {
         if (!files.length) {
@@ -282,6 +379,10 @@ function Chat() {
 
             <ChatHeader
                 recipientName={recipient?.name}
+                recipientAvatar={recipient?.avatar}
+                recipientAvatarPositionX={recipient?.avatarPositionX}
+                recipientAvatarPositionY={recipient?.avatarPositionY}
+                recipientAvatarScale={recipient?.avatarScale}
                 recipientStatus={online}
                 selectionMode={selectionMode}
                 selectedCount={selectedMessages.size}
@@ -303,10 +404,16 @@ function Chat() {
                 messages={messages}
                 currentUserId={currentUser?.id}
                 recipientName={recipient?.name}
+                recipientAvatar={recipient?.avatar}
+                recipientAvatarPositionX={recipient?.avatarPositionX}
+                recipientAvatarPositionY={recipient?.avatarPositionY}
+                recipientAvatarScale={recipient?.avatarScale}
                 selectionMode={selectionMode}
                 selectedMessages={selectedMessages}
                 onToggleSelect={toggleSelect}
                 onEnterSelectionMode={enterSelectionMode}
+                onReplyMessage={setReplyToMessage}
+                onForwardMessage={openForwardDialog}
                 onEditMessage={(id, content) => {
                     setEditingMessageId(id);
                     setEditContent(content);
@@ -339,7 +446,84 @@ function Chat() {
                 incomingFiles={incomingFiles}
                 onIncomingFilesConsumed={() => setIncomingFiles(null)}
                 sendStatus={sendStatus}
+                replyPreview={replyPreview}
+                onCancelReply={() => setReplyToMessage(null)}
             />
+            {forwardMessage && (
+                <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 px-4">
+                    <div className="app-card w-full max-w-md p-4 shadow-xl sm:p-5">
+                        <div className="mb-3 flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                                <h2 className="text-lg font-semibold text-gray-950">Переслать сообщение</h2>
+                                <p className="truncate text-sm text-gray-500">{messagePreviewText(forwardMessage)}</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={closeForwardDialog}
+                                disabled={forwardLoading}
+                                className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-gray-500 transition hover:bg-gray-100"
+                                aria-label="Закрыть"
+                            >
+                                x
+                            </button>
+                        </div>
+
+                        <div className="max-h-72 overflow-y-auto rounded-xl border border-gray-100">
+                            {forwardLoading && forwardFriends.length === 0 ? (
+                                <div className="flex justify-center p-5"><Spinner size="sm" /></div>
+                            ) : forwardFriends.length === 0 ? (
+                                <div className="p-4 text-center text-sm text-gray-500">Нет доступных получателей</div>
+                            ) : (
+                                forwardFriends.map(friend => (
+                                    <label key={friend.id} className="flex cursor-pointer items-center gap-3 border-b border-gray-100 p-3 last:border-b-0 hover:bg-gray-50">
+                                        <input
+                                            type="checkbox"
+                                            checked={Boolean(friend.id && forwardSelectedIds.has(friend.id))}
+                                            onChange={() => toggleForwardRecipient(friend.id)}
+                                            className="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500"
+                                        />
+                                        <Avatar
+                                            name={friend.name}
+                                            src={friend.avatar}
+                                            positionX={friend.avatarPositionX}
+                                            positionY={friend.avatarPositionY}
+                                            scale={friend.avatarScale}
+                                        />
+                                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-800">
+                                            {friend.name || friend.email}
+                                        </span>
+                                    </label>
+                                ))
+                            )}
+                        </div>
+
+                        {forwardError && (
+                            <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                                {forwardError}
+                            </div>
+                        )}
+
+                        <div className="mt-4 flex gap-3">
+                            <button
+                                type="button"
+                                onClick={submitForward}
+                                disabled={forwardLoading || forwardSelectedIds.size === 0}
+                                className="flex-1 rounded-xl bg-sky-600 px-4 py-2 text-white transition hover:bg-sky-700 disabled:opacity-50"
+                            >
+                                {forwardLoading ? 'Отправляем...' : 'Переслать'}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={closeForwardDialog}
+                                disabled={forwardLoading}
+                                className="flex-1 rounded-xl bg-gray-100 px-4 py-2 text-gray-800 transition hover:bg-gray-200 disabled:opacity-50"
+                            >
+                                Отмена
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
             <DeleteConfirmModal isOpen={deleteConfirmOpen} onConfirm={handleBatchDelete} onCancel={closeDeleteConfirm} />
         </div>
     );

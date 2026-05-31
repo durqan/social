@@ -98,7 +98,14 @@ export function FriendItem({ friend, active, onOpenMenu }: FriendItemProps) {
             className={`flex w-full select-none items-center gap-3 rounded-xl p-3 text-left transition [-webkit-touch-callout:none] [-webkit-user-select:none] hover:bg-gray-50 ${active ? 'relative z-[60] bg-white shadow-2xl ring-2 ring-white/80' : ''}`}
             style={{ touchAction: 'manipulation' }}
         >
-            <Avatar name={friend.name} src={friend.avatar} size="list" />
+            <Avatar
+                name={friend.name}
+                src={friend.avatar}
+                positionX={friend.avatarPositionX}
+                positionY={friend.avatarPositionY}
+                scale={friend.avatarScale}
+                size="list"
+            />
             <span className="min-w-0">
                 <span className="block truncate font-semibold text-gray-800">
                     {friend.name || 'Пользователь'}

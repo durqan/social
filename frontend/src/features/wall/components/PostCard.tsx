@@ -46,7 +46,14 @@ export function PostCard({
         <div className="app-card p-3 sm:p-4">
             <div className="flex items-center justify-between mb-3">
                 <div className="flex min-w-0 items-center gap-3">
-                    <Avatar name={post.user?.name} className="cursor-pointer" />
+                    <Avatar
+                        name={post.user?.name}
+                        src={post.user?.avatar}
+                        positionX={post.user?.avatar_position_x}
+                        positionY={post.user?.avatar_position_y}
+                        scale={post.user?.avatar_scale}
+                        className="cursor-pointer"
+                    />
                     <div className="min-w-0">
                         <p className="truncate font-semibold text-gray-800">{post.user?.name || 'Пользователь'}</p>
                         <p className="text-xs text-gray-500">{formatRelativeDate(post.created_at)}</p>
@@ -121,7 +128,15 @@ export function PostCard({
                     <div className="space-y-3 mb-3">
                         {comments.map(comment => (
                             <div key={comment.id} className="flex gap-2 sm:gap-3">
-                                <Avatar name={comment.user?.name} size="sm" className="flex-shrink-0 cursor-pointer" />
+                                <Avatar
+                                    name={comment.user?.name}
+                                    src={comment.user?.avatar}
+                                    positionX={comment.user?.avatar_position_x}
+                                    positionY={comment.user?.avatar_position_y}
+                                    scale={comment.user?.avatar_scale}
+                                    size="sm"
+                                    className="flex-shrink-0 cursor-pointer"
+                                />
                                 <div className="min-w-0 flex-1">
                                     <div className="rounded-xl bg-gray-50 p-2">
                                         <p className="truncate font-semibold text-sm">{comment.user?.name || 'Пользователь'}</p>
@@ -146,6 +161,9 @@ export function PostCard({
                         <Avatar
                             name={currentUser?.name}
                             src={currentUser?.avatar}
+                            positionX={currentUser?.avatarPositionX}
+                            positionY={currentUser?.avatarPositionY}
+                            scale={currentUser?.avatarScale}
                             size="sm"
                             className="flex-shrink-0 cursor-pointer"
                         />

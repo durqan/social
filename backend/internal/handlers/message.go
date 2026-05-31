@@ -24,8 +24,10 @@ func SendMessage(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		var req struct {
-			Content     string                            `json:"content"`
-			Attachments []services.MessageAttachmentInput `json:"attachments"`
+			Content                string                            `json:"content"`
+			Attachments            []services.MessageAttachmentInput `json:"attachments"`
+			ReplyToMessageID       *uint                             `json:"replyToMessageId"`
+			ReplyToMessageIDLegacy *uint                             `json:"reply_to_message_id"`
 		}
 
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -39,7 +41,12 @@ func SendMessage(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		message, err := services.SendMessage(db, userID, toID, req.Content, attachments)
+		replyToMessageID := req.ReplyToMessageID
+		if replyToMessageID == nil {
+			replyToMessageID = req.ReplyToMessageIDLegacy
+		}
+
+		message, err := services.SendMessage(db, userID, toID, req.Content, attachments, replyToMessageID)
 		if errors.Is(err, services.ErrMessageContentRequired) {
 			c.JSON(400, gin.H{"error": "message content or image is required"})
 			return
@@ -52,6 +59,10 @@ func SendMessage(db *gorm.DB) gin.HandlerFunc {
 			c.JSON(403, gin.H{"error": "can only message accepted friends"})
 			return
 		}
+		if errors.Is(err, services.ErrMessageInvalidReply) {
+			c.JSON(400, gin.H{"error": "reply message must belong to this conversation"})
+			return
+		}
 		if err != nil {
 			c.JSON(500, gin.H{"error": "failed to send message"})
 			return
@@ -60,6 +71,58 @@ func SendMessage(db *gorm.DB) gin.HandlerFunc {
 		publishNotification(toID, userID, dto.NotificationTypeMessage, message.ID)
 
 		c.JSON(201, services.WithPrivateAttachmentURLs(message))
+	}
+}
+
+func ForwardMessage(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, ok := authenticatedUserID(c)
+		if !ok {
+			return
+		}
+		messageID, ok := uintParam(c, "messageId", "invalid message id")
+		if !ok {
+			return
+		}
+
+		var req struct {
+			ToUserIDsLegacy []uint `json:"to_user_ids"`
+			ToUserIDs       []uint `json:"toUserIds"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(400, gin.H{"error": err.Error()})
+			return
+		}
+
+		toUserIDs := req.ToUserIDs
+		if len(toUserIDs) == 0 {
+			toUserIDs = req.ToUserIDsLegacy
+		}
+		if len(toUserIDs) == 0 || len(toUserIDs) > 20 {
+			c.JSON(400, gin.H{"error": "select between 1 and 20 recipients"})
+			return
+		}
+
+		messages, err := services.ForwardMessage(db, userID, messageID, toUserIDs)
+		if errors.Is(err, services.ErrMessageForbidden) {
+			c.JSON(403, gin.H{"error": "you do not have access to this message"})
+			return
+		}
+		if errors.Is(err, services.ErrMessageNotFriends) {
+			c.JSON(403, gin.H{"error": "can only forward messages to accepted friends"})
+			return
+		}
+		if err != nil {
+			c.JSON(500, gin.H{"error": "failed to forward message"})
+			return
+		}
+
+		for _, message := range messages {
+			publishNotification(message.ToID, userID, dto.NotificationTypeMessage, message.ID)
+			broadcastNewMessage(c.Request.Context(), message)
+		}
+
+		c.JSON(201, gin.H{"messages": services.WithPrivateAttachmentURLsForMessages(messages)})
 	}
 }
 

@@ -1,6 +1,7 @@
 import type { ChangeEvent, FormEvent } from 'react';
 
 import type { PasswordChangeData } from "@/shared/types/domain.js";
+import { Avatar } from "@/shared/ui/Avatar.js";
 
 export type ProfileEditTab = 'profile' | 'password';
 
@@ -8,6 +9,9 @@ export type ProfileFormData = {
     name: string;
     email: string;
     bio: string;
+    avatarPositionX: number;
+    avatarPositionY: number;
+    avatarScale: number;
 };
 
 export type ProfileEditMessage = {
@@ -66,6 +70,7 @@ type ProfileFormProps = {
     onSubmit: (event: FormEvent) => void;
     onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
     onAvatarChange: (event: ChangeEvent<HTMLInputElement>) => void;
+    onAvatarSettingChange: (name: 'avatarPositionX' | 'avatarPositionY' | 'avatarScale', value: number) => void;
     onCancel: () => void;
 };
 
@@ -76,16 +81,21 @@ export function ProfileForm({
     onSubmit,
     onChange,
     onAvatarChange,
+    onAvatarSettingChange,
     onCancel,
 }: ProfileFormProps) {
     return (
         <form onSubmit={onSubmit} className="space-y-4">
             <div className="space-y-3">
                 <div className="flex justify-center">
-                    <img
+                    <Avatar
+                        name={data.name}
                         src={avatarPreview || '/default-avatar.png'}
-                        alt="Avatar preview"
-                        className="w-28 h-28 rounded-full object-cover border"
+                        positionX={data.avatarPositionX}
+                        positionY={data.avatarPositionY}
+                        scale={data.avatarScale}
+                        size="xl"
+                        className="border border-gray-200"
                     />
                 </div>
 
@@ -98,6 +108,33 @@ export function ProfileForm({
                         className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-gray-100 file:px-3 file:py-2 file:text-sm file:text-gray-700"
                     />
                     <p className="mt-1 text-xs text-gray-500">JPG, PNG или WebP, максимум 5 МБ.</p>
+                </div>
+
+                <div className="grid gap-3 rounded-xl border border-gray-100 bg-gray-50 p-3 sm:grid-cols-3">
+                    <RangeControl
+                        label="Горизонталь"
+                        value={data.avatarPositionX}
+                        min={0}
+                        max={100}
+                        step={1}
+                        onChange={value => onAvatarSettingChange('avatarPositionX', value)}
+                    />
+                    <RangeControl
+                        label="Вертикаль"
+                        value={data.avatarPositionY}
+                        min={0}
+                        max={100}
+                        step={1}
+                        onChange={value => onAvatarSettingChange('avatarPositionY', value)}
+                    />
+                    <RangeControl
+                        label="Масштаб"
+                        value={data.avatarScale}
+                        min={1}
+                        max={3}
+                        step={0.05}
+                        onChange={value => onAvatarSettingChange('avatarScale', value)}
+                    />
                 </div>
             </div>
 
@@ -136,6 +173,37 @@ export function ProfileForm({
                 </button>
             </div>
         </form>
+    );
+}
+
+function RangeControl({
+    label,
+    value,
+    min,
+    max,
+    step,
+    onChange,
+}: {
+    label: string;
+    value: number;
+    min: number;
+    max: number;
+    step: number;
+    onChange: (value: number) => void;
+}) {
+    return (
+        <label className="block">
+            <span className="mb-1 block text-xs font-medium text-gray-600">{label}</span>
+            <input
+                type="range"
+                min={min}
+                max={max}
+                step={step}
+                value={value}
+                onChange={event => onChange(Number(event.target.value))}
+                className="w-full accent-sky-600"
+            />
+        </label>
     );
 }
 

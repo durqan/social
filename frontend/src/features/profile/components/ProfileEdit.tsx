@@ -30,6 +30,9 @@ function ProfileEdit() {
         name: user?.name || '',
         email: user?.email || '',
         bio: user?.bio || '',
+        avatarPositionX: user?.avatarPositionX ?? 50,
+        avatarPositionY: user?.avatarPositionY ?? 50,
+        avatarScale: user?.avatarScale ?? 1,
     });
     const [passwordData, setPasswordData] = useState<PasswordChangeData>(initialPasswordData);
     const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -66,6 +69,17 @@ function ProfileEdit() {
         setMessage(null);
         setAvatarFile(file);
         setAvatarPreview(URL.createObjectURL(file));
+        setFormData(prev => ({
+            ...prev,
+            avatarPositionX: 50,
+            avatarPositionY: 50,
+            avatarScale: 1,
+        }));
+    };
+
+    const handleAvatarSettingChange = (name: 'avatarPositionX' | 'avatarPositionY' | 'avatarScale', value: number) => {
+        setFormData(prev => ({ ...prev, [name]: value }));
+        setMessage(null);
     };
 
     const handleSubmit = async (event: FormEvent) => {
@@ -78,7 +92,14 @@ function ProfileEdit() {
                 await userService.uploadAvatar(user.id!, avatarFile);
             }
 
-            const updatedUser = await userService.updateUser(user.id!, formData);
+            const updatedUser = await userService.updateUser(user.id!, {
+                name: formData.name,
+                email: formData.email,
+                bio: formData.bio,
+                avatar_position_x: formData.avatarPositionX,
+                avatar_position_y: formData.avatarPositionY,
+                avatar_scale: formData.avatarScale,
+            });
             setUser(updatedUser);
             setSuccess('Профиль успешно обновлен!');
         } catch (err: unknown) {
@@ -148,6 +169,7 @@ function ProfileEdit() {
                             onSubmit={handleSubmit}
                             onChange={handleChange}
                             onAvatarChange={handleAvatarChange}
+                            onAvatarSettingChange={handleAvatarSettingChange}
                             onCancel={() => navigate(`/profile/${id}`)}
                         />
                     )}

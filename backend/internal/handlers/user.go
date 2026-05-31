@@ -122,6 +122,27 @@ func PatchUser(db *gorm.DB) gin.HandlerFunc {
 		if req.Bio != nil {
 			updates["bio"] = *req.Bio
 		}
+		if req.AvatarPositionX != nil {
+			if *req.AvatarPositionX < 0 || *req.AvatarPositionX > 100 {
+				c.JSON(400, gin.H{"error": "avatar position x must be between 0 and 100"})
+				return
+			}
+			updates["avatar_position_x"] = *req.AvatarPositionX
+		}
+		if req.AvatarPositionY != nil {
+			if *req.AvatarPositionY < 0 || *req.AvatarPositionY > 100 {
+				c.JSON(400, gin.H{"error": "avatar position y must be between 0 and 100"})
+				return
+			}
+			updates["avatar_position_y"] = *req.AvatarPositionY
+		}
+		if req.AvatarScale != nil {
+			if *req.AvatarScale < 1 || *req.AvatarScale > 3 {
+				c.JSON(400, gin.H{"error": "avatar scale must be between 1 and 3"})
+				return
+			}
+			updates["avatar_scale"] = *req.AvatarScale
+		}
 		if len(updates) == 0 {
 			c.JSON(400, gin.H{"error": "no valid fields to update"})
 			return

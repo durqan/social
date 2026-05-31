@@ -79,6 +79,9 @@ function Profile() {
                 userId={currentUser?.id}
                 userName={currentUser?.name}
                 userAvatar={currentUser?.avatar}
+                userAvatarPositionX={currentUser?.avatarPositionX}
+                userAvatarPositionY={currentUser?.avatarPositionY}
+                userAvatarScale={currentUser?.avatarScale}
                 userPresence={userPresence}
             />
             <div className="lg:ml-72">

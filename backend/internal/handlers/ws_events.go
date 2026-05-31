@@ -44,9 +44,11 @@ func handleWebSocketSendMessage(ctx context.Context, userID uint, rawPayload jso
 	}
 
 	var payload struct {
-		ToID        uint                              `json:"to_id"`
-		Content     string                            `json:"content"`
-		Attachments []services.MessageAttachmentInput `json:"attachments"`
+		ToID                   uint                              `json:"to_id"`
+		Content                string                            `json:"content"`
+		Attachments            []services.MessageAttachmentInput `json:"attachments"`
+		ReplyToMessageID       *uint                             `json:"replyToMessageId"`
+		ReplyToMessageIDLegacy *uint                             `json:"reply_to_message_id"`
 	}
 
 	if err := json.Unmarshal(rawPayload, &payload); err != nil {
@@ -65,7 +67,12 @@ func handleWebSocketSendMessage(ctx context.Context, userID uint, rawPayload jso
 		return
 	}
 
-	fullMessage, err := services.SendMessage(dbInstance, userID, payload.ToID, payload.Content, attachments)
+	replyToMessageID := payload.ReplyToMessageID
+	if replyToMessageID == nil {
+		replyToMessageID = payload.ReplyToMessageIDLegacy
+	}
+
+	fullMessage, err := services.SendMessage(dbInstance, userID, payload.ToID, payload.Content, attachments, replyToMessageID)
 	if errors.Is(err, services.ErrMessageContentRequired) {
 		log.Println("Invalid message data")
 		return
@@ -78,6 +85,10 @@ func handleWebSocketSendMessage(ctx context.Context, userID uint, rawPayload jso
 		sendWebSocketError(ctx, userID, "can only message accepted friends")
 		return
 	}
+	if errors.Is(err, services.ErrMessageInvalidReply) {
+		sendWebSocketError(ctx, userID, "reply message must belong to this conversation")
+		return
+	}
 	if err != nil {
 		log.Println("Failed to save message:", err)
 		return
@@ -85,22 +96,26 @@ func handleWebSocketSendMessage(ctx context.Context, userID uint, rawPayload jso
 
 	publishNotification(payload.ToID, userID, dto.NotificationTypeMessage, fullMessage.ID)
 
+	broadcastNewMessage(ctx, fullMessage)
+}
+
+func broadcastNewMessage(ctx context.Context, message models.Message) {
 	messageBytes, err := json.Marshal(gin.H{
 		"type":    "message:new",
-		"payload": services.WithPrivateAttachmentURLs(fullMessage),
+		"payload": services.WithPrivateAttachmentURLs(message),
 	})
 	if err != nil {
 		log.Println("Failed to marshal message:", err)
 		return
 	}
 
-	for _, toConn := range clients.getAll(payload.ToID) {
+	for _, toConn := range clients.getAll(message.ToID) {
 		if err := toConn.write(ctx, messageBytes); err != nil {
 			log.Println("Failed to send message to recipient:", err)
 		}
 	}
 
-	for _, fromConn := range clients.getAll(userID) {
+	for _, fromConn := range clients.getAll(message.FromID) {
 		if err := fromConn.write(ctx, messageBytes); err != nil {
 			log.Println("Failed to send message to sender:", err)
 		}

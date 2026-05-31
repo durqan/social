@@ -67,7 +67,13 @@ export function UserSearch({ className = '' }: UserSearchProps) {
                                     onClick={() => openUser(userID)}
                                     className="flex w-full items-center gap-3 p-3 text-left transition hover:bg-gray-50"
                                 >
-                                    <Avatar name={user.name} src={user.avatar} />
+                                    <Avatar
+                                        name={user.name}
+                                        src={user.avatar}
+                                        positionX={user.avatarPositionX}
+                                        positionY={user.avatarPositionY}
+                                        scale={user.avatarScale}
+                                    />
                                     <span className="min-w-0">
                                         <span className="block truncate font-semibold text-gray-800">
                                             {user.name || 'Пользователь'}

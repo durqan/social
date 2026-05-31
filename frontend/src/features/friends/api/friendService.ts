@@ -1,9 +1,10 @@
 import { request } from "@/shared/api/axios.js";
 import type { User, Friendship } from "@/shared/types/domain.js";
+import { normalizeUser } from "@/shared/api/userService.js";
 
 export const friendService = {
     async getFriendsList(): Promise<User[]> {
-        return request.get<User[]>('/users/friends/list');
+        return (await request.get<User[]>('/users/friends/list')).map(normalizeUser);
     },
 
     async getFriendRequests(): Promise<Friendship[]> {

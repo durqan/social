@@ -136,6 +136,18 @@ func WithPrivateAttachmentURLs(message models.Message) models.Message {
 	for i := range message.Attachments {
 		message.Attachments[i].FileURL = PrivateAttachmentURL(message.Attachments[i].ID)
 	}
+	if message.ReplyToMessage != nil {
+		reply := WithPrivateAttachmentURLs(*message.ReplyToMessage)
+		reply.ReplyToMessage = nil
+		reply.ForwardedFromMessage = nil
+		message.ReplyToMessage = &reply
+	}
+	if message.ForwardedFromMessage != nil {
+		forwarded := WithPrivateAttachmentURLs(*message.ForwardedFromMessage)
+		forwarded.ReplyToMessage = nil
+		forwarded.ForwardedFromMessage = nil
+		message.ForwardedFromMessage = &forwarded
+	}
 	return message
 }
 

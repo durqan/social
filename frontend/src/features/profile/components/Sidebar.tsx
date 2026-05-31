@@ -12,6 +12,9 @@ interface SidebarProps {
     userId?: number;
     userName?: string;
     userAvatar?: string | null;
+    userAvatarPositionX?: number;
+    userAvatarPositionY?: number;
+    userAvatarScale?: number;
     userPresence?: { online: boolean; loading?: boolean };
 }
 
@@ -63,6 +66,9 @@ function Sidebar({
     userId,
     userName,
     userAvatar,
+    userAvatarPositionX,
+    userAvatarPositionY,
+    userAvatarScale,
     userPresence,
 }: SidebarProps) {
     const wsService = useWebSocket();
@@ -184,7 +190,13 @@ function Sidebar({
             <aside className="fixed left-0 top-0 z-40 hidden h-full w-72 flex-col border-r border-gray-200/80 bg-white/95 px-3 py-4 shadow-sm backdrop-blur lg:flex">
                 <div className="mb-4 rounded-2xl border border-gray-100 bg-gray-50/80 p-3">
                     <div className="flex min-w-0 items-center gap-3">
-                        <Avatar name={userName} src={userAvatar} />
+                        <Avatar
+                            name={userName}
+                            src={userAvatar}
+                            positionX={userAvatarPositionX}
+                            positionY={userAvatarPositionY}
+                            scale={userAvatarScale}
+                        />
                         <div className="min-w-0">
                             <p className="truncate font-semibold text-gray-900">{userName || 'Пользователь'}</p>
                             <p className={userPresence?.online ? 'text-xs text-emerald-600' : 'text-xs text-gray-400'}>

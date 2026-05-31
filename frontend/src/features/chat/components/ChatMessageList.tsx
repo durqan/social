@@ -18,9 +18,11 @@ type MenuAction = {
     key: string;
     label: string;
     tone?: 'danger';
-    icon: 'edit' | 'delete' | 'text' | 'link' | 'select';
+    icon: 'edit' | 'delete' | 'text' | 'link' | 'select' | 'reply' | 'forward';
     onSelect: () => void;
 };
+
+const optimisticMessageFloor = 10000000;
 
 function cleanUrl(value: string) {
     return value.replace(/[),.!?;:]+$/, '');
@@ -58,10 +60,16 @@ interface ChatMessageListProps {
     messages: Message[];
     currentUserId?: number;
     recipientName?: string;
+    recipientAvatar?: string | null;
+    recipientAvatarPositionX?: number;
+    recipientAvatarPositionY?: number;
+    recipientAvatarScale?: number;
     selectionMode: boolean;
     selectedMessages: Set<number>;
     onToggleSelect: (id: number) => void;
     onEnterSelectionMode: (id: number) => void;
+    onReplyMessage: (message: Message) => void;
+    onForwardMessage: (message: Message) => void;
     onEditMessage: (id: number, content: string) => void;
     onDeleteMessage: (id: number) => void;
     editingMessageId: number | null;
@@ -83,10 +91,16 @@ export const ChatMessageList = ({
                                     messages,
                                     currentUserId,
                                     recipientName,
+                                    recipientAvatar,
+                                    recipientAvatarPositionX,
+                                    recipientAvatarPositionY,
+                                    recipientAvatarScale,
                                     selectionMode,
                                     selectedMessages,
                                     onToggleSelect,
                                     onEnterSelectionMode,
+                                    onReplyMessage,
+                                    onForwardMessage,
                                     onEditMessage,
                                     onDeleteMessage,
                                     editingMessageId,
@@ -116,8 +130,9 @@ export const ChatMessageList = ({
     const contextMessageText = contextMessage?.content.trim() ?? '';
     const contextMessageHasText = Boolean(contextMessageText);
     const contextMessageIsOwn = Boolean(contextMessage && contextMessage.from_id === currentUserId);
+    const contextMessageIsReal = Boolean(contextMessage && contextMessage.id > 0 && contextMessage.id < optimisticMessageFloor);
     const contextMessageCanSelect = Boolean(
-        contextMessage && contextMessageIsOwn && contextMessage.id > 0 && contextMessage.id < 10000000
+        contextMessage && contextMessageIsOwn && contextMessageIsReal
     );
     const isMobileMenu = contextMenu?.mode === 'mobile';
 
@@ -185,8 +200,9 @@ export const ChatMessageList = ({
 
         const canSelect = isOwn && actionsEnabled && message.id > 0 && message.id < 10000000;
         const ownActionsCount = isOwn && actionsEnabled ? 2 : 0;
+        const messageActionsCount = actionsEnabled && message.id > 0 && message.id < optimisticMessageFloor ? 2 : 0;
         const copyActionsCount = Number(Boolean(message.content.trim())) + Number(Boolean(firstUrl(message.content || '')));
-        const actionCount = ownActionsCount + copyActionsCount + Number(canSelect);
+        const actionCount = ownActionsCount + messageActionsCount + copyActionsCount + Number(canSelect);
 
         if (actionCount === 0) {
             setContextMenu(null);
@@ -236,12 +252,41 @@ export const ChatMessageList = ({
         action();
     };
 
+    const scrollToMessage = (messageId: number) => {
+        const container = containerRef.current;
+        const element = container?.querySelector<HTMLElement>(`[data-chat-message-id="${messageId}"]`);
+        if (!element) {
+            return;
+        }
+
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        element.classList.add('ring-2', 'ring-sky-300');
+        window.setTimeout(() => {
+            element.classList.remove('ring-2', 'ring-sky-300');
+        }, 1200);
+    };
+
     const menuActions = useMemo<MenuAction[]>(() => {
         if (!contextMessage) {
             return [];
         }
 
         const actions: MenuAction[] = [];
+
+        if (actionsEnabled && contextMessageIsReal) {
+            actions.push({
+                key: 'reply',
+                label: 'Ответить',
+                icon: 'reply',
+                onSelect: () => onReplyMessage(contextMessage),
+            });
+            actions.push({
+                key: 'forward',
+                label: 'Переслать',
+                icon: 'forward',
+                onSelect: () => onForwardMessage(contextMessage),
+            });
+        }
 
         if (contextMessageIsOwn && actionsEnabled) {
             if (contextMessageCanSelect) {
@@ -296,11 +341,14 @@ export const ChatMessageList = ({
         contextMessage,
         contextMessageCanSelect,
         contextMessageHasText,
+        contextMessageIsReal,
         contextMessageIsOwn,
         contextMessageUrl,
         onDeleteMessage,
         onEditMessage,
         onEnterSelectionMode,
+        onForwardMessage,
+        onReplyMessage,
     ]);
 
     return (
@@ -317,7 +365,7 @@ export const ChatMessageList = ({
             ) : (
                 messages.map((msg, idx) => {
                     const isOwn = msg.from_id === currentUserId;
-                    const canSelect = isOwn && msg.id > 0 && msg.id < 10000000;
+                    const canSelect = isOwn && msg.id > 0 && msg.id < optimisticMessageFloor;
                     const prevMsg = idx > 0 ? messages[idx - 1] : null;
                     const showDate = !prevMsg || formatDate(msg.created_at) !== formatDate(prevMsg.created_at);
                     const isFirst = idx === 0;
@@ -330,12 +378,17 @@ export const ChatMessageList = ({
                             showDate={showDate}
                             isFirst={isFirst}
                             recipientName={recipientName}
+                            recipientAvatar={recipientAvatar}
+                            recipientAvatarPositionX={recipientAvatarPositionX}
+                            recipientAvatarPositionY={recipientAvatarPositionY}
+                            recipientAvatarScale={recipientAvatarScale}
                             selectionMode={selectionMode}
                             isSelected={selectedMessages.has(msg.id)}
                             isContextActive={isMobileMenu && contextMenu?.messageId === msg.id}
                             canSelect={canSelect}
                             onToggleSelect={() => onToggleSelect(msg.id)}
                             onSelectMessage={() => onToggleSelect(msg.id)}
+                            onReplyPreviewClick={scrollToMessage}
                             onOpenContextMenu={(message, options) => openContextMenu(message, options, isOwn)}
                             editingMessageId={editingMessageId}
                             editContent={editContent}
@@ -421,6 +474,8 @@ function ContextMenuAction({
                 {action.icon === 'text' && <span className="text-xs font-semibold">T</span>}
                 {action.icon === 'link' && <span className="text-xs font-semibold">L</span>}
                 {action.icon === 'select' && <span className="h-3.5 w-3.5 rounded border-2 border-current" />}
+                {action.icon === 'reply' && <span className="text-xs font-semibold">R</span>}
+                {action.icon === 'forward' && <span className="text-xs font-semibold">F</span>}
             </span>
             <span className={mobile ? 'font-medium' : undefined}>{action.label}</span>
         </button>

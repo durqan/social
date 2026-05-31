@@ -7,10 +7,26 @@ export interface User {
     name?: string;
     bio?: string;
     avatar?: string | null;
+    avatarPositionX?: number;
+    avatarPositionY?: number;
+    avatarScale?: number;
+    avatar_position_x?: number;
+    avatar_position_y?: number;
+    avatar_scale?: number;
     createdAt?: string;
     isEmailVerified?: boolean;
     is_email_verified?: boolean;
     created_at?: string;
+}
+
+export interface MessageUser {
+    id: number;
+    name: string;
+    email: string;
+    avatar?: string | null;
+    avatar_position_x?: number;
+    avatar_position_y?: number;
+    avatar_scale?: number;
 }
 
 export interface Post {
@@ -19,6 +35,10 @@ export interface Post {
     user: {
         id: number;
         name: string;
+        avatar?: string | null;
+        avatar_position_x?: number;
+        avatar_position_y?: number;
+        avatar_scale?: number;
     };
     content: string;
     created_at: string;
@@ -35,6 +55,10 @@ export interface Comment {
     user: {
         id: number;
         name: string;
+        avatar?: string | null;
+        avatar_position_x?: number;
+        avatar_position_y?: number;
+        avatar_scale?: number;
     };
     content: string;
     created_at: string;
@@ -72,17 +96,23 @@ export interface Message {
     content: string;
     created_at: string;
     is_read: boolean;
-    from: {
-        id: number;
-        name: string;
-        email: string;
-    };
+    reply_to_message_id?: number | null;
+    forwarded_from_message_id?: number | null;
+    forwarded_from_user_id?: number | null;
+    from: MessageUser;
+    reply_to_message?: Message | null;
+    forwarded_from_message?: Message | null;
+    forwarded_from_user?: MessageUser | null;
     attachments?: MessageAttachment[];
 }
 
 export interface Conversation {
     user_id: number;
     name: string;
+    avatar?: string | null;
+    avatar_position_x?: number;
+    avatar_position_y?: number;
+    avatar_scale?: number;
     last_message: string;
     last_message_at: string;
     unread_count: number;

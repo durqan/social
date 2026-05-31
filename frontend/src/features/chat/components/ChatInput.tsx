@@ -22,6 +22,11 @@ interface ChatInputProps {
     } | null;
     onIncomingFilesConsumed?: () => void;
     sendStatus?: string;
+    replyPreview?: {
+        author: string;
+        text: string;
+    } | null;
+    onCancelReply?: () => void;
 }
 
 export const ChatInput = ({
@@ -33,6 +38,8 @@ export const ChatInput = ({
     incomingFiles,
     onIncomingFilesConsumed,
     sendStatus,
+    replyPreview,
+    onCancelReply,
 }: ChatInputProps) => {
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -132,6 +139,23 @@ export const ChatInput = ({
 
     return (
         <div className="border-t border-gray-200/80 bg-white/95 p-3 backdrop-blur sm:p-4">
+            {replyPreview && (
+                <div className="mb-3 flex items-start gap-3 rounded-xl border border-sky-100 bg-sky-50 px-3 py-2">
+                    <div className="min-w-0 flex-1 border-l-2 border-sky-400 pl-3">
+                        <p className="text-xs font-medium text-sky-700">Ответ на: {replyPreview.author}</p>
+                        <p className="truncate text-sm text-gray-700">{replyPreview.text}</p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={onCancelReply}
+                        className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-gray-500 transition hover:bg-white hover:text-gray-800"
+                        aria-label="Отменить ответ"
+                        title="Отменить ответ"
+                    >
+                        <Icon name="close" className="h-4 w-4" />
+                    </button>
+                </div>
+            )}
             {selectedFiles.length > 0 && (
                 <div className="mb-3 rounded-xl border border-gray-200 bg-gray-50 p-2 shadow-sm">
                     <div className="mb-2 flex items-center justify-between gap-3">

@@ -12,15 +12,21 @@ type UserResponse struct {
 	Age             int       `json:"age"`
 	Bio             string    `json:"bio"`
 	Avatar          string    `json:"avatar"`
+	AvatarPositionX float64   `json:"avatar_position_x"`
+	AvatarPositionY float64   `json:"avatar_position_y"`
+	AvatarScale     float64   `json:"avatar_scale"`
 	IsEmailVerified bool      `json:"is_email_verified"`
 	CreatedAt       time.Time `json:"created_at"`
 }
 
 type UpdateUserRequest struct {
-	Name  *string `json:"name"`
-	Email *string `json:"email" binding:"omitempty,email"`
-	Age   *int    `json:"age"`
-	Bio   *string `json:"bio"`
+	Name            *string  `json:"name"`
+	Email           *string  `json:"email" binding:"omitempty,email"`
+	Age             *int     `json:"age"`
+	Bio             *string  `json:"bio"`
+	AvatarPositionX *float64 `json:"avatar_position_x"`
+	AvatarPositionY *float64 `json:"avatar_position_y"`
+	AvatarScale     *float64 `json:"avatar_scale"`
 }
 
 type ChangePasswordRequest struct {
@@ -36,6 +42,9 @@ func ToUserResponse(user models.User) UserResponse {
 		Age:             user.Age,
 		Bio:             user.Bio,
 		Avatar:          user.Avatar,
+		AvatarPositionX: user.AvatarPositionX,
+		AvatarPositionY: user.AvatarPositionY,
+		AvatarScale:     user.AvatarScale,
 		IsEmailVerified: user.IsEmailVerified,
 		CreatedAt:       user.CreatedAt,
 	}

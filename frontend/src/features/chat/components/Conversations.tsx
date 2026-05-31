@@ -274,7 +274,14 @@ function ConversationItem({
             className={`flex select-none items-center gap-3 border-b border-gray-100 p-3 transition last:border-b-0 [-webkit-touch-callout:none] [-webkit-user-select:none] hover:bg-gray-50 sm:p-4 ${active ? 'relative z-[60] bg-white shadow-2xl ring-2 ring-white/80' : ''}`}
             style={{ touchAction: 'manipulation' }}
         >
-            <Avatar name={conversation.name} size="list" />
+            <Avatar
+                name={conversation.name}
+                src={conversation.avatar}
+                positionX={conversation.avatar_position_x}
+                positionY={conversation.avatar_position_y}
+                scale={conversation.avatar_scale}
+                size="list"
+            />
             <div className="min-w-0 flex-1">
                 <div className="flex items-start justify-between gap-3">
                     <p className="truncate font-semibold text-gray-950">{conversation.name}</p>

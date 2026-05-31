@@ -86,13 +86,14 @@ export class WebSocketService {
         this.handlers.delete(handler);
     }
 
-    send(toId: number, content: string, attachments: MessageAttachment[] = []) {
+    send(toId: number, content: string, attachments: MessageAttachment[] = [], replyToMessageId?: number) {
         this.sendEvent({
             type: 'message:send',
             payload: {
                 to_id: toId,
                 content,
                 attachments,
+                replyToMessageId,
             },
         });
     }
