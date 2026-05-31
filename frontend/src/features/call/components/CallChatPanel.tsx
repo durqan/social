@@ -181,7 +181,6 @@ export function CallChatPanel({
                     selectionMode={false}
                     selectedMessages={selectedMessages}
                     onToggleSelect={() => undefined}
-                    onEnterSelectionMode={() => undefined}
                     onEditMessage={(id, content) => {
                         setEditingMessageId(id);
                         setEditContent(content);

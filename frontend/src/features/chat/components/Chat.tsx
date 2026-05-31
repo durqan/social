@@ -300,7 +300,6 @@ function Chat() {
                 selectionMode={selectionMode}
                 selectedMessages={selectedMessages}
                 onToggleSelect={toggleSelect}
-                onEnterSelectionMode={enterSelectionMode}
                 onEditMessage={(id, content) => {
                     setEditingMessageId(id);
                     setEditContent(content);

@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { memo, useRef, useState, type MouseEvent, type TouchEvent } from 'react';
 import type { Message } from "@/shared/types/domain.js";
 import { Avatar } from "@/shared/ui/Avatar.js";
 import { Icon } from "@/shared/ui/Icon.js";
@@ -11,11 +11,6 @@ function cleanUrl(value: string) {
 
 function normalizeUrl(value: string) {
     return value.startsWith('www.') ? `https://${value}` : value;
-}
-
-function firstUrl(value: string) {
-    const match = value.match(urlPattern)?.[0];
-    return match ? normalizeUrl(cleanUrl(match)) : '';
 }
 
 function linkifyText(value: string, isOwn: boolean) {
@@ -76,10 +71,12 @@ interface ChatMessageProps {
     recipientName?: string;
     selectionMode: boolean;
     isSelected: boolean;
+    isContextActive: boolean;
     onToggleSelect: () => void;
-    onLongPress: () => void;
-    onEdit: () => void;
-    onDelete: () => void;
+    onOpenContextMenu: (message: Message, options: {
+        position: { x: number; y: number };
+        source: 'mouse' | 'touch';
+    }) => void;
     editingMessageId: number | null;
     editContent: string;
     setEditContent: (content: string) => void;
@@ -87,7 +84,6 @@ interface ChatMessageProps {
     onCancelEdit: () => void;
     formatTime: (date: string) => string;
     formatDate: (date: string) => string;
-    actionsEnabled?: boolean;
 }
 
 const ChatMessageComponent = ({
@@ -98,10 +94,9 @@ const ChatMessageComponent = ({
                                 recipientName,
                                 selectionMode,
                                 isSelected,
+                                isContextActive,
                                 onToggleSelect,
-                                onLongPress,
-                                onEdit,
-                                onDelete,
+                                onOpenContextMenu,
                                 editingMessageId,
                                 editContent,
                                 setEditContent,
@@ -109,98 +104,92 @@ const ChatMessageComponent = ({
                                 onCancelEdit,
                                 formatTime,
                                 formatDate,
-                                actionsEnabled = true,
                             }: ChatMessageProps) => {
     const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const suppressNextClickRef = useRef(false);
+    const touchStartRef = useRef<{ x: number; y: number } | null>(null);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-    const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
-    const messageUrl = useMemo(() => firstUrl(message.content || ''), [message.content]);
-    const hasText = Boolean(message.content.trim());
 
-    useEffect(() => {
-        if (!contextMenu) {
-            return;
-        }
-
-        const closeMenu = () => setContextMenu(null);
-        const closeOnEscape = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') {
-                closeMenu();
-            }
-        };
-
-        window.addEventListener('click', closeMenu);
-        window.addEventListener('scroll', closeMenu, true);
-        window.addEventListener('keydown', closeOnEscape);
-
-        return () => {
-            window.removeEventListener('click', closeMenu);
-            window.removeEventListener('scroll', closeMenu, true);
-            window.removeEventListener('keydown', closeOnEscape);
-        };
-    }, [contextMenu]);
-
-    const handleTouchStart = () => {
-        longPressTimer.current = setTimeout(() => {
-            onLongPress();
-        }, 500);
-    };
-
-    const handleTouchEnd = () => {
+    const clearLongPressTimer = () => {
         if (longPressTimer.current) {
             clearTimeout(longPressTimer.current);
             longPressTimer.current = null;
         }
     };
 
-    const openContextMenu = (event: MouseEvent<HTMLDivElement>) => {
-        event.preventDefault();
-        event.stopPropagation();
-
-        const menuWidth = 224;
-        const ownActionsCount = isOwn && actionsEnabled ? 2 : 0;
-        const copyActionsCount = Number(hasText) + Number(Boolean(messageUrl));
-        const actionCount = ownActionsCount + copyActionsCount;
-
-        if (actionCount === 0) {
-            setContextMenu(null);
-            return;
-        }
-
-        const menuHeight = Math.max(62, actionCount * 44 + 10);
-
-        setContextMenu({
-            x: Math.max(8, Math.min(event.clientX, window.innerWidth - menuWidth - 8)),
-            y: Math.max(8, Math.min(event.clientY, window.innerHeight - menuHeight - 8)),
+    const openContextMenuAt = (clientX: number, clientY: number, source: 'mouse' | 'touch') => {
+        onOpenContextMenu(message, {
+            position: { x: clientX, y: clientY },
+            source,
         });
     };
 
-    const copyToClipboard = async (value: string) => {
-        if (!value) {
+    const openContextMenu = (event: MouseEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+        openContextMenuAt(event.clientX, event.clientY, 'mouse');
+    };
+
+    const handleTouchStart = (event: TouchEvent<HTMLDivElement>) => {
+        if (event.touches.length !== 1) {
             return;
         }
 
-        try {
-            await navigator.clipboard.writeText(value);
-        } catch {
-            const textarea = document.createElement('textarea');
-            textarea.value = value;
-            textarea.style.position = 'fixed';
-            textarea.style.opacity = '0';
-            document.body.appendChild(textarea);
-            textarea.select();
-            document.execCommand('copy');
-            textarea.remove();
-        } finally {
-            setContextMenu(null);
+        const touch = event.touches[0];
+        clearLongPressTimer();
+        touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+
+        longPressTimer.current = setTimeout(() => {
+            suppressNextClickRef.current = true;
+            navigator.vibrate?.(8);
+            document.getSelection()?.removeAllRanges();
+            openContextMenuAt(touch.clientX, touch.clientY, 'touch');
+            window.setTimeout(() => {
+                suppressNextClickRef.current = false;
+            }, 700);
+        }, 520);
+    };
+
+    const handleTouchEnd = () => {
+        clearLongPressTimer();
+        touchStartRef.current = null;
+    };
+
+    const handleTouchMove = (event: TouchEvent<HTMLDivElement>) => {
+        const start = touchStartRef.current;
+        const touch = event.touches[0];
+
+        if (!start || !touch) {
+            return;
         }
+
+        const deltaX = Math.abs(touch.clientX - start.x);
+        const deltaY = Math.abs(touch.clientY - start.y);
+
+        if (deltaX > 8 || deltaY > 8) {
+            handleTouchEnd();
+        }
+    };
+
+    const handleClickCapture = (event: MouseEvent<HTMLDivElement>) => {
+        if (!suppressNextClickRef.current) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        suppressNextClickRef.current = false;
     };
 
     return (
         <div
             id={isFirst ? 'msg-first' : `msg-${message.id}`}
+            className={isContextActive ? 'relative z-[60]' : undefined}
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
+            onTouchCancel={handleTouchEnd}
+            onTouchMove={handleTouchMove}
+            onClickCapture={handleClickCapture}
             onContextMenu={(e) => {
                 openContextMenu(e);
             }}
@@ -246,7 +235,7 @@ const ChatMessageComponent = ({
                             </div>
                         </div>
                     ) : (
-                        <div className={`rounded-2xl px-3 py-2 sm:px-4 ${isOwn ? 'bg-sky-50 text-slate-900 border border-sky-100 rounded-br-md' : 'bg-white text-gray-900 rounded-bl-md border border-gray-200/70'}`}>
+                        <div className={`rounded-2xl px-3 py-2 transition-shadow sm:px-4 ${isContextActive ? 'shadow-2xl ring-2 ring-white/80' : ''} ${isOwn ? 'bg-sky-50 text-slate-900 border border-sky-100 rounded-br-md' : 'bg-white text-gray-900 rounded-bl-md border border-gray-200/70'}`}>
                             {message.attachments?.length ? (
                                 <div className={`grid gap-2 ${message.attachments.length > 1 ? 'grid-cols-2' : 'grid-cols-1'} ${message.content ? 'mb-2' : ''}`}>
                                     {message.attachments.map(attachment => (
@@ -283,65 +272,6 @@ const ChatMessageComponent = ({
 
                 </div>
             </div>
-            {contextMenu && (
-                <div
-                    className="fixed z-50 w-56 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl shadow-slate-900/10"
-                    style={{ left: contextMenu.x, top: contextMenu.y }}
-                    onClick={event => event.stopPropagation()}
-                    onContextMenu={event => event.preventDefault()}
-                >
-                    {isOwn && actionsEnabled && (
-                        <button
-                            type="button"
-                            className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm text-gray-800 transition hover:bg-gray-50"
-                            onClick={() => {
-                                setContextMenu(null);
-                                onEdit();
-                            }}
-                        >
-                            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gray-100">
-                                <Icon name="edit" className="h-3.5 w-3.5" />
-                            </span>
-                            Редактировать
-                        </button>
-                    )}
-                    {isOwn && actionsEnabled && (
-                        <button
-                            type="button"
-                            className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm text-red-600 transition hover:bg-red-50"
-                            onClick={() => {
-                                setContextMenu(null);
-                                onDelete();
-                            }}
-                        >
-                            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-red-50">
-                                <Icon name="delete" className="h-3.5 w-3.5" />
-                            </span>
-                            Удалить сообщение
-                        </button>
-                    )}
-                    {hasText && (
-                        <button
-                            type="button"
-                            className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm text-gray-800 transition hover:bg-gray-50"
-                            onClick={() => void copyToClipboard(message.content)}
-                        >
-                            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-600">T</span>
-                            Скопировать текст
-                        </button>
-                    )}
-                    {messageUrl && (
-                        <button
-                            type="button"
-                            className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm text-gray-800 transition hover:bg-gray-50"
-                            onClick={() => void copyToClipboard(messageUrl)}
-                        >
-                            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-sky-50 text-xs font-semibold text-sky-700">L</span>
-                            Скопировать ссылку
-                        </button>
-                    )}
-                </div>
-            )}
             {previewUrl && (
                 <div
                     className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4"
