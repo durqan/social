@@ -26,7 +26,7 @@ export function FriendItem({ friend, onRemove }: FriendItemProps) {
                 onClick={() => navigate(`/users/${friendID}`)}
                 className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
             >
-                <Avatar name={friend.name} src={friend.avatar} size="lg" />
+                <Avatar name={friend.name} src={friend.avatar} size="list" />
                 <span className="min-w-0">
                     <span className="block truncate font-semibold text-gray-800">
                         {friend.name || 'Пользователь'}

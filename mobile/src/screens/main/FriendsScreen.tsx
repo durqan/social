@@ -275,6 +275,7 @@ function UserAvatar({ user }: { user?: User }) {
         <Image
           source={{ uri: assetURL(user.avatar) }}
           style={styles.avatarImage}
+          resizeMode="cover"
         />
       ) : (
         <Text style={styles.avatarText}>
@@ -351,6 +352,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
+    flexShrink: 0,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.surfaceMuted,
