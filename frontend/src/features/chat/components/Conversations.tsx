@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent, type TouchEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent, type TouchEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Conversation } from "@/shared/types/domain.js";
 import { messageService } from "@/features/chat/api/messageService.js";
@@ -6,6 +6,8 @@ import { Avatar } from "@/shared/ui/Avatar.js";
 import { useAuth } from "@/app/providers/AuthContext.js";
 import { formatMonthDayDate } from "@/shared/utils/date.js";
 import { Icon } from "@/shared/ui/Icon.js";
+import { useWebSocket } from "@/app/providers/WebSocketContext.js";
+import type { WsEvent } from "@/shared/types/ws.js";
 
 type ConversationMenuState = {
     userId: number;
@@ -22,12 +24,9 @@ function Conversations() {
     const [deletingUserId, setDeletingUserId] = useState<number | null>(null);
     const navigate = useNavigate();
     const { currentUser } = useAuth();
+    const wsService = useWebSocket();
 
-    useEffect(() => {
-        fetchConversations();
-    }, []);
-
-    const fetchConversations = async () => {
+    const fetchConversations = useCallback(async () => {
         try {
             setConversations(await messageService.getConversations());
         } catch (err) {
@@ -36,7 +35,43 @@ function Conversations() {
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
+
+    useEffect(() => {
+        void fetchConversations();
+    }, [fetchConversations]);
+
+    useEffect(() => {
+        if (!currentUser?.id) {
+            return;
+        }
+
+        const handleMessage = (event: WsEvent) => {
+            switch (event.type) {
+                case 'message:new':
+                    if (event.payload.from_id === currentUser.id || event.payload.to_id === currentUser.id) {
+                        void fetchConversations();
+                    }
+                    return;
+
+                case 'message:read':
+                    if (event.payload.from_id === currentUser.id || event.payload.to_id === currentUser.id) {
+                        void fetchConversations();
+                    }
+                    return;
+
+                case 'message:delete':
+                    void fetchConversations();
+                    return;
+
+                default:
+                    return;
+            }
+        };
+
+        wsService.onMessage(handleMessage);
+        return () => wsService.removeMessageHandler(handleMessage);
+    }, [currentUser?.id, fetchConversations, wsService]);
 
     const selectedConversation = menu
         ? conversations.find(conversation => conversation.user_id === menu.userId) ?? null

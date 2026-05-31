@@ -172,6 +172,6 @@ func DeleteMessagesBatch(db *gorm.DB, ids []uint, userID uint) error {
 
 func GetUnreadCount(db *gorm.DB, userID uint) (int64, error) {
 	var count int64
-	err := db.Model(&models.Message{}).Where("to_id = ? AND is_read = false", userID).Count(&count).Error
+	err := db.Model(&models.Message{}).Where("to_id = ? AND is_read = false AND deleted_at IS NULL", userID).Count(&count).Error
 	return count, err
 }

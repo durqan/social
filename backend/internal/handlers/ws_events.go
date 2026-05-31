@@ -247,6 +247,40 @@ func sendMessageReadReceipt(ctx context.Context, readerID uint, senderID uint) {
 	}
 }
 
+func broadcastMessageDelete(ctx context.Context, messageID uint, userIDs ...uint) {
+	if messageID == 0 {
+		return
+	}
+
+	deleteBytes, err := json.Marshal(gin.H{
+		"type": "message:delete",
+		"payload": gin.H{
+			"message_id": messageID,
+		},
+	})
+	if err != nil {
+		log.Println("Failed to marshal message delete:", err)
+		return
+	}
+
+	sentTo := make(map[uint]struct{}, len(userIDs))
+	for _, userID := range userIDs {
+		if userID == 0 {
+			continue
+		}
+		if _, exists := sentTo[userID]; exists {
+			continue
+		}
+		sentTo[userID] = struct{}{}
+
+		for _, toConn := range clients.getAll(userID) {
+			if err := toConn.write(ctx, deleteBytes); err != nil {
+				log.Println("Failed to send message delete:", err)
+			}
+		}
+	}
+}
+
 func forwardCallEvent(ctx context.Context, eventType string, fromID uint, payload json.RawMessage) {
 	var callPayload map[string]json.RawMessage
 

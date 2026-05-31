@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"tester/internal/dto"
+	"tester/internal/models"
 	"tester/internal/repository"
 	"tester/internal/services"
 
@@ -69,6 +70,7 @@ func SendMessage(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		publishNotification(toID, userID, dto.NotificationTypeMessage, message.ID)
+		broadcastNewMessage(c.Request.Context(), message)
 
 		c.JSON(201, services.WithPrivateAttachmentURLs(message))
 	}
@@ -236,6 +238,16 @@ func DeleteMessage(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
+		var message models.Message
+		if err := db.Select("id", "from_id", "to_id").First(&message, messageID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				c.JSON(404, gin.H{"error": "message not found"})
+				return
+			}
+			c.JSON(500, gin.H{"error": "failed to delete message"})
+			return
+		}
+
 		err := services.DeleteMessageForUser(db, userID, messageID)
 		if errors.Is(err, services.ErrMessageForbidden) {
 			c.JSON(403, gin.H{"error": "you are not a participant in this conversation"})
@@ -249,6 +261,8 @@ func DeleteMessage(db *gorm.DB) gin.HandlerFunc {
 			c.JSON(500, gin.H{"error": "failed to delete message"})
 			return
 		}
+
+		broadcastMessageDelete(c.Request.Context(), messageID, message.FromID, message.ToID)
 
 		c.JSON(200, gin.H{"message": "deleted for both"})
 	}
@@ -275,9 +289,22 @@ func DeleteMessagesBatch(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
+		var messages []models.Message
+		if err := db.
+			Select("id", "from_id", "to_id").
+			Where("id IN ? AND (from_id = ? OR to_id = ?)", req.MessageIDs, userID, userID).
+			Find(&messages).Error; err != nil {
+			c.JSON(500, gin.H{"error": "failed to delete messages"})
+			return
+		}
+
 		if err := repository.DeleteMessagesBatch(db, req.MessageIDs, userID); err != nil {
 			c.JSON(403, gin.H{"error": err.Error()})
 			return
+		}
+
+		for _, message := range messages {
+			broadcastMessageDelete(c.Request.Context(), message.ID, message.FromID, message.ToID)
 		}
 
 		c.JSON(200, gin.H{"message": "deleted"})
