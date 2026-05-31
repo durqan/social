@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type ReactElement } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type ReactElement } from 'react';
 import { Icon } from "@/shared/ui/Icon.js";
 import EmojiPickerModule, { EmojiStyle, type EmojiClickData, type Props as EmojiPickerProps } from 'emoji-picker-react';
 import {
@@ -8,6 +8,7 @@ import {
 } from "@/shared/utils/uploadValidation.js";
 
 const EmojiPicker = EmojiPickerModule as unknown as (props: EmojiPickerProps) => ReactElement | null;
+const textareaMaxHeight = 168;
 
 interface ChatInputProps {
     value: string;
@@ -34,11 +35,29 @@ export const ChatInput = ({
     sendStatus,
 }: ChatInputProps) => {
     const fileInputRef = useRef<HTMLInputElement | null>(null);
+    const textareaRef = useRef<HTMLTextAreaElement | null>(null);
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
     const [previews, setPreviews] = useState<string[]>([]);
     const canSend = Boolean(value.trim()) || selectedFiles.length > 0;
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const [sending, setSending] = useState(false);
+
+    const resizeTextarea = useCallback(() => {
+        const textarea = textareaRef.current;
+
+        if (!textarea) {
+            return;
+        }
+
+        textarea.style.height = 'auto';
+        const nextHeight = Math.min(textarea.scrollHeight, textareaMaxHeight);
+        textarea.style.height = `${nextHeight}px`;
+        textarea.style.overflowY = textarea.scrollHeight > textareaMaxHeight ? 'auto' : 'hidden';
+    }, []);
+
+    useLayoutEffect(() => {
+        resizeTextarea();
+    }, [resizeTextarea, value]);
 
     useEffect(() => {
         const urls = selectedFiles.map(file => URL.createObjectURL(file));
@@ -173,8 +192,12 @@ export const ChatInput = ({
                 </button>
 
                 <textarea
+                    ref={textareaRef}
                     value={value}
-                    onChange={onChange}
+                    onChange={event => {
+                        onChange(event);
+                        requestAnimationFrame(resizeTextarea);
+                    }}
                     onPaste={handlePaste}
                     onKeyDown={e => {
                         if (e.key === 'Enter' && !e.shiftKey) {
@@ -184,8 +207,11 @@ export const ChatInput = ({
                     }}
                     placeholder="Сообщение..."
                     rows={1}
-                    className="app-input flex-1 px-3 py-2 text-sm resize-none overflow-y-auto sm:px-4 sm:text-base"
-                    style={{ maxHeight: '120px' }}
+                    className="app-input flex-1 px-3 py-2 text-sm leading-5 resize-none sm:px-4 sm:text-base sm:leading-6"
+                    style={{
+                        minHeight: '40px',
+                        maxHeight: `${textareaMaxHeight}px`,
+                    }}
                 />
                 <button
                     type="button"

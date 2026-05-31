@@ -107,6 +107,15 @@ export const messageApi = {
     });
   },
 
+  async updateMessage(messageId: number, content: string) {
+    return apiRequest<Message>(`/messages/${messageId}`, {
+      method: 'PATCH',
+      body: {
+        content,
+      },
+    });
+  },
+
   async deleteMessage(messageId: number) {
     await apiRequest<{ message: string }>(`/messages/${messageId}`, {
       method: 'DELETE',

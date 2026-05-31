@@ -158,7 +158,16 @@ const ChatMessageComponent = ({
         event.stopPropagation();
 
         const menuWidth = 224;
-        const menuHeight = hasText && messageUrl ? 150 : hasText || messageUrl ? 106 : 62;
+        const ownActionsCount = isOwn && actionsEnabled ? 2 : 0;
+        const copyActionsCount = Number(hasText) + Number(Boolean(messageUrl));
+        const actionCount = ownActionsCount + copyActionsCount;
+
+        if (actionCount === 0) {
+            setContextMenu(null);
+            return;
+        }
+
+        const menuHeight = Math.max(62, actionCount * 44 + 10);
 
         setContextMenu({
             x: Math.max(8, Math.min(event.clientX, window.innerWidth - menuWidth - 8)),
@@ -272,26 +281,6 @@ const ChatMessageComponent = ({
                         </div>
                     )}
 
-                    {actionsEnabled && !selectionMode && (
-                        <div className={`absolute top-1/2 hidden -translate-y-1/2 gap-1 opacity-0 transition-all duration-200 group-hover:opacity-100 sm:flex ${isOwn ? '-left-20' : '-right-20'}`}>
-                            {isOwn && (
-                                <button
-                                    onClick={onEdit}
-                                    className="flex h-7 w-7 items-center justify-center rounded-full bg-white text-gray-600 shadow-sm hover:bg-gray-100"
-                                    title="Редактировать"
-                                >
-                                    <Icon name="edit" className="w-3.5 h-3.5 text-gray-600" />
-                                </button>
-                            )}
-                            <button
-                                onClick={onDelete}
-                                className="flex h-7 w-7 items-center justify-center rounded-full bg-white text-gray-600 shadow-sm hover:bg-red-50"
-                                title="Удалить"
-                            >
-                                <Icon name="delete" className="w-3.5 h-3.5 text-gray-600 hover:text-red-500" />
-                            </button>
-                        </div>
-                    )}
                 </div>
             </div>
             {contextMenu && (
@@ -301,6 +290,36 @@ const ChatMessageComponent = ({
                     onClick={event => event.stopPropagation()}
                     onContextMenu={event => event.preventDefault()}
                 >
+                    {isOwn && actionsEnabled && (
+                        <button
+                            type="button"
+                            className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm text-gray-800 transition hover:bg-gray-50"
+                            onClick={() => {
+                                setContextMenu(null);
+                                onEdit();
+                            }}
+                        >
+                            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gray-100">
+                                <Icon name="edit" className="h-3.5 w-3.5" />
+                            </span>
+                            Редактировать
+                        </button>
+                    )}
+                    {isOwn && actionsEnabled && (
+                        <button
+                            type="button"
+                            className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm text-red-600 transition hover:bg-red-50"
+                            onClick={() => {
+                                setContextMenu(null);
+                                onDelete();
+                            }}
+                        >
+                            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-red-50">
+                                <Icon name="delete" className="h-3.5 w-3.5" />
+                            </span>
+                            Удалить сообщение
+                        </button>
+                    )}
                     {hasText && (
                         <button
                             type="button"
@@ -321,19 +340,6 @@ const ChatMessageComponent = ({
                             Скопировать ссылку
                         </button>
                     )}
-                    <button
-                        type="button"
-                        className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm text-red-600 transition hover:bg-red-50"
-                        onClick={() => {
-                            setContextMenu(null);
-                            onDelete();
-                        }}
-                    >
-                        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-red-50">
-                            <Icon name="delete" className="h-3.5 w-3.5" />
-                        </span>
-                        Удалить сообщение
-                    </button>
                 </div>
             )}
             {previewUrl && (

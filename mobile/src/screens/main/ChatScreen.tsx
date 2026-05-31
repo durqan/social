@@ -48,6 +48,8 @@ import type { ChatStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'Chat'>;
 type LoadMode = 'initial' | 'refresh' | 'silent';
+const composerInputMinHeight = 48;
+const composerInputMaxHeight = 136;
 
 const urlPattern = /(https?:\/\/[^\s<]+|www\.[^\s<]+)/gi;
 
@@ -62,6 +64,20 @@ function normalizeUrl(value: string) {
 function firstUrl(value: string) {
   const match = value.match(urlPattern)?.[0];
   return match ? normalizeUrl(cleanUrl(match)) : '';
+}
+
+function estimateComposerInputHeight(value: string) {
+  if (!value) {
+    return composerInputMinHeight;
+  }
+
+  const hardLines = value.split('\n').length;
+  const softLines = Math.ceil(value.length / 36);
+  const estimatedLines = Math.max(hardLines, softLines);
+  return Math.min(
+    composerInputMaxHeight,
+    Math.max(composerInputMinHeight, 28 + estimatedLines * 22),
+  );
 }
 
 function linkParts(value: string) {
@@ -113,9 +129,11 @@ export default function ChatScreen({ route }: Props) {
   } | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
+  const [inputHeight, setInputHeight] = useState(composerInputMinHeight);
   const [pendingImages, setPendingImages] = useState<LocalChatImage[]>([]);
   const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
+  const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
@@ -214,6 +232,7 @@ export default function ChatScreen({ route }: Props) {
     }
 
     setInput(draftRef.current.input);
+    setInputHeight(estimateComposerInputHeight(draftRef.current.input));
     setPendingImages(draftRef.current.pendingImages);
     draftRef.current = null;
   }, []);
@@ -344,6 +363,37 @@ export default function ChatScreen({ route }: Props) {
 
   async function sendMessage() {
     const trimmed = input.trim();
+
+    if (editingMessage) {
+      if (!trimmed) {
+        setError('Введите текст сообщения');
+        return;
+      }
+
+      setSending('sending');
+      setError(null);
+      try {
+        const updated = await messageApi.updateMessage(
+          editingMessage.id,
+          trimmed,
+        );
+        setMessages(previous =>
+          previous.map(message =>
+            message.id === editingMessage.id ? updated : message,
+          ),
+        );
+        setInput('');
+        setInputHeight(composerInputMinHeight);
+        setEditingMessage(null);
+        signalChatDataChanged();
+      } catch (apiError) {
+        setError(getApiErrorMessage(apiError));
+      } finally {
+        setSending(null);
+      }
+      return;
+    }
+
     if (!trimmed && pendingImages.length === 0) {
       setError('Введите сообщение или выберите изображение');
       return;
@@ -397,6 +447,7 @@ export default function ChatScreen({ route }: Props) {
       }
 
       setInput('');
+      setInputHeight(composerInputMinHeight);
       setPendingImages([]);
     } catch (apiError) {
       const message = getApiErrorMessage(apiError);
@@ -413,6 +464,22 @@ export default function ChatScreen({ route }: Props) {
 
   function removePendingImage(id: string) {
     setPendingImages(previous => previous.filter(image => image.id !== id));
+  }
+
+  function handleComposerTextChange(nextValue: string) {
+    setInput(nextValue);
+
+    if (!nextValue) {
+      setInputHeight(composerInputMinHeight);
+    }
+  }
+
+  function handleComposerContentSizeChange(contentHeight: number) {
+    const nextHeight = Math.min(
+      composerInputMaxHeight,
+      Math.max(composerInputMinHeight, Math.ceil(contentHeight) + 16),
+    );
+    setInputHeight(nextHeight);
   }
 
   function copyValue(value: string, notice: string) {
@@ -433,6 +500,33 @@ export default function ChatScreen({ route }: Props) {
     } catch (apiError) {
       setError(getApiErrorMessage(apiError));
     }
+  }
+
+  function startEditingMessage(message: Message) {
+    setSelectedMessage(null);
+    setPendingImages([]);
+    setEditingMessage(message);
+    setInput(message.content);
+    setInputHeight(estimateComposerInputHeight(message.content));
+    setError(null);
+  }
+
+  function cancelEditingMessage() {
+    setEditingMessage(null);
+    setInput('');
+    setInputHeight(composerInputMinHeight);
+    setError(null);
+  }
+
+  function openMessageActions(message: Message) {
+    const isOwnMessage = Boolean(user?.id && message.from_id === user.id);
+    const hasCopyAction = Boolean(message.content.trim() || firstUrl(message.content));
+
+    if (!isOwnMessage && !hasCopyAction) {
+      return;
+    }
+
+    setSelectedMessage(message);
   }
 
   return (
@@ -472,7 +566,7 @@ export default function ChatScreen({ route }: Props) {
               message={item}
               outgoing={item.from_id === user?.id}
               onImagePress={setSelectedImageUrl}
-              onLongPress={() => setSelectedMessage(item)}
+              onLongPress={() => openMessageActions(item)}
             />
           )}
           contentContainerStyle={[
@@ -521,27 +615,51 @@ export default function ChatScreen({ route }: Props) {
         </View>
       ) : null}
 
+      {editingMessage ? (
+        <View style={styles.editingBar}>
+          <View style={styles.editingInfo}>
+            <Text style={styles.editingTitle}>Редактирование</Text>
+            <Text style={styles.editingText} numberOfLines={1}>
+              {editingMessage.content}
+            </Text>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            style={styles.editingCancel}
+            onPress={cancelEditingMessage}
+          >
+            <Text style={styles.editingCancelText}>×</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
       <View style={styles.composer}>
         <AppButton
           title="Фото"
           variant="secondary"
-          disabled={Boolean(sending)}
+          disabled={Boolean(sending) || Boolean(editingMessage)}
           onPress={pickImages}
         />
         <TextInput
           value={input}
-          onChangeText={setInput}
+          onChangeText={handleComposerTextChange}
+          onContentSizeChange={event =>
+            handleComposerContentSizeChange(event.nativeEvent.contentSize.height)
+          }
           placeholder="Сообщение"
           placeholderTextColor={colors.soft}
           multiline
+          scrollEnabled={inputHeight >= composerInputMaxHeight}
           maxLength={1000}
           editable={!sending}
-          style={styles.input}
+          textAlignVertical="top"
+          style={[styles.input, { height: inputHeight }]}
         />
         <AppButton
-          title="Отправить"
+          title={editingMessage ? 'Сохранить' : 'Отправить'}
           disabled={
-            Boolean(sending) || (!input.trim() && pendingImages.length === 0)
+            Boolean(sending) ||
+            (!input.trim() && !editingMessage && pendingImages.length === 0)
           }
           loading={Boolean(sending)}
           onPress={sendMessage}
@@ -585,6 +703,10 @@ export default function ChatScreen({ route }: Props) {
         onDelete={message => {
           deleteSelectedMessage(message).catch(() => undefined);
         }}
+        onEdit={startEditingMessage}
+        isOwn={Boolean(
+          selectedMessage && user?.id && selectedMessage.from_id === user.id,
+        )}
       />
     </Screen>
   );
@@ -685,15 +807,19 @@ function MessageBubble({
 
 function MessageActionSheet({
   message,
+  isOwn,
   onClose,
   onCopyText,
   onCopyLink,
+  onEdit,
   onDelete,
 }: {
   message: Message | null;
+  isOwn: boolean;
   onClose: () => void;
   onCopyText: (message: Message) => void;
   onCopyLink: (url: string) => void;
+  onEdit: (message: Message) => void;
   onDelete: (message: Message) => void;
 }) {
   const trimmedText = message?.content.trim() ?? '';
@@ -710,6 +836,32 @@ function MessageActionSheet({
         <Pressable style={styles.sheet} onPress={event => event.stopPropagation()}>
           <View style={styles.sheetHandle} />
           <Text style={styles.sheetTitle}>Сообщение</Text>
+
+          {message && isOwn ? (
+            <Pressable
+              accessibilityRole="button"
+              style={styles.sheetAction}
+              onPress={() => onEdit(message)}
+            >
+              <Text style={styles.sheetActionIcon}>E</Text>
+              <Text style={styles.sheetActionText}>Редактировать</Text>
+            </Pressable>
+          ) : null}
+
+          {message && isOwn ? (
+            <Pressable
+              accessibilityRole="button"
+              style={[styles.sheetAction, styles.sheetDangerAction]}
+              onPress={() => onDelete(message)}
+            >
+              <Text style={[styles.sheetActionIcon, styles.sheetDangerIcon]}>
+                D
+              </Text>
+              <Text style={[styles.sheetActionText, styles.sheetDangerText]}>
+                Удалить сообщение
+              </Text>
+            </Pressable>
+          ) : null}
 
           {trimmedText ? (
             <Pressable
@@ -730,21 +882,6 @@ function MessageActionSheet({
             >
               <Text style={styles.sheetActionIcon}>L</Text>
               <Text style={styles.sheetActionText}>Скопировать ссылку</Text>
-            </Pressable>
-          ) : null}
-
-          {message ? (
-            <Pressable
-              accessibilityRole="button"
-              style={[styles.sheetAction, styles.sheetDangerAction]}
-              onPress={() => onDelete(message)}
-            >
-              <Text style={[styles.sheetActionIcon, styles.sheetDangerIcon]}>
-                D
-              </Text>
-              <Text style={[styles.sheetActionText, styles.sheetDangerText]}>
-                Удалить сообщение
-              </Text>
             </Pressable>
           ) : null}
         </Pressable>
@@ -886,6 +1023,47 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
   },
+  editingBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  editingInfo: {
+    flex: 1,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.accent,
+    paddingLeft: 10,
+  },
+  editingTitle: {
+    color: colors.accent,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '800',
+  },
+  editingText: {
+    color: colors.muted,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  editingCancel: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceMuted,
+  },
+  editingCancelText: {
+    color: colors.muted,
+    fontSize: 24,
+    lineHeight: 26,
+    fontWeight: '600',
+  },
   composer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -897,8 +1075,6 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    maxHeight: 110,
-    minHeight: 48,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 12,
