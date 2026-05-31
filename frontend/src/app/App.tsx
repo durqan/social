@@ -18,6 +18,7 @@ import { AudioCallProvider } from '@/features/call/AudioCallContext.js';
 import { RequireAuth, RequireGuest } from "@/features/auth/components/RequireAuth.js";
 import { PushSubscriptionManager } from "@/features/notifications/components/PushSubscriptionManager.js";
 import { Seo } from "@/shared/ui/Seo.js";
+import { PetCompanion } from "@/features/pet/components/PetCompanion.js";
 
 function AppRoutes() {
     const { currentUser } = useAuth();
@@ -57,6 +58,7 @@ function App() {
                             <PushSubscriptionManager />
                             <NotificationHandler />
                             <AppRoutes />
+                            <PetCompanion />
                         </AudioCallProvider>
                     </AuthProvider>
                 </WebSocketProvider>
