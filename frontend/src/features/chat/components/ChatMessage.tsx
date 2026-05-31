@@ -201,6 +201,7 @@ const ChatMessageComponent = ({
     return (
         <div
             id={isFirst ? 'msg-first' : `msg-${message.id}`}
+            data-chat-message-id={message.id}
             className={`${isContextActive ? 'relative z-[60]' : ''} select-none [-webkit-touch-callout:none] [-webkit-user-select:none]`}
             style={{
                 touchAction: 'manipulation',

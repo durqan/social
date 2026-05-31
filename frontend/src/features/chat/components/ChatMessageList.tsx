@@ -1,4 +1,4 @@
-import { useRef, useEffect, useMemo, useState, type UIEvent } from 'react';
+import { useRef, useEffect, useLayoutEffect, useMemo, useState, type UIEvent } from 'react';
 import { ChatMessage } from './ChatMessage.js';
 import type { Message } from "@/shared/types/domain.js";
 import { Spinner } from "@/shared/ui/Spinner.js";
@@ -69,7 +69,9 @@ interface ChatMessageListProps {
     setEditContent: (content: string) => void;
     onSaveEdit: (id: number, content: string) => void;
     onCancelEdit: () => void;
+    hasMore: boolean;
     loadingMore: boolean;
+    onLoadMore: () => Promise<void>;
     onScroll: (e: UIEvent<HTMLDivElement>) => void;
     messagesEndRef: React.RefObject<HTMLDivElement | null>;
     formatDate: (date: string) => string;
@@ -92,7 +94,9 @@ export const ChatMessageList = ({
                                     setEditContent,
                                     onSaveEdit,
                                     onCancelEdit,
+                                    hasMore,
                                     loadingMore,
+                                    onLoadMore,
                                     onScroll,
                                     messagesEndRef,
                                     formatDate,
@@ -100,6 +104,8 @@ export const ChatMessageList = ({
                                     actionsEnabled = true,
                                 }: ChatMessageListProps) => {
     const containerRef = useRef<HTMLDivElement>(null);
+    const paginationAnchorRef = useRef<{ messageId: number; top: number } | null>(null);
+    const paginationRequestRef = useRef(false);
     const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
     const contextMessage = useMemo(() => (
         contextMenu ? messages.find(message => message.id === contextMenu.messageId) ?? null : null
@@ -115,13 +121,29 @@ export const ChatMessageList = ({
     );
     const isMobileMenu = contextMenu?.mode === 'mobile';
 
-    useEffect(() => {
-        if (containerRef.current && loadingMore) {
-            const firstMessage = document.getElementById('msg-first');
-            if (firstMessage) {
-                containerRef.current.scrollTop = firstMessage.offsetTop;
-            }
+    useLayoutEffect(() => {
+        const container = containerRef.current;
+        const anchor = paginationAnchorRef.current;
+
+        if (!container || !anchor) {
+            return;
         }
+
+        const anchorElement = container.querySelector<HTMLElement>(`[data-chat-message-id="${anchor.messageId}"]`);
+
+        if (anchorElement) {
+            const nextTop = anchorElement.getBoundingClientRect().top;
+            container.scrollTop += nextTop - anchor.top;
+        }
+    }, [messages.length, loadingMore]);
+
+    useEffect(() => {
+        if (loadingMore) {
+            return;
+        }
+
+        paginationRequestRef.current = false;
+        paginationAnchorRef.current = null;
     }, [loadingMore]);
 
     useEffect(() => {
@@ -184,8 +206,29 @@ export const ChatMessageList = ({
     };
 
     const handleScroll = (event: UIEvent<HTMLDivElement>) => {
+        const container = event.currentTarget;
         setContextMenu(null);
         onScroll(event);
+
+        if (
+            !hasMore ||
+            loadingMore ||
+            paginationRequestRef.current ||
+            messages.length === 0 ||
+            container.scrollTop > 80
+        ) {
+            return;
+        }
+
+        const firstMessage = messages[0];
+        const firstMessageElement = container.querySelector<HTMLElement>(`[data-chat-message-id="${firstMessage.id}"]`);
+
+        paginationAnchorRef.current = {
+            messageId: firstMessage.id,
+            top: firstMessageElement?.getBoundingClientRect().top ?? container.getBoundingClientRect().top,
+        };
+        paginationRequestRef.current = true;
+        void onLoadMore();
     };
 
     const closeAndRun = (action: () => void) => {

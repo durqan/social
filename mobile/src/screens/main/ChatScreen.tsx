@@ -12,6 +12,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { launchImageLibrary } from 'react-native-image-picker';
 import type { Asset } from 'react-native-image-picker';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -50,6 +51,8 @@ type Props = NativeStackScreenProps<ChatStackParamList, 'Chat'>;
 type LoadMode = 'initial' | 'refresh' | 'silent';
 const composerInputMinHeight = 48;
 const composerInputMaxHeight = 136;
+const messagePageSize = 50;
+const loadOlderThreshold = 56;
 
 const urlPattern = /(https?:\/\/[^\s<]+|www\.[^\s<]+)/gi;
 
@@ -123,6 +126,10 @@ export default function ChatScreen({ route }: Props) {
   const otherUserId = route.params.userId;
   const listRef = useRef<FlatList<Message>>(null);
   const hasLoadedRef = useRef(false);
+  const hasMoreRef = useRef(true);
+  const loadingOlderRef = useRef(false);
+  const messagesRef = useRef<Message[]>([]);
+  const shouldScrollToEndRef = useRef(false);
   const draftRef = useRef<{
     input: string;
     pendingImages: LocalChatImage[];
@@ -136,6 +143,8 @@ export default function ChatScreen({ route }: Props) {
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [sending, setSending] = useState<'uploading' | 'sending' | null>(null);
   const [uploadProgress, setUploadProgress] = useState<{
@@ -153,6 +162,21 @@ export default function ChatScreen({ route }: Props) {
     const timer = setTimeout(() => setCopyNotice(null), 1600);
     return () => clearTimeout(timer);
   }, [copyNotice]);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  useEffect(() => {
+    hasMoreRef.current = hasMore;
+  }, [hasMore]);
+
+  const scrollToLatestMessage = useCallback(() => {
+    requestAnimationFrame(() => {
+      listRef.current?.scrollToEnd({ animated: hasLoadedRef.current });
+      shouldScrollToEndRef.current = false;
+    });
+  }, []);
 
   const markConversationRead = useCallback(async () => {
     await messageApi.markAsRead(otherUserId);
@@ -184,8 +208,12 @@ export default function ChatScreen({ route }: Props) {
       setError(null);
       try {
         const response = await messageApi.getMessagesWith(otherUserId, {
-          limit: 50,
+          limit: messagePageSize,
         });
+        shouldScrollToEndRef.current =
+          mode !== 'silent' || messagesRef.current.length === 0;
+        hasMoreRef.current = response.has_more;
+        setHasMore(response.has_more);
         setMessages(response.messages);
         markConversationRead().catch(() => undefined);
       } catch (apiError) {
@@ -203,6 +231,68 @@ export default function ChatScreen({ route }: Props) {
     },
     [markConversationRead, otherUserId],
   );
+
+  const loadOlderMessages = useCallback(async () => {
+    const currentMessages = messagesRef.current;
+    const oldestMessage = currentMessages[0];
+
+    if (
+      loadingOlderRef.current ||
+      !hasMoreRef.current ||
+      !oldestMessage ||
+      refreshing
+    ) {
+      return;
+    }
+
+    loadingOlderRef.current = true;
+    shouldScrollToEndRef.current = false;
+    setLoadingOlder(true);
+
+    try {
+      const response = await messageApi.getMessagesWith(otherUserId, {
+        before: oldestMessage.id,
+        limit: messagePageSize,
+      });
+      hasMoreRef.current = response.has_more;
+      setHasMore(response.has_more);
+
+      if (response.messages.length) {
+        setMessages(previous => {
+          const existingIds = new Set(previous.map(message => message.id));
+          const olderMessages = response.messages.filter(
+            message => !existingIds.has(message.id),
+          );
+
+          return olderMessages.length
+            ? [...olderMessages, ...previous]
+            : previous;
+        });
+      }
+    } catch (apiError) {
+      setError(getApiErrorMessage(apiError));
+    } finally {
+      loadingOlderRef.current = false;
+      setLoadingOlder(false);
+    }
+  }, [otherUserId, refreshing]);
+
+  const handleMessagesScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (event.nativeEvent.contentOffset.y > loadOlderThreshold) {
+        return;
+      }
+
+      loadOlderMessages().catch(() => undefined);
+    },
+    [loadOlderMessages],
+  );
+
+  const handleMessageListContentSizeChange = useCallback(() => {
+    if (shouldScrollToEndRef.current) {
+      scrollToLatestMessage();
+    }
+  }, [scrollToLatestMessage]);
 
   useFocusEffect(
     useCallback(() => {
@@ -284,6 +374,7 @@ export default function ChatScreen({ route }: Props) {
         if (previous.some(item => item.id === message.id)) {
           return previous;
         }
+        shouldScrollToEndRef.current = true;
         return [...previous, message];
       });
 
@@ -308,14 +399,6 @@ export default function ChatScreen({ route }: Props) {
       unsubscribeMessages();
     };
   }, [handleSocketEvent]);
-
-  useEffect(() => {
-    if (messages.length > 0) {
-      requestAnimationFrame(() =>
-        listRef.current?.scrollToEnd({ animated: true }),
-      );
-    }
-  }, [messages.length]);
 
   async function pickImages() {
     const remaining = CHAT_IMAGE_MAX_COUNT - pendingImages.length;
@@ -442,6 +525,7 @@ export default function ChatScreen({ route }: Props) {
           attachments,
         );
         draftRef.current = null;
+        shouldScrollToEndRef.current = true;
         setMessages(previous => [...previous, sent]);
         signalChatDataChanged();
       }
@@ -561,6 +645,9 @@ export default function ChatScreen({ route }: Props) {
           refreshing={refreshing}
           onRefresh={() => loadMessages('refresh')}
           keyboardShouldPersistTaps="handled"
+          maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+          onScroll={handleMessagesScroll}
+          scrollEventThrottle={80}
           renderItem={({ item }) => (
             <MessageBubble
               message={item}
@@ -573,8 +660,13 @@ export default function ChatScreen({ route }: Props) {
             styles.messageList,
             messages.length === 0 && styles.emptyMessageList,
           ]}
-          onContentSizeChange={() =>
-            listRef.current?.scrollToEnd({ animated: true })
+          onContentSizeChange={handleMessageListContentSizeChange}
+          ListHeaderComponent={
+            loadingOlder ? (
+              <View style={styles.loadingOlder}>
+                <ActivityIndicator color={colors.accent} />
+              </View>
+            ) : null
           }
           ListEmptyComponent={
             <EmptyState
@@ -899,6 +991,10 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     padding: 16,
+  },
+  loadingOlder: {
+    alignItems: 'center',
+    paddingVertical: 8,
   },
   callActions: {
     flexDirection: 'row',

@@ -45,6 +45,7 @@ function Chat() {
     const {
         messages,
         setMessages,
+        hasMore,
         loadingMore,
         initialLoading,
         editingMessageId,
@@ -52,6 +53,7 @@ function Chat() {
         editContent,
         setEditContent,
         loadInitial,
+        loadMore,
         sendMessage: sendMessageToStore,
         updateMessage,
         deleteMessage,
@@ -315,7 +317,9 @@ function Chat() {
                 setEditContent={setEditContent}
                 onSaveEdit={updateMessage}
                 onCancelEdit={() => setEditingMessageId(null)}
+                hasMore={hasMore}
                 loadingMore={loadingMore}
+                onLoadMore={loadMore}
                 onScroll={handleScroll}
                 messagesEndRef={messagesEndRef}
                 formatDate={formatMonthDayDate}

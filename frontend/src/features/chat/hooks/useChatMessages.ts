@@ -43,7 +43,7 @@ export const useChatMessages = (userId: string | undefined, currentUserId: numbe
     }, [userId]);
 
     const loadMore = useCallback(async () => {
-        if (loadingMore || !hasMore || messages.length === 0) return;
+        if (!userId || loadingMore || !hasMore || messages.length === 0) return;
         setLoadingMore(true);
         const oldestId = messages[0]?.id;
         try {
@@ -51,7 +51,12 @@ export const useChatMessages = (userId: string | undefined, currentUserId: numbe
             const newMessages = res.messages;
             setHasMore(res.has_more);
             if (newMessages.length) {
-                setMessages(prev => [...newMessages, ...prev]);
+                setMessages(prev => {
+                    const existingIds = new Set(prev.map(message => message.id));
+                    const olderMessages = newMessages.filter(message => !existingIds.has(message.id));
+
+                    return olderMessages.length ? [...olderMessages, ...prev] : prev;
+                });
             }
         } catch (error) {
             console.error(error);
