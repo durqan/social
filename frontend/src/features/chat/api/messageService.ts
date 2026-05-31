@@ -49,4 +49,31 @@ export const messageService = {
     async deleteMessagesBatch(messageIds: number[]): Promise<void> {
         await request.delete('/messages/batch', { data: { message_ids: messageIds } });
     },
+
+    async deleteConversationWith(userId: number): Promise<void> {
+        let before: number | undefined;
+        const messageIds: number[] = [];
+
+        for (let page = 0; page < 100; page += 1) {
+            const response = await this.getMessagesWith(String(userId), {
+                before,
+                limit: 100,
+            });
+
+            if (!response.messages.length) {
+                break;
+            }
+
+            messageIds.push(...response.messages.map(message => message.id));
+            before = response.messages[0]?.id;
+
+            if (!response.has_more) {
+                break;
+            }
+        }
+
+        if (messageIds.length) {
+            await this.deleteMessagesBatch(messageIds);
+        }
+    },
 };

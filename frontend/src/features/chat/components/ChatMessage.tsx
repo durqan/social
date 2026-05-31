@@ -72,7 +72,9 @@ interface ChatMessageProps {
     selectionMode: boolean;
     isSelected: boolean;
     isContextActive: boolean;
+    canSelect: boolean;
     onToggleSelect: () => void;
+    onSelectMessage: () => void;
     onOpenContextMenu: (message: Message, options: {
         position: { x: number; y: number };
         source: 'mouse' | 'touch';
@@ -95,7 +97,9 @@ const ChatMessageComponent = ({
                                 selectionMode,
                                 isSelected,
                                 isContextActive,
+                                canSelect,
                                 onToggleSelect,
+                                onSelectMessage,
                                 onOpenContextMenu,
                                 editingMessageId,
                                 editContent,
@@ -128,6 +132,19 @@ const ChatMessageComponent = ({
         event.preventDefault();
         event.stopPropagation();
         openContextMenuAt(event.clientX, event.clientY, 'mouse');
+    };
+
+    const handleMessageClick = (event: MouseEvent<HTMLDivElement>) => {
+        if (!selectionMode) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        if (canSelect) {
+            onSelectMessage();
+        }
     };
 
     const handleTouchStart = (event: TouchEvent<HTMLDivElement>) => {
@@ -184,7 +201,10 @@ const ChatMessageComponent = ({
     return (
         <div
             id={isFirst ? 'msg-first' : `msg-${message.id}`}
-            className={isContextActive ? 'relative z-[60]' : undefined}
+            className={`${isContextActive ? 'relative z-[60]' : ''} select-none [-webkit-touch-callout:none] [-webkit-user-select:none]`}
+            style={{
+                touchAction: 'manipulation',
+            }}
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
             onTouchCancel={handleTouchEnd}
@@ -208,7 +228,8 @@ const ChatMessageComponent = ({
                             type="checkbox"
                             checked={isSelected}
                             onChange={onToggleSelect}
-                            className="w-5 h-5 rounded border-gray-300 text-sky-500 focus:ring-sky-500"
+                            disabled={!canSelect}
+                            className="w-5 h-5 rounded border-gray-300 text-sky-500 focus:ring-sky-500 disabled:opacity-30"
                         />
                     </div>
                 )}
@@ -235,14 +256,28 @@ const ChatMessageComponent = ({
                             </div>
                         </div>
                     ) : (
-                        <div className={`rounded-2xl px-3 py-2 transition-shadow sm:px-4 ${isContextActive ? 'shadow-2xl ring-2 ring-white/80' : ''} ${isOwn ? 'bg-sky-50 text-slate-900 border border-sky-100 rounded-br-md' : 'bg-white text-gray-900 rounded-bl-md border border-gray-200/70'}`}>
+                        <div
+                            onClick={handleMessageClick}
+                            className={`rounded-2xl px-3 py-2 transition-shadow sm:px-4 ${selectionMode ? canSelect ? 'cursor-pointer' : 'opacity-60' : ''} ${isContextActive ? 'shadow-2xl ring-2 ring-white/80' : ''} ${isOwn ? 'bg-sky-50 text-slate-900 border border-sky-100 rounded-br-md' : 'bg-white text-gray-900 rounded-bl-md border border-gray-200/70'}`}
+                        >
                             {message.attachments?.length ? (
                                 <div className={`grid gap-2 ${message.attachments.length > 1 ? 'grid-cols-2' : 'grid-cols-1'} ${message.content ? 'mb-2' : ''}`}>
                                     {message.attachments.map(attachment => (
                                         <button
                                             type="button"
                                             key={attachment.file_url}
-                                            onClick={() => setPreviewUrl(attachment.file_url)}
+                                            onClick={event => {
+                                                if (selectionMode) {
+                                                    event.preventDefault();
+                                                    event.stopPropagation();
+                                                    if (canSelect) {
+                                                        onSelectMessage();
+                                                    }
+                                                    return;
+                                                }
+
+                                                setPreviewUrl(attachment.file_url);
+                                            }}
                                             className="block overflow-hidden rounded-xl bg-black/5 text-left"
                                             aria-label="Открыть изображение"
                                         >
@@ -258,7 +293,7 @@ const ChatMessageComponent = ({
                             ) : null}
 
                             {message.content && (
-                                <p className="select-text text-sm break-words">
+                                <p className="text-sm break-words">
                                     {linkifyText(message.content, isOwn)}
                                 </p>
                             )}

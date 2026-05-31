@@ -18,7 +18,7 @@ type MenuAction = {
     key: string;
     label: string;
     tone?: 'danger';
-    icon: 'edit' | 'delete' | 'text' | 'link';
+    icon: 'edit' | 'delete' | 'text' | 'link' | 'select';
     onSelect: () => void;
 };
 
@@ -61,6 +61,7 @@ interface ChatMessageListProps {
     selectionMode: boolean;
     selectedMessages: Set<number>;
     onToggleSelect: (id: number) => void;
+    onEnterSelectionMode: (id: number) => void;
     onEditMessage: (id: number, content: string) => void;
     onDeleteMessage: (id: number) => void;
     editingMessageId: number | null;
@@ -83,6 +84,7 @@ export const ChatMessageList = ({
                                     selectionMode,
                                     selectedMessages,
                                     onToggleSelect,
+                                    onEnterSelectionMode,
                                     onEditMessage,
                                     onDeleteMessage,
                                     editingMessageId,
@@ -108,6 +110,9 @@ export const ChatMessageList = ({
     const contextMessageText = contextMessage?.content.trim() ?? '';
     const contextMessageHasText = Boolean(contextMessageText);
     const contextMessageIsOwn = Boolean(contextMessage && contextMessage.from_id === currentUserId);
+    const contextMessageCanSelect = Boolean(
+        contextMessage && contextMessageIsOwn && contextMessage.id > 0 && contextMessage.id < 10000000
+    );
     const isMobileMenu = contextMenu?.mode === 'mobile';
 
     useEffect(() => {
@@ -156,18 +161,19 @@ export const ChatMessageList = ({
     ) => {
         window.dispatchEvent(new Event(menuOpenedEventName));
 
+        const canSelect = isOwn && actionsEnabled && message.id > 0 && message.id < 10000000;
         const ownActionsCount = isOwn && actionsEnabled ? 2 : 0;
         const copyActionsCount = Number(Boolean(message.content.trim())) + Number(Boolean(firstUrl(message.content || '')));
-        const actionCount = ownActionsCount + copyActionsCount;
+        const actionCount = ownActionsCount + copyActionsCount + Number(canSelect);
 
         if (actionCount === 0) {
             setContextMenu(null);
             return;
         }
 
-        const menuWidth = 224;
-        const menuHeight = Math.max(62, actionCount * 44 + 10);
         const mode = options.source === 'touch' ? 'mobile' : 'desktop';
+        const menuWidth = mode === 'mobile' ? 256 : 224;
+        const menuHeight = Math.max(62, actionCount * (mode === 'mobile' ? 50 : 44) + 10);
 
         setContextMenu({
             messageId: message.id,
@@ -195,6 +201,15 @@ export const ChatMessageList = ({
         const actions: MenuAction[] = [];
 
         if (contextMessageIsOwn && actionsEnabled) {
+            if (contextMessageCanSelect) {
+                actions.push({
+                    key: 'select',
+                    label: 'Выбрать',
+                    icon: 'select',
+                    onSelect: () => onEnterSelectionMode(contextMessage.id),
+                });
+            }
+
             actions.push({
                 key: 'edit',
                 label: 'Редактировать',
@@ -236,11 +251,13 @@ export const ChatMessageList = ({
     }, [
         actionsEnabled,
         contextMessage,
+        contextMessageCanSelect,
         contextMessageHasText,
         contextMessageIsOwn,
         contextMessageUrl,
         onDeleteMessage,
         onEditMessage,
+        onEnterSelectionMode,
     ]);
 
     return (
@@ -257,6 +274,7 @@ export const ChatMessageList = ({
             ) : (
                 messages.map((msg, idx) => {
                     const isOwn = msg.from_id === currentUserId;
+                    const canSelect = isOwn && msg.id > 0 && msg.id < 10000000;
                     const prevMsg = idx > 0 ? messages[idx - 1] : null;
                     const showDate = !prevMsg || formatDate(msg.created_at) !== formatDate(prevMsg.created_at);
                     const isFirst = idx === 0;
@@ -272,7 +290,9 @@ export const ChatMessageList = ({
                             selectionMode={selectionMode}
                             isSelected={selectedMessages.has(msg.id)}
                             isContextActive={isMobileMenu && contextMenu?.messageId === msg.id}
+                            canSelect={canSelect}
                             onToggleSelect={() => onToggleSelect(msg.id)}
+                            onSelectMessage={() => onToggleSelect(msg.id)}
                             onOpenContextMenu={(message, options) => openContextMenu(message, options, isOwn)}
                             editingMessageId={editingMessageId}
                             editContent={editContent}
@@ -315,21 +335,19 @@ export const ChatMessageList = ({
             )}
             {contextMenu && contextMessage && isMobileMenu && (
                 <div
-                    className="fixed inset-x-0 bottom-0 z-[70] rounded-t-2xl bg-white px-3 pb-[max(18px,env(safe-area-inset-bottom))] pt-2 shadow-2xl"
+                    className="fixed z-[70] w-64 overflow-hidden rounded-xl border border-gray-100 bg-white py-1 shadow-2xl"
+                    style={{ left: contextMenu.x, top: contextMenu.y }}
                     onClick={event => event.stopPropagation()}
                     onContextMenu={event => event.preventDefault()}
                 >
-                    <div className="mx-auto mb-2 h-1 w-11 rounded-full bg-gray-300" />
-                    <div className="overflow-hidden rounded-xl border border-gray-100 bg-white">
-                        {menuActions.map(action => (
-                            <ContextMenuAction
-                                key={action.key}
-                                action={action}
-                                mobile
-                                onSelect={() => closeAndRun(action.onSelect)}
-                            />
-                        ))}
-                    </div>
+                    {menuActions.map(action => (
+                        <ContextMenuAction
+                            key={action.key}
+                            action={action}
+                            mobile
+                            onSelect={() => closeAndRun(action.onSelect)}
+                        />
+                    ))}
                 </div>
             )}
             <div ref={messagesEndRef} />
@@ -359,6 +377,7 @@ function ContextMenuAction({
                 {action.icon === 'delete' && <Icon name="delete" className="h-3.5 w-3.5" />}
                 {action.icon === 'text' && <span className="text-xs font-semibold">T</span>}
                 {action.icon === 'link' && <span className="text-xs font-semibold">L</span>}
+                {action.icon === 'select' && <span className="h-3.5 w-3.5 rounded border-2 border-current" />}
             </span>
             <span className={mobile ? 'font-medium' : undefined}>{action.label}</span>
         </button>

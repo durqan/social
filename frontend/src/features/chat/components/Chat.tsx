@@ -124,11 +124,15 @@ function Chat() {
     }, []);
 
     const handleBatchDelete = async () => {
-        const realIds = Array.from(selectedMessages).filter(id => id > 0 && id < 10000000);
+        const realIds = messages
+            .filter(message => selectedMessages.has(message.id))
+            .filter(message => message.from_id === currentUser?.id)
+            .filter(message => message.id > 0 && message.id < 10000000)
+            .map(message => message.id);
         if (!realIds.length) return alert('Нельзя удалить ещё не отправленные сообщения');
         try {
             await messageService.deleteMessagesBatch(realIds);
-            setMessages(prev => prev.filter(m => !selectedMessages.has(m.id)));
+            setMessages(prev => prev.filter(m => !realIds.includes(m.id)));
             exitSelectionMode();
         } catch (error) {
             console.error(error);
@@ -300,6 +304,7 @@ function Chat() {
                 selectionMode={selectionMode}
                 selectedMessages={selectedMessages}
                 onToggleSelect={toggleSelect}
+                onEnterSelectionMode={enterSelectionMode}
                 onEditMessage={(id, content) => {
                     setEditingMessageId(id);
                     setEditContent(content);
