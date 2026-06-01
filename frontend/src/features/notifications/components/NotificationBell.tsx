@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import {
@@ -159,6 +159,75 @@ function pushEnableMessage(reason: string) {
     }
 }
 
+type PushViewState = 'enabled' | 'disabled' | 'blocked' | 'unsupported';
+
+function pushViewState(status: PushNotificationStatus, subscribed: boolean): PushViewState {
+    if (status === 'denied') {
+        return 'blocked';
+    }
+    if (status === 'unsupported' || status === 'unconfigured') {
+        return 'unsupported';
+    }
+    if (status === 'granted' && subscribed) {
+        return 'enabled';
+    }
+
+    return 'disabled';
+}
+
+function pushStatusCopy(status: PushNotificationStatus, subscribed: boolean) {
+    const state = pushViewState(status, subscribed);
+
+    if (status === 'unconfigured') {
+        return {
+            state,
+            title: 'Push не настроены',
+            description: 'Серверная отправка отключена',
+        };
+    }
+
+    switch (state) {
+        case 'enabled':
+            return {
+                state,
+                title: 'Push включены',
+                description: 'Браузерные уведомления активны',
+            };
+        case 'blocked':
+            return {
+                state,
+                title: 'Push заблокированы',
+                description: 'Разрешите уведомления в настройках браузера',
+            };
+        case 'unsupported':
+            return {
+                state,
+                title: 'Push не поддерживаются',
+                description: 'Для iPhone откройте приложение с домашнего экрана',
+            };
+        default:
+            return {
+                state,
+                title: 'Push отключены',
+                description: 'Можно включить уведомления',
+            };
+    }
+}
+
+const pushIndicatorClass: Record<PushViewState, string> = {
+    enabled: 'bg-emerald-500 shadow-emerald-500/30',
+    disabled: 'bg-gray-400 shadow-gray-400/25',
+    blocked: 'bg-red-500 shadow-red-500/30',
+    unsupported: 'bg-amber-400 shadow-amber-400/30',
+};
+
+const pushContainerClass: Record<PushViewState, string> = {
+    enabled: 'border-emerald-100 bg-emerald-50/70',
+    disabled: 'border-gray-200 bg-gray-50',
+    blocked: 'border-red-100 bg-red-50/70',
+    unsupported: 'border-amber-100 bg-amber-50/70',
+};
+
 export function NotificationBell({ userId, compact = false }: NotificationBellProps) {
     const navigate = useNavigate();
     const [notifications, setNotifications] = useState<SocialNotification[]>([]);
@@ -171,11 +240,48 @@ export function NotificationBell({ userId, compact = false }: NotificationBellPr
     const [pushMessage, setPushMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
     const [actorNames, setActorNames] = useState<Record<number, string>>({});
     const rootRef = useRef<HTMLDivElement>(null);
+    const pushMessageTimeoutRef = useRef<number | null>(null);
 
     const unreadCount = useMemo(
         () => notifications.filter(notification => !notification.is_read).length,
         [notifications],
     );
+    const visibleNotifications = useMemo(() => notifications.slice(0, 5), [notifications]);
+    const hiddenNotificationCount = Math.max(0, notifications.length - visibleNotifications.length);
+    const pushCopy = pushStatusCopy(pushStatus, pushSubscribed);
+
+    const setTemporaryPushMessage = useCallback((message: { type: 'success' | 'error'; text: string } | null) => {
+        if (pushMessageTimeoutRef.current !== null) {
+            window.clearTimeout(pushMessageTimeoutRef.current);
+            pushMessageTimeoutRef.current = null;
+        }
+
+        setPushMessage(message);
+
+        if (message) {
+            pushMessageTimeoutRef.current = window.setTimeout(() => {
+                setPushMessage(null);
+                pushMessageTimeoutRef.current = null;
+            }, 4500);
+        }
+    }, []);
+
+    const refreshPushState = useCallback(async () => {
+        const nextStatus = getPushNotificationStatus();
+        setPushStatus(nextStatus);
+
+        if (nextStatus === 'granted') {
+            try {
+                setPushSubscribed(await hasPushSubscription());
+            } catch (error) {
+                console.error('Ошибка проверки push-подписки:', error);
+                setPushSubscribed(false);
+            }
+            return;
+        }
+
+        setPushSubscribed(false);
+    }, []);
 
     useEffect(() => {
         const baseTitle = document.title.replace(/^\(\d+\)\s+/, '') || 'Durqan';
@@ -185,6 +291,14 @@ export function NotificationBell({ userId, compact = false }: NotificationBellPr
             document.title = baseTitle;
         };
     }, [unreadCount]);
+
+    useEffect(() => {
+        return () => {
+            if (pushMessageTimeoutRef.current !== null) {
+                window.clearTimeout(pushMessageTimeoutRef.current);
+            }
+        };
+    }, []);
 
     useEffect(() => {
         const unlock = () => unlockNotificationSound();
@@ -331,21 +445,7 @@ export function NotificationBell({ userId, compact = false }: NotificationBellPr
             return;
         }
 
-        let cancelled = false;
-
-        setPushStatus(getPushNotificationStatus());
-        hasPushSubscription()
-            .then(isSubscribed => {
-                if (!cancelled) {
-                    setPushSubscribed(isSubscribed);
-                }
-            })
-            .catch(error => {
-                console.error('Ошибка проверки push-подписки:', error);
-                if (!cancelled) {
-                    setPushSubscribed(false);
-                }
-            });
+        void refreshPushState();
 
         const handlePointerDown = (event: PointerEvent) => {
             if (!rootRef.current?.contains(event.target as Node)) {
@@ -355,10 +455,25 @@ export function NotificationBell({ userId, compact = false }: NotificationBellPr
 
         document.addEventListener('pointerdown', handlePointerDown);
         return () => {
-            cancelled = true;
             document.removeEventListener('pointerdown', handlePointerDown);
         };
-    }, [open]);
+    }, [open, refreshPushState]);
+
+    useEffect(() => {
+        const refreshOnVisible = () => {
+            if (!document.hidden) {
+                void refreshPushState();
+            }
+        };
+
+        window.addEventListener('focus', refreshOnVisible);
+        document.addEventListener('visibilitychange', refreshOnVisible);
+
+        return () => {
+            window.removeEventListener('focus', refreshOnVisible);
+            document.removeEventListener('visibilitychange', refreshOnVisible);
+        };
+    }, [refreshPushState]);
 
     const navigateToNotification = (notification: SocialNotification) => {
         if (!userId) {
@@ -397,26 +512,67 @@ export function NotificationBell({ userId, compact = false }: NotificationBellPr
 
         setPushLoading(true);
         setErrorMessage('');
-        setPushMessage(null);
+        setTemporaryPushMessage(null);
 
         try {
             const result = await enablePushNotifications();
-            setPushStatus(getPushNotificationStatus());
-            setPushSubscribed(await hasPushSubscription());
-            setPushMessage(result.ok
+            await refreshPushState();
+            setTemporaryPushMessage(result.ok
                 ? { type: 'success', text: 'Push-уведомления включены' }
                 : { type: 'error', text: pushEnableMessage(result.reason) });
         } catch (error) {
             console.error('Ошибка подключения push-уведомлений:', error);
-            setPushMessage({ type: 'error', text: 'Не удалось сохранить push-подписку' });
-            setPushStatus(getPushNotificationStatus());
-            setPushSubscribed(await hasPushSubscription());
+            setTemporaryPushMessage({ type: 'error', text: 'Не удалось сохранить push-подписку' });
+            await refreshPushState();
         } finally {
             setPushLoading(false);
         }
     };
 
-    const showPushButton = pushStatus === 'prompt' || (pushStatus === 'granted' && !pushSubscribed);
+    const handleCheckPush = async () => {
+        if (!userId) {
+            return;
+        }
+
+        setPushLoading(true);
+        setTemporaryPushMessage(null);
+
+        try {
+            const status = getPushNotificationStatus();
+            if (status === 'granted') {
+                const result = await enablePushNotifications();
+                await refreshPushState();
+                setTemporaryPushMessage(result.ok
+                    ? { type: 'success', text: 'Push-подписка активна' }
+                    : { type: 'error', text: pushEnableMessage(result.reason) });
+                return;
+            }
+
+            await refreshPushState();
+            setTemporaryPushMessage({ type: 'error', text: pushEnableMessage(status) });
+        } catch (error) {
+            console.error('Ошибка проверки push-уведомлений:', error);
+            await refreshPushState();
+            setTemporaryPushMessage({ type: 'error', text: 'Не удалось проверить push' });
+        } finally {
+            setPushLoading(false);
+        }
+    };
+
+    const handleBlockedPushHelp = () => {
+        setTemporaryPushMessage({
+            type: 'error',
+            text: 'Откройте настройки сайта в браузере и разрешите уведомления',
+        });
+    };
+
+    const pushAction = pushCopy.state === 'enabled'
+        ? { label: 'Проверить', onClick: handleCheckPush }
+        : pushCopy.state === 'disabled'
+            ? { label: 'Включить', onClick: handleEnablePush }
+            : pushCopy.state === 'blocked'
+                ? { label: 'Настройки', onClick: handleBlockedPushHelp }
+                : null;
 
     return (
         <div ref={rootRef} className="relative">
@@ -443,25 +599,37 @@ export function NotificationBell({ userId, compact = false }: NotificationBellPr
                         )}
                     </div>
 
-                    {showPushButton && (
-                        <div className="border-b border-gray-100 px-4 py-3">
-                            <button
-                                type="button"
-                                onClick={handleEnablePush}
-                                disabled={pushLoading}
-                                className="w-full rounded-lg bg-sky-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-sky-700 disabled:opacity-60"
-                            >
-                                {pushLoading ? 'Подключение...' : 'Включить push-уведомления'}
-                            </button>
+                    <div className="border-b border-gray-100 px-3 py-3 sm:px-4">
+                        <div className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${pushContainerClass[pushCopy.state]}`}>
+                            <span className="relative flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-white text-gray-700 shadow-sm">
+                                <Icon name="bell" className="h-4 w-4" />
+                                <span className={`absolute right-1 top-1 h-2.5 w-2.5 rounded-full shadow-md ${pushIndicatorClass[pushCopy.state]}`} />
+                            </span>
+                            <span className="min-w-0 flex-1">
+                                <span className="block truncate text-sm font-semibold text-gray-950">{pushCopy.title}</span>
+                                <span className="block truncate text-xs text-gray-500">{pushCopy.description}</span>
+                            </span>
+                            {pushAction && (
+                                <button
+                                    type="button"
+                                    onClick={pushAction.onClick}
+                                    disabled={pushLoading}
+                                    className="flex-shrink-0 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 disabled:opacity-60"
+                                >
+                                    {pushLoading ? '...' : pushAction.label}
+                                </button>
+                            )}
                         </div>
-                    )}
-                    {pushMessage && (
-                        <div className={`border-b border-gray-100 px-4 py-2 text-sm ${
-                            pushMessage.type === 'success' ? 'text-emerald-700' : 'text-red-600'
-                        }`}>
-                            {pushMessage.text}
-                        </div>
-                    )}
+                        {pushMessage && (
+                            <div className={`mt-2 rounded-lg px-2 py-1.5 text-xs ${
+                                pushMessage.type === 'success'
+                                    ? 'bg-emerald-50 text-emerald-700'
+                                    : 'bg-red-50 text-red-600'
+                            }`}>
+                                {pushMessage.text}
+                            </div>
+                        )}
+                    </div>
 
                     <div className="max-h-96 overflow-y-auto">
                         {errorMessage && notifications.length === 0 ? (
@@ -471,7 +639,7 @@ export function NotificationBell({ userId, compact = false }: NotificationBellPr
                         ) : notifications.length === 0 ? (
                             <div className="px-4 py-6 text-center text-sm text-gray-500">Нет уведомлений</div>
                         ) : (
-                            notifications.map(notification => (
+                            visibleNotifications.map(notification => (
                                 <button
                                     key={notification.id}
                                     type="button"
@@ -503,6 +671,11 @@ export function NotificationBell({ userId, compact = false }: NotificationBellPr
                                     </div>
                                 </button>
                             ))
+                        )}
+                        {hiddenNotificationCount > 0 && (
+                            <div className="px-4 py-2 text-center text-xs text-gray-400">
+                                Показаны последние 5 из {notifications.length}
+                            </div>
                         )}
                     </div>
                 </div>
