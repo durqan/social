@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -118,14 +119,25 @@ func (s *Service) Send(subscription models.PushSubscription, payload Payload) er
 		defer resp.Body.Close()
 	}
 
-	if resp != nil && isInvalidStatus(resp.StatusCode) {
-		return fmt.Errorf("%w: status %d", ErrSubscriptionInvalid, resp.StatusCode)
-	}
 	if err != nil {
-		return err
+		return fmt.Errorf("web push request failed for %s: %w", endpointHost(subscription.Endpoint), err)
+	}
+	if resp != nil && isInvalidStatus(resp.StatusCode) {
+		return fmt.Errorf(
+			"%w: endpoint=%s status=%d body=%s",
+			ErrSubscriptionInvalid,
+			endpointHost(subscription.Endpoint),
+			resp.StatusCode,
+			responseBodySnippet(resp),
+		)
 	}
 	if resp != nil && resp.StatusCode >= http.StatusBadRequest {
-		return fmt.Errorf("web push failed with status %d", resp.StatusCode)
+		return fmt.Errorf(
+			"web push failed: endpoint=%s status=%d body=%s",
+			endpointHost(subscription.Endpoint),
+			resp.StatusCode,
+			responseBodySnippet(resp),
+		)
 	}
 
 	return nil
@@ -185,6 +197,27 @@ func (s *Service) SendMobile(token models.MobilePushToken, payload Payload) erro
 
 func isInvalidStatus(status int) bool {
 	return status == http.StatusGone || status == http.StatusNotFound
+}
+
+func endpointHost(endpoint string) string {
+	parsed, err := url.Parse(endpoint)
+	if err != nil || parsed.Host == "" {
+		return "unknown"
+	}
+	return parsed.Host
+}
+
+func responseBodySnippet(resp *http.Response) string {
+	if resp == nil || resp.Body == nil {
+		return ""
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 2048))
+	if err != nil {
+		return fmt.Sprintf("read_error:%v", err)
+	}
+
+	return strings.TrimSpace(string(body))
 }
 
 type fcmSendRequest struct {

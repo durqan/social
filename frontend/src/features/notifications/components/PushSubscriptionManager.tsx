@@ -17,9 +17,15 @@ export function PushSubscriptionManager() {
         }
 
         attemptedUserIDRef.current = userID;
-        enablePushNotifications().catch(error => {
-            console.error('Ошибка подключения push-уведомлений:', error);
-        });
+        enablePushNotifications()
+            .then(result => {
+                if (!result.ok) {
+                    console.warn('Push-подписка не включена:', result.reason);
+                }
+            })
+            .catch(error => {
+                console.error('Ошибка подключения push-уведомлений:', error);
+            });
     }, [currentUser?.id]);
 
     return null;

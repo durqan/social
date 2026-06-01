@@ -1,6 +1,7 @@
 {
   "name": "Durqan",
   "short_name": "Durqan",
+  "id": "/",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

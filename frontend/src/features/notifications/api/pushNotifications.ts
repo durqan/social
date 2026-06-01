@@ -9,6 +9,10 @@ export type PushNotificationStatus =
     | 'prompt'
     | 'granted';
 
+export type PushEnableResult =
+    | { ok: true; endpoint: string }
+    | { ok: false; reason: 'unconfigured' | 'unsupported' | 'denied' | 'permission-dismissed' | 'subscription-unavailable' };
+
 function base64URLToUint8Array(base64URL: string) {
     const padding = '='.repeat((4 - (base64URL.length % 4)) % 4);
     const base64 = `${base64URL}${padding}`.replace(/-/g, '+').replace(/_/g, '/');
@@ -40,17 +44,17 @@ function serializeSubscription(subscription: PushSubscription): PushSubscription
     };
 }
 
-export async function enablePushNotifications() {
+export async function enablePushNotifications(): Promise<PushEnableResult> {
     if (!vapidPublicKey) {
-        return;
+        return { ok: false, reason: 'unconfigured' };
     }
 
     if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
-        return;
+        return { ok: false, reason: 'unsupported' };
     }
 
     if (Notification.permission === 'denied') {
-        return;
+        return { ok: false, reason: 'denied' };
     }
 
     const permission = Notification.permission === 'granted'
@@ -58,10 +62,13 @@ export async function enablePushNotifications() {
         : await Notification.requestPermission();
 
     if (permission !== 'granted') {
-        return;
+        return { ok: false, reason: 'permission-dismissed' };
     }
 
-    await navigator.serviceWorker.register('/sw.js');
+    const registeredWorker = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+    await registeredWorker.update().catch(error => {
+        console.error('Ошибка обновления service worker:', error);
+    });
     const registration = await navigator.serviceWorker.ready;
     let subscription = await registration.pushManager.getSubscription();
 
@@ -74,10 +81,11 @@ export async function enablePushNotifications() {
 
     const payload = serializeSubscription(subscription);
     if (!payload) {
-        return;
+        return { ok: false, reason: 'subscription-unavailable' };
     }
 
     await notificationService.subscribePush(payload);
+    return { ok: true, endpoint: payload.endpoint };
 }
 
 export async function hasPushSubscription() {

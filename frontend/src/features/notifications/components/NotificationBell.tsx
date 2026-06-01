@@ -142,6 +142,23 @@ function matchesReadPayload(notification: SocialNotification, payload: MarkNotif
     return true;
 }
 
+function pushEnableMessage(reason: string) {
+    switch (reason) {
+        case 'unconfigured':
+            return 'Push не настроены на сервере';
+        case 'unsupported':
+            return 'Это окружение не поддерживает push. На iPhone откройте приложение с домашнего экрана.';
+        case 'denied':
+            return 'Push запрещены в настройках iOS/Safari';
+        case 'permission-dismissed':
+            return 'Разрешение на push не выдано';
+        case 'subscription-unavailable':
+            return 'Браузер не вернул push-подписку';
+        default:
+            return 'Не удалось включить push';
+    }
+}
+
 export function NotificationBell({ userId, compact = false }: NotificationBellProps) {
     const navigate = useNavigate();
     const [notifications, setNotifications] = useState<SocialNotification[]>([]);
@@ -151,6 +168,7 @@ export function NotificationBell({ userId, compact = false }: NotificationBellPr
     const [pushStatus, setPushStatus] = useState<PushNotificationStatus>(() => getPushNotificationStatus());
     const [pushSubscribed, setPushSubscribed] = useState(false);
     const [pushLoading, setPushLoading] = useState(false);
+    const [pushMessage, setPushMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
     const [actorNames, setActorNames] = useState<Record<number, string>>({});
     const rootRef = useRef<HTMLDivElement>(null);
 
@@ -379,14 +397,18 @@ export function NotificationBell({ userId, compact = false }: NotificationBellPr
 
         setPushLoading(true);
         setErrorMessage('');
+        setPushMessage(null);
 
         try {
-            await enablePushNotifications();
+            const result = await enablePushNotifications();
             setPushStatus(getPushNotificationStatus());
             setPushSubscribed(await hasPushSubscription());
+            setPushMessage(result.ok
+                ? { type: 'success', text: 'Push-уведомления включены' }
+                : { type: 'error', text: pushEnableMessage(result.reason) });
         } catch (error) {
             console.error('Ошибка подключения push-уведомлений:', error);
-            setErrorMessage('Не удалось включить push');
+            setPushMessage({ type: 'error', text: 'Не удалось сохранить push-подписку' });
             setPushStatus(getPushNotificationStatus());
             setPushSubscribed(await hasPushSubscription());
         } finally {
@@ -431,6 +453,13 @@ export function NotificationBell({ userId, compact = false }: NotificationBellPr
                             >
                                 {pushLoading ? 'Подключение...' : 'Включить push-уведомления'}
                             </button>
+                        </div>
+                    )}
+                    {pushMessage && (
+                        <div className={`border-b border-gray-100 px-4 py-2 text-sm ${
+                            pushMessage.type === 'success' ? 'text-emerald-700' : 'text-red-600'
+                        }`}>
+                            {pushMessage.text}
                         </div>
                     )}
 
