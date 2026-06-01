@@ -2,6 +2,7 @@ import { Avatar } from "@/shared/ui/Avatar.js";
 import { Icon } from "@/shared/ui/Icon.js";
 
 interface ChatHeaderProps {
+    recipientId?: number;
     recipientName?: string;
     recipientAvatar?: string | null;
     recipientAvatarPositionX?: number;
@@ -18,6 +19,7 @@ interface ChatHeaderProps {
 }
 
 export const ChatHeader = ({
+                               recipientId,
                                recipientName,
                                recipientAvatar,
                                recipientAvatarPositionX,
@@ -63,6 +65,7 @@ export const ChatHeader = ({
                         <Avatar
                             name={recipientName}
                             src={recipientAvatar}
+                            userId={recipientId}
                             positionX={recipientAvatarPositionX}
                             positionY={recipientAvatarPositionY}
                             scale={recipientAvatarScale}

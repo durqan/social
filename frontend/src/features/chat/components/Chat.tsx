@@ -378,6 +378,7 @@ function Chat() {
             )}
 
             <ChatHeader
+                recipientId={recipient?.id}
                 recipientName={recipient?.name}
                 recipientAvatar={recipient?.avatar}
                 recipientAvatarPositionX={recipient?.avatarPositionX}
@@ -485,6 +486,7 @@ function Chat() {
                                         <Avatar
                                             name={friend.name}
                                             src={friend.avatar}
+                                            userId={friend.id}
                                             positionX={friend.avatarPositionX}
                                             positionY={friend.avatarPositionY}
                                             scale={friend.avatarScale}

@@ -70,6 +70,7 @@ export function UserSearch({ className = '' }: UserSearchProps) {
                                     <Avatar
                                         name={user.name}
                                         src={user.avatar}
+                                        userId={userID}
                                         positionX={user.avatarPositionX}
                                         positionY={user.avatarPositionY}
                                         scale={user.avatarScale}

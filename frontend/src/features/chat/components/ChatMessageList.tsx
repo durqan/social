@@ -237,6 +237,10 @@ export const ChatMessageList = ({
         }
 
         const firstMessage = messages[0];
+        if (!firstMessage) {
+            return;
+        }
+
         const firstMessageElement = container.querySelector<HTMLElement>(`[data-chat-message-id="${firstMessage.id}"]`);
 
         paginationAnchorRef.current = {

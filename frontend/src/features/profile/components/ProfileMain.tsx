@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { useOutletContext, useNavigate } from 'react-router-dom';
 import type { ProfileContextType } from "@/shared/types/domain.js";
 import { usePresence } from "@/shared/hooks/usePresence.js";
 import { Avatar } from "@/shared/ui/Avatar.js";
+import { ImageViewer } from "@/shared/ui/ImageViewer.js";
 import { formatLongDate } from "@/shared/utils/date.js";
 import { EmailVerificationNotice } from "@/features/profile/components/EmailVerificationNotice.js";
 import { friendButtonText, useFriendStatus } from "@/features/friends/hooks/useFriendStatus.js";
@@ -10,6 +12,7 @@ import { useEmailVerification } from "@/features/auth/hooks/useEmailVerification
 function ProfileMain() {
     const navigate = useNavigate();
     const { user, isOwner, currentUser } = useOutletContext<ProfileContextType>();
+    const [avatarViewerOpen, setAvatarViewerOpen] = useState(false);
     const { online } = usePresence(user.id);
     const {
         friendStatus,
@@ -29,15 +32,23 @@ function ProfileMain() {
                     <div className="h-24 bg-[linear-gradient(135deg,#eef2f7,#dbeafe)] sm:h-32"></div>
                     <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 sm:-bottom-12 sm:left-6 sm:translate-x-0">
                         <div className="w-20 h-20 bg-white rounded-full p-1 sm:w-24 sm:h-24">
-                            <Avatar
-                                name={user?.name}
-                                src={user?.avatar}
-                                positionX={user?.avatarPositionX}
-                                positionY={user?.avatarPositionY}
-                                scale={user?.avatarScale}
-                                size="lg"
-                                className="w-full h-full text-xl sm:text-2xl"
-                            />
+                            <button
+                                type="button"
+                                onClick={() => user?.avatar && setAvatarViewerOpen(true)}
+                                disabled={!user?.avatar}
+                                className="block h-full w-full rounded-full disabled:cursor-default"
+                                aria-label="Открыть аватарку"
+                            >
+                                <Avatar
+                                    name={user?.name}
+                                    src={user?.avatar}
+                                    positionX={user?.avatarPositionX}
+                                    positionY={user?.avatarPositionY}
+                                    scale={user?.avatarScale}
+                                    size="lg"
+                                    className="w-full h-full text-xl sm:text-2xl"
+                                />
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -98,6 +109,13 @@ function ProfileMain() {
                     </div>
                 </div>
             </div>
+            {avatarViewerOpen && user?.avatar && (
+                <ImageViewer
+                    src={user.avatar}
+                    alt={user.name || 'Аватар'}
+                    onClose={() => setAvatarViewerOpen(false)}
+                />
+            )}
         </div>
     );
 }

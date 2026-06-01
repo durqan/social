@@ -16,17 +16,19 @@ export function FriendRequestItem({ request, onAccept }: FriendRequestItemProps)
     if (!user?.id) {
         return null;
     }
+    const userId = user.id;
 
     return (
         <div className="flex flex-col gap-3 rounded-xl p-3 transition hover:bg-gray-50 sm:flex-row sm:items-center sm:justify-between">
             <button
                 type="button"
                 className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
-                onClick={() => navigate(`/users/${user.id}`)}
+                onClick={() => navigate(`/users/${userId}`)}
             >
                 <Avatar
                     name={user.name}
                     src={user.avatar}
+                    userId={userId}
                     positionX={user.avatarPositionX ?? user.avatar_position_x}
                     positionY={user.avatarPositionY ?? user.avatar_position_y}
                     scale={user.avatarScale ?? user.avatar_scale}
@@ -43,7 +45,7 @@ export function FriendRequestItem({ request, onAccept }: FriendRequestItemProps)
             </button>
 
             <Button
-                onClick={() => onAccept(request.id, user.id)}
+                onClick={() => onAccept(request.id, userId)}
                 className="w-full py-2 sm:w-auto sm:py-1"
             >
                 Принять

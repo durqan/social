@@ -1,6 +1,10 @@
+import { useNavigate } from 'react-router-dom';
+import type { KeyboardEvent, MouseEvent, ReactNode } from 'react';
+
 interface AvatarProps {
     name?: string;
     src?: string | null;
+    userId?: number;
     size?: 'sm' | 'md' | 'list' | 'lg' | 'xl';
     className?: string;
     positionX?: number;
@@ -19,34 +23,67 @@ const sizes = {
 export const Avatar = ({
     name,
     src,
+    userId,
     size = 'md',
     className = '',
     positionX = 50,
     positionY = 50,
     scale = 1,
 }: AvatarProps) => {
-    const baseClassName = `${sizes[size]} shrink-0 aspect-square rounded-full overflow-hidden ${className}`;
+    const navigate = useNavigate();
+    const isClickable = typeof userId === 'number' && userId > 0;
+    const baseClassName = `${sizes[size]} inline-flex shrink-0 aspect-square rounded-full overflow-hidden ${isClickable ? 'cursor-pointer outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-sky-500' : ''} ${className}`;
+    const content: ReactNode = src ? (
+        <img
+            src={src}
+            alt={name || 'Avatar'}
+            className="block h-full w-full object-cover"
+            style={{
+                objectPosition: `${positionX}% ${positionY}%`,
+                transform: `scale(${scale})`,
+                transformOrigin: `${positionX}% ${positionY}%`,
+            }}
+        />
+    ) : (
+        name?.charAt(0).toUpperCase() || '?'
+    );
 
-    if (src) {
-        return (
-            <div className={baseClassName}>
-                <img
-                    src={src}
-                    alt={name || 'Avatar'}
-                    className="block h-full w-full object-cover"
-                    style={{
-                        objectPosition: `${positionX}% ${positionY}%`,
-                        transform: `scale(${scale})`,
-                        transformOrigin: `${positionX}% ${positionY}%`,
-                    }}
-                />
-            </div>
-        );
-    }
+    const openProfile = () => {
+        if (isClickable) {
+            navigate(`/users/${userId}`);
+        }
+    };
+
+    const handleClick = (event: MouseEvent<HTMLSpanElement>) => {
+        if (!isClickable) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        openProfile();
+    };
+
+    const handleKeyDown = (event: KeyboardEvent<HTMLSpanElement>) => {
+        if (!isClickable || (event.key !== 'Enter' && event.key !== ' ')) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        openProfile();
+    };
 
     return (
-        <div className={`${baseClassName} bg-sky-500 flex items-center justify-center text-white font-bold`}>
-            {name?.charAt(0).toUpperCase() || '?'}
-        </div>
+        <span
+            className={src ? baseClassName : `${baseClassName} bg-sky-500 flex items-center justify-center text-white font-bold`}
+            role={isClickable ? 'link' : undefined}
+            tabIndex={isClickable ? 0 : undefined}
+            aria-label={isClickable ? `Открыть профиль ${name || 'пользователя'}` : undefined}
+            onClick={handleClick}
+            onKeyDown={handleKeyDown}
+        >
+            {content}
+        </span>
     );
 };

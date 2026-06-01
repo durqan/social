@@ -53,6 +53,10 @@ func GetConversations(db *gorm.DB, userID uint) ([]map[string]interface{}, error
             avatar_scale,
             last_message,
             last_message_at,
+            last_sender_id,
+            last_sender_name,
+            last_is_mine,
+            last_read,
             unread_count
         FROM (
             SELECT 
@@ -67,6 +71,10 @@ func GetConversations(db *gorm.DB, userID uint) ([]map[string]interface{}, error
                 u.avatar_scale,
                 m.content as last_message,
                 m.created_at as last_message_at,
+                m.from_id as last_sender_id,
+                sender.name as last_sender_name,
+                (m.from_id = ?) as last_is_mine,
+                m.is_read as last_read,
                 (
                     SELECT COUNT(*) FROM messages 
                     WHERE to_id = ? AND from_id = CASE WHEN m.from_id = ? THEN m.to_id ELSE m.from_id END 
@@ -79,12 +87,13 @@ func GetConversations(db *gorm.DB, userID uint) ([]map[string]interface{}, error
                 ) as rn
             FROM messages m
             JOIN users u ON u.id = CASE WHEN m.from_id = ? THEN m.to_id ELSE m.from_id END
+            JOIN users sender ON sender.id = m.from_id
             WHERE (m.from_id = ? OR m.to_id = ?)
             AND m.deleted_at IS NULL
         ) subq
         WHERE rn = 1
         ORDER BY last_message_at DESC
-    `, userID, userID, userID, userID, userID, userID, userID).
+    `, userID, userID, userID, userID, userID, userID, userID, userID).
 		Scan(&conversations).Error
 
 	return conversations, err

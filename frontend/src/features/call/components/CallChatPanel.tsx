@@ -182,6 +182,8 @@ export function CallChatPanel({
                     selectedMessages={selectedMessages}
                     onToggleSelect={() => undefined}
                     onEnterSelectionMode={() => undefined}
+                    onReplyMessage={() => undefined}
+                    onForwardMessage={() => undefined}
                     onEditMessage={(id, content) => {
                         setEditingMessageId(id);
                         setEditContent(content);
@@ -192,7 +194,9 @@ export function CallChatPanel({
                     setEditContent={setEditContent}
                     onSaveEdit={updateMessage}
                     onCancelEdit={() => setEditingMessageId(null)}
+                    hasMore={false}
                     loadingMore={loadingMore || initialLoading}
+                    onLoadMore={async () => undefined}
                     onScroll={handleScroll}
                     messagesEndRef={messagesEndRef}
                     formatDate={formatMonthDayDate}

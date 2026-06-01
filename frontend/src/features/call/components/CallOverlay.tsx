@@ -191,7 +191,7 @@ export function CallOverlay({
                         : 'relative aspect-video overflow-hidden bg-gray-900'
                 }>
                     <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
-                        <Avatar name={peerName} size="lg" />
+                        <Avatar name={peerName} userId={peerUserId ?? undefined} size="lg" />
                     </div>
 
                     <video
@@ -232,7 +232,7 @@ export function CallOverlay({
 
             <div className={isExpanded ? 'absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent p-4 pt-16 sm:p-6 sm:pt-20' : 'p-3 sm:p-4'}>
                 <div className={isExpanded ? 'mx-auto flex max-w-3xl flex-col items-center gap-4' : 'flex items-center gap-3'}>
-                    {!isExpanded && <Avatar name={peerName} />}
+                    {!isExpanded && <Avatar name={peerName} userId={peerUserId ?? undefined} />}
 
                     <div className={isExpanded ? 'min-w-0 text-center' : 'min-w-0 flex-1'}>
                         <p className={isExpanded ? 'truncate text-lg font-semibold text-white' : 'truncate font-semibold text-gray-900'}>

@@ -116,6 +116,9 @@ export default function ChatListScreen({ navigation }: Props) {
         renderItem={({ item }) => {
           const isUnread = item.unread_count > 0;
           const preview = item.last_message.trim() || 'Изображение';
+          const previewAuthor = item.last_is_mine
+            ? 'Вы'
+            : item.last_sender_name || item.name || 'Пользователь';
 
           return (
             <Pressable
@@ -147,7 +150,9 @@ export default function ChatListScreen({ navigation }: Props) {
                   style={[styles.preview, isUnread && styles.previewUnread]}
                   numberOfLines={1}
                 >
+                  <Text style={styles.previewAuthor}>{previewAuthor}: </Text>
                   {preview}
+                  {item.last_is_mine ? ` ${item.last_read ? '✓✓' : '✓'}` : ''}
                 </Text>
               </View>
               {isUnread ? (
@@ -234,6 +239,9 @@ const styles = StyleSheet.create({
   preview: {
     color: colors.muted,
     fontSize: 14,
+  },
+  previewAuthor: {
+    fontWeight: '700',
   },
   previewUnread: {
     color: colors.text,

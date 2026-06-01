@@ -46,6 +46,10 @@ export function FriendItem({ friend, active, onOpenMenu }: FriendItemProps) {
         }
 
         const touch = event.touches[0];
+        if (!touch) {
+            return;
+        }
+
         touchStartRef.current = { x: touch.clientX, y: touch.clientY };
         clearLongPress();
         longPressTimer.current = setTimeout(() => {
@@ -101,6 +105,7 @@ export function FriendItem({ friend, active, onOpenMenu }: FriendItemProps) {
             <Avatar
                 name={friend.name}
                 src={friend.avatar}
+                userId={friendID}
                 positionX={friend.avatarPositionX}
                 positionY={friend.avatarPositionY}
                 scale={friend.avatarScale}

@@ -40,7 +40,7 @@ export function imageFilesFromClipboard(dataTransfer: DataTransfer) {
     const itemFiles = Array.from(dataTransfer.items || [])
         .filter(item => item.kind === 'file')
         .map(item => item.getAsFile())
-        .filter((file): file is File => Boolean(file) && file.type.startsWith('image/'));
+        .filter((file): file is File => file !== null && file.type.startsWith('image/'));
 
     if (itemFiles.length) {
         return itemFiles;

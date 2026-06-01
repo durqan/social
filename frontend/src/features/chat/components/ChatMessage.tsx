@@ -1,7 +1,7 @@
 import { memo, useRef, useState, type MouseEvent, type TouchEvent } from 'react';
 import type { Message } from "@/shared/types/domain.js";
 import { Avatar } from "@/shared/ui/Avatar.js";
-import { Icon } from "@/shared/ui/Icon.js";
+import { ImageViewer } from "@/shared/ui/ImageViewer.js";
 import { messageAuthorName, messagePreviewText } from "@/features/chat/lib/messagePreview.js";
 
 const urlPattern = /(https?:\/\/[^\s<]+|www\.[^\s<]+)/gi;
@@ -164,6 +164,10 @@ const ChatMessageComponent = ({
         }
 
         const touch = event.touches[0];
+        if (!touch) {
+            return;
+        }
+
         clearLongPressTimer();
         touchStartRef.current = { x: touch.clientX, y: touch.clientY };
 
@@ -249,6 +253,7 @@ const ChatMessageComponent = ({
                     <Avatar
                         name={recipientName}
                         src={recipientAvatar}
+                        userId={message.from_id}
                         positionX={recipientAvatarPositionX}
                         positionY={recipientAvatarPositionY}
                         scale={recipientAvatarScale}
@@ -362,27 +367,11 @@ const ChatMessageComponent = ({
                 </div>
             </div>
             {previewUrl && (
-                <div
-                    className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4"
-                    onClick={() => setPreviewUrl(null)}
-                    role="dialog"
-                    aria-modal="true"
-                >
-                    <button
-                        type="button"
-                        className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/20"
-                        onClick={() => setPreviewUrl(null)}
-                        aria-label="Закрыть изображение"
-                    >
-                        <Icon name="close" className="h-5 w-5" />
-                    </button>
-                    <img
-                        src={previewUrl}
-                        alt="Вложение"
-                        className="max-h-[88vh] max-w-[92vw] rounded-xl object-contain shadow-2xl"
-                        onClick={event => event.stopPropagation()}
-                    />
-                </div>
+                <ImageViewer
+                    src={previewUrl}
+                    alt="Вложение"
+                    onClose={() => setPreviewUrl(null)}
+                />
             )}
         </div>
     );

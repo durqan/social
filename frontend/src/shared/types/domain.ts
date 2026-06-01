@@ -115,6 +115,10 @@ export interface Conversation {
     avatar_scale?: number;
     last_message: string;
     last_message_at: string;
+    last_sender_id: number;
+    last_sender_name: string;
+    last_is_mine: boolean;
+    last_read: boolean;
     unread_count: number;
 }
 

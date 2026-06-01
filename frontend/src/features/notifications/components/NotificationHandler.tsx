@@ -26,6 +26,7 @@ type NotificationToast = {
     title: string;
     message: string;
     onClick: () => void;
+    actorId?: number;
     tone?: 'default' | 'blue' | 'green';
 };
 
@@ -33,6 +34,7 @@ function showNotificationToast({
     title,
     message,
     onClick,
+    actorId,
     tone = 'default',
 }: NotificationToast) {
     const borderClass = {
@@ -50,7 +52,7 @@ function showNotificationToast({
             className={`mx-3 max-w-sm cursor-pointer rounded-2xl border border-gray-200 bg-white p-4 shadow-xl shadow-gray-900/10 transition-colors hover:bg-gray-50 ${borderClass}`}
         >
             <div className="flex items-center gap-3">
-                <Avatar name={title} />
+                <Avatar name={title} userId={actorId} />
                 <div className="min-w-0 flex-1">
                     <p className="truncate font-semibold text-gray-900">{title}</p>
                     <p className="truncate text-sm text-gray-600">{message}</p>
@@ -89,6 +91,7 @@ function NotificationHandler() {
                         title: event.payload.from_name || 'Пользователь',
                         message: 'Отправил(а) заявку в друзья',
                         tone: 'blue',
+                        actorId: event.payload.from_id,
                         onClick: () => navigate(`/users/${event.payload.from_id}`),
                     });
                     return;
@@ -98,6 +101,7 @@ function NotificationHandler() {
                         title: event.payload.from_name || 'Пользователь',
                         message: 'Принял(а) заявку в друзья',
                         tone: 'green',
+                        actorId: event.payload.from_id,
                         onClick: () => navigate(`/users/${event.payload.from_id}`),
                     });
                     return;
@@ -128,6 +132,7 @@ function NotificationHandler() {
                     showNotificationToast({
                         title: senderName,
                         message: message.content.slice(0, 50),
+                        actorId: message.from_id,
                         onClick: () => navigate(`/users/${currentUserId}/chat/${message.from_id}`),
                     });
 

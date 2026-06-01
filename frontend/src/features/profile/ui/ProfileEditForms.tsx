@@ -207,8 +207,12 @@ function AvatarPositionEditor({
         if (points.length < 2) {
             return 0;
         }
+        const [firstPoint, secondPoint] = points;
+        if (!firstPoint || !secondPoint) {
+            return 0;
+        }
 
-        return Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+        return Math.hypot(firstPoint.x - secondPoint.x, firstPoint.y - secondPoint.y);
     };
 
     const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
@@ -275,9 +279,14 @@ function AvatarPositionEditor({
         pinchStartRef.current = null;
 
         if (remaining.length === 1) {
+            const point = remaining[0];
+            if (!point) {
+                return;
+            }
+
             dragStartRef.current = {
-                x: remaining[0].x,
-                y: remaining[0].y,
+                x: point.x,
+                y: point.y,
                 positionX,
                 positionY,
             };

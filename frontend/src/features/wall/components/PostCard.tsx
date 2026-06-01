@@ -49,6 +49,7 @@ export function PostCard({
                     <Avatar
                         name={post.user?.name}
                         src={post.user?.avatar}
+                        userId={post.user?.id}
                         positionX={post.user?.avatar_position_x}
                         positionY={post.user?.avatar_position_y}
                         scale={post.user?.avatar_scale}
@@ -131,6 +132,7 @@ export function PostCard({
                                 <Avatar
                                     name={comment.user?.name}
                                     src={comment.user?.avatar}
+                                    userId={comment.user?.id}
                                     positionX={comment.user?.avatar_position_x}
                                     positionY={comment.user?.avatar_position_y}
                                     scale={comment.user?.avatar_scale}
@@ -161,6 +163,7 @@ export function PostCard({
                         <Avatar
                             name={currentUser?.name}
                             src={currentUser?.avatar}
+                            userId={currentUser?.id}
                             positionX={currentUser?.avatarPositionX}
                             positionY={currentUser?.avatarPositionY}
                             scale={currentUser?.avatarScale}

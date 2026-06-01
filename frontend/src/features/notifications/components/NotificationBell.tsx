@@ -14,6 +14,7 @@ import {
 import { userService } from "@/shared/api/userService.js";
 import type { SocialNotification } from "@/shared/types/domain.js";
 import { formatRelativeDate } from "@/shared/utils/date.js";
+import { Avatar } from "@/shared/ui/Avatar.js";
 import { Icon } from "@/shared/ui/Icon.js";
 
 type NotificationBellProps = {
@@ -380,7 +381,7 @@ export function NotificationBell({ userId, compact = false }: NotificationBellPr
         setErrorMessage('');
 
         try {
-            await enablePushNotifications(userId);
+            await enablePushNotifications();
             setPushStatus(getPushNotificationStatus());
             setPushSubscribed(await hasPushSubscription());
         } catch (error) {
@@ -454,6 +455,11 @@ export function NotificationBell({ userId, compact = false }: NotificationBellPr
                                         <span className={`mt-1 h-2 w-2 flex-shrink-0 rounded-full ${
                                             notification.is_read ? 'bg-gray-300' : 'bg-sky-500'
                                         }`} />
+                                        <Avatar
+                                            name={actorNames[notification.actor_id] || fallbackActorName}
+                                            userId={notification.actor_id}
+                                            size="sm"
+                                        />
                                         <span className="min-w-0 flex-1">
                                             <span className="block text-sm font-semibold text-gray-950">
                                                 {getNotificationTitle(notification, actorNames[notification.actor_id])}

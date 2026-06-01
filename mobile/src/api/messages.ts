@@ -34,6 +34,10 @@ function normalizeConversation(conversation: Conversation): Conversation {
     name: conversation.name || 'Пользователь',
     last_message: conversation.last_message || '',
     last_message_at: conversation.last_message_at || '',
+    last_sender_id: Number(conversation.last_sender_id) || 0,
+    last_sender_name: conversation.last_sender_name || '',
+    last_is_mine: Boolean(conversation.last_is_mine),
+    last_read: Boolean(conversation.last_read),
     unread_count: Number(conversation.unread_count) || 0,
   };
 }

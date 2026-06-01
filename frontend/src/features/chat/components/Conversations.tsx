@@ -239,6 +239,10 @@ function ConversationItem({
     const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const touchStartRef = useRef<{ x: number; y: number } | null>(null);
     const suppressClickRef = useRef(false);
+    const lastMessageText = conversation.last_message.trim() || 'Изображение';
+    const lastSenderLabel = conversation.last_is_mine
+        ? 'Вы'
+        : conversation.last_sender_name || conversation.name || 'Пользователь';
 
     const clearLongPress = () => {
         if (longPressTimer.current) {
@@ -259,6 +263,10 @@ function ConversationItem({
         }
 
         const touch = event.touches[0];
+        if (!touch) {
+            return;
+        }
+
         touchStartRef.current = { x: touch.clientX, y: touch.clientY };
         clearLongPress();
         longPressTimer.current = setTimeout(() => {
@@ -312,6 +320,7 @@ function ConversationItem({
             <Avatar
                 name={conversation.name}
                 src={conversation.avatar}
+                userId={conversation.user_id}
                 positionX={conversation.avatar_position_x}
                 positionY={conversation.avatar_position_y}
                 scale={conversation.avatar_scale}
@@ -324,7 +333,17 @@ function ConversationItem({
                         {formatMonthDayDate(conversation.last_message_at)}
                     </p>
                 </div>
-                <p className="truncate text-sm text-gray-500">{conversation.last_message}</p>
+                <p className="flex min-w-0 items-center gap-1 text-sm text-gray-500">
+                    <span className="min-w-0 flex-1 truncate">
+                        <span className="font-medium text-gray-600">{lastSenderLabel}: </span>
+                        {lastMessageText}
+                    </span>
+                    {conversation.last_is_mine && (
+                        <span className="flex-shrink-0 text-sky-600">
+                            {conversation.last_read ? '✓✓' : '✓'}
+                        </span>
+                    )}
+                </p>
             </div>
             {conversation.unread_count > 0 && (
                 <div className="flex h-5 min-w-5 items-center justify-center rounded-full bg-sky-500 px-1.5 text-xs text-white">
