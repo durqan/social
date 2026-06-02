@@ -223,6 +223,8 @@ func UpdateMessage(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
+		broadcastMessageUpdate(c.Request.Context(), message)
+
 		c.JSON(200, message)
 	}
 }

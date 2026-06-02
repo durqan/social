@@ -207,19 +207,9 @@ func handleWebSocketReadReceipt(ctx context.Context, userID uint, rawPayload jso
 		return
 	}
 
-	result := dbInstance.Model(&models.Message{}).
-		Where(
-			"from_id = ? AND to_id = ? AND is_read = false",
-			payload.ToID,
-			userID,
-		).
-		Update("is_read", true)
-	if result.Error != nil {
-		log.Println("Failed to mark messages as read:", result.Error)
+	if err := services.MarkConversationRead(dbInstance, payload.ToID, userID); err != nil {
+		log.Println("Failed to mark messages as read:", err)
 		return
-	}
-	if result.RowsAffected > 0 {
-		services.InvalidateMessageCaches()
 	}
 
 	sendMessageReadReceipt(ctx, userID, payload.ToID)
@@ -276,6 +266,34 @@ func broadcastMessageDelete(ctx context.Context, messageID uint, userIDs ...uint
 		for _, toConn := range clients.getAll(userID) {
 			if err := toConn.write(ctx, deleteBytes); err != nil {
 				log.Println("Failed to send message delete:", err)
+			}
+		}
+	}
+}
+
+func broadcastMessageUpdate(ctx context.Context, message models.Message) {
+	updateBytes, err := json.Marshal(gin.H{
+		"type":    "message:update",
+		"payload": services.WithPrivateAttachmentURLs(message),
+	})
+	if err != nil {
+		log.Println("Failed to marshal message update:", err)
+		return
+	}
+
+	sentTo := make(map[uint]struct{}, 2)
+	for _, userID := range []uint{message.FromID, message.ToID} {
+		if userID == 0 {
+			continue
+		}
+		if _, exists := sentTo[userID]; exists {
+			continue
+		}
+		sentTo[userID] = struct{}{}
+
+		for _, toConn := range clients.getAll(userID) {
+			if err := toConn.write(ctx, updateBytes); err != nil {
+				log.Println("Failed to send message update:", err)
 			}
 		}
 	}

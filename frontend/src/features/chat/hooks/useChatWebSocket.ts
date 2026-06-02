@@ -16,16 +16,19 @@ interface UseChatWebSocketProps {
     onReadReceipt: (fromId: number) => void;
 
     onNewMessage: (msg: Message) => void;
+
+    onMessageUpdated: (msg: Message) => void;
 }
 
 export const useChatWebSocket = ({
-                                     userId,
-                                     currentUserId,
-                                     onTyping,
-                                     onMessageDeleted,
-                                 onReadReceipt,
-                                 onNewMessage,
-                             }: UseChatWebSocketProps) => {
+    userId,
+    currentUserId,
+    onTyping,
+    onMessageDeleted,
+    onReadReceipt,
+    onNewMessage,
+    onMessageUpdated,
+}: UseChatWebSocketProps) => {
     const wsService = useWebSocket();
 
     useEffect(() => {
@@ -107,6 +110,23 @@ export const useChatWebSocket = ({
                     break;
                 }
 
+                // =========================
+                // MESSAGE UPDATE
+                // =========================
+                case 'message:update': {
+
+                    const payload = event.payload;
+
+                    if (
+                        payload.from_id === Number(userId) ||
+                        payload.to_id === Number(userId)
+                    ) {
+                        onMessageUpdated(payload);
+                    }
+
+                    break;
+                }
+
                 case 'call:offer':
                 case 'call:answer':
                 case 'call:ice':
@@ -115,6 +135,7 @@ export const useChatWebSocket = ({
                 case 'presence:update':
                 case 'friend:request':
                 case 'friend:accepted':
+                case 'message:error':
                     break;
 
                 default:
@@ -139,6 +160,7 @@ export const useChatWebSocket = ({
         onMessageDeleted,
         onReadReceipt,
         onNewMessage,
+        onMessageUpdated,
         wsService,
     ]);
 };

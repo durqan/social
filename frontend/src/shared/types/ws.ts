@@ -10,6 +10,18 @@ export type MessageEvent = BaseWsEvent<
     Message
 >;
 
+export type MessageUpdatedEvent = BaseWsEvent<
+    'message:update',
+    Message
+>;
+
+export type MessageErrorEvent = BaseWsEvent<
+    'message:error',
+    {
+        error: string;
+    }
+>;
+
 export type TypingStartEvent = BaseWsEvent<
     'typing:start',
     {
@@ -107,6 +119,8 @@ export type CallRejectEvent = BaseWsEvent<
 
 export type WsEvent =
     | MessageEvent
+    | MessageUpdatedEvent
+    | MessageErrorEvent
     | TypingStartEvent
     | TypingStopEvent
     | ReadReceiptEvent

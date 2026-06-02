@@ -23,10 +23,14 @@ export interface MessageUser {
     id: number;
     name: string;
     email: string;
+    age?: number;
+    bio?: string;
     avatar?: string | null;
     avatar_position_x?: number;
     avatar_position_y?: number;
     avatar_scale?: number;
+    is_email_verified?: boolean;
+    created_at?: string;
 }
 
 export interface Post {
@@ -87,6 +91,7 @@ export interface MessageAttachment {
     width?: number;
     height?: number;
     size: number;
+    created_at?: string;
 }
 
 export interface Message {
@@ -95,11 +100,13 @@ export interface Message {
     to_id: number;
     content: string;
     created_at: string;
+    updated_at?: string;
     is_read: boolean;
     reply_to_message_id?: number | null;
     forwarded_from_message_id?: number | null;
     forwarded_from_user_id?: number | null;
-    from: MessageUser;
+    from?: MessageUser;
+    to?: MessageUser;
     reply_to_message?: Message | null;
     forwarded_from_message?: Message | null;
     forwarded_from_user?: MessageUser | null;

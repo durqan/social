@@ -65,6 +65,7 @@ function Chat() {
         loadMore,
         sendMessage: sendMessageToStore,
         updateMessage,
+        applyMessageUpdate,
         deleteMessage,
         markAsRead,
     } = useChatMessages(userId, currentUser?.id);
@@ -101,6 +102,7 @@ function Chat() {
                 markAsRead(Number(userId));
             }
         }, [markAsRead, setMessages, userId, wsService]),
+        onMessageUpdated: applyMessageUpdate,
     });
 
     useEffect(() => {

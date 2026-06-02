@@ -13,6 +13,8 @@ const ignoredEvents: ReadonlySet<WsEvent['type']> = new Set([
     'typing:start',
     'typing:stop',
     'message:delete',
+    'message:update',
+    'message:error',
     'message:read',
     'call:offer',
     'call:answer',

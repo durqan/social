@@ -45,6 +45,7 @@ export function CallChatPanel({
         loadInitial,
         sendMessage: sendMessageToStore,
         updateMessage,
+        applyMessageUpdate,
         markAsRead,
     } = useChatMessages(String(peerUserId), currentUser.id);
     const { messagesEndRef, handleScroll } = useChatScroll([messages]);
@@ -91,6 +92,7 @@ export function CallChatPanel({
                 onSeen();
             }
         }, [markAsRead, onSeen, peerUserId, setMessages, wsService]),
+        onMessageUpdated: applyMessageUpdate,
     });
 
     const uploadAttachments = useCallback(async (files: File[]): Promise<MessageAttachment[]> => {

@@ -16,6 +16,26 @@ const dispatchNotificationsRead = (payload: MarkNotificationsReadPayload) => {
     }));
 };
 
+const messageUpdateTime = (message: Message): number | null => {
+    if (!message.updated_at) {
+        return null;
+    }
+
+    const time = Date.parse(message.updated_at);
+    return Number.isFinite(time) ? time : null;
+};
+
+const shouldApplyMessageUpdate = (current: Message, updated: Message) => {
+    const currentTime = messageUpdateTime(current);
+    const updatedTime = messageUpdateTime(updated);
+
+    if (currentTime === null || updatedTime === null) {
+        return true;
+    }
+
+    return updatedTime >= currentTime;
+};
+
 export const useChatMessages = (userId: string | undefined, currentUserId: number | undefined) => {
     const [messages, setMessages] = useState<Message[]>([]);
     const [hasMore, setHasMore] = useState(true);
@@ -72,7 +92,27 @@ export const useChatMessages = (userId: string | undefined, currentUserId: numbe
 
     const updateMessage = useCallback(async (messageId: number, newContent: string) => {
         const updated = await messageService.updateMessage(messageId, newContent);
-        setMessages(prev => prev.map(m => m.id === messageId ? updated : m));
+        setMessages(prev => prev.map(m =>
+            m.id === messageId && shouldApplyMessageUpdate(m, updated) ? updated : m
+        ));
+    }, []);
+
+    const applyMessageUpdate = useCallback((updated: Message) => {
+        setMessages(prev => {
+            let changed = false;
+            const nextMessages = prev.map(message => {
+                if (message.id !== updated.id) {
+                    return message;
+                }
+                if (!shouldApplyMessageUpdate(message, updated)) {
+                    return message;
+                }
+                changed = true;
+                return updated;
+            });
+
+            return changed ? nextMessages : prev;
+        });
     }, []);
 
     const deleteMessage = useCallback(async (messageId: number) => {
@@ -118,6 +158,7 @@ export const useChatMessages = (userId: string | undefined, currentUserId: numbe
         loadMore,
         sendMessage,
         updateMessage,
+        applyMessageUpdate,
         deleteMessage,
         markAsRead,
     };

@@ -83,6 +83,26 @@ function estimateComposerInputHeight(value: string) {
   );
 }
 
+function messageUpdateTime(message: Message) {
+  if (!message.updated_at) {
+    return null;
+  }
+
+  const time = Date.parse(message.updated_at);
+  return Number.isFinite(time) ? time : null;
+}
+
+function shouldApplyMessageUpdate(current: Message, updated: Message) {
+  const currentTime = messageUpdateTime(current);
+  const updatedTime = messageUpdateTime(updated);
+
+  if (currentTime === null || updatedTime === null) {
+    return true;
+  }
+
+  return updatedTime >= currentTime;
+}
+
 function linkParts(value: string) {
   const parts: Array<{ type: 'text' | 'link'; value: string; href?: string }> =
     [];
@@ -353,6 +373,48 @@ export default function ChatScreen({ route }: Props) {
         return;
       }
 
+      if (event.type === 'message:delete') {
+        const payload = event.payload as { message_id: number };
+
+        if (!messagesRef.current.some(item => item.id === payload.message_id)) {
+          return;
+        }
+
+        setMessages(previous =>
+          previous.filter(item => item.id !== payload.message_id),
+        );
+        signalChatDataChanged();
+        return;
+      }
+
+      if (event.type === 'message:update') {
+        const message = event.payload as Message;
+        const belongsToChat =
+          (message.from_id === otherUserId && message.to_id === user?.id) ||
+          (message.to_id === otherUserId && message.from_id === user?.id);
+        const existingMessage = messagesRef.current.find(
+          item => item.id === message.id,
+        );
+
+        if (
+          !belongsToChat ||
+          !existingMessage ||
+          !shouldApplyMessageUpdate(existingMessage, message)
+        ) {
+          return;
+        }
+
+        setMessages(previous =>
+          previous.map(item =>
+            item.id === message.id && shouldApplyMessageUpdate(item, message)
+              ? message
+              : item,
+          ),
+        );
+        signalChatDataChanged();
+        return;
+      }
+
       if (event.type !== 'message:new') {
         return;
       }
@@ -387,6 +449,7 @@ export default function ChatScreen({ route }: Props) {
       otherUserId,
       refreshUnreadCount,
       restoreDraftAfterSendError,
+      signalChatDataChanged,
       user?.id,
     ],
   );
@@ -462,7 +525,10 @@ export default function ChatScreen({ route }: Props) {
         );
         setMessages(previous =>
           previous.map(message =>
-            message.id === editingMessage.id ? updated : message,
+            message.id === editingMessage.id &&
+            shouldApplyMessageUpdate(message, updated)
+              ? updated
+              : message,
           ),
         );
         setInput('');

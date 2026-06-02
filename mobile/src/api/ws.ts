@@ -24,6 +24,10 @@ export type WsEvent =
       payload: Message;
     }
   | {
+      type: 'message:update';
+      payload: Message;
+    }
+  | {
       type: 'message:error';
       payload: {
         error: string;
@@ -34,6 +38,12 @@ export type WsEvent =
       payload: {
         from_id: number;
         to_id: number;
+      };
+    }
+  | {
+      type: 'message:delete';
+      payload: {
+        message_id: number;
       };
     }
   | {

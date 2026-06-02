@@ -49,6 +49,7 @@ function Conversations() {
         const handleMessage = (event: WsEvent) => {
             switch (event.type) {
                 case 'message:new':
+                case 'message:update':
                     if (event.payload.from_id === currentUser.id || event.payload.to_id === currentUser.id) {
                         void fetchConversations();
                     }

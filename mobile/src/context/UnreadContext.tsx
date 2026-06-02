@@ -108,7 +108,12 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
     }
 
     const handleSocketEvent = (event: WsEvent) => {
-      if (event.type === 'message:new' || event.type === 'message:read') {
+      if (
+        event.type === 'message:new' ||
+        event.type === 'message:update' ||
+        event.type === 'message:delete' ||
+        event.type === 'message:read'
+      ) {
         signalChatDataChanged();
       }
     };
