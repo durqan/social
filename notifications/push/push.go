@@ -53,8 +53,9 @@ func NewServiceFromEnv() *Service {
 	privateKey := os.Getenv("VAPID_PRIVATE_KEY")
 	subject := os.Getenv("VAPID_SUBJECT")
 	if subject == "" {
-		subject = "mailto:example@example.com"
+		subject = "example@example.com"
 	}
+	subject = normalizeVAPIDSubject(subject)
 
 	webEnabled := publicKey != "" && privateKey != ""
 	if !webEnabled {
@@ -197,6 +198,25 @@ func (s *Service) SendMobile(token models.MobilePushToken, payload Payload) erro
 
 func isInvalidStatus(status int) bool {
 	return status == http.StatusGone || status == http.StatusNotFound
+}
+
+func normalizeVAPIDSubject(subject string) string {
+	subject = strings.TrimSpace(subject)
+	lowerSubject := strings.ToLower(subject)
+
+	if strings.HasPrefix(lowerSubject, "mailto:") {
+		subject = strings.TrimSpace(subject[len("mailto:"):])
+	}
+
+	if strings.HasPrefix(strings.ToLower(subject), "https:") {
+		return "https:" + subject[len("https:"):]
+	}
+
+	if len(subject) >= 2 && subject[0] == '<' && subject[len(subject)-1] == '>' {
+		return strings.TrimSpace(subject[1 : len(subject)-1])
+	}
+
+	return subject
 }
 
 func endpointHost(endpoint string) string {
