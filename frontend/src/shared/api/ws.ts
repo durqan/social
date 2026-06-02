@@ -8,8 +8,19 @@ type OutgoingEvent = {
     type: string;
     payload: unknown;
 };
+type QueuedEvent = OutgoingEvent & {
+    queuedAt: number;
+};
 
 const reconnectDelayMs = 3000;
+const callEventQueueTtlMs = 30000;
+const callEventTypes = new Set([
+    'call:offer',
+    'call:answer',
+    'call:ice',
+    'call:end',
+    'call:reject',
+]);
 
 function websocketURL() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -21,7 +32,7 @@ export class WebSocketService {
     private handlers = new Set<WsHandler>();
     private shouldReconnect = true;
     private reconnectTimer: number | null = null;
-    private pendingEvents: OutgoingEvent[] = [];
+    private pendingEvents: QueuedEvent[] = [];
     private opening = false;
 
     connect() {
@@ -113,28 +124,46 @@ export class WebSocketService {
     sendCallOffer(
         toId: number,
         offer: RTCSessionDescriptionInit,
-        callType: CallType = 'audio',
+        callType: CallType,
+        callId: string,
     ) {
         this.sendEventToUser('call:offer', toId, {
+            call_id: callId,
             call_type: callType,
             offer,
         });
     }
 
-    sendCallAnswer(toId: number, answer: RTCSessionDescriptionInit) {
-        this.sendEventToUser('call:answer', toId, { answer });
+    sendCallAnswer(toId: number, answer: RTCSessionDescriptionInit, callId: string) {
+        this.sendEventToUser('call:answer', toId, {
+            answer,
+            call_id: callId,
+        });
     }
 
-    sendCallIce(toId: number, candidate: RTCIceCandidateInit) {
-        this.sendEventToUser('call:ice', toId, { candidate });
+    sendCallIce(toId: number, candidate: RTCIceCandidateInit, callId: string) {
+        this.sendEventToUser('call:ice', toId, {
+            candidate,
+            call_id: callId,
+        });
     }
 
-    sendCallEnd(toId: number) {
-        this.sendEventToUser('call:end', toId);
+    sendCallEnd(toId: number, callId: string) {
+        this.sendEventToUser('call:end', toId, { call_id: callId });
     }
 
-    sendCallReject(toId: number) {
-        this.sendEventToUser('call:reject', toId);
+    sendCallReject(toId: number, callId: string) {
+        this.sendEventToUser('call:reject', toId, { call_id: callId });
+    }
+
+    discardPendingCallEvents(callId?: string) {
+        this.pendingEvents = this.pendingEvents.filter(event => {
+            if (!isCallEvent(event)) {
+                return true;
+            }
+
+            return callId ? getEventCallId(event) !== callId : false;
+        });
     }
 
     disconnect() {
@@ -169,7 +198,10 @@ export class WebSocketService {
             return;
         }
 
-        this.pendingEvents.push(event);
+        this.pendingEvents.push({
+            ...event,
+            queuedAt: Date.now(),
+        });
         this.connect();
     }
 
@@ -214,7 +246,26 @@ export class WebSocketService {
             return;
         }
 
-        const events = this.pendingEvents.splice(0);
-        events.forEach(event => this.ws?.send(JSON.stringify(event)));
+        const now = Date.now();
+        const events = this.pendingEvents.splice(0).filter(event => (
+            !isCallEvent(event) || now - event.queuedAt <= callEventQueueTtlMs
+        ));
+
+        events.forEach(({ queuedAt: _queuedAt, ...event }) => {
+            this.ws?.send(JSON.stringify(event));
+        });
     }
+}
+
+function isCallEvent(event: OutgoingEvent) {
+    return callEventTypes.has(event.type);
+}
+
+function getEventCallId(event: OutgoingEvent) {
+    if (!event.payload || typeof event.payload !== 'object') {
+        return null;
+    }
+
+    const callId = (event.payload as { call_id?: unknown }).call_id;
+    return typeof callId === 'string' ? callId : null;
 }

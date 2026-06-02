@@ -56,6 +56,7 @@ export type WsEvent =
       type: 'call:offer';
       payload: {
         from_id: number;
+        call_id: string;
         call_type?: CallType;
         offer: CallSessionDescription;
       };
@@ -64,6 +65,7 @@ export type WsEvent =
       type: 'call:answer';
       payload: {
         from_id: number;
+        call_id: string;
         answer: CallSessionDescription;
       };
     }
@@ -71,6 +73,7 @@ export type WsEvent =
       type: 'call:ice';
       payload: {
         from_id: number;
+        call_id: string;
         candidate: CallIceCandidate;
       };
     }
@@ -78,6 +81,7 @@ export type WsEvent =
       type: 'call:end' | 'call:reject';
       payload: {
         from_id: number;
+        call_id: string;
       };
     }
   | {
@@ -88,6 +92,7 @@ export type WsEvent =
 type WsHandler = (event: WsEvent) => void;
 type StatusHandler = (connected: boolean) => void;
 type OutgoingEvent = { type: string; payload: unknown };
+type QueuedEvent = OutgoingEvent & { queuedAt: number };
 type RNWebSocketConstructor = new (
   url: string,
   protocols?: string | string[] | null,
@@ -109,7 +114,15 @@ class ChatSocket {
   private opening = false;
   private connected = false;
   private networkOnline = true;
-  private pendingEvents: OutgoingEvent[] = [];
+  private pendingEvents: QueuedEvent[] = [];
+  private readonly callEventQueueTtlMs = 30000;
+  private readonly callEventTypes = new Set([
+    'call:offer',
+    'call:answer',
+    'call:ice',
+    'call:end',
+    'call:reject',
+  ]);
 
   constructor() {
     NetInfo.addEventListener(state => {
@@ -204,6 +217,7 @@ class ChatSocket {
     toId: number,
     offer: CallSessionDescription,
     callType: CallType,
+    callId: string,
   ) {
     this.sendEvent({
       type: 'call:offer',
@@ -211,45 +225,60 @@ class ChatSocket {
         to_id: toId,
         offer,
         call_type: callType,
+        call_id: callId,
       },
     });
   }
 
-  sendCallAnswer(toId: number, answer: CallSessionDescription) {
+  sendCallAnswer(toId: number, answer: CallSessionDescription, callId: string) {
     this.sendEvent({
       type: 'call:answer',
       payload: {
         to_id: toId,
         answer,
+        call_id: callId,
       },
     });
   }
 
-  sendCallIce(toId: number, candidate: CallIceCandidate) {
+  sendCallIce(toId: number, candidate: CallIceCandidate, callId: string) {
     this.sendEvent({
       type: 'call:ice',
       payload: {
         to_id: toId,
         candidate,
+        call_id: callId,
       },
     });
   }
 
-  sendCallEnd(toId: number) {
+  sendCallEnd(toId: number, callId: string) {
     this.sendEvent({
       type: 'call:end',
       payload: {
         to_id: toId,
+        call_id: callId,
       },
     });
   }
 
-  sendCallReject(toId: number) {
+  sendCallReject(toId: number, callId: string) {
     this.sendEvent({
       type: 'call:reject',
       payload: {
         to_id: toId,
+        call_id: callId,
       },
+    });
+  }
+
+  discardPendingCallEvents(callId?: string) {
+    this.pendingEvents = this.pendingEvents.filter(event => {
+      if (!this.isCallEvent(event)) {
+        return true;
+      }
+
+      return callId ? this.eventCallId(event) !== callId : false;
     });
   }
 
@@ -295,7 +324,10 @@ class ChatSocket {
 
   private sendEvent(event: OutgoingEvent) {
     if (!this.isConnected()) {
-      this.pendingEvents.push(event);
+      this.pendingEvents.push({
+        ...event,
+        queuedAt: Date.now(),
+      });
       this.connect();
       return;
     }
@@ -308,8 +340,15 @@ class ChatSocket {
       return;
     }
 
-    const events = this.pendingEvents.splice(0);
-    events.forEach(event => {
+    const now = Date.now();
+    const events = this.pendingEvents.splice(0).filter(event => {
+      return (
+        !this.isCallEvent(event) ||
+        now - event.queuedAt <= this.callEventQueueTtlMs
+      );
+    });
+
+    events.forEach(({ queuedAt: _queuedAt, ...event }) => {
       this.ws?.send(JSON.stringify(event));
     });
   }
@@ -367,6 +406,19 @@ class ChatSocket {
 
     this.connected = nextConnected;
     this.statusHandlers.forEach(handler => handler(nextConnected));
+  }
+
+  private isCallEvent(event: OutgoingEvent) {
+    return this.callEventTypes.has(event.type);
+  }
+
+  private eventCallId(event: OutgoingEvent) {
+    if (!event.payload || typeof event.payload !== 'object') {
+      return null;
+    }
+
+    const callId = (event.payload as { call_id?: unknown }).call_id;
+    return typeof callId === 'string' ? callId : null;
   }
 }
 

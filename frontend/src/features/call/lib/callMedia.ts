@@ -18,6 +18,7 @@ type LocalCallStreamResult = {
 
 type PeerConnectionOptions = {
     toId: number;
+    callId: string;
     wsService: WebSocketService;
     onRemoteStream: (stream: MediaStream) => void;
     onConnectionStateChange: (state: RTCPeerConnectionState) => void;
@@ -57,6 +58,7 @@ export async function openLocalCallStream(callType: CallType): Promise<LocalCall
 
 export function createCallPeerConnection({
     toId,
+    callId,
     wsService,
     onRemoteStream,
     onConnectionStateChange,
@@ -65,7 +67,7 @@ export function createCallPeerConnection({
 
     pc.onicecandidate = event => {
         if (event.candidate) {
-            wsService.sendCallIce(toId, event.candidate.toJSON());
+            wsService.sendCallIce(toId, event.candidate.toJSON(), callId);
         }
     };
 

@@ -166,7 +166,7 @@ REST refresh flow:
 ## 1-на-1 звонки
 
 - Используется `react-native-webrtc`.
-- Signaling идет через существующий backend WebSocket: `call:offer`, `call:answer`, `call:ice`, `call:end`, `call:reject`.
+- Signaling идет через существующий backend WebSocket: `call:offer`, `call:answer`, `call:ice`, `call:end`, `call:reject`; контракт с `call_id` описан в `../CALL_EVENTS.md`.
 - Поддержаны исходящий и входящий звонок, принять, отклонить, завершить, mute/unmute microphone, camera on/off, switch camera.
 - UI звонка mobile-first: remote video на весь экран, local preview, нижняя панель кнопок и состояния connecting/ringing/active/ended/error.
 - При logout/background локальные tracks очищаются.

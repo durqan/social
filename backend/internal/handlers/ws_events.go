@@ -319,6 +319,18 @@ func forwardCallEvent(ctx context.Context, eventType string, fromID uint, payloa
 
 	delete(callPayload, "to_id")
 
+	callIDRaw, ok := callPayload["call_id"]
+	if !ok {
+		log.Println("Invalid call payload: missing call_id")
+		return
+	}
+
+	var callID string
+	if err := json.Unmarshal(callIDRaw, &callID); err != nil || callID == "" {
+		log.Println("Invalid call payload: invalid call_id")
+		return
+	}
+
 	eventPayload := gin.H{
 		"from_id": fromID,
 	}
@@ -336,7 +348,7 @@ func forwardCallEvent(ctx context.Context, eventType string, fromID uint, payloa
 		return
 	}
 
-	if toConn, ok := clients.get(toID); ok {
+	for _, toConn := range clients.getAll(toID) {
 		if err := toConn.write(ctx, eventBytes); err != nil {
 			log.Println("Failed to forward call event:", err)
 		}

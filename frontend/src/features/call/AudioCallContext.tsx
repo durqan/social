@@ -37,6 +37,15 @@ type AudioCallContextValue = {
 
 const AudioCallContext = createContext<AudioCallContextValue | null>(null);
 
+function createCallId() {
+    return globalThis.crypto?.randomUUID?.() ??
+        `call-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function isCallId(value: unknown): value is string {
+    return typeof value === 'string' && value.length > 0;
+}
+
 export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
     const wsService = useWebSocket();
     const { currentUser } = useAuth();
@@ -62,6 +71,7 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
     const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
     const localVideoRef = useRef<HTMLVideoElement | null>(null);
     const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
+    const callIdRef = useRef<string | null>(null);
     const incomingOfferRef = useRef<RTCSessionDescriptionInit | null>(null);
     const pendingIceRef = useRef<RTCIceCandidateInit[]>([]);
     const disconnectTimeoutRef = useRef<number | null>(null);
@@ -102,7 +112,14 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
     }, [stopLocalStream]);
 
     const cleanupCall = useCallback(() => {
+        const callId = callIdRef.current;
+
+        if (callId) {
+            wsService.discardPendingCallEvents(callId);
+        }
+
         cleanupMediaSession();
+        callIdRef.current = null;
         setCallPeer(null);
         setPeerName('Пользователь');
         setCurrentCallType('audio');
@@ -123,6 +140,7 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
         setIsCallChatOpen,
         setIsCameraOn,
         setIsMicrophoneOn,
+        wsService,
     ]);
 
     const getLocalStream = useCallback(async (nextCallType: CallType) => {
@@ -169,9 +187,10 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
         await addIceCandidates(pc, pendingCandidates, 'Failed to add pending ICE candidate:');
     }, []);
 
-    const createPeerConnection = useCallback((toId: number) => {
+    const createPeerConnection = useCallback((toId: number, callId: string) => {
         const pc = createCallPeerConnection({
             toId,
+            callId,
             wsService,
             onRemoteStream: remoteStream => {
                 remoteStreamRef.current = remoteStream;
@@ -230,6 +249,8 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
         }
 
         setError(null);
+        const callId = createCallId();
+        callIdRef.current = callId;
         setCallPeer(toId);
         setPeerName(name || 'Пользователь');
         setCurrentCallType(nextCallType);
@@ -237,7 +258,7 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
 
         try {
             const localStream = await getLocalStream(nextCallType);
-            const pc = createPeerConnection(toId);
+            const pc = createPeerConnection(toId, callId);
 
             addStreamTracks(pc, localStream);
             await applyVideoSenderQuality(pc);
@@ -245,7 +266,7 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
 
-            wsService.sendCallOffer(toId, offer, callTypeRef.current);
+            wsService.sendCallOffer(toId, offer, callTypeRef.current, callId);
         } catch (e) {
             console.error('Failed to start call:', e);
             setError(getCallErrorMessage(e, 'Не удалось начать звонок'));
@@ -359,8 +380,9 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
         const fromId = peerUserIdRef.current;
         const offer = incomingOfferRef.current;
         const nextCallType = callTypeRef.current;
+        const callId = callIdRef.current;
 
-        if (!fromId || !offer) {
+        if (!fromId || !offer || !callId) {
             return;
         }
 
@@ -368,7 +390,7 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
 
         try {
             const localStream = await getLocalStream(nextCallType);
-            const pc = createPeerConnection(fromId);
+            const pc = createPeerConnection(fromId, callId);
 
             addStreamTracks(pc, localStream);
             await applyVideoSenderQuality(pc);
@@ -379,16 +401,16 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
 
-            wsService.sendCallAnswer(fromId, answer);
+            wsService.sendCallAnswer(fromId, answer, callId);
             setCallStatus('active');
         } catch (e) {
             console.error('Failed to accept call:', e);
             setError(getCallErrorMessage(e, 'Не удалось принять звонок'));
-            wsService.sendCallReject(fromId);
-            cleanupMediaSession();
+            wsService.sendCallReject(fromId, callId);
+            cleanupCall();
         }
     }, [
-        cleanupMediaSession,
+        cleanupCall,
         createPeerConnection,
         flushPendingIce,
         getLocalStream,
@@ -398,9 +420,10 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
 
     const rejectCall = useCallback(() => {
         const fromId = peerUserIdRef.current;
+        const callId = callIdRef.current;
 
-        if (fromId) {
-            wsService.sendCallReject(fromId);
+        if (fromId && callId) {
+            wsService.sendCallReject(fromId, callId);
         }
 
         cleanupCall();
@@ -408,9 +431,10 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
 
     const endCall = useCallback(() => {
         const toId = peerUserIdRef.current;
+        const callId = callIdRef.current;
 
-        if (toId) {
-            wsService.sendCallEnd(toId);
+        if (toId && callId) {
+            wsService.sendCallEnd(toId, callId);
         }
 
         cleanupCall();
@@ -420,18 +444,24 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
         const handleMessage = async (event: WsEvent) => {
             switch (event.type) {
                 case 'call:offer': {
-                    const { from_id: fromId, offer, call_type: incomingCallType } = event.payload;
+                    const {
+                        from_id: fromId,
+                        call_id: callId,
+                        offer,
+                        call_type: incomingCallType,
+                    } = event.payload;
 
-                    if (fromId === currentUser?.id) {
+                    if (fromId === currentUser?.id || !isCallId(callId)) {
                         return;
                     }
 
                     if (statusRef.current !== 'idle') {
-                        wsService.sendCallReject(fromId);
+                        wsService.sendCallReject(fromId, callId);
                         return;
                     }
 
                     setError(null);
+                    callIdRef.current = callId;
                     setCallPeer(fromId);
                     setCurrentCallType(incomingCallType === 'video' ? 'video' : 'audio');
                     incomingOfferRef.current = offer;
@@ -442,7 +472,18 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
                 }
 
                 case 'call:answer': {
-                    const { from_id: fromId, answer } = event.payload;
+                    const { from_id: fromId, call_id: callId, answer } = event.payload;
+
+                    if (!isCallId(callId) || callId !== callIdRef.current) {
+                        return;
+                    }
+
+                    if (fromId === currentUser?.id) {
+                        if (!peerConnectionRef.current || statusRef.current === 'incoming') {
+                            cleanupCall();
+                        }
+                        return;
+                    }
 
                     if (fromId !== peerUserIdRef.current || !peerConnectionRef.current) {
                         return;
@@ -458,9 +499,14 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
                 }
 
                 case 'call:ice': {
-                    const { from_id: fromId, candidate } = event.payload;
+                    const { from_id: fromId, call_id: callId, candidate } = event.payload;
 
-                    if (fromId !== peerUserIdRef.current) {
+                    if (
+                        fromId === currentUser?.id ||
+                        fromId !== peerUserIdRef.current ||
+                        !isCallId(callId) ||
+                        callId !== callIdRef.current
+                    ) {
                         return;
                     }
 
@@ -478,10 +524,21 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
 
                 case 'call:end':
                 case 'call:reject': {
-                    const { from_id: fromId } = event.payload;
+                    const { from_id: fromId, call_id: callId } = event.payload;
+
+                    if (!isCallId(callId) || callId !== callIdRef.current) {
+                        return;
+                    }
+
+                    if (fromId === currentUser?.id) {
+                        cleanupCall();
+                        return;
+                    }
 
                     if (fromId === peerUserIdRef.current) {
-                        cleanupCall();
+                        if (event.type === 'call:end' || statusRef.current !== 'active') {
+                            cleanupCall();
+                        }
                     }
 
                     return;
@@ -529,8 +586,9 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
     useEffect(() => {
         if (!currentUser && statusRef.current !== 'idle') {
             const toId = peerUserIdRef.current;
-            if (toId) {
-                wsService.sendCallEnd(toId);
+            const callId = callIdRef.current;
+            if (toId && callId) {
+                wsService.sendCallEnd(toId, callId);
             }
 
             cleanupCall();
@@ -565,8 +623,9 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
             }
 
             const toId = peerUserIdRef.current;
-            if (toId) {
-                wsService.sendCallEnd(toId);
+            const callId = callIdRef.current;
+            if (toId && callId) {
+                wsService.sendCallEnd(toId, callId);
             }
 
             cleanupCall();

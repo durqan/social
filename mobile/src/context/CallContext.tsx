@@ -59,6 +59,7 @@ type CallContextValue = {
 
 type PendingOffer = {
   fromId: number;
+  callId: string;
   offer: CallSessionDescription;
   callType: CallType;
 };
@@ -66,9 +67,19 @@ type PendingOffer = {
 type PeerConnection = InstanceType<typeof RTCPeerConnection>;
 type PeerConnectionEventTarget = {
   addEventListener: (type: string, handler: (event: unknown) => void) => void;
+  removeEventListener?: (type: string, handler: (event: unknown) => void) => void;
 };
 
 const CallContext = createContext<CallContextValue | undefined>(undefined);
+const disconnectedCleanupDelayMs = 10000;
+
+function createCallId() {
+  return `call-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function isCallId(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0;
+}
 
 function iceServers() {
   const servers: Array<{
@@ -173,9 +184,13 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const callTypeRef = useRef(callType);
   const pcRef = useRef<PeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
+  const remoteStreamRef = useRef<MediaStream | null>(null);
+  const callIdRef = useRef<string | null>(null);
   const pendingOfferRef = useRef<PendingOffer | null>(null);
   const pendingIceRef = useRef<CallIceCandidate[]>([]);
   const endTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const disconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pcListenerCleanupRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     statusRef.current = status;
@@ -196,12 +211,35 @@ export function CallProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const resetCall = useCallback(() => {
-    clearEndTimer();
+  const clearDisconnectTimer = useCallback(() => {
+    if (disconnectTimerRef.current) {
+      clearTimeout(disconnectTimerRef.current);
+      disconnectTimerRef.current = null;
+    }
+  }, []);
+
+  const closePeerConnection = useCallback(() => {
+    clearDisconnectTimer();
+    pcListenerCleanupRef.current?.();
+    pcListenerCleanupRef.current = null;
     pcRef.current?.close();
     pcRef.current = null;
+  }, [clearDisconnectTimer]);
+
+  const resetCall = useCallback(() => {
+    const callId = callIdRef.current;
+
+    if (callId) {
+      chatSocket.discardPendingCallEvents(callId);
+    }
+
+    clearEndTimer();
+    closePeerConnection();
     stopStream(localStreamRef.current);
     localStreamRef.current = null;
+    stopStream(remoteStreamRef.current);
+    remoteStreamRef.current = null;
+    callIdRef.current = null;
     pendingOfferRef.current = null;
     pendingIceRef.current = [];
     setLocalStream(null);
@@ -213,15 +251,23 @@ export function CallProvider({ children }: { children: ReactNode }) {
     setPeerName('Пользователь');
     setError(null);
     setStatus('idle');
-  }, [clearEndTimer]);
+  }, [clearEndTimer, closePeerConnection]);
 
   const finishCall = useCallback(
     (nextStatus: CallStatus = 'ended', message?: string) => {
+      const callId = callIdRef.current;
+
+      if (callId) {
+        chatSocket.discardPendingCallEvents(callId);
+      }
+
       clearEndTimer();
-      pcRef.current?.close();
-      pcRef.current = null;
+      closePeerConnection();
       stopStream(localStreamRef.current);
       localStreamRef.current = null;
+      stopStream(remoteStreamRef.current);
+      remoteStreamRef.current = null;
+      callIdRef.current = null;
       pendingOfferRef.current = null;
       pendingIceRef.current = [];
       setLocalStream(null);
@@ -232,7 +278,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       setStatus(nextStatus);
       endTimerRef.current = setTimeout(resetCall, 1800);
     },
-    [clearEndTimer, resetCall],
+    [clearEndTimer, closePeerConnection, resetCall],
   );
 
   const loadPeerName = useCallback(
@@ -292,13 +338,21 @@ export function CallProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const createPeerConnection = useCallback(
-    (toId: number) => {
+    (toId: number, callId: string) => {
+      closePeerConnection();
+
       const pc = new RTCPeerConnection({
         iceServers: iceServers(),
       });
       const eventTarget = pc as unknown as PeerConnectionEventTarget;
+      const isCurrentConnection = () =>
+        pcRef.current === pc && callIdRef.current === callId;
 
-      eventTarget.addEventListener('icecandidate', event => {
+      const handleIceCandidate = (event: unknown) => {
+        if (!isCurrentConnection()) {
+          return;
+        }
+
         const candidate = (
           event as {
             candidate?: { toJSON: () => CallIceCandidate } | null;
@@ -309,35 +363,81 @@ export function CallProvider({ children }: { children: ReactNode }) {
         }
 
         try {
-          chatSocket.sendCallIce(toId, candidate.toJSON());
+          chatSocket.sendCallIce(toId, candidate.toJSON(), callId);
         } catch (sendError) {
           warnDev('[SocialMobile] Failed to send ICE candidate', sendError);
         }
-      });
+      };
 
-      eventTarget.addEventListener('track', event => {
+      const handleTrack = (event: unknown) => {
+        if (!isCurrentConnection()) {
+          return;
+        }
+
         const [stream] = (event as { streams?: MediaStream[] }).streams ?? [];
         if (stream) {
+          if (remoteStreamRef.current && remoteStreamRef.current !== stream) {
+            stopStream(remoteStreamRef.current);
+          }
+          remoteStreamRef.current = stream;
           setRemoteStream(stream);
         }
-      });
+      };
 
-      eventTarget.addEventListener('connectionstatechange', () => {
+      const handleConnectionStateChange = () => {
+        if (!isCurrentConnection()) {
+          return;
+        }
+
         if (pc.connectionState === 'connected') {
+          clearDisconnectTimer();
           setStatus('active');
         }
+
+        if (
+          pc.connectionState === 'disconnected' &&
+          !disconnectTimerRef.current
+        ) {
+          disconnectTimerRef.current = setTimeout(() => {
+            disconnectTimerRef.current = null;
+
+            if (
+              pcRef.current === pc &&
+              callIdRef.current === callId &&
+              pc.connectionState === 'disconnected'
+            ) {
+              finishCall('error', 'Соединение звонка прервано.');
+            }
+          }, disconnectedCleanupDelayMs);
+        }
+
         if (
           pc.connectionState === 'failed' ||
           pc.connectionState === 'closed'
         ) {
           finishCall('error', 'Соединение звонка прервано.');
         }
-      });
+      };
 
       pcRef.current = pc;
+      eventTarget.addEventListener('icecandidate', handleIceCandidate);
+      eventTarget.addEventListener('track', handleTrack);
+      eventTarget.addEventListener(
+        'connectionstatechange',
+        handleConnectionStateChange,
+      );
+      pcListenerCleanupRef.current = () => {
+        eventTarget.removeEventListener?.('icecandidate', handleIceCandidate);
+        eventTarget.removeEventListener?.('track', handleTrack);
+        eventTarget.removeEventListener?.(
+          'connectionstatechange',
+          handleConnectionStateChange,
+        );
+      };
+
       return pc;
     },
-    [finishCall],
+    [clearDisconnectTimer, closePeerConnection, finishCall],
   );
 
   const startCall = useCallback(
@@ -348,6 +448,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
       clearEndTimer();
       setError(null);
+      const callId = createCallId();
+      callIdRef.current = callId;
       setPeerUserId(toId);
       setPeerName(name || 'Пользователь');
       setCallType(nextCallType);
@@ -356,12 +458,12 @@ export function CallProvider({ children }: { children: ReactNode }) {
       try {
         chatSocket.connect();
         const stream = await openLocalStream(nextCallType);
-        const pc = createPeerConnection(toId);
+        const pc = createPeerConnection(toId, callId);
         stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
         const offer = (await pc.createOffer()) as CallSessionDescription;
         await pc.setLocalDescription(new RTCSessionDescription(offer));
-        chatSocket.sendCallOffer(toId, offer, nextCallType);
+        chatSocket.sendCallOffer(toId, offer, nextCallType, callId);
         setStatus('ringing');
       } catch (callError) {
         finishCall('error', callErrorMessage(callError));
@@ -397,7 +499,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
     try {
       const stream = await openLocalStream(pendingOffer.callType);
-      const pc = createPeerConnection(pendingOffer.fromId);
+      callIdRef.current = pendingOffer.callId;
+      const pc = createPeerConnection(pendingOffer.fromId, pendingOffer.callId);
       stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
       await pc.setRemoteDescription(
@@ -407,10 +510,14 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
       const answer = (await pc.createAnswer()) as CallSessionDescription;
       await pc.setLocalDescription(new RTCSessionDescription(answer));
-      chatSocket.sendCallAnswer(pendingOffer.fromId, answer);
+      chatSocket.sendCallAnswer(
+        pendingOffer.fromId,
+        answer,
+        pendingOffer.callId,
+      );
     } catch (callError) {
       try {
-        chatSocket.sendCallReject(pendingOffer.fromId);
+        chatSocket.sendCallReject(pendingOffer.fromId, pendingOffer.callId);
       } catch {
         // Ignore socket failures while leaving the failed call state.
       }
@@ -420,9 +527,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
   const rejectCall = useCallback(() => {
     const targetId = peerUserIdRef.current ?? pendingOfferRef.current?.fromId;
-    if (targetId) {
+    const callId = callIdRef.current ?? pendingOfferRef.current?.callId;
+    if (targetId && callId) {
       try {
-        chatSocket.sendCallReject(targetId);
+        chatSocket.sendCallReject(targetId, callId);
       } catch {
         // Socket can already be closed; local cleanup still matters.
       }
@@ -432,9 +540,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
   const endCall = useCallback(() => {
     const targetId = peerUserIdRef.current;
-    if (targetId) {
+    const callId = callIdRef.current;
+    if (targetId && callId) {
       try {
-        chatSocket.sendCallEnd(targetId);
+        chatSocket.sendCallEnd(targetId, callId);
       } catch {
         // Socket can already be closed; local cleanup still matters.
       }
@@ -477,14 +586,24 @@ export function CallProvider({ children }: { children: ReactNode }) {
       if (event.type === 'call:offer') {
         const payload = event.payload as {
           from_id: number;
+          call_id?: string;
           offer: CallSessionDescription;
           call_type?: CallType;
         };
-        const { from_id: fromId, offer, call_type: incomingType } = payload;
+        const {
+          from_id: fromId,
+          call_id: callId,
+          offer,
+          call_type: incomingType,
+        } = payload;
+
+        if (fromId === user?.id || !isCallId(callId)) {
+          return;
+        }
 
         if (statusRef.current !== 'idle') {
           try {
-            chatSocket.sendCallReject(fromId);
+            chatSocket.sendCallReject(fromId, callId);
           } catch {
             // Ignore busy reject failures.
           }
@@ -493,9 +612,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
         pendingOfferRef.current = {
           fromId,
+          callId,
           offer,
           callType: incomingType === 'video' ? 'video' : 'audio',
         };
+        callIdRef.current = callId;
         setPeerUserId(fromId);
         setCallType(incomingType === 'video' ? 'video' : 'audio');
         setStatus('incoming');
@@ -505,9 +626,21 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
       const payload = event.payload as {
         from_id: number;
+        call_id?: string;
         answer?: CallSessionDescription;
         candidate?: CallIceCandidate;
       };
+
+      if (!isCallId(payload.call_id) || payload.call_id !== callIdRef.current) {
+        return;
+      }
+
+      if (payload.from_id === user?.id) {
+        if (!pcRef.current || statusRef.current === 'incoming') {
+          finishCall('ended');
+        }
+        return;
+      }
 
       if (payload.from_id !== peerUserIdRef.current) {
         return;
@@ -544,9 +677,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      finishCall('ended');
+      if (event.type === 'call:end' || statusRef.current !== 'active') {
+        finishCall('ended');
+      }
     },
-    [finishCall, flushPendingIce, loadPeerName],
+    [finishCall, flushPendingIce, loadPeerName, user?.id],
   );
 
   useEffect(() => {
