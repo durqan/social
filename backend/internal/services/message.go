@@ -70,6 +70,7 @@ func SendMessage(db *gorm.DB, fromID, toID uint, content string, attachments []m
 	if err != nil {
 		return models.Message{}, err
 	}
+	InvalidateMessageCaches()
 	return message, nil
 }
 
@@ -154,6 +155,7 @@ func ForwardMessage(db *gorm.DB, userID uint, sourceMessageID uint, toIDs []uint
 		return nil, err
 	}
 
+	InvalidateMessageCaches()
 	return messages, nil
 }
 
@@ -184,6 +186,7 @@ func UpdateMessage(db *gorm.DB, userID, messageID uint, content string) (models.
 	if err != nil {
 		return models.Message{}, err
 	}
+	InvalidateMessageCaches()
 	return updated, nil
 }
 
@@ -197,7 +200,11 @@ func DeleteMessageForUser(db *gorm.DB, userID, messageID uint) error {
 		return ErrMessageForbidden
 	}
 
-	return repository.DeleteMessage(db, messageID)
+	if err := repository.DeleteMessage(db, messageID); err != nil {
+		return err
+	}
+	InvalidateMessageCaches()
+	return nil
 }
 
 func MarkConversationRead(db *gorm.DB, fromID, toID uint) error {
