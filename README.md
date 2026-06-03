@@ -1,6 +1,6 @@
 # Social Network
 
-Full-stack социальная сеть с веб-клиентом, React Native Android-приложением, REST API, WebSocket-чатом, push-уведомлениями, 1-на-1 звонками и комнатами совместного просмотра видео.
+Full-stack социальная сеть с веб-клиентом, React Native Android-приложением, REST API, WebSocket-чатом, push-уведомлениями и 1-на-1 звонками.
 
 ## Возможности
 
@@ -11,7 +11,6 @@ Full-stack социальная сеть с веб-клиентом, React Nativ
 - Уведомления через RabbitMQ, SSE, Web Push и Android FCM.
 - WebRTC 1-на-1 аудио/видеозвонки с опциональным TURN-сервером.
 - Загрузка аватаров и картинок в локальное хранилище или S3-compatible object storage.
-- Комнаты совместного просмотра видео с live-чатом.
 - Адаптивный React-интерфейс и отдельное React Native Android-приложение.
 
 ## Стек
@@ -20,7 +19,6 @@ Full-stack социальная сеть с веб-клиентом, React Nativ
 - Mobile: React Native, TypeScript, React Native Firebase, react-native-webrtc.
 - Backend: Go 1.26, Gin, GORM, PostgreSQL, Redis, WebSocket.
 - Notifications: Go, Gin, PostgreSQL, RabbitMQ, SSE, Web Push/VAPID, FCM.
-- Watcher: Go, Gin, WebSocket, in-memory комнаты.
 - Infrastructure: Docker, Docker Compose, Nginx, Certbot, optional Coturn.
 
 ## Структура
@@ -30,7 +28,6 @@ backend/        основной API, auth, пользователи, посты
 frontend/       веб-клиент React/Vite и nginx-конфиги
 mobile/         React Native Android app и APK-сборка
 notifications/  сервис уведомлений и push-подписок
-watcher/        сервис комнат совместного просмотра
 init/           SQL/init-файлы для PostgreSQL
 certbot/        данные Let's Encrypt для production
 ```
@@ -60,7 +57,7 @@ cp .env.example .env
 make dev-infra
 ```
 
-Эта команда поднимает PostgreSQL, Redis, RabbitMQ и watcher. RabbitMQ Management UI доступен на `http://localhost:15672` с логином `guest` и паролем `guest`.
+Эта команда поднимает PostgreSQL, Redis и RabbitMQ. RabbitMQ Management UI доступен на `http://localhost:15672` с логином `guest` и паролем `guest`.
 
 ### Backend
 
@@ -78,7 +75,7 @@ npm install
 npm run dev
 ```
 
-Vite dev server открывается на `http://localhost:5173`. В разработке фронтенд проксирует backend, notifications, watcher и WebSocket-маршруты, поэтому nginx не нужен.
+Vite dev server открывается на `http://localhost:5173`. В разработке фронтенд проксирует backend, notifications и WebSocket-маршруты, поэтому nginx не нужен.
 
 ### Notifications
 
@@ -111,7 +108,7 @@ SOCIAL_API_BASE_URL=http://<LAN-IP>:8080 npm run start
 docker compose -f docker-compose.prod.yml up -d
 ```
 
-Production compose поднимает PostgreSQL, Redis, RabbitMQ, backend, notifications, watcher, frontend/nginx и certbot. По умолчанию образы берутся из `ghcr.io/durqan/*`, но их можно переопределить переменными `BACKEND_IMAGE`, `FRONTEND_IMAGE`, `NOTIFICATIONS_IMAGE`, `WATCHER_IMAGE`.
+Production compose поднимает PostgreSQL, Redis, RabbitMQ, backend, notifications, frontend/nginx и certbot. По умолчанию образы берутся из `ghcr.io/durqan/*`, но их можно переопределить переменными `BACKEND_IMAGE`, `FRONTEND_IMAGE`, `NOTIFICATIONS_IMAGE`.
 
 Для WebRTC-звонков с TURN:
 
@@ -141,7 +138,6 @@ S3_FORCE_PATH_STYLE=true
 ```bash
 cd backend && go test ./...
 cd notifications && go test ./...
-cd watcher && go test ./...
 cd frontend && npm run lint && npm run build
 cd mobile && npm ci && npx tsc --noEmit && npm run lint && npm test -- --runInBand
 ```

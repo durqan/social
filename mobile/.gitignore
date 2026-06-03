@@ -60,7 +60,7 @@ yarn-error.log
 **/Pods/
 /vendor/bundle/
 
-# Temporary files created by Metro to check the health of the file watcher
+# Temporary files created by Metro to check file monitoring health
 .metro-health-check*
 
 # testing

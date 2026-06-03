@@ -10,7 +10,6 @@
 - Реал-тайм чат через WebSocket.
 - Уведомления через notifications service, SSE и Web Push.
 - Аудиозвонки через WebRTC.
-- Комнаты совместного просмотра через watcher service.
 
 Контракт signaling для звонков описан в `../CALL_EVENTS.md`.
 
@@ -32,11 +31,9 @@ Vite читает переменные с префиксом `VITE_`:
 VITE_API_BASE_URL=/api
 VITE_NOTIFICATIONS_URL=/notifications-api
 VITE_VAPID_PUBLIC_KEY=
-VITE_WATCHER_API_BASE_URL=/watcher-api
-VITE_WATCHER_WS_BASE_URL=
 VITE_TURN_URLS=turn:localhost:3478?transport=udp,turn:localhost:3478?transport=tcp
 VITE_TURN_USERNAME=social_turn
 VITE_TURN_CREDENTIAL=change_me_turn_password
 ```
 
-В локальной разработке значения по умолчанию рассчитаны на Vite proxy и backend на `http://localhost:8080`. Для production маршрутизацию API, notifications и watcher выполняет nginx.
+В локальной разработке значения по умолчанию рассчитаны на Vite proxy и backend на `http://localhost:8080`. Для production маршрутизацию API и notifications выполняет nginx.

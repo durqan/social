@@ -2,9 +2,7 @@ User-agent: *
 Allow: /
 Disallow: /api/
 Disallow: /notifications-api/
-Disallow: /watcher-api/
 Disallow: /ws
-Disallow: /watcher-ws/
 Disallow: /users/
 Disallow: /verify-email/
 

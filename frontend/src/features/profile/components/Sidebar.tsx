@@ -174,13 +174,6 @@ function Sidebar({
             icon: 'messages',
             badge: { count: unreadCount, color: 'bg-red-500' },
         },
-        {
-            key: 'watch',
-            to: `/users/${userId}/watch`,
-            label: 'Совместный просмотр',
-            mobileLabel: 'Видео',
-            icon: 'video',
-        },
     ], [notificationCount, unreadCount, userId]);
 
     const isChatPage = location.pathname.includes('/chat/');

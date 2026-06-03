@@ -8,7 +8,6 @@ import Wall from "@/features/wall/components/Wall.js";
 import Conversations from "@/features/chat/components/Conversations.js";
 import Chat from "@/features/chat/components/Chat.js";
 import Friends from "@/features/friends/components/Friends.js";
-import Watcher from "@/features/watcher/components/Watcher.js";
 import VerifyEmail from "@/features/auth/components/VerifyEmail.js";
 import { Toaster } from 'react-hot-toast';
 import NotificationHandler from "@/features/notifications/components/NotificationHandler.js";
@@ -37,7 +36,6 @@ function AppRoutes() {
                     <Route path="conversations" element={<Conversations />} />
                     <Route path="chat/:userId" element={<Chat />} />
                     <Route path="friends" element={<Friends />} />
-                    <Route path="watch" element={<Watcher />} />
                 </Route>
             </Route>
             <Route path="/" element={<Navigate to={currentUser ? `/users/${currentUser.id}` : '/login'} />} />
