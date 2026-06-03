@@ -92,7 +92,7 @@ func (s *Service) sendPushNotifications(notification models.Notification) {
 		return
 	}
 
-	payload := buildPushPayload(notification)
+	payload := s.buildPushPayload(notification)
 
 	if s.push.WebPushEnabled() {
 		subscriptions, err := s.repo.FindPushSubscriptionsByUserID(notification.RecipientID)
@@ -134,8 +134,17 @@ func (s *Service) sendPushNotifications(notification models.Notification) {
 	}
 }
 
-func buildPushPayload(notification models.Notification) pushsvc.Payload {
-	return pushsvc.Payload{
+type pushPayloadDataSource interface {
+	FindMessageByID(id uint) (models.Message, error)
+	FindUserByID(id uint) (models.User, error)
+}
+
+func (s *Service) buildPushPayload(notification models.Notification) pushsvc.Payload {
+	return buildPushPayload(notification, s.repo)
+}
+
+func buildPushPayload(notification models.Notification, dataSource pushPayloadDataSource) pushsvc.Payload {
+	payload := pushsvc.Payload{
 		Title:          pushTitle(notification.Type),
 		Body:           pushBody(notification.Type),
 		URL:            pushURL(notification),
@@ -145,19 +154,76 @@ func buildPushPayload(notification models.Notification) pushsvc.Payload {
 		EntityID:       notification.EntityID,
 		ActorID:        notification.ActorID,
 	}
+
+	if notification.Type == dto.NotificationTypeMessage {
+		return buildMessagePushPayload(notification, dataSource, payload)
+	}
+
+	return payload
+}
+
+func buildMessagePushPayload(
+	notification models.Notification,
+	dataSource pushPayloadDataSource,
+	fallback pushsvc.Payload,
+) pushsvc.Payload {
+	if dataSource == nil {
+		return fallback
+	}
+
+	message, err := dataSource.FindMessageByID(notification.EntityID)
+	if err != nil {
+		return fallback
+	}
+
+	actor, err := dataSource.FindUserByID(notification.ActorID)
+	if err != nil {
+		return fallback
+	}
+
+	payload := fallback
+	if title := displayUserName(actor); title != "" {
+		payload.Title = title
+	}
+	if body := messagePreview(message); body != "" {
+		payload.Body = body
+	}
+	return payload
+}
+
+func displayUserName(user models.User) string {
+	return strings.TrimSpace(user.Name)
+}
+
+func messagePreview(message models.Message) string {
+	content := strings.TrimSpace(message.Content)
+	if content != "" {
+		return content
+	}
+
+	for _, attachment := range message.Attachments {
+		if strings.EqualFold(strings.TrimSpace(attachment.FileType), "image") {
+			return "📷 Фотография"
+		}
+	}
+	if len(message.Attachments) > 0 {
+		return "📎 Вложение"
+	}
+
+	return ""
 }
 
 func pushTitle(notificationType string) string {
 	switch notificationType {
-	case "message_received":
+	case dto.NotificationTypeMessage:
 		return "Новое сообщение"
-	case "friend_request":
+	case dto.NotificationTypeFriendRequest:
 		return "Новая заявка в друзья"
-	case "friend_accepted":
+	case dto.NotificationTypeFriendAccepted:
 		return "Заявка принята"
-	case "post_liked":
+	case dto.NotificationTypePostLiked:
 		return "Новый лайк"
-	case "comment_created":
+	case dto.NotificationTypeCommentCreated:
 		return "Новый комментарий"
 	default:
 		return "Новое уведомление"
@@ -166,15 +232,15 @@ func pushTitle(notificationType string) string {
 
 func pushBody(notificationType string) string {
 	switch notificationType {
-	case "message_received":
+	case dto.NotificationTypeMessage:
 		return "Вам написали новое сообщение"
-	case "friend_request":
+	case dto.NotificationTypeFriendRequest:
 		return "Вам отправили заявку в друзья"
-	case "friend_accepted":
+	case dto.NotificationTypeFriendAccepted:
 		return "Вашу заявку в друзья приняли"
-	case "post_liked":
+	case dto.NotificationTypePostLiked:
 		return "Ваш пост лайкнули"
-	case "comment_created":
+	case dto.NotificationTypeCommentCreated:
 		return "Ваш пост прокомментировали"
 	default:
 		return "Откройте приложение, чтобы посмотреть"
@@ -183,13 +249,13 @@ func pushBody(notificationType string) string {
 
 func pushURL(notification models.Notification) string {
 	switch notification.Type {
-	case "message_received":
+	case dto.NotificationTypeMessage:
 		return fmt.Sprintf("/users/%d/chat/%d", notification.RecipientID, notification.ActorID)
-	case "friend_request":
+	case dto.NotificationTypeFriendRequest:
 		return fmt.Sprintf("/users/%d/friends", notification.RecipientID)
-	case "friend_accepted":
+	case dto.NotificationTypeFriendAccepted:
 		return fmt.Sprintf("/users/%d", notification.ActorID)
-	case "post_liked", "comment_created":
+	case dto.NotificationTypePostLiked, dto.NotificationTypeCommentCreated:
 		return fmt.Sprintf("/users/%d/wall", notification.RecipientID)
 	default:
 		return fmt.Sprintf("/users/%d", notification.RecipientID)

@@ -132,3 +132,17 @@ func (r *Repository) RevokeMobilePushTokenByID(id uint) error {
 			"updated_at": now,
 		}).Error
 }
+
+func (r *Repository) FindMessageByID(id uint) (models.Message, error) {
+	var message models.Message
+	err := r.db.
+		Preload("Attachments").
+		First(&message, id).Error
+	return message, err
+}
+
+func (r *Repository) FindUserByID(id uint) (models.User, error) {
+	var user models.User
+	err := r.db.First(&user, id).Error
+	return user, err
+}
