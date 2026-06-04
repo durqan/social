@@ -14,6 +14,7 @@ import NotificationHandler from "@/features/notifications/components/Notificatio
 import { AuthProvider, useAuth } from '@/app/providers/AuthContext.js';
 import { WebSocketProvider } from '@/app/providers/WebSocketContext.js';
 import { AudioCallProvider } from '@/features/call/AudioCallContext.js';
+import { SettingsProvider } from '@/app/providers/SettingsContext.js';
 import { RequireAuth, RequireGuest } from "@/features/auth/components/RequireAuth.js";
 import { PushSubscriptionManager } from "@/features/notifications/components/PushSubscriptionManager.js";
 import { Seo } from "@/shared/ui/Seo.js";
@@ -46,16 +47,24 @@ function AppRoutes() {
 function App() {
     return (
         <>
-            <Toaster position="top-right" />
+            <Toaster
+                position="top-right"
+                toastOptions={{
+                    className: 'rounded-2xl border border-border bg-surface text-text shadow-app',
+                    duration: 4000,
+                }}
+            />
             <Router>
                 <Seo />
                 <WebSocketProvider>
                     <AuthProvider>
-                        <AudioCallProvider>
-                            <PushSubscriptionManager />
-                            <NotificationHandler />
-                            <AppRoutes />
-                        </AudioCallProvider>
+                        <SettingsProvider>
+                            <AudioCallProvider>
+                                <PushSubscriptionManager />
+                                <NotificationHandler />
+                                <AppRoutes />
+                            </AudioCallProvider>
+                        </SettingsProvider>
                     </AuthProvider>
                 </WebSocketProvider>
             </Router>

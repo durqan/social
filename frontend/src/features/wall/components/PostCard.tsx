@@ -56,8 +56,8 @@ export function PostCard({
                         className="cursor-pointer"
                     />
                     <div className="min-w-0">
-                        <p className="truncate font-semibold text-gray-800">{post.user?.name || 'Пользователь'}</p>
-                        <p className="text-xs text-gray-500">{formatRelativeDate(post.created_at)}</p>
+                        <p className="truncate font-semibold text-text">{post.user?.name || 'Пользователь'}</p>
+                        <p className="text-xs text-text-secondary">{formatRelativeDate(post.created_at)}</p>
                     </div>
                 </div>
 
@@ -65,13 +65,13 @@ export function PostCard({
                     <div className="flex gap-2">
                         <button
                             onClick={() => onStartEdit(post)}
-                            className="text-gray-400 hover:text-sky-600 transition cursor-pointer"
+                            className="text-text-muted hover:text-primary transition cursor-pointer"
                         >
                             <Icon name="edit" />
                         </button>
                         <button
                             onClick={() => onDelete(post.id)}
-                            className="text-gray-400 hover:text-red-600 transition cursor-pointer"
+                            className="text-text-muted hover:text-danger transition cursor-pointer"
                         >
                             <Icon name="delete" />
                         </button>
@@ -91,33 +91,33 @@ export function PostCard({
                     <div className="flex gap-2 mt-2">
                         <button
                             onClick={() => onSaveEdit(post.id)}
-                            className="rounded-xl bg-sky-600 px-3 py-1.5 text-sm text-white transition hover:bg-sky-700 cursor-pointer"
+                            className="rounded-xl bg-primary px-3 py-1.5 text-sm text-white transition hover:bg-primary-hover cursor-pointer"
                         >
                             Сохранить
                         </button>
                         <button
                             onClick={onCancelEdit}
-                            className="rounded-xl bg-gray-100 px-3 py-1.5 text-sm text-gray-800 transition hover:bg-gray-200 cursor-pointer"
+                            className="rounded-xl bg-surface-muted px-3 py-1.5 text-sm text-text transition hover:bg-surface-hover cursor-pointer"
                         >
                             Отмена
                         </button>
                     </div>
                 </div>
             ) : (
-                <p className="text-gray-700 mb-3 whitespace-pre-wrap">{post.content}</p>
+                <p className="text-text-secondary mb-3 whitespace-pre-wrap">{post.content}</p>
             )}
 
-            <div className="flex items-center gap-4 pt-3 border-t border-gray-100">
+            <div className="flex items-center gap-4 pt-3 border-t border-border">
                 <button
                     onClick={() => onLike(post.id)}
-                    className={`flex items-center gap-1 transition cursor-pointer ${post.is_liked ? 'text-sky-600' : 'text-gray-500 hover:text-sky-600'}`}
+                    className={`flex items-center gap-1 transition cursor-pointer ${post.is_liked ? 'text-primary' : 'text-text-muted hover:text-primary'}`}
                 >
                     <Icon name="heart" filled={post.is_liked} />
                     <span className="text-sm">{post.likes_count ?? 0}</span>
                 </button>
                 <button
                     onClick={() => onToggleComments(post.id)}
-                    className="flex items-center gap-1 text-gray-500 hover:text-sky-600 transition cursor-pointer"
+                    className="flex items-center gap-1 text-text-muted hover:text-primary transition cursor-pointer"
                 >
                     <Icon name="messages" />
                     <span className="text-sm">{post.comments_count ?? 0}</span>
@@ -140,15 +140,15 @@ export function PostCard({
                                     className="flex-shrink-0 cursor-pointer"
                                 />
                                 <div className="min-w-0 flex-1">
-                                    <div className="rounded-xl bg-gray-50 p-2">
-                                        <p className="truncate font-semibold text-sm">{comment.user?.name || 'Пользователь'}</p>
-                                        <p className="break-words text-gray-700 text-sm">{comment.content}</p>
+                                    <div className="rounded-xl bg-surface-muted p-2">
+                                        <p className="truncate font-semibold text-sm text-text">{comment.user?.name || 'Пользователь'}</p>
+                                        <p className="break-words text-text-secondary text-sm">{comment.content}</p>
                                     </div>
                                     <div className="mt-1 flex items-center justify-between gap-2">
-                                        <p className="text-xs text-gray-500">{formatRelativeDate(comment.created_at)}</p>
+                                        <p className="text-xs text-text-muted">{formatRelativeDate(comment.created_at)}</p>
                                         <button
                                             onClick={() => onCommentLike(comment.id, post.id)}
-                                            className={`flex items-center gap-1 text-xs transition cursor-pointer ${comment.is_liked ? 'text-sky-600' : 'text-gray-500 hover:text-sky-600'}`}
+                                            className={`flex items-center gap-1 text-xs transition cursor-pointer ${comment.is_liked ? 'text-primary' : 'text-text-muted hover:text-primary'}`}
                                         >
                                             <Icon name="heart" filled={comment.is_liked} />
                                             <span>{comment.likes_count ?? 0}</span>
@@ -182,7 +182,7 @@ export function PostCard({
                                 <button
                                     onClick={() => onCreateComment(post.id)}
                                     disabled={!commentDraft.trim()}
-                                    className="rounded-xl bg-sky-600 px-4 py-1.5 text-sm text-white transition hover:bg-sky-700 disabled:opacity-50 cursor-pointer"
+                                    className="rounded-xl bg-primary px-4 py-1.5 text-sm text-white transition hover:bg-primary-hover disabled:opacity-50 cursor-pointer"
                                 >
                                     Отправить
                                 </button>

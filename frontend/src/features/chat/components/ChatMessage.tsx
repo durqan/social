@@ -53,7 +53,7 @@ function linkifyText(value: string, isOwn: boolean) {
                     href={part.href}
                     target="_blank"
                     rel="noreferrer"
-                    className={`underline decoration-1 underline-offset-2 ${isOwn ? 'text-sky-700 hover:text-sky-900' : 'text-sky-600 hover:text-sky-800'}`}
+                    className={`underline decoration-1 underline-offset-2 ${isOwn ? 'text-primary hover:text-primary-hover' : 'text-primary hover:text-primary-hover'}`}
                     onClick={event => event.stopPropagation()}
                 >
                     {part.value}
@@ -235,7 +235,7 @@ const ChatMessageComponent = ({
         >
             {showDate && (
                 <div className="flex justify-center my-4">
-                    <span className="rounded-full bg-white/80 px-3 py-1 text-xs text-gray-500 shadow-sm">
+                    <span className="rounded-full bg-surface px-3 py-1 text-xs text-text-secondary shadow-sm">
                         {formatDate(message.created_at)}
                     </span>
                 </div>
@@ -248,7 +248,7 @@ const ChatMessageComponent = ({
                             checked={isSelected}
                             onChange={onToggleSelect}
                             disabled={!canSelect}
-                            className="w-5 h-5 rounded border-gray-300 text-sky-500 focus:ring-sky-500 disabled:opacity-30"
+                            className="w-5 h-5 rounded border-border text-primary focus:ring-primary disabled:opacity-30"
                         />
                     </div>
                 )}
@@ -266,7 +266,7 @@ const ChatMessageComponent = ({
                 )}
                 <div className="relative max-w-[82%] sm:max-w-[70%]">
                     {editingMessageId === message.id ? (
-                        <div className="rounded-2xl border border-gray-200/80 bg-white px-4 py-2">
+                        <div className="rounded-2xl border border-border bg-surface px-4 py-2">
                             <textarea
                                 value={editContent}
                                 onChange={e => setEditContent(e.target.value)}
@@ -275,10 +275,10 @@ const ChatMessageComponent = ({
                                 autoFocus
                             />
                             <div className="flex gap-2 mt-2 justify-end">
-                                <button onClick={onSaveEdit} className="rounded-lg bg-sky-600 px-3 py-1 text-xs text-white hover:bg-sky-700">
+                                <button onClick={onSaveEdit} className="rounded-lg bg-primary px-3 py-1 text-xs text-white hover:bg-primary-hover">
                                     Сохранить
                                 </button>
-                                <button onClick={onCancelEdit} className="rounded-lg bg-gray-100 px-3 py-1 text-xs text-gray-800 hover:bg-gray-200">
+                                <button onClick={onCancelEdit} className="rounded-lg bg-surface-hover px-3 py-1 text-xs text-text hover:bg-surface">
                                     Отмена
                                 </button>
                             </div>
@@ -286,10 +286,10 @@ const ChatMessageComponent = ({
                     ) : (
                         <div
                             onClick={handleMessageClick}
-                            className={`rounded-2xl px-3 py-2 transition-shadow sm:px-4 ${selectionMode ? canSelect ? 'cursor-pointer' : 'opacity-60' : ''} ${isContextActive ? 'shadow-2xl ring-2 ring-white/80' : ''} ${isOwn ? 'bg-sky-50 text-slate-900 border border-sky-100 rounded-br-md' : 'bg-white text-gray-900 rounded-bl-md border border-gray-200/70'}`}
+                            className={`rounded-2xl px-3 py-2 transition-shadow sm:px-4 ${selectionMode ? canSelect ? 'cursor-pointer' : 'opacity-60' : ''} ${isContextActive ? 'shadow-2xl ring-2 ring-primary/50' : ''} ${isOwn ? 'bubble-own border border-primary/30 rounded-br-md' : 'bubble-other border border-border rounded-bl-md'}`}
                         >
                             {message.forwarded_from_message_id && (
-                                <div className={`mb-1 text-xs font-medium ${isOwn ? 'text-sky-700' : 'text-gray-500'}`}>
+                                <div className={`mb-1 text-xs font-medium ${isOwn ? 'text-primary' : 'text-text-muted'}`}>
                                     {message.forwarded_from_user?.name
                                         ? `Переслано от ${message.forwarded_from_user.name}`
                                         : 'Пересланное сообщение'}
@@ -305,19 +305,19 @@ const ChatMessageComponent = ({
                                             onReplyPreviewClick(message.reply_to_message_id);
                                         }
                                     }}
-                                    className={`mb-2 block w-full rounded-lg border-l-2 px-2 py-1.5 text-left transition ${isOwn ? 'border-sky-400 bg-white/65 hover:bg-white' : 'border-gray-300 bg-gray-50 hover:bg-gray-100'}`}
+                                    className={`mb-2 block w-full rounded-lg border-l-2 px-2 py-1.5 text-left transition ${isOwn ? 'border-primary bg-surface hover:bg-surface-hover' : 'border-border bg-surface-muted hover:bg-surface'}`}
                                 >
                                     {message.reply_to_message ? (
                                         <>
-                                            <span className="block truncate text-xs font-semibold text-gray-700">
+                                            <span className="block truncate text-xs font-semibold text-text-secondary">
                                                 {messageAuthorName(message.reply_to_message)}
                                             </span>
-                                            <span className="block truncate text-xs text-gray-500">
+                                            <span className="block truncate text-xs text-text-muted">
                                                 {messagePreviewText(message.reply_to_message)}
                                             </span>
                                         </>
                                     ) : (
-                                        <span className="block truncate text-xs text-gray-500">Сообщение недоступно</span>
+                                        <span className="block truncate text-xs text-text-muted">Сообщение недоступно</span>
                                     )}
                                 </button>
                             )}
@@ -375,7 +375,7 @@ const ChatMessageComponent = ({
                                 </p>
                             )}
 
-                            <div className={`text-xs mt-1 ${isOwn ? 'text-black text-right' : 'text-gray-400 text-left'}`}>
+                            <div className={`text-xs mt-1 ${isOwn ? 'text-text text-right' : 'text-text-muted text-left'}`}>
                                 {formatTime(message.created_at)}
                                 {isOwn && <span className="ml-1">{message.is_read ? '✓✓' : '✓'}</span>}
                             </div>

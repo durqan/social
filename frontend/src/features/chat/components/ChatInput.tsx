@@ -460,17 +460,17 @@ export const ChatInput = ({
     };
 
     return (
-        <div className="border-t border-gray-200/80 bg-white/95 p-3 backdrop-blur sm:p-4">
+        <div className="border-t border-border bg-surface/95 p-3 backdrop-blur sm:p-4 glass-panel">
             {replyPreview && (
-                <div className="mb-3 flex items-start gap-3 rounded-xl border border-sky-100 bg-sky-50 px-3 py-2">
-                    <div className="min-w-0 flex-1 border-l-2 border-sky-400 pl-3">
-                        <p className="text-xs font-medium text-sky-700">Ответ на: {replyPreview.author}</p>
-                        <p className="truncate text-sm text-gray-700">{replyPreview.text}</p>
+                <div className="mb-3 flex items-start gap-3 rounded-xl border border-primary/30 bg-surface-muted px-3 py-2">
+                    <div className="min-w-0 flex-1 border-l-2 border-primary pl-3">
+                        <p className="text-xs font-medium text-primary">Ответ на: {replyPreview.author}</p>
+                        <p className="truncate text-sm text-text-secondary">{replyPreview.text}</p>
                     </div>
                     <button
                         type="button"
                         onClick={onCancelReply}
-                        className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-gray-500 transition hover:bg-white hover:text-gray-800"
+                        className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-text-secondary transition hover:bg-surface hover:text-text"
                         aria-label="Отменить ответ"
                         title="Отменить ответ"
                     >
@@ -479,16 +479,16 @@ export const ChatInput = ({
                 </div>
             )}
             {selectedFiles.length > 0 && (
-                <div className="mb-3 rounded-xl border border-gray-200 bg-gray-50 p-2 shadow-sm">
+                <div className="mb-3 rounded-xl border border-border bg-surface-muted p-2 shadow-app">
                     <div className="mb-2 flex items-center justify-between gap-3">
-                        <span className="text-xs font-medium text-gray-600">
+                        <span className="text-xs font-medium text-text-secondary">
                             {selectedFiles.length === 1 ? '1 изображение' : `${selectedFiles.length} изображений`}
                         </span>
                     </div>
 
                     <div className="flex gap-2 overflow-x-auto pb-1">
                         {selectedFiles.map((file, index) => (
-                            <div key={`${file.name}-${file.lastModified}-${index}`} className="relative h-20 w-20 flex-shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-gray-100">
+                            <div key={`${file.name}-${file.lastModified}-${index}`} className="relative h-20 w-20 flex-shrink-0 overflow-hidden rounded-xl border border-border bg-surface">
                                 <img
                                     src={previews[index]}
                                     alt={file.name || 'Изображение'}
@@ -518,22 +518,22 @@ export const ChatInput = ({
                 <div
                     className={`mb-3 flex items-center gap-3 rounded-xl px-3 py-2 text-sm ${
                         isCancellingRecord
-                            ? 'border border-red-200 bg-red-50 text-red-800'
-                            : 'border border-sky-100 bg-sky-50 text-sky-800'
+                            ? 'border border-danger bg-danger-soft text-danger'
+                            : 'border border-primary/30 bg-surface-muted text-primary'
                     }`}
                 >
-                    <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />
+                    <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-danger" />
                     <span className="font-semibold">{formatDuration(recordingElapsed)}</span>
                     <span
                         className={`min-w-0 flex-1 truncate ${
-                            isCancellingRecord ? 'text-red-600 font-medium' : 'text-sky-700'
+                            isCancellingRecord ? 'text-danger font-medium' : 'text-primary'
                         }`}
                     >
                         {isCancellingRecord ? 'Отпустите, чтобы отменить' : 'Отпустите, чтобы завершить запись'}
                     </span>
                     <span
                         className={`text-[10px] sm:text-[11px] whitespace-nowrap ${
-                            isCancellingRecord ? 'text-red-500' : 'text-sky-600'
+                            isCancellingRecord ? 'text-danger' : 'text-primary'
                         }`}
                     >
                         {isCancellingRecord ? 'Отменить' : 'Сдвиньте влево для отмены'}
@@ -640,7 +640,7 @@ export const ChatInput = ({
                     onPointerCancel={e => handleMicPointerEnd(e, true)}
                     onPointerLeave={handleMicPointerLeave}
                     disabled={selectedFiles.length > 0 || sending || recordingStopping || !!pendingVoice}
-                    className={`composer-button ${isRecording ? 'recording' : pendingVoice ? 'text-gray-400' : ''}`}
+                    className={`composer-button ${isRecording ? 'recording' : pendingVoice ? 'text-text-muted' : ''}`}
                     title={
                         isRecording
                             ? 'Удерживайте для записи, отпустите чтобы завершить, сдвиньте влево для отмены'
@@ -667,13 +667,13 @@ export const ChatInput = ({
                 </button>
             </div>
             {errorMessage && (
-                <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                <div className="mt-2 rounded-lg border border-danger bg-danger-soft px-3 py-2 text-sm text-danger">
                     {errorMessage}
                 </div>
             )}
             {sendStatus && !errorMessage && (
-                <div className="mt-2 flex items-center gap-2 rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-sm text-sky-700">
-                    <span className="h-3 w-3 animate-spin rounded-full border-2 border-sky-200 border-t-sky-600" />
+                <div className="mt-2 flex items-center gap-2 rounded-lg border border-primary/30 bg-surface-muted px-3 py-2 text-sm text-primary">
+                    <span className="h-3 w-3 animate-spin rounded-full border-2 border-primary/40 border-t-primary" />
                     {sendStatus}
                 </div>
             )}

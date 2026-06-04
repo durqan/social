@@ -66,7 +66,7 @@ function ControlButton({
     onClick,
 }: ControlButtonProps) {
     const toneClass = {
-        default: 'bg-white/90 text-gray-800 hover:bg-white',
+        default: 'bg-surface text-text-secondary hover:bg-surface-hover',
         active: 'bg-sky-500 text-white hover:bg-sky-600',
         off: 'bg-amber-500 text-white hover:bg-amber-600',
         danger: 'bg-red-500 text-white hover:bg-red-600',
@@ -182,7 +182,7 @@ export function CallOverlay({
         <div className={
             expandedVideo
                 ? 'fixed inset-0 z-50 flex flex-col overflow-hidden bg-gray-950 text-white'
-                : 'fixed inset-x-3 bottom-3 z-50 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl sm:inset-x-auto sm:bottom-6 sm:right-6 sm:w-[min(460px,calc(100vw-32px))]'
+                : 'fixed inset-x-3 bottom-3 z-50 overflow-hidden rounded-xl border border-border bg-surface shadow-app sm:inset-x-auto sm:bottom-6 sm:right-6 sm:w-[min(460px,calc(100vw-32px))]'
         }>
             {callType === 'video' && (
                 <div className={
@@ -235,11 +235,11 @@ export function CallOverlay({
                     {!isExpanded && <Avatar name={peerName} userId={peerUserId ?? undefined} />}
 
                     <div className={isExpanded ? 'min-w-0 text-center' : 'min-w-0 flex-1'}>
-                        <p className={isExpanded ? 'truncate text-lg font-semibold text-white' : 'truncate font-semibold text-gray-900'}>
+                        <p className={isExpanded ? 'truncate text-lg font-semibold text-white' : 'truncate font-semibold text-text'}>
                             {peerName}
                         </p>
 
-                        <p className={isExpanded ? 'text-sm text-gray-200' : 'text-sm text-gray-500'}>
+                        <p className={isExpanded ? 'text-sm text-gray-200' : 'text-sm text-text-muted'}>
                             {statusText(status, callType)}
                         </p>
 

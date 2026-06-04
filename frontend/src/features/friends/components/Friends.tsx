@@ -25,7 +25,7 @@ const dispatchNotificationsRead = (payload: MarkNotificationsReadPayload) => {
 
 const tabClass = (active: boolean) => (
     `flex-1 px-4 py-3 text-sm font-medium transition-colors ${
-        active ? 'text-sky-700 border-b-2 border-sky-600' : 'text-gray-500 hover:text-gray-700'
+        active ? 'text-primary border-b-2 border-primary' : 'text-text-muted hover:text-text-secondary'
     }`
 );
 
@@ -158,7 +158,7 @@ function Friends() {
     return (
         <div className="mx-auto max-w-2xl">
             <div className="app-card overflow-hidden">
-                <div className="flex border-b border-gray-200/80 bg-gray-50/70">
+                <div className="flex border-b border-border bg-surface-muted">
                     <button
                         type="button"
                         onClick={() => {
@@ -184,7 +184,7 @@ function Friends() {
                 <div className="p-3 sm:p-4">
                     {activeTab === 'friends' && (
                         friends.length === 0 ? (
-                            <p className="text-center text-gray-500 py-8">У вас пока нет друзей</p>
+                            <p className="text-center text-text-muted py-8">У вас пока нет друзей</p>
                         ) : (
                             <div className="space-y-2">
                                 {friends.map(friend => (
@@ -200,7 +200,7 @@ function Friends() {
                     )}
                     {activeTab === 'requests' && (
                         requests.length === 0 ? (
-                            <p className="text-center text-gray-500 py-8">Нет входящих заявок</p>
+                            <p className="text-center text-text-muted py-8">Нет входящих заявок</p>
                         ) : (
                             <div className="space-y-2">
                                 {requests.map(req => req.user && (
@@ -229,7 +229,7 @@ function Friends() {
             )}
             {menu && selectedFriend && (
                 <div
-                    className="fixed z-50 w-52 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl shadow-slate-900/10"
+                    className="fixed z-50 w-52 overflow-hidden rounded-xl border border-border bg-surface py-1 shadow-app"
                     style={{ left: menu.x, top: menu.y }}
                     onClick={event => event.stopPropagation()}
                     onContextMenu={event => event.preventDefault()}
@@ -249,8 +249,8 @@ function Friends() {
             {confirmFriend && (
                 <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 px-4">
                     <div className="app-card w-full max-w-sm p-5 shadow-xl sm:p-6">
-                        <h2 className="mb-2 text-lg font-semibold text-gray-950">Удалить из друзей?</h2>
-                        <p className="mb-4 text-sm leading-5 text-gray-600">
+                        <h2 className="mb-2 text-lg font-semibold text-text">Удалить из друзей?</h2>
+                        <p className="mb-4 text-sm leading-5 text-text-secondary">
                             {confirmFriend.name || confirmFriend.email || 'Пользователь'} будет удалён из списка друзей.
                         </p>
                         <div className="flex gap-3">
@@ -258,7 +258,7 @@ function Friends() {
                                 type="button"
                                 onClick={confirmRemoveFriend}
                                 disabled={deletingFriendId === confirmFriend.id}
-                                className="flex-1 rounded-xl bg-red-500 px-4 py-2 text-white transition hover:bg-red-600 disabled:opacity-60"
+                                className="flex-1 rounded-xl bg-danger px-4 py-2 text-white transition hover:bg-danger disabled:opacity-60"
                             >
                                 {deletingFriendId === confirmFriend.id ? 'Удаляем...' : 'Удалить'}
                             </button>
@@ -266,7 +266,7 @@ function Friends() {
                                 type="button"
                                 onClick={() => setConfirmFriendId(null)}
                                 disabled={Boolean(deletingFriendId)}
-                                className="flex-1 rounded-xl bg-gray-100 px-4 py-2 text-gray-800 transition hover:bg-gray-200 disabled:opacity-60"
+                                className="flex-1 rounded-xl bg-surface-hover px-4 py-2 text-text transition hover:bg-surface disabled:opacity-60"
                             >
                                 Отмена
                             </button>

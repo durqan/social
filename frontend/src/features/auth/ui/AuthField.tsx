@@ -23,7 +23,7 @@ export function AuthField({
 }: AuthFieldProps) {
     return (
         <div className={className}>
-            <label className="block text-gray-700 mb-2">{label}</label>
+            <label className="block text-text-secondary mb-2">{label}</label>
             <input
                 type={type}
                 name={name}

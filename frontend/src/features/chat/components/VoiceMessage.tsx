@@ -70,12 +70,12 @@ export const VoiceMessage = ({
   const displayDuration = player.duration || initialDuration;
 
   const playButtonClass = isOwn
-    ? 'bg-sky-600 text-white hover:bg-sky-700 active:bg-sky-800'
-    : 'bg-sky-500 text-white hover:bg-sky-600 active:bg-sky-700';
+    ? 'bg-primary text-white hover:bg-primary-hover active:bg-primary'
+    : 'bg-primary/90 text-white hover:bg-primary active:bg-primary';
 
   return (
     <div
-      className={`flex min-w-56 items-center gap-2.5 rounded-xl px-3 py-2 ${isOwn ? 'bg-white/70' : 'bg-gray-50'}`}
+      className={`flex min-w-56 items-center gap-2.5 rounded-xl px-3 py-2 ${isOwn ? 'bubble-own' : 'bubble-other'}`}
       onClick={(event) => {
         if (selectionMode) {
           event.preventDefault();
@@ -108,15 +108,15 @@ export const VoiceMessage = ({
         aria-valuenow={Math.floor(player.currentTime)}
         aria-label="Позиция воспроизведения голосового сообщения"
       >
-        <div className="relative h-1.5 w-full bg-gray-300/70 rounded-full overflow-hidden">
+        <div className="relative h-1.5 w-full bg-border rounded-full overflow-hidden">
           <div
-            className="absolute top-0 left-0 h-1.5 bg-sky-500 rounded-full transition-[width] duration-75"
+            className="absolute top-0 left-0 h-1.5 bg-primary rounded-full transition-[width] duration-75"
             style={{ width: `${progressPercent}%` }}
           />
         </div>
       </div>
 
-      <div className="text-[10px] tabular-nums font-medium text-gray-500 flex-shrink-0 w-[4.5rem] text-right tracking-tight">
+      <div className="text-[10px] tabular-nums font-medium text-text-secondary flex-shrink-0 w-[4.5rem] text-right tracking-tight">
         {formatDuration(player.currentTime)} / {formatDuration(displayDuration)}
       </div>
 

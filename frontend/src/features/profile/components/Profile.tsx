@@ -59,7 +59,7 @@ function Profile() {
             <div className="min-h-screen bg-[var(--app-bg)] flex items-center justify-center">
                 <div className="flex flex-col items-center gap-4">
                     <Spinner size="lg" />
-                    <p className="text-gray-500">Загрузка...</p>
+                    <p className="text-text-secondary">Загрузка...</p>
                 </div>
             </div>
         );
@@ -84,11 +84,11 @@ function Profile() {
                 userPresence={userPresence}
             />
             <div className="lg:ml-72">
-                <header className="sticky top-0 z-30 border-b border-gray-200/80 bg-white/90 backdrop-blur">
+                <header className="sticky top-0 z-30 border-b border-border bg-surface/90 backdrop-blur app-header">
                     <div className="relative px-3 py-2.5 sm:px-6 sm:py-3">
                         <div className="flex min-w-0 items-center justify-between gap-2 sm:gap-3">
                             <div className="min-w-0 flex-1">
-                                <h1 className="truncate text-base font-semibold tracking-tight text-gray-950 sm:text-xl">
+                                <h1 className="truncate text-base font-semibold tracking-tight text-text sm:text-xl">
                                     {getPageTitle()}
                                 </h1>
                             </div>
@@ -105,7 +105,7 @@ function Profile() {
                                 )}
                                 <button
                                     onClick={handleLogout}
-                                    className="icon-button h-9 w-9 hover:text-red-600 sm:h-10 sm:w-10"
+                                    className="icon-button h-9 w-9 hover:text-danger sm:h-10 sm:w-10"
                                     title="Выйти"
                                 >
                                     <Icon name="logout" />

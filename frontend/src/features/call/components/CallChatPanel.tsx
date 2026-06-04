@@ -158,17 +158,17 @@ export function CallChatPanel({
             className="fixed inset-0 z-[60] bg-black/45 sm:bg-black/30"
             onMouseDown={handleBackdropMouseDown}
         >
-            <section className="absolute inset-x-0 bottom-0 flex max-h-[78vh] min-h-[420px] flex-col overflow-hidden rounded-t-2xl bg-[#f4f5f7] shadow-2xl sm:inset-y-0 sm:left-auto sm:right-0 sm:h-full sm:max-h-none sm:w-[390px] sm:rounded-none">
-                <header className="flex items-center justify-between border-b border-gray-200/80 bg-white px-4 py-3">
+            <section className="absolute inset-x-0 bottom-0 flex max-h-[78vh] min-h-[420px] flex-col overflow-hidden rounded-t-2xl bg-surface shadow-app sm:inset-y-0 sm:left-auto sm:right-0 sm:h-full sm:max-h-none sm:w-[390px] sm:rounded-none">
+                <header className="flex items-center justify-between border-b border-border bg-surface px-4 py-3 glass-panel">
                     <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-gray-900">{peerName}</p>
-                        <p className="text-xs text-gray-500">Чат звонка</p>
+                        <p className="truncate text-sm font-semibold text-text">{peerName}</p>
+                        <p className="text-xs text-text-secondary">Чат звонка</p>
                     </div>
 
                     <button
                         type="button"
                         onClick={onClose}
-                        className="flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                        className="flex h-9 w-9 items-center justify-center rounded-full border border-border bg-surface text-text-secondary hover:bg-surface-hover"
                         aria-label="Закрыть чат"
                         title="Закрыть чат"
                     >
