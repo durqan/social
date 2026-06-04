@@ -17,6 +17,7 @@ import { AudioCallProvider } from '@/features/call/AudioCallContext.js';
 import { RequireAuth, RequireGuest } from "@/features/auth/components/RequireAuth.js";
 import { PushSubscriptionManager } from "@/features/notifications/components/PushSubscriptionManager.js";
 import { Seo } from "@/shared/ui/Seo.js";
+import { ThemeProvider } from "@/app/themes/ThemeProvider.js";
 
 function AppRoutes() {
     const { currentUser } = useAuth();
@@ -45,8 +46,30 @@ function AppRoutes() {
 
 function App() {
     return (
-        <>
-            <Toaster position="top-right" />
+        <ThemeProvider>
+            <Toaster
+                position="top-right"
+                toastOptions={{
+                    style: {
+                        background: 'var(--app-card)',
+                        border: '1px solid var(--app-border)',
+                        color: 'var(--app-text-primary)',
+                        boxShadow: 'var(--app-card-shadow)',
+                    },
+                    success: {
+                        iconTheme: {
+                            primary: 'var(--app-success)',
+                            secondary: 'var(--app-text-inverse)',
+                        },
+                    },
+                    error: {
+                        iconTheme: {
+                            primary: 'var(--app-error)',
+                            secondary: 'var(--app-text-inverse)',
+                        },
+                    },
+                }}
+            />
             <Router>
                 <Seo />
                 <WebSocketProvider>
@@ -59,7 +82,7 @@ function App() {
                     </AuthProvider>
                 </WebSocketProvider>
             </Router>
-        </>
+        </ThemeProvider>
     );
 }
 

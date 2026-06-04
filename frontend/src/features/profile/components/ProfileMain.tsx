@@ -29,7 +29,7 @@ function ProfileMain() {
         <div className="mx-auto max-w-2xl">
             <div className="app-card overflow-hidden">
                 <div className="relative">
-                    <div className="h-24 bg-[linear-gradient(135deg,#eef2f7,#dbeafe)] sm:h-32"></div>
+                    <div className="h-24 bg-[var(--app-profile-cover)] sm:h-32"></div>
                     <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 sm:-bottom-12 sm:left-6 sm:translate-x-0">
                         <div className="w-20 h-20 bg-white rounded-full p-1 sm:w-24 sm:h-24">
                             <button

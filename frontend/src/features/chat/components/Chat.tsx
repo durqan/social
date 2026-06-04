@@ -497,7 +497,7 @@ function Chat() {
 
     return (
         <div
-            className="relative flex h-full flex-col overflow-hidden bg-[#f4f5f7] sm:h-[calc(100vh-120px)] sm:rounded-2xl sm:border sm:border-gray-200/80"
+            className="relative flex h-full flex-col overflow-hidden bg-[var(--app-chat-bg)] sm:h-[calc(100vh-120px)] sm:rounded-2xl sm:border sm:border-gray-200/80"
             onDragEnter={handleDragEnter}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}

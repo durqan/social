@@ -54,7 +54,7 @@ function linkifyText(value: string, isOwn: boolean) {
                     href={part.href}
                     target="_blank"
                     rel="noreferrer"
-                    className={`underline decoration-1 underline-offset-2 ${isOwn ? 'text-sky-700 hover:text-sky-900' : 'text-sky-600 hover:text-sky-800'}`}
+                    className="text-[var(--app-accent)] underline decoration-1 underline-offset-2 hover:text-[var(--app-accent-hover)]"
                     onClick={event => event.stopPropagation()}
                 >
                     {part.value}
@@ -268,7 +268,7 @@ const ChatMessageComponent = ({
                 )}
                 <div className="relative max-w-[82%] sm:max-w-[70%]">
                     {editingMessageId === message.id ? (
-                        <div className="rounded-2xl border border-gray-200/80 bg-white px-4 py-2">
+                        <div className="rounded-2xl border border-[var(--app-border)] bg-[var(--app-card)] px-4 py-2">
                             <textarea
                                 value={editContent}
                                 onChange={e => setEditContent(e.target.value)}
@@ -277,10 +277,10 @@ const ChatMessageComponent = ({
                                 autoFocus
                             />
                             <div className="flex gap-2 mt-2 justify-end">
-                                <button onClick={onSaveEdit} className="rounded-lg bg-sky-600 px-3 py-1 text-xs text-white hover:bg-sky-700">
+                                <button onClick={onSaveEdit} className="rounded-lg app-button-primary px-3 py-1 text-xs">
                                     Сохранить
                                 </button>
-                                <button onClick={onCancelEdit} className="rounded-lg bg-gray-100 px-3 py-1 text-xs text-gray-800 hover:bg-gray-200">
+                                <button onClick={onCancelEdit} className="rounded-lg app-button-secondary px-3 py-1 text-xs">
                                     Отмена
                                 </button>
                             </div>
@@ -288,10 +288,10 @@ const ChatMessageComponent = ({
                     ) : (
                         <div
                             onClick={handleMessageClick}
-                            className={`rounded-2xl px-3 py-2 transition-shadow sm:px-4 ${selectionMode ? canSelect ? 'cursor-pointer' : 'opacity-60' : ''} ${isContextActive ? 'shadow-2xl ring-2 ring-white/80' : ''} ${isOwn ? 'bg-sky-50 text-slate-900 border border-sky-100 rounded-br-md' : 'bg-white text-gray-900 rounded-bl-md border border-gray-200/70'}`}
+                            className={`rounded-2xl px-3 py-2 transition-shadow sm:px-4 ${selectionMode ? canSelect ? 'cursor-pointer' : 'opacity-60' : ''} ${isContextActive ? 'shadow-2xl ring-2 ring-[var(--app-glass-border)]' : ''} ${isOwn ? 'rounded-br-md border border-[var(--app-message-own-border)] bg-[var(--app-message-own-bg)] text-[var(--app-message-own-text)]' : 'rounded-bl-md border border-[var(--app-message-other-border)] bg-[var(--app-message-other-bg)] text-[var(--app-message-other-text)]'}`}
                         >
                             {message.forwarded_from_message_id && (
-                                <div className={`mb-1 text-xs font-medium ${isOwn ? 'text-sky-700' : 'text-gray-500'}`}>
+                                <div className={`mb-1 text-xs font-medium ${isOwn ? 'text-[var(--app-accent)]' : 'text-[var(--app-text-secondary)]'}`}>
                                     {message.forwarded_from_user?.name
                                         ? `Переслано от ${message.forwarded_from_user.name}`
                                         : 'Пересланное сообщение'}
@@ -307,19 +307,19 @@ const ChatMessageComponent = ({
                                             onReplyPreviewClick(message.reply_to_message_id);
                                         }
                                     }}
-                                    className={`mb-2 block w-full rounded-lg border-l-2 px-2 py-1.5 text-left transition ${isOwn ? 'border-sky-400 bg-white/65 hover:bg-white' : 'border-gray-300 bg-gray-50 hover:bg-gray-100'}`}
+                                    className={`mb-2 block w-full rounded-lg border-l-2 px-2 py-1.5 text-left transition ${isOwn ? 'border-[var(--app-accent-border)] bg-[var(--app-card-muted)] hover:bg-[var(--app-card)]' : 'border-[var(--app-border-strong)] bg-[var(--app-card-muted)] hover:bg-[var(--app-hover)]'}`}
                                 >
                                     {message.reply_to_message ? (
                                         <>
-                                            <span className="block truncate text-xs font-semibold text-gray-700">
+                                            <span className="block truncate text-xs font-semibold text-[var(--app-text-primary)]">
                                                 {messageAuthorName(message.reply_to_message)}
                                             </span>
-                                            <span className="block truncate text-xs text-gray-500">
+                                            <span className="block truncate text-xs text-[var(--app-text-secondary)]">
                                                 {messagePreviewText(message.reply_to_message)}
                                             </span>
                                         </>
                                     ) : (
-                                        <span className="block truncate text-xs text-gray-500">Сообщение недоступно</span>
+                                        <span className="block truncate text-xs text-[var(--app-text-secondary)]">Сообщение недоступно</span>
                                     )}
                                 </button>
                             )}
@@ -392,7 +392,7 @@ const ChatMessageComponent = ({
                                 </p>
                             )}
 
-                            <div className={`text-xs mt-1 ${isOwn ? 'text-black text-right' : 'text-gray-400 text-left'}`}>
+                            <div className={`mt-1 text-xs ${isOwn ? 'text-right text-[var(--app-text-secondary)]' : 'text-left text-[var(--app-text-soft)]'}`}>
                                 {formatTime(message.created_at)}
                                 {isOwn && <span className="ml-1">{message.is_read ? '✓✓' : '✓'}</span>}
                             </div>

@@ -14,6 +14,7 @@ import {
     type ProfileEditTab,
     type ProfileFormData,
 } from "@/features/profile/ui/ProfileEditForms.js";
+import { ThemeSettings } from "@/app/themes/ThemeSettings.js";
 
 const initialPasswordData: PasswordChangeData = {
     oldPassword: '',
@@ -181,6 +182,10 @@ function ProfileEdit() {
                             onSubmit={handlePasswordSubmit}
                             onChange={handlePasswordChange}
                         />
+                    )}
+
+                    {activeTab === 'theme' && (
+                        <ThemeSettings />
                     )}
                 </div>
             </div>

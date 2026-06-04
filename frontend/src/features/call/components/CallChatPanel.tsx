@@ -158,7 +158,7 @@ export function CallChatPanel({
             className="fixed inset-0 z-[60] bg-black/45 sm:bg-black/30"
             onMouseDown={handleBackdropMouseDown}
         >
-            <section className="absolute inset-x-0 bottom-0 flex max-h-[78vh] min-h-[420px] flex-col overflow-hidden rounded-t-2xl bg-[#f4f5f7] shadow-2xl sm:inset-y-0 sm:left-auto sm:right-0 sm:h-full sm:max-h-none sm:w-[390px] sm:rounded-none">
+            <section className="absolute inset-x-0 bottom-0 flex max-h-[78vh] min-h-[420px] flex-col overflow-hidden rounded-t-2xl bg-[var(--app-chat-bg)] shadow-2xl sm:inset-y-0 sm:left-auto sm:right-0 sm:h-full sm:max-h-none sm:w-[390px] sm:rounded-none">
                 <header className="flex items-center justify-between border-b border-gray-200/80 bg-white px-4 py-3">
                     <div className="min-w-0">
                         <p className="truncate text-sm font-semibold text-gray-900">{peerName}</p>

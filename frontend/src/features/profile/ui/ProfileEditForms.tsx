@@ -3,7 +3,7 @@ import { useRef, type ChangeEvent, type FormEvent, type PointerEvent, type Wheel
 import type { PasswordChangeData } from "@/shared/types/domain.js";
 import { Avatar } from "@/shared/ui/Avatar.js";
 
-export type ProfileEditTab = 'profile' | 'password';
+export type ProfileEditTab = 'profile' | 'password' | 'theme';
 
 export type ProfileFormData = {
     name: string;
@@ -50,6 +50,9 @@ export function ProfileEditTabs({ activeTab, onChange }: TabsProps) {
                 </button>
                 <button onClick={() => onChange('password')} className={tabClass('password')}>
                     Сменить пароль
+                </button>
+                <button onClick={() => onChange('theme')} className={tabClass('theme')}>
+                    Оформление
                 </button>
             </div>
         </div>
