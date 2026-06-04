@@ -114,6 +114,7 @@ export const ChatInput = ({
     const videoRecordingStartedAtRef = useRef(0);
     const videoRecordingTimerRef = useRef<number | null>(null);
     const videoRecordingMaxTimerRef = useRef<number | null>(null);
+    const liveVideoPreviewRef = useRef<HTMLVideoElement>(null);
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
     const [previews, setPreviews] = useState<string[]>([]);
     const canSend = Boolean(value.trim()) || selectedFiles.length > 0;
@@ -171,6 +172,28 @@ export const ChatInput = ({
             urls.forEach(url => URL.revokeObjectURL(url));
         };
     }, [selectedFiles]);
+
+    // Attach live camera stream to preview video element during recording.
+    // Must use srcObject (not src), keep muted+playsInline+autoPlay.
+    useEffect(() => {
+        if (!isVideoRecording) {
+            return;
+        }
+        const videoEl = liveVideoPreviewRef.current;
+        const stream = videoStreamRef.current;
+        if (videoEl && stream) {
+            if (videoEl.srcObject !== stream) {
+                videoEl.srcObject = stream;
+            }
+            const p = videoEl.play();
+            if (p && typeof p.catch === 'function') {
+                p.catch(() => undefined);
+            }
+        }
+        return () => {
+            // srcObject cleared in stopVideoStream on stop/cancel/unmount
+        };
+    }, [isVideoRecording]);
 
     const addFiles = useCallback((files: File[], replace = false) => {
         if (!files.length) {
@@ -311,8 +334,16 @@ export const ChatInput = ({
     }, []);
 
     const stopVideoStream = useCallback(() => {
-        videoStreamRef.current?.getTracks().forEach(track => track.stop());
+        const stream = videoStreamRef.current;
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+        }
         videoStreamRef.current = null;
+        // clear live preview video element srcObject to release camera
+        const live = liveVideoPreviewRef.current;
+        if (live) {
+            live.srcObject = null;
+        }
     }, []);
 
     const stopRecording = useCallback((commitToPreview: boolean) => {
@@ -788,7 +819,17 @@ export const ChatInput = ({
 
             {isVideoRecording && (
                 <div className="mb-3 flex items-center gap-3 rounded-xl border border-primary/30 bg-surface-muted px-3 py-2 text-sm text-primary">
-                    <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-danger" />
+                    {/* compact round live camera preview */}
+                    <div className="relative h-12 w-12 flex-shrink-0 overflow-hidden rounded-full border border-primary/40 bg-black">
+                        <video
+                            ref={liveVideoPreviewRef}
+                            className="h-full w-full object-cover"
+                            muted
+                            playsInline
+                            autoPlay
+                        />
+                        <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-danger animate-pulse" />
+                    </div>
                     <span className="font-semibold">{formatDuration(videoRecordingElapsed)}</span>
                     <span className="min-w-0 flex-1 truncate text-primary">Запись видео-сообщения…</span>
                     <button

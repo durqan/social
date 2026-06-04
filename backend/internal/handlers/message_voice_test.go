@@ -259,3 +259,18 @@ func videoNoteUploadRequest(t *testing.T, target string, filename string, conten
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	return req
 }
+
+func TestContentTypeForKeyVideoNote(t *testing.T) {
+	if ct := contentTypeForKey("video-notes/user_42/123e4567-e89b-12d3-a456-426614174000.webm"); ct != "video/webm" {
+		t.Fatalf("expected video/webm for .webm video note, got %s", ct)
+	}
+	if ct := contentTypeForKey("video-notes/user_1/abc.mp4"); ct != "video/mp4" {
+		t.Fatalf("expected video/mp4, got %s", ct)
+	}
+	if ct := contentTypeForKey("voice/user_5/xx.ogg"); ct != "audio/ogg" {
+		t.Fatalf("expected audio/ogg, got %s", ct)
+	}
+	if ct := contentTypeForKey("messages/user_7/img.jpg"); ct != "image/jpeg" {
+		t.Fatalf("expected image/jpeg, got %s", ct)
+	}
+}

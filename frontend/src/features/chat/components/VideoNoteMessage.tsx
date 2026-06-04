@@ -100,6 +100,12 @@ export const VideoNoteMessage = ({
     void togglePlay(e);
   };
 
+  const handleError = (e: React.SyntheticEvent<HTMLVideoElement, Event>) => {
+    // eslint-disable-next-line no-console
+    console.error('[VideoNoteMessage] playback error', src, e);
+    setIsPlaying(false);
+  };
+
   const bubbleClass = isOwn ? 'bubble-own' : 'bubble-other';
 
   return (
@@ -120,25 +126,26 @@ export const VideoNoteMessage = ({
         onPlay={handlePlay}
         onPause={handlePause}
         onEnded={handleEnded}
+        onError={handleError}
         // poster can be set if backend provides thumb, but not; first frame after load
       />
       {/* dark overlay for contrast */}
-      <div className="absolute inset-0 rounded-full bg-black/20" />
+      <div className="absolute inset-0 rounded-full bg-black/20 pointer-events-none" />
 
       {/* center play / pause */}
       {!isPlaying && (
-        <div className="relative z-10 flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white">
+        <div className="relative z-10 flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white pointer-events-none">
           <Icon name="play" className="h-3.5 w-3.5 ml-0.5" filled />
         </div>
       )}
       {isPlaying && (
-        <div className="relative z-10 flex h-8 w-8 items-center justify-center rounded-full bg-black/40 text-white">
+        <div className="relative z-10 flex h-8 w-8 items-center justify-center rounded-full bg-black/40 text-white pointer-events-none">
           <Icon name="pause" className="h-3.5 w-3.5" filled />
         </div>
       )}
 
       {/* circular progress ring */}
-      <svg className="absolute inset-0 -rotate-90" width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      <svg className="absolute inset-0 -rotate-90 pointer-events-none" width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
         <circle
           cx={size / 2}
           cy={size / 2}
@@ -161,7 +168,7 @@ export const VideoNoteMessage = ({
       </svg>
 
       {/* duration badge bottom */}
-      <div className="absolute bottom-1 right-1 z-10 rounded bg-black/70 px-1 py-0 text-[9px] tabular-nums text-white">
+      <div className="absolute bottom-1 right-1 z-10 rounded bg-black/70 px-1 py-0 text-[9px] tabular-nums text-white pointer-events-none">
         {formatDuration(displayDuration)}
       </div>
     </div>
