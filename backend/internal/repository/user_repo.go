@@ -67,7 +67,7 @@ func ChangePassword(db *gorm.DB, userId uint, hashedPassword string) error {
 
 func GetUsersByEmailOrName(db *gorm.DB, query string) ([]models.User, error) {
 	var users []models.User
-	err := db.Where("name LIKE ? OR email LIKE ?",
+	err := db.Where("name ILIKE ? OR email ILIKE ?",
 		"%"+query+"%",
 		"%"+query+"%").
 		Limit(20).
