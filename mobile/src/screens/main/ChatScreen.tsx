@@ -15,7 +15,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
+import type { GestureResponderEvent, NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { launchImageLibrary } from 'react-native-image-picker';
 import type { Asset } from 'react-native-image-picker';
 import Sound, {
@@ -182,6 +182,9 @@ export default function ChatScreen({ route }: Props) {
   );
   const voicePressStartXRef = useRef(0);
   const playingVoiceUrlRef = useRef<string | null>(null);
+  const previewPlayingRef = useRef<boolean>(false);
+  const pendingVoiceRef = useRef<LocalVoiceMessage | null>(null);
+  const previewProgressBarRef = useRef<View>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [inputHeight, setInputHeight] = useState(composerInputMinHeight);
@@ -206,6 +209,10 @@ export default function ChatScreen({ route }: Props) {
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [isVoiceCancelling, setIsVoiceCancelling] = useState(false);
   const [playingVoiceUrl, setPlayingVoiceUrl] = useState<string | null>(null);
+
+  const [pendingVoice, setPendingVoice] = useState<LocalVoiceMessage | null>(null);
+  const [previewPlaying, setPreviewPlaying] = useState(false);
+  const [previewPosition, setPreviewPosition] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [copyNotice, setCopyNotice] = useState<string | null>(null);
 
@@ -234,6 +241,14 @@ export default function ChatScreen({ route }: Props) {
   }, [playingVoiceUrl]);
 
   useEffect(() => {
+    pendingVoiceRef.current = pendingVoice;
+  }, [pendingVoice]);
+
+  useEffect(() => {
+    previewPlayingRef.current = previewPlaying;
+  }, [previewPlaying]);
+
+  useEffect(() => {
     hasMoreRef.current = hasMore;
   }, [hasMore]);
 
@@ -257,6 +272,7 @@ export default function ChatScreen({ route }: Props) {
       }
       Sound.removeRecordBackListener();
       Sound.removePlaybackEndListener();
+      Sound.removePlayBackListener();
       Sound.stopPlayer().catch(() => undefined);
       Sound.stopRecorder().catch(() => undefined);
     };
@@ -272,6 +288,10 @@ export default function ChatScreen({ route }: Props) {
         }
         if (pendingImagesRef.current.length > 0) {
           setError('Сначала отправьте или удалите выбранные изображения');
+          return;
+        }
+        if (pendingVoiceRef.current) {
+          setError('Сначала отправьте или удалите записанное голосовое сообщение');
           return;
         }
         voicePressStartXRef.current = evt.nativeEvent.pageX || 0;
@@ -290,8 +310,8 @@ export default function ChatScreen({ route }: Props) {
       },
       onPanResponderRelease: (_evt, gestureState) => {
         const leftDist = Math.max(0, -gestureState.dx);
-        const shouldSend = leftDist <= 80;
-        Promise.resolve((stopVoiceRecordingRef.current || stopVoiceRecording)(shouldSend)).catch(() => undefined);
+        const shouldCommit = leftDist <= 80; // commit to preview (not auto-send)
+        Promise.resolve((stopVoiceRecordingRef.current || stopVoiceRecording)(shouldCommit)).catch(() => undefined);
         setIsVoiceCancelling(false);
       },
       onPanResponderTerminate: () => {
@@ -648,6 +668,13 @@ export default function ChatScreen({ route }: Props) {
     if (recordingActiveRef.current || recordingBusyRef.current || sendingRef.current || editingMessageRef.current) {
       return;
     }
+    if (previewPlayingRef.current) {
+      Sound.stopPlayer().catch(() => undefined);
+      Sound.removePlayBackListener();
+      Sound.removePlaybackEndListener();
+      setPreviewPlaying(false);
+      previewPlayingRef.current = false;
+    }
     if (pendingImagesRef.current.length > 0) {
       setError('Сначала отправьте или удалите выбранные изображения');
       return;
@@ -692,7 +719,7 @@ export default function ChatScreen({ route }: Props) {
     }
   }
 
-  async function stopVoiceRecording(send: boolean) {
+  async function stopVoiceRecording(commitToPreview: boolean) {
     if (!recordingActiveRef.current || recordingBusy) {
       setIsVoiceCancelling(false);
       return;
@@ -706,7 +733,7 @@ export default function ChatScreen({ route }: Props) {
     try {
       path = await Sound.stopRecorder();
     } catch (apiError) {
-      if (send) {
+      if (commitToPreview) {
         setError(getApiErrorMessage(apiError));
       }
     }
@@ -727,55 +754,191 @@ export default function ChatScreen({ route }: Props) {
     setRecordingBusy(false);
     setIsVoiceCancelling(false);
 
-    const shouldSend = send && durationSeconds >= 1;
-    if (shouldSend && path) {
-      await sendVoiceMessage(path, durationSeconds);
+    if (!commitToPreview || durationSeconds < 1 || !path) {
+      // New UX: cancelled via slide or too short -> no preview, discard
+      return;
     }
+
+    // Commit to local preview card (no auto upload/send)
+    const voice: LocalVoiceMessage = {
+      uri: path,
+      type: CHAT_VOICE_MIME_TYPE,
+      fileName: `voice-message-${Date.now()}.webm`,
+      durationSeconds: Math.max(1, Math.round(durationSeconds)),
+    };
+    setPendingVoice(voice);
+    setPreviewPosition(0);
+    setPreviewPlaying(false);
+    previewPlayingRef.current = false;
   }
 
   startVoiceRecordingRef.current = startVoiceRecording;
   stopVoiceRecordingRef.current = stopVoiceRecording;
 
-  async function sendVoiceMessage(path: string, durationSeconds: number) {
-    const uri =
-      path.startsWith('file://') || path.startsWith('content://')
-        ? path
-        : `file://${path}`;
-    const voice: LocalVoiceMessage = {
-      uri,
-      type: CHAT_VOICE_MIME_TYPE,
-      fileName: `voice-message-${Date.now()}.webm`,
-      durationSeconds,
-    };
-    const validationError = validateLocalVoiceMessage(voice);
+  // sendVoiceMessage now used for explicit "Отправить" from preview card.
+  // It reads current `input` as optional text comment (voice + text support).
+  // Returns true on success.
+  async function sendVoiceMessage(voice: LocalVoiceMessage): Promise<boolean> {
+    const normalizedUri =
+      voice.uri.startsWith('file://') || voice.uri.startsWith('content://')
+        ? voice.uri
+        : `file://${voice.uri}`;
+    const voiceToSend: LocalVoiceMessage = { ...voice, uri: normalizedUri };
+
+    const validationError = validateLocalVoiceMessage(voiceToSend);
     if (validationError) {
       setError(validationError);
-      return;
+      return false;
     }
+
+    const comment = input.trim();
 
     setSending('uploadingVoice');
     setUploadProgress(null);
     setError(null);
 
     try {
-      const attachment = await messageApi.uploadVoice(voice);
+      const attachment = await messageApi.uploadVoice(voiceToSend);
       const attachments = [attachment];
 
       setSending('sending');
       if (chatSocket.isConnected()) {
-        chatSocket.sendMessage(otherUserId, '', attachments);
+        chatSocket.sendMessage(otherUserId, comment, attachments);
       } else {
-        const sent = await messageApi.sendMessage(otherUserId, '', attachments);
+        const sent = await messageApi.sendMessage(otherUserId, comment, attachments);
         shouldScrollToEndRef.current = true;
         setMessages(previous => [...previous, sent]);
         signalChatDataChanged();
       }
+      if (comment) {
+        setInput('');
+        setInputHeight(composerInputMinHeight);
+      }
+      return true;
     } catch (apiError) {
       setError(getApiErrorMessage(apiError));
+      return false;
     } finally {
       setSending(null);
       setUploadProgress(null);
     }
+  }
+
+  // Preview voice (local, pre-send) playback using Sound (reuses same engine as sent voices)
+  async function togglePreviewPlayback() {
+    if (!pendingVoice) return;
+    const raw = pendingVoice.uri;
+    const uri =
+      raw.startsWith('file://') || raw.startsWith('content://') ? raw : `file://${raw}`;
+
+    try {
+      if (previewPlayingRef.current) {
+        await Sound.stopPlayer().catch(() => undefined);
+        Sound.removePlayBackListener();
+        Sound.removePlaybackEndListener();
+        setPreviewPlaying(false);
+        previewPlayingRef.current = false;
+        setPreviewPosition(0);
+        return;
+      }
+
+      // Stop any sent voice playback to avoid conflict
+      if (playingVoiceUrlRef.current) {
+        await Sound.stopPlayer().catch(() => undefined);
+        setPlayingVoiceUrl(null);
+      }
+
+      Sound.removePlaybackEndListener();
+      Sound.removePlayBackListener();
+
+      Sound.addPlaybackEndListener(() => {
+        Sound.removePlaybackEndListener();
+        Sound.removePlayBackListener();
+        setPreviewPlaying(false);
+        previewPlayingRef.current = false;
+        setPreviewPosition(pendingVoice.durationSeconds || 0);
+      });
+
+      Sound.addPlayBackListener((meta: { currentPosition?: number; duration?: number }) => {
+        if (typeof meta.currentPosition === 'number') {
+          const sec = Math.max(0, meta.currentPosition / 1000);
+          setPreviewPosition(sec);
+        }
+      });
+
+      await Sound.startPlayer(uri);
+      setPreviewPlaying(true);
+      previewPlayingRef.current = true;
+    } catch (apiError) {
+      Sound.removePlaybackEndListener();
+      Sound.removePlayBackListener();
+      setPreviewPlaying(false);
+      previewPlayingRef.current = false;
+      setError(getApiErrorMessage(apiError));
+    }
+  }
+
+  async function deletePendingVoice() {
+    if (previewPlayingRef.current) {
+      await Sound.stopPlayer().catch(() => undefined);
+      Sound.removePlayBackListener();
+      Sound.removePlaybackEndListener();
+    }
+    setPreviewPlaying(false);
+    previewPlayingRef.current = false;
+    setPreviewPosition(0);
+    setPendingVoice(null);
+  }
+
+  async function sendPendingVoice() {
+    if (!pendingVoice) return;
+    if (previewPlayingRef.current) {
+      await Sound.stopPlayer().catch(() => undefined);
+      Sound.removePlayBackListener();
+      Sound.removePlaybackEndListener();
+    }
+    setPreviewPlaying(false);
+    previewPlayingRef.current = false;
+    const voiceToSend = pendingVoice;
+    setPreviewPosition(0);
+    setPendingVoice(null); // optimistic clear; restore on failure below
+    const ok = await sendVoiceMessage(voiceToSend);
+    if (!ok) {
+      // restore preview so user can retry send/delete
+      setPendingVoice(voiceToSend);
+    }
+  }
+
+  async function seekPreview(percent: number) {
+    if (!pendingVoice) return;
+    const dur = pendingVoice.durationSeconds || 0;
+    if (dur <= 0) return;
+    const targetSec = Math.max(0, Math.min(dur, percent * dur));
+    setPreviewPosition(targetSec);
+
+    try {
+      if (previewPlayingRef.current) {
+        await Sound.seekToPlayer(targetSec * 1000).catch(() => undefined);
+      } else {
+        // start then seek shortly after
+        await togglePreviewPlayback();
+        setTimeout(() => {
+          Sound.seekToPlayer(targetSec * 1000).catch(() => undefined);
+        }, 120);
+      }
+    } catch {
+      // ignore seek errors
+    }
+  }
+
+  async function handlePreviewProgressPress(e: GestureResponderEvent) {
+    const bar = previewProgressBarRef.current;
+    if (!bar || !pendingVoice) return;
+    bar.measure((x, y, width, height, pageX) => {
+      const relX = (e.nativeEvent as any).pageX - pageX;
+      const pct = width > 0 ? Math.max(0, Math.min(1, relX / width)) : 0;
+      void seekPreview(pct);
+    });
   }
 
   async function sendMessage() {
@@ -911,6 +1074,16 @@ export default function ChatScreen({ route }: Props) {
 
   async function toggleVoicePlayback(url: string) {
     try {
+      // Stop preview if active (mutual exclusive)
+      if (previewPlayingRef.current) {
+        await Sound.stopPlayer().catch(() => undefined);
+        Sound.removePlayBackListener();
+        Sound.removePlaybackEndListener();
+        setPreviewPlaying(false);
+        previewPlayingRef.current = false;
+        setPreviewPosition(0);
+      }
+
       if (playingVoiceUrlRef.current === url) {
         await Sound.stopPlayer();
         Sound.removePlaybackEndListener();
@@ -1107,13 +1280,82 @@ export default function ChatScreen({ route }: Props) {
             ]}
             numberOfLines={1}
           >
-            {isVoiceCancelling ? 'Отпустите, чтобы отменить' : 'Отпустите, чтобы отправить'}
+            {isVoiceCancelling ? 'Отпустите, чтобы отменить' : 'Отпустите, чтобы завершить запись'}
           </Text>
           {!isVoiceCancelling && (
             <Text style={styles.recordingHint} numberOfLines={1}>
               Сдвиньте влево для отмены
             </Text>
           )}
+        </View>
+      ) : null}
+
+      {pendingVoice ? (
+        <View style={styles.previewVoiceCard}>
+          <View style={styles.previewVoiceRow}>
+            <Pressable
+              onPress={() => {
+                togglePreviewPlayback().catch(() => undefined);
+              }}
+              style={[
+                styles.previewPlayButton,
+                previewPlaying && styles.previewPlayButtonActive,
+              ]}
+              disabled={Boolean(sending)}
+            >
+              <Text style={styles.previewPlayText}>{previewPlaying ? 'Ⅱ' : '▶'}</Text>
+            </Pressable>
+
+            <View
+              ref={previewProgressBarRef}
+              style={styles.previewProgressBar}
+              onStartShouldSetResponder={() => true}
+              onResponderRelease={handlePreviewProgressPress}
+            >
+              <View
+                style={[
+                  styles.previewProgressFill,
+                  {
+                    width: `${Math.min(
+                      100,
+                      ((previewPosition || 0) / (pendingVoice.durationSeconds || 1)) * 100,
+                    )}%`,
+                  },
+                ]}
+              />
+            </View>
+
+            <Text style={styles.previewDuration}>
+              {formatDuration(previewPosition || 0)} / {formatDuration(pendingVoice.durationSeconds)}
+            </Text>
+          </View>
+
+          <View style={styles.previewMeta}>
+            <Text style={styles.previewMetaText}>
+              {formatDuration(pendingVoice.durationSeconds)}
+            </Text>
+          </View>
+
+          <View style={styles.previewActions}>
+            <Pressable
+              onPress={() => {
+                deletePendingVoice().catch(() => undefined);
+              }}
+              style={styles.previewDeleteBtn}
+              disabled={Boolean(sending)}
+            >
+              <Text style={styles.previewDeleteText}>🗑 Удалить</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                sendPendingVoice().catch(() => undefined);
+              }}
+              style={styles.previewSendBtn}
+              disabled={Boolean(sending)}
+            >
+              <Text style={styles.previewSendText}>➤ Отправить</Text>
+            </Pressable>
+          </View>
         </View>
       ) : null}
 
@@ -1127,7 +1369,7 @@ export default function ChatScreen({ route }: Props) {
         <AppButton
           title="Голос"
           variant="secondary"
-          disabled={Boolean(sending) || Boolean(editingMessage) || pendingImages.length > 0 || recordingBusy}
+          disabled={Boolean(sending) || Boolean(editingMessage) || pendingImages.length > 0 || recordingBusy || Boolean(pendingVoice)}
           onPress={() => {}}
           style={recording ? styles.voiceButtonRecording : undefined}
           {...voicePanResponder.panHandlers}
@@ -1152,7 +1394,8 @@ export default function ChatScreen({ route }: Props) {
           disabled={
             Boolean(sending) ||
             recording ||
-            (!input.trim() && !editingMessage && pendingImages.length === 0)
+            (!input.trim() && !editingMessage && pendingImages.length === 0 && !pendingVoice) ||
+            Boolean(pendingVoice)
           }
           loading={Boolean(sending)}
           onPress={sendMessage}
@@ -1727,6 +1970,91 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 13,
     fontWeight: '800',
+  },
+  // Preview voice card (new UX: record -> preview -> send/delete)
+  previewVoiceCard: {
+    marginHorizontal: 12,
+    marginBottom: 6,
+    padding: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
+    gap: 8,
+  },
+  previewVoiceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  previewPlayButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  previewPlayButtonActive: {
+    backgroundColor: colors.accentStrong,
+  },
+  previewPlayText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  previewProgressBar: {
+    flex: 1,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.border,
+    overflow: 'hidden',
+  },
+  previewProgressFill: {
+    height: '100%',
+    backgroundColor: colors.accent,
+  },
+  previewDuration: {
+    minWidth: 72,
+    textAlign: 'right',
+    fontSize: 11,
+    fontVariant: ['tabular-nums'],
+    color: colors.muted,
+  },
+  previewMeta: {
+    paddingLeft: 42,
+  },
+  previewMetaText: {
+    fontSize: 10,
+    color: colors.muted,
+  },
+  previewActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingLeft: 42,
+    paddingTop: 4,
+  },
+  previewDeleteBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+  },
+  previewDeleteText: {
+    color: colors.danger || '#dc2626',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  previewSendBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: colors.accent,
+  },
+  previewSendText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
   },
   composer: {
     flexDirection: 'row',

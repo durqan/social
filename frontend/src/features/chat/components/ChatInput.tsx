@@ -8,6 +8,7 @@ import {
     imageFilesFromClipboard,
     validateChatImages,
 } from "@/shared/utils/uploadValidation.js";
+import { PreviewVoiceMessage } from "@/features/chat/components/PreviewVoiceMessage.js";
 
 const EmojiPicker = EmojiPickerModule as unknown as (props: EmojiPickerProps) => ReactElement | null;
 const textareaMaxHeight = 168;
@@ -38,7 +39,7 @@ interface ChatInputProps {
     value: string;
     onChange: (e: ChangeEvent<HTMLTextAreaElement>) => void;
     onSend: (files?: File[]) => Promise<boolean> | boolean;
-    onSendVoice?: (file: File, durationSeconds: number) => Promise<boolean> | boolean;
+    onSendVoice?: (file: File, durationSeconds: number, text?: string) => Promise<boolean> | boolean;
     errorMessage?: string;
     onErrorMessageChange?: (message: string) => void;
     incomingFiles?: {
@@ -87,6 +88,15 @@ export const ChatInput = ({
     const [recordingElapsed, setRecordingElapsed] = useState(0);
     const [recordingStopping, setRecordingStopping] = useState(false);
     const [isCancellingRecord, setIsCancellingRecord] = useState(false);
+
+    type PendingVoice = {
+        blob: Blob;
+        durationSeconds: number;
+        size: number;
+        objectUrl: string;
+        mimeType: string;
+    };
+    const [pendingVoice, setPendingVoice] = useState<PendingVoice | null>(null);
 
     const resizeTextarea = useCallback(() => {
         const textarea = textareaRef.current;
@@ -146,8 +156,17 @@ export const ChatInput = ({
         setSelectedFiles(prev => prev.filter((_, i) => i !== index));
     };
 
+    const clearPendingVoice = useCallback(() => {
+        setPendingVoice(prev => {
+            if (prev) {
+                URL.revokeObjectURL(prev.objectUrl);
+            }
+            return null;
+        });
+    }, []);
+
     const handleSend = async () => {
-        if (!canSend || sending || isRecording) return;
+        if (!canSend || sending || isRecording || pendingVoice) return;
         onErrorMessageChange?.('');
         setSending(true);
         const sent = await onSend(selectedFiles);
@@ -163,6 +182,28 @@ export const ChatInput = ({
             fileInputRef.current.value = '';
         }
     };
+
+    const handleSendPendingVoice = useCallback(async () => {
+        if (!pendingVoice || sending || !onSendVoice) {
+            return;
+        }
+        onErrorMessageChange?.('');
+        const file = new File([pendingVoice.blob], `voice-message.${voiceFileExtension(pendingVoice.mimeType)}`, {
+            type: pendingVoice.mimeType,
+            lastModified: Date.now(),
+        });
+
+        setSending(true);
+        try {
+            // Pass current text as optional comment; sendVoice handler decides whether to include & clear it
+            const sent = await onSendVoice(file, pendingVoice.durationSeconds, value);
+            if (sent) {
+                clearPendingVoice();
+            }
+        } finally {
+            setSending(false);
+        }
+    }, [pendingVoice, sending, onSendVoice, onErrorMessageChange, value, clearPendingVoice]);
 
     const clearRecordingTimers = useCallback(() => {
         if (recordingTimerRef.current !== null) {
@@ -180,7 +221,7 @@ export const ChatInput = ({
         voiceStreamRef.current = null;
     }, []);
 
-    const stopRecording = useCallback((send: boolean) => {
+    const stopRecording = useCallback((commitToPreview: boolean) => {
         const recorder = mediaRecorderRef.current;
 
         if (!recorder || recorder.state === 'inactive') {
@@ -197,7 +238,7 @@ export const ChatInput = ({
         setRecordingStopping(true);
         clearRecordingTimers();
 
-        recorder.onstop = async () => {
+        recorder.onstop = () => {
             const chunks = voiceChunksRef.current;
             const durationSeconds = Math.ceil((Date.now() - recordingStartedAtRef.current) / 1000);
             const mimeType = recorder.mimeType || supportedVoiceMimeType();
@@ -211,11 +252,8 @@ export const ChatInput = ({
             setIsCancellingRecord(false);
             pendingVoiceStopRef.current = null;
 
-            if (!send || durationSeconds < 1) {
-                return;
-            }
-            if (!onSendVoice) {
-                onErrorMessageChange?.('Голосовые сообщения недоступны.');
+            if (!commitToPreview || durationSeconds < 1) {
+                // cancelled or too short: discard chunks (no upload)
                 return;
             }
             if (!chunks.length) {
@@ -225,21 +263,26 @@ export const ChatInput = ({
 
             const type = voiceFileType(mimeType);
             const blob = new Blob(chunks, { type });
-            const file = new File([blob], `voice-message.${voiceFileExtension(type)}`, {
-                type,
-                lastModified: Date.now(),
+            const objectUrl = URL.createObjectURL(blob);
+
+            // Clear any previous preview
+            setPendingVoice(prev => {
+                if (prev) URL.revokeObjectURL(prev.objectUrl);
+                return null;
             });
 
-            setSending(true);
-            try {
-                await onSendVoice(file, durationSeconds);
-            } finally {
-                setSending(false);
-            }
+            setPendingVoice({
+                blob,
+                durationSeconds,
+                size: blob.size,
+                objectUrl,
+                mimeType: type,
+            });
+            // Do NOT call onSendVoice here. User must explicitly Send or Delete from preview.
         };
 
         recorder.stop();
-    }, [clearRecordingTimers, onErrorMessageChange, onSendVoice, stopVoiceStream]);
+    }, [clearRecordingTimers, onErrorMessageChange, stopVoiceStream]);
 
     const startRecording = useCallback(async () => {
         if (isRecording || sending || recordingStopping) {
@@ -307,7 +350,6 @@ export const ChatInput = ({
         clearRecordingTimers,
         isRecording,
         onErrorMessageChange,
-        onSendVoice,
         recordingStopping,
         sending,
         stopRecording,
@@ -316,7 +358,7 @@ export const ChatInput = ({
 
     const handleMicPointerDown = useCallback(
         (e: React.PointerEvent<HTMLButtonElement>) => {
-            if (isRecording || sending || recordingStopping || selectedFiles.length > 0) {
+            if (isRecording || sending || recordingStopping || selectedFiles.length > 0 || pendingVoice) {
                 return;
             }
             if (e.pointerType === 'mouse' && e.button !== 0) {
@@ -337,7 +379,7 @@ export const ChatInput = ({
                 }
             }
         },
-        [isRecording, sending, recordingStopping, selectedFiles.length, startRecording],
+        [isRecording, sending, recordingStopping, selectedFiles.length, pendingVoice, startRecording],
     );
 
     const handleMicPointerMove = useCallback(
@@ -397,6 +439,11 @@ export const ChatInput = ({
             stopVoiceStream();
             setIsCancellingRecord(false);
             pendingVoiceStopRef.current = null;
+            // revoke any unsent preview blob url
+            setPendingVoice(prev => {
+                if (prev) URL.revokeObjectURL(prev.objectUrl);
+                return null;
+            });
         };
     }, [clearRecordingTimers, stopVoiceStream]);
 
@@ -482,7 +529,7 @@ export const ChatInput = ({
                             isCancellingRecord ? 'text-red-600 font-medium' : 'text-sky-700'
                         }`}
                     >
-                        {isCancellingRecord ? 'Отпустите, чтобы отменить' : 'Отпустите, чтобы отправить'}
+                        {isCancellingRecord ? 'Отпустите, чтобы отменить' : 'Отпустите, чтобы завершить запись'}
                     </span>
                     <span
                         className={`text-[10px] sm:text-[11px] whitespace-nowrap ${
@@ -492,6 +539,21 @@ export const ChatInput = ({
                         {isCancellingRecord ? 'Отменить' : 'Сдвиньте влево для отмены'}
                     </span>
                 </div>
+            )}
+
+            {pendingVoice && (
+                <PreviewVoiceMessage
+                    src={pendingVoice.objectUrl}
+                    durationSeconds={pendingVoice.durationSeconds}
+                    sizeBytes={pendingVoice.size}
+                    onDelete={() => {
+                        clearPendingVoice();
+                    }}
+                    onSend={() => {
+                        void handleSendPendingVoice();
+                    }}
+                    sending={sending}
+                />
             )}
 
             <div className="relative flex gap-2 items-end">
@@ -511,7 +573,7 @@ export const ChatInput = ({
                 <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    disabled={isRecording || sending}
+                    disabled={isRecording || sending || !!pendingVoice}
                     className="w-10 h-10 rounded-full border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 transition flex items-center justify-center flex-shrink-0 disabled:opacity-50"
                     title="Прикрепить картинку"
                 >
@@ -577,20 +639,20 @@ export const ChatInput = ({
                     onPointerUp={handleMicPointerEnd}
                     onPointerCancel={e => handleMicPointerEnd(e, true)}
                     onPointerLeave={handleMicPointerLeave}
-                    disabled={selectedFiles.length > 0 || sending || recordingStopping}
+                    disabled={selectedFiles.length > 0 || sending || recordingStopping || !!pendingVoice}
                     className={`w-10 h-10 rounded-full border transition flex items-center justify-center flex-shrink-0 disabled:opacity-50 ${
                         isRecording
                             ? 'bg-red-500 border-red-600 text-white'
                             : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
                     }`}
-                    title={isRecording ? 'Удерживайте для записи, отпустите чтобы отправить, сдвиньте влево для отмены' : 'Записать голосовое (удерживайте)'}
+                    title={isRecording ? 'Удерживайте для записи, отпустите чтобы завершить, сдвиньте влево для отмены' : 'Записать голосовое (удерживайте)'}
                     aria-label="Записать голосовое сообщение"
                 >
                     <Icon name="mic" className={isRecording ? 'animate-pulse' : ''} />
                 </button>
                 <button
                     onClick={() => void handleSend()}
-                    disabled={!canSend || sending || isRecording}
+                    disabled={!canSend || sending || isRecording || !!pendingVoice}
                     className="w-10 h-10 bg-sky-600 text-white rounded-full hover:bg-sky-700 transition disabled:opacity-50 flex items-center justify-center flex-shrink-0">
                     <Icon name="send" />
                 </button>

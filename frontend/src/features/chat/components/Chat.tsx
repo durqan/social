@@ -238,7 +238,7 @@ function Chat() {
         }
     }, [currentUser, newMessage, replyToMessage, sendMessageToStore, uploadAttachments, userId, wsService]);
 
-    const sendVoiceMessage = useCallback(async (file: File, durationSeconds: number) => {
+    const sendVoiceMessage = useCallback(async (file: File, durationSeconds: number, text?: string) => {
         if (!(currentUser?.isEmailVerified ?? currentUser?.is_email_verified ?? false)) {
             setUploadError('Подтвердите email, чтобы продолжить');
             return false;
@@ -257,11 +257,13 @@ function Chat() {
             const attachments = [attachment];
             setSendStatus('Отправляем голосовое сообщение');
 
+            const content = (text ?? '').trim();
+
             const tempMessage: Message = {
                 id: Date.now(),
                 from_id: currentUser?.id || 0,
                 to_id: Number(userId),
-                content: '',
+                content,
                 created_at: new Date().toISOString(),
                 is_read: false,
                 reply_to_message_id: replyToMessage?.id ?? null,
@@ -274,8 +276,11 @@ function Chat() {
                 attachments,
             };
 
-            sendMessageToStore('', tempMessage);
-            wsService.send(Number(userId), '', attachments, replyToMessage?.id);
+            sendMessageToStore(content, tempMessage);
+            wsService.send(Number(userId), content, attachments, replyToMessage?.id);
+            if (content) {
+                setNewMessage('');
+            }
             setReplyToMessage(null);
             return true;
         } catch (error) {
@@ -285,7 +290,7 @@ function Chat() {
         } finally {
             setSendStatus('');
         }
-    }, [currentUser, replyToMessage, sendMessageToStore, userId, wsService]);
+    }, [currentUser, newMessage, replyToMessage, sendMessageToStore, userId, wsService]);
 
     const openForwardDialog = useCallback((message: Message) => {
         setForwardMessage(message);
