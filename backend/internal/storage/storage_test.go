@@ -61,3 +61,15 @@ func TestNewObjectKeyGeneratesSafeUUIDKey(t *testing.T) {
 		t.Fatal("expected invalid extension to be rejected")
 	}
 }
+
+func TestNewObjectKeyGeneratesSafeVoiceKey(t *testing.T) {
+	key, err := NewObjectKey("voice/user_1", ".webm")
+	if err != nil {
+		t.Fatalf("new object key: %v", err)
+	}
+
+	pattern := regexp.MustCompile(`^voice/user_1/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.webm$`)
+	if !pattern.MatchString(key) {
+		t.Fatalf("voice object key %q does not match safe UUID pattern", key)
+	}
+}

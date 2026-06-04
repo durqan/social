@@ -45,7 +45,19 @@ const uploadErrorText: Record<string, string> = {
     'failed to read image': 'Не удалось прочитать картинку. Попробуйте выбрать другой файл.',
     'failed to save image': 'Не удалось сохранить картинку. Попробуйте еще раз.',
     'too many images': 'Можно прикрепить максимум 5 картинок за раз.',
-    'only image attachments are supported': 'Можно прикреплять только картинки.',
+    'unsupported attachment type': 'Этот тип вложения не поддерживается.',
+    'cannot mix image and voice attachments': 'Голосовое сообщение нельзя отправить вместе с картинками.',
+    'only one voice attachment is supported': 'Можно отправить только одно голосовое сообщение за раз.',
+    'message content or attachment is required': 'Введите сообщение или добавьте вложение.',
+    'voice is required': 'Запишите голосовое сообщение.',
+    'voice is too large': 'Голосовое сообщение слишком большое. Максимум 12 МБ.',
+    'voice must be webm or ogg': 'Голосовое сообщение должно быть в формате WebM или Ogg.',
+    'voice content does not match content type': 'Файл поврежден или не является корректным аудио.',
+    'invalid voice': 'Файл поврежден или не является корректным аудио.',
+    'failed to read voice': 'Не удалось прочитать голосовое сообщение. Попробуйте записать еще раз.',
+    'failed to save voice': 'Не удалось сохранить голосовое сообщение. Попробуйте еще раз.',
+    'voice duration is required': 'Не удалось определить длительность голосового сообщения.',
+    'voice is too long': 'Голосовое сообщение слишком длинное. Максимум 5 минут.',
 };
 
 export const getUploadErrorMessage = (error: unknown, fallback: string) => {

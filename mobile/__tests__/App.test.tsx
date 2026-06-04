@@ -55,6 +55,30 @@ jest.mock('react-native-image-picker', () => ({
   launchImageLibrary: jest.fn(),
 }));
 
+jest.mock('react-native-nitro-sound', () => ({
+  __esModule: true,
+  default: {
+    setSubscriptionDuration: jest.fn(),
+    addRecordBackListener: jest.fn(),
+    removeRecordBackListener: jest.fn(),
+    addPlaybackEndListener: jest.fn(),
+    removePlaybackEndListener: jest.fn(),
+    startRecorder: jest.fn(() => Promise.resolve('file:///tmp/voice.webm')),
+    stopRecorder: jest.fn(() => Promise.resolve('file:///tmp/voice.webm')),
+    startPlayer: jest.fn(() => Promise.resolve('started')),
+    stopPlayer: jest.fn(() => Promise.resolve('stopped')),
+  },
+  AudioSourceAndroidType: {
+    MIC: 1,
+  },
+  OutputFormatAndroidType: {
+    WEBM: 9,
+  },
+  AudioEncoderAndroidType: {
+    VORBIS: 6,
+  },
+}));
+
 jest.mock('react-native-webrtc', () => {
   class MockMediaStream {
     getTracks() {

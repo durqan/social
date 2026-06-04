@@ -14,6 +14,14 @@ export const messageService = {
             timeout: 300000,
         });
     },
+    async uploadVoice(file: File, durationSeconds: number): Promise<MessageAttachment> {
+        const formData = new FormData();
+        formData.append('voice', file);
+        formData.append('duration', String(durationSeconds));
+        return request.post<MessageAttachment>('/messages/upload-voice', formData, {
+            timeout: 300000,
+        });
+    },
     async getConversations(): Promise<Conversation[]> {
         const conversations = await request.get<Conversation[]>('/messages/conversations');
         return Array.isArray(conversations) ? conversations : [];

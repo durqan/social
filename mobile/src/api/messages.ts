@@ -1,4 +1,11 @@
-import { CHAT_IMAGE_MAX_BYTES, CHAT_IMAGE_MIME_TYPES } from '../config/env';
+import {
+  CHAT_IMAGE_MAX_BYTES,
+  CHAT_IMAGE_MIME_TYPES,
+  CHAT_VOICE_MAX_BYTES,
+  CHAT_VOICE_MAX_DURATION_SECONDS,
+  CHAT_VOICE_MIME_TYPE,
+} from '../config/env';
+import { formatDuration } from '../utils/format';
 import { apiRequest, toQueryString } from './http';
 import type {
   Conversation,
@@ -15,6 +22,14 @@ export type LocalChatImage = {
   fileSize?: number;
 };
 
+export type LocalVoiceMessage = {
+  uri: string;
+  type: string;
+  fileName: string;
+  durationSeconds: number;
+  fileSize?: number;
+};
+
 export function validateLocalChatImage(image: LocalChatImage) {
   if (!(CHAT_IMAGE_MIME_TYPES as readonly string[]).includes(image.type)) {
     return 'Поддерживаются только JPEG, PNG и WebP';
@@ -22,6 +37,26 @@ export function validateLocalChatImage(image: LocalChatImage) {
 
   if (image.fileSize && image.fileSize > CHAT_IMAGE_MAX_BYTES) {
     return 'Изображение должно быть не больше 10 МБ';
+  }
+
+  return null;
+}
+
+export function validateLocalVoiceMessage(voice: LocalVoiceMessage) {
+  if (voice.type !== CHAT_VOICE_MIME_TYPE) {
+    return 'Поддерживаются только голосовые сообщения WebM';
+  }
+
+  if (voice.fileSize && voice.fileSize > CHAT_VOICE_MAX_BYTES) {
+    return 'Голосовое сообщение должно быть не больше 12 МБ';
+  }
+
+  if (voice.durationSeconds <= 0) {
+    return 'Голосовое сообщение слишком короткое';
+  }
+
+  if (voice.durationSeconds > CHAT_VOICE_MAX_DURATION_SECONDS) {
+    return `Голосовое сообщение должно быть не длиннее ${formatDuration(CHAT_VOICE_MAX_DURATION_SECONDS)}`;
   }
 
   return null;
@@ -92,6 +127,21 @@ export const messageApi = {
     } as unknown as Blob);
 
     return apiRequest<MessageAttachment>('/messages/upload', {
+      method: 'POST',
+      body: formData,
+    });
+  },
+
+  async uploadVoice(voice: LocalVoiceMessage) {
+    const formData = new FormData();
+    formData.append('voice', {
+      uri: voice.uri,
+      type: voice.type,
+      name: voice.fileName,
+    } as unknown as Blob);
+    formData.append('duration', String(voice.durationSeconds));
+
+    return apiRequest<MessageAttachment>('/messages/upload-voice', {
       method: 'POST',
       body: formData,
     });

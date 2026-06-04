@@ -1,8 +1,11 @@
 const imageTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const voiceTypes = new Set(['audio/webm', 'audio/ogg']);
 
 export const avatarMaxSize = 5 * 1024 * 1024;
 export const chatImageMaxSize = 10 * 1024 * 1024;
 export const chatImageMaxCount = 5;
+export const chatVoiceMaxSize = 12 * 1024 * 1024;
+export const chatVoiceMaxDurationSeconds = 5 * 60;
 
 export function formatFileSize(bytes: number) {
     if (bytes >= 1024 * 1024) {
@@ -14,6 +17,13 @@ export function formatFileSize(bytes: number) {
     }
 
     return `${bytes} Б`;
+}
+
+export function formatDuration(totalSeconds?: number) {
+    const safeSeconds = Math.max(0, Math.floor(totalSeconds || 0));
+    const minutes = Math.floor(safeSeconds / 60);
+    const seconds = safeSeconds % 60;
+    return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
 export function validateImageFile(file: File, maxSize: number) {
@@ -70,6 +80,30 @@ export function validateChatImages(files: File[]) {
         if (error) {
             return `${file.name || 'Изображение'}: ${error}`;
         }
+    }
+
+    return '';
+}
+
+export function validateVoiceFile(file: File, durationSeconds: number) {
+    if (file.size <= 0) {
+        return 'Голосовое сообщение пустое. Попробуйте записать еще раз.';
+    }
+
+    if (!voiceTypes.has(file.type)) {
+        return 'Поддерживаются только голосовые сообщения WebM или Ogg.';
+    }
+
+    if (file.size > chatVoiceMaxSize) {
+        return `Голосовое сообщение слишком большое: ${formatFileSize(file.size)}. Максимум ${formatFileSize(chatVoiceMaxSize)}.`;
+    }
+
+    if (durationSeconds <= 0) {
+        return 'Голосовое сообщение слишком короткое.';
+    }
+
+    if (durationSeconds > chatVoiceMaxDurationSeconds) {
+        return `Голосовое сообщение должно быть не длиннее ${formatDuration(chatVoiceMaxDurationSeconds)}.`;
     }
 
     return '';

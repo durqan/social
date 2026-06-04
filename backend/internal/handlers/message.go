@@ -49,7 +49,7 @@ func SendMessage(db *gorm.DB) gin.HandlerFunc {
 
 		message, err := services.SendMessage(db, userID, toID, req.Content, attachments, replyToMessageID)
 		if errors.Is(err, services.ErrMessageContentRequired) {
-			c.JSON(400, gin.H{"error": "message content or image is required"})
+			c.JSON(400, gin.H{"error": "message content or attachment is required"})
 			return
 		}
 		if errors.Is(err, services.ErrMessageContentTooLong) {

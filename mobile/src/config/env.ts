@@ -76,6 +76,9 @@ export const CHAT_IMAGE_MIME_TYPES = [
   'image/png',
   'image/webp',
 ] as const;
+export const CHAT_VOICE_MAX_BYTES = 12 * 1024 * 1024;
+export const CHAT_VOICE_MAX_DURATION_SECONDS = 5 * 60;
+export const CHAT_VOICE_MIME_TYPE = 'audio/webm';
 
 export function apiURL(path: string) {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;

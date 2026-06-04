@@ -52,11 +52,14 @@ export interface Conversation {
 
 export interface MessageAttachment {
   id?: number;
+  attachment_id?: string;
   message_id?: number;
   file_url: string;
-  file_type: 'image';
+  file_type: 'image' | 'voice';
   width?: number;
   height?: number;
+  duration?: number;
+  duration_seconds?: number;
   size: number;
   created_at?: string;
 }

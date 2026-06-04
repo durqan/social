@@ -302,12 +302,14 @@ export const ChatMessageList = ({
                 });
             }
 
-            actions.push({
-                key: 'edit',
-                label: 'Редактировать',
-                icon: 'edit',
-                onSelect: () => onEditMessage(contextMessage.id, contextMessage.content),
-            });
+            if (contextMessageHasText) {
+                actions.push({
+                    key: 'edit',
+                    label: 'Редактировать',
+                    icon: 'edit',
+                    onSelect: () => onEditMessage(contextMessage.id, contextMessage.content),
+                });
+            }
             actions.push({
                 key: 'delete',
                 label: 'Удалить сообщение',

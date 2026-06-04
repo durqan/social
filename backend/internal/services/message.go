@@ -16,7 +16,7 @@ import (
 )
 
 var (
-	ErrMessageContentRequired = errors.New("message content or image is required")
+	ErrMessageContentRequired = errors.New("message content or attachment is required")
 	ErrMessageContentTooLong  = errors.New("message content is too long")
 	ErrMessageForbidden       = errors.New("message forbidden")
 	ErrMessageNotFriends      = errors.New("message requires accepted friendship")
@@ -134,12 +134,13 @@ func ForwardMessage(db *gorm.DB, userID uint, sourceMessageID uint, toIDs []uint
 			attachments := make([]models.MessageAttachment, 0, len(source.Attachments))
 			for _, attachment := range source.Attachments {
 				attachments = append(attachments, models.MessageAttachment{
-					MessageID: message.ID,
-					FileURL:   attachment.FileURL,
-					FileType:  attachment.FileType,
-					Width:     attachment.Width,
-					Height:    attachment.Height,
-					Size:      attachment.Size,
+					MessageID:       message.ID,
+					FileURL:         attachment.FileURL,
+					FileType:        attachment.FileType,
+					Width:           attachment.Width,
+					Height:          attachment.Height,
+					DurationSeconds: attachment.DurationSeconds,
+					Size:            attachment.Size,
 				})
 			}
 			if err := repository.CreateMessageAttachments(tx, attachments); err != nil {

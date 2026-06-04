@@ -2,18 +2,43 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ChangeE
 import { Icon } from "@/shared/ui/Icon.js";
 import EmojiPickerModule, { EmojiStyle, type EmojiClickData, type Props as EmojiPickerProps } from 'emoji-picker-react';
 import {
+    chatVoiceMaxDurationSeconds,
     formatFileSize,
+    formatDuration,
     imageFilesFromClipboard,
     validateChatImages,
 } from "@/shared/utils/uploadValidation.js";
 
 const EmojiPicker = EmojiPickerModule as unknown as (props: EmojiPickerProps) => ReactElement | null;
 const textareaMaxHeight = 168;
+const voiceMimeCandidates = [
+    'audio/webm;codecs=opus',
+    'audio/ogg;codecs=opus',
+    'audio/webm',
+    'audio/ogg',
+];
+
+function supportedVoiceMimeType() {
+    if (typeof MediaRecorder === 'undefined') {
+        return '';
+    }
+
+    return voiceMimeCandidates.find(type => MediaRecorder.isTypeSupported(type)) || '';
+}
+
+function voiceFileType(mimeType: string) {
+    return mimeType.split(';')[0] || mimeType;
+}
+
+function voiceFileExtension(mimeType: string) {
+    return voiceFileType(mimeType) === 'audio/ogg' ? 'ogg' : 'webm';
+}
 
 interface ChatInputProps {
     value: string;
     onChange: (e: ChangeEvent<HTMLTextAreaElement>) => void;
     onSend: (files?: File[]) => Promise<boolean> | boolean;
+    onSendVoice?: (file: File, durationSeconds: number) => Promise<boolean> | boolean;
     errorMessage?: string;
     onErrorMessageChange?: (message: string) => void;
     incomingFiles?: {
@@ -33,6 +58,7 @@ export const ChatInput = ({
     value,
     onChange,
     onSend,
+    onSendVoice,
     errorMessage = '',
     onErrorMessageChange,
     incomingFiles,
@@ -43,11 +69,20 @@ export const ChatInput = ({
 }: ChatInputProps) => {
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const voiceChunksRef = useRef<Blob[]>([]);
+    const voiceStreamRef = useRef<MediaStream | null>(null);
+    const recordingStartedAtRef = useRef(0);
+    const recordingTimerRef = useRef<number | null>(null);
+    const recordingMaxTimerRef = useRef<number | null>(null);
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
     const [previews, setPreviews] = useState<string[]>([]);
     const canSend = Boolean(value.trim()) || selectedFiles.length > 0;
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const [sending, setSending] = useState(false);
+    const [isRecording, setIsRecording] = useState(false);
+    const [recordingElapsed, setRecordingElapsed] = useState(0);
+    const [recordingStopping, setRecordingStopping] = useState(false);
 
     const resizeTextarea = useCallback(() => {
         const textarea = textareaRef.current;
@@ -108,7 +143,7 @@ export const ChatInput = ({
     };
 
     const handleSend = async () => {
-        if (!canSend || sending) return;
+        if (!canSend || sending || isRecording) return;
         onErrorMessageChange?.('');
         setSending(true);
         const sent = await onSend(selectedFiles);
@@ -124,6 +159,155 @@ export const ChatInput = ({
             fileInputRef.current.value = '';
         }
     };
+
+    const clearRecordingTimers = useCallback(() => {
+        if (recordingTimerRef.current !== null) {
+            window.clearInterval(recordingTimerRef.current);
+            recordingTimerRef.current = null;
+        }
+        if (recordingMaxTimerRef.current !== null) {
+            window.clearTimeout(recordingMaxTimerRef.current);
+            recordingMaxTimerRef.current = null;
+        }
+    }, []);
+
+    const stopVoiceStream = useCallback(() => {
+        voiceStreamRef.current?.getTracks().forEach(track => track.stop());
+        voiceStreamRef.current = null;
+    }, []);
+
+    const stopRecording = useCallback((send: boolean) => {
+        const recorder = mediaRecorderRef.current;
+
+        if (!recorder || recorder.state === 'inactive') {
+            clearRecordingTimers();
+            stopVoiceStream();
+            setIsRecording(false);
+            setRecordingStopping(false);
+            setRecordingElapsed(0);
+            return;
+        }
+
+        setRecordingStopping(true);
+        clearRecordingTimers();
+
+        recorder.onstop = async () => {
+            const chunks = voiceChunksRef.current;
+            const durationSeconds = Math.max(1, Math.ceil((Date.now() - recordingStartedAtRef.current) / 1000));
+            const mimeType = recorder.mimeType || supportedVoiceMimeType();
+
+            mediaRecorderRef.current = null;
+            voiceChunksRef.current = [];
+            stopVoiceStream();
+            setIsRecording(false);
+            setRecordingStopping(false);
+            setRecordingElapsed(0);
+
+            if (!send) {
+                return;
+            }
+            if (!onSendVoice) {
+                onErrorMessageChange?.('Голосовые сообщения недоступны.');
+                return;
+            }
+            if (!chunks.length) {
+                onErrorMessageChange?.('Голосовое сообщение пустое. Попробуйте записать еще раз.');
+                return;
+            }
+
+            const type = voiceFileType(mimeType);
+            const blob = new Blob(chunks, { type });
+            const file = new File([blob], `voice-message.${voiceFileExtension(type)}`, {
+                type,
+                lastModified: Date.now(),
+            });
+
+            setSending(true);
+            try {
+                await onSendVoice(file, durationSeconds);
+            } finally {
+                setSending(false);
+            }
+        };
+
+        recorder.stop();
+    }, [clearRecordingTimers, onErrorMessageChange, onSendVoice, stopVoiceStream]);
+
+    const startRecording = useCallback(async () => {
+        if (isRecording || sending || recordingStopping) {
+            return;
+        }
+        if (!onSendVoice) {
+            onErrorMessageChange?.('Голосовые сообщения недоступны.');
+            return;
+        }
+        if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+            onErrorMessageChange?.('Браузер не поддерживает запись голосовых сообщений.');
+            return;
+        }
+
+        const mimeType = supportedVoiceMimeType();
+        if (!mimeType) {
+            onErrorMessageChange?.('Браузер не поддерживает запись WebM/Ogg аудио.');
+            return;
+        }
+
+        try {
+            onErrorMessageChange?.('');
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const recorder = new MediaRecorder(stream, { mimeType });
+
+            voiceChunksRef.current = [];
+            voiceStreamRef.current = stream;
+            mediaRecorderRef.current = recorder;
+            recordingStartedAtRef.current = Date.now();
+
+            recorder.ondataavailable = event => {
+                if (event.data.size > 0) {
+                    voiceChunksRef.current.push(event.data);
+                }
+            };
+            recorder.onerror = () => {
+                onErrorMessageChange?.('Не удалось записать голосовое сообщение.');
+                stopRecording(false);
+            };
+
+            recorder.start();
+            setIsRecording(true);
+            setRecordingElapsed(0);
+            recordingTimerRef.current = window.setInterval(() => {
+                setRecordingElapsed(Math.floor((Date.now() - recordingStartedAtRef.current) / 1000));
+            }, 250);
+            recordingMaxTimerRef.current = window.setTimeout(() => {
+                stopRecording(true);
+            }, chatVoiceMaxDurationSeconds * 1000);
+        } catch {
+            clearRecordingTimers();
+            stopVoiceStream();
+            onErrorMessageChange?.('Разрешите доступ к микрофону, чтобы записать голосовое сообщение.');
+        }
+    }, [
+        clearRecordingTimers,
+        isRecording,
+        onErrorMessageChange,
+        onSendVoice,
+        recordingStopping,
+        sending,
+        stopRecording,
+        stopVoiceStream,
+    ]);
+
+    useEffect(() => {
+        return () => {
+            clearRecordingTimers();
+            const recorder = mediaRecorderRef.current;
+            if (recorder && recorder.state !== 'inactive') {
+                recorder.onstop = null;
+                recorder.stop();
+            }
+            stopVoiceStream();
+        };
+    }, [clearRecordingTimers, stopVoiceStream]);
 
     const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
         const files = imageFilesFromClipboard(event.clipboardData);
@@ -192,6 +376,32 @@ export const ChatInput = ({
                 </div>
             )}
 
+            {isRecording && (
+                <div className="mb-3 flex items-center gap-3 rounded-xl border border-sky-100 bg-sky-50 px-3 py-2 text-sm text-sky-800">
+                    <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />
+                    <span className="font-semibold">{formatDuration(recordingElapsed)}</span>
+                    <span className="min-w-0 flex-1 truncate text-sky-700">
+                        Запись голосового сообщения
+                    </span>
+                    <button
+                        type="button"
+                        onClick={() => stopRecording(false)}
+                        disabled={recordingStopping}
+                        className="rounded-lg px-2 py-1 text-sky-700 transition hover:bg-white disabled:opacity-60"
+                    >
+                        Отмена
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => stopRecording(true)}
+                        disabled={recordingStopping}
+                        className="rounded-lg bg-sky-600 px-3 py-1 font-medium text-white transition hover:bg-sky-700 disabled:opacity-60"
+                    >
+                        Отправить
+                    </button>
+                </div>
+            )}
+
             <div className="relative flex gap-2 items-end">
                 <input
                     ref={fileInputRef}
@@ -209,7 +419,8 @@ export const ChatInput = ({
                 <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="w-10 h-10 rounded-full border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 transition flex items-center justify-center flex-shrink-0"
+                    disabled={isRecording || sending}
+                    className="w-10 h-10 rounded-full border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 transition flex items-center justify-center flex-shrink-0 disabled:opacity-50"
                     title="Прикрепить картинку"
                 >
                     <Icon name="image" />
@@ -240,7 +451,8 @@ export const ChatInput = ({
                 <button
                     type="button"
                     onClick={() => setShowEmojiPicker(prev => !prev)}
-                    className="w-10 h-10 rounded-full border border-gray-200 bg-white hover:bg-gray-50 transition flex items-center justify-center flex-shrink-0"
+                    disabled={isRecording}
+                    className="w-10 h-10 rounded-full border border-gray-200 bg-white hover:bg-gray-50 transition flex items-center justify-center flex-shrink-0 disabled:opacity-50"
                     title="Эмодзи">
                     😊
                 </button>
@@ -267,8 +479,18 @@ export const ChatInput = ({
                     </div>
                 )}
                 <button
+                    type="button"
+                    onClick={() => void startRecording()}
+                    disabled={selectedFiles.length > 0 || sending || isRecording || recordingStopping}
+                    className="w-10 h-10 rounded-full border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 transition flex items-center justify-center flex-shrink-0 disabled:opacity-50"
+                    title="Записать голосовое"
+                    aria-label="Записать голосовое сообщение"
+                >
+                    <Icon name="mic" />
+                </button>
+                <button
                     onClick={() => void handleSend()}
-                    disabled={!canSend || sending}
+                    disabled={!canSend || sending || isRecording}
                     className="w-10 h-10 bg-sky-600 text-white rounded-full hover:bg-sky-700 transition disabled:opacity-50 flex items-center justify-center flex-shrink-0">
                     <Icon name="send" />
                 </button>

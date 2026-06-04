@@ -27,9 +27,36 @@ import {
     filesFromDataTransfer,
     imageFilesFromClipboard,
     compressChatImage,
+    validateVoiceFile,
 } from "@/shared/utils/uploadValidation.js";
 
 const optimisticMessageFloor = 10000000;
+
+function attachmentsMatchOptimistic(pending: Message, received: Message) {
+    const pendingAttachments = pending.attachments || [];
+    const receivedAttachments = received.attachments || [];
+
+    if (pendingAttachments.length !== receivedAttachments.length) {
+        return false;
+    }
+
+    return pendingAttachments.every((attachment, index) => {
+        const receivedAttachment = receivedAttachments[index];
+
+        if (!receivedAttachment || attachment.file_type !== receivedAttachment.file_type) {
+            return false;
+        }
+
+        if (attachment.file_type === 'voice') {
+            return (attachment.duration_seconds || attachment.duration || 0) ===
+                (receivedAttachment.duration_seconds || receivedAttachment.duration || 0);
+        }
+
+        return attachment.width === receivedAttachment.width &&
+            attachment.height === receivedAttachment.height &&
+            attachment.size === receivedAttachment.size;
+    });
+}
 
 function Chat() {
     const { userId } = useParams();
@@ -90,7 +117,8 @@ function Chat() {
                     m.from_id === msg.from_id &&
                     m.to_id === msg.to_id &&
                     m.content === msg.content &&
-                    (m.reply_to_message_id ?? null) === (msg.reply_to_message_id ?? null)
+                    (m.reply_to_message_id ?? null) === (msg.reply_to_message_id ?? null) &&
+                    attachmentsMatchOptimistic(m, msg)
                 );
                 if (optimisticIndex !== -1) {
                     return prev.map((m, index) => index === optimisticIndex ? msg : m);
@@ -209,6 +237,55 @@ function Chat() {
             setSendStatus('');
         }
     }, [currentUser, newMessage, replyToMessage, sendMessageToStore, uploadAttachments, userId, wsService]);
+
+    const sendVoiceMessage = useCallback(async (file: File, durationSeconds: number) => {
+        if (!(currentUser?.isEmailVerified ?? currentUser?.is_email_verified ?? false)) {
+            setUploadError('Подтвердите email, чтобы продолжить');
+            return false;
+        }
+
+        const validationError = validateVoiceFile(file, durationSeconds);
+        if (validationError) {
+            setUploadError(validationError);
+            return false;
+        }
+
+        try {
+            setUploadError('');
+            setSendStatus('Загружаем голосовое сообщение');
+            const attachment = await messageService.uploadVoice(file, durationSeconds);
+            const attachments = [attachment];
+            setSendStatus('Отправляем голосовое сообщение');
+
+            const tempMessage: Message = {
+                id: Date.now(),
+                from_id: currentUser?.id || 0,
+                to_id: Number(userId),
+                content: '',
+                created_at: new Date().toISOString(),
+                is_read: false,
+                reply_to_message_id: replyToMessage?.id ?? null,
+                reply_to_message: replyToMessage,
+                forwarded_from_message_id: null,
+                forwarded_from_user_id: null,
+                forwarded_from_message: null,
+                forwarded_from_user: null,
+                from: { id: currentUser?.id || 0, name: currentUser?.name || '', email: currentUser?.email || '' },
+                attachments,
+            };
+
+            sendMessageToStore('', tempMessage);
+            wsService.send(Number(userId), '', attachments, replyToMessage?.id);
+            setReplyToMessage(null);
+            return true;
+        } catch (error) {
+            console.error(error);
+            setUploadError(getUploadErrorMessage(error, 'Не удалось отправить голосовое сообщение'));
+            return false;
+        } finally {
+            setSendStatus('');
+        }
+    }, [currentUser, replyToMessage, sendMessageToStore, userId, wsService]);
 
     const openForwardDialog = useCallback((message: Message) => {
         setForwardMessage(message);
@@ -444,6 +521,7 @@ function Chat() {
                     handleTyping();
                 }}
                 onSend={sendMessage}
+                onSendVoice={sendVoiceMessage}
                 errorMessage={uploadError}
                 onErrorMessageChange={setUploadError}
                 incomingFiles={incomingFiles}

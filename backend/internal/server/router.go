@@ -123,6 +123,7 @@ func registerMessageRoutes(router *gin.Engine, database *gorm.DB) {
 	messages.GET("/uploads/:filename", handlers.GetUploadedMessageImage())
 	messages.GET("/attachments/:id", handlers.GetMessageAttachment(database))
 	messages.POST("/upload", middleware.RequireVerifiedEmail(database), middleware.RateLimitMiddleware(60, time.Hour), handlers.UploadMessageImage(database))
+	messages.POST("/upload-voice", middleware.RequireVerifiedEmail(database), middleware.RateLimitMiddleware(60, time.Hour), handlers.UploadMessageVoice(database))
 	messages.POST("/send/:toId", middleware.RequireVerifiedEmail(database), middleware.RateLimitMiddleware(30, 10*time.Minute), handlers.SendMessage(database))
 	messages.POST("/:messageId/forward", middleware.RequireVerifiedEmail(database), middleware.RateLimitMiddleware(30, 10*time.Minute), handlers.ForwardMessage(database))
 	messages.PATCH("/:messageId", handlers.UpdateMessage(database))

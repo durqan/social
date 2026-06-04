@@ -6,6 +6,8 @@ import {
   Image,
   Linking,
   Modal,
+  PermissionsAndroid,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -15,6 +17,11 @@ import {
 import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { launchImageLibrary } from 'react-native-image-picker';
 import type { Asset } from 'react-native-image-picker';
+import Sound, {
+  AudioEncoderAndroidType,
+  AudioSourceAndroidType,
+  OutputFormatAndroidType,
+} from 'react-native-nitro-sound';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 
@@ -22,12 +29,16 @@ import {
   assetURL,
   CHAT_IMAGE_MAX_COUNT,
   CHAT_IMAGE_MIME_TYPES,
+  CHAT_VOICE_MAX_DURATION_SECONDS,
+  CHAT_VOICE_MIME_TYPE,
 } from '../../config/env';
-import { getApiErrorMessage } from '../../api/http';
+import { getApiErrorMessage, getCookieHeader } from '../../api/http';
 import {
   messageApi,
   validateLocalChatImage,
+  validateLocalVoiceMessage,
   type LocalChatImage,
+  type LocalVoiceMessage,
 } from '../../api/messages';
 import type { Message, MessageAttachment } from '../../api/types';
 import { chatSocket, type WsEvent } from '../../api/ws';
@@ -44,7 +55,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useCall } from '../../context/CallContext';
 import { useUnread } from '../../context/UnreadContext';
 import { colors } from '../../theme/colors';
-import { formatDateTime } from '../../utils/format';
+import { formatDateTime, formatDuration } from '../../utils/format';
 import type { ChatStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'Chat'>;
@@ -53,6 +64,14 @@ const composerInputMinHeight = 48;
 const composerInputMaxHeight = 136;
 const messagePageSize = 50;
 const loadOlderThreshold = 56;
+const voiceAudioSet = {
+  AudioSourceAndroid: AudioSourceAndroidType.MIC,
+  OutputFormatAndroid: OutputFormatAndroidType.WEBM,
+  AudioEncoderAndroid: AudioEncoderAndroidType.VORBIS,
+  AudioChannels: 1,
+  AudioSamplingRate: 44100,
+  AudioEncodingBitRate: 64000,
+} as const;
 
 const urlPattern = /(https?:\/\/[^\s<]+|www\.[^\s<]+)/gi;
 
@@ -154,6 +173,13 @@ export default function ChatScreen({ route }: Props) {
     input: string;
     pendingImages: LocalChatImage[];
   } | null>(null);
+  const recordingStartedAtRef = useRef(0);
+  const recordingSecondsRef = useRef(0);
+  const recordingActiveRef = useRef(false);
+  const recordingMaxTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const playingVoiceUrlRef = useRef<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [inputHeight, setInputHeight] = useState(composerInputMinHeight);
@@ -166,11 +192,17 @@ export default function ChatScreen({ route }: Props) {
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [hasLoaded, setHasLoaded] = useState(false);
-  const [sending, setSending] = useState<'uploading' | 'sending' | null>(null);
+  const [sending, setSending] = useState<
+    'uploading' | 'uploadingVoice' | 'sending' | null
+  >(null);
   const [uploadProgress, setUploadProgress] = useState<{
     current: number;
     total: number;
   } | null>(null);
+  const [recording, setRecording] = useState(false);
+  const [recordingBusy, setRecordingBusy] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [playingVoiceUrl, setPlayingVoiceUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copyNotice, setCopyNotice] = useState<string | null>(null);
 
@@ -188,8 +220,24 @@ export default function ChatScreen({ route }: Props) {
   }, [messages]);
 
   useEffect(() => {
+    playingVoiceUrlRef.current = playingVoiceUrl;
+  }, [playingVoiceUrl]);
+
+  useEffect(() => {
     hasMoreRef.current = hasMore;
   }, [hasMore]);
+
+  useEffect(() => {
+    return () => {
+      if (recordingMaxTimerRef.current) {
+        clearTimeout(recordingMaxTimerRef.current);
+      }
+      Sound.removeRecordBackListener();
+      Sound.removePlaybackEndListener();
+      Sound.stopPlayer().catch(() => undefined);
+      Sound.stopRecorder().catch(() => undefined);
+    };
+  }, []);
 
   const scrollToLatestMessage = useCallback(() => {
     requestAnimationFrame(() => {
@@ -507,6 +555,158 @@ export default function ChatScreen({ route }: Props) {
     );
   }
 
+  async function ensureRecordAudioPermission() {
+    if (Platform.OS !== 'android') {
+      return true;
+    }
+
+    const granted = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+      {
+        title: 'Доступ к микрофону',
+        message: 'Разрешите доступ к микрофону, чтобы записывать голосовые сообщения.',
+        buttonNegative: 'Отмена',
+        buttonPositive: 'Разрешить',
+      },
+    );
+
+    return granted === PermissionsAndroid.RESULTS.GRANTED;
+  }
+
+  function clearRecordingLimitTimer() {
+    if (recordingMaxTimerRef.current) {
+      clearTimeout(recordingMaxTimerRef.current);
+      recordingMaxTimerRef.current = null;
+    }
+  }
+
+  async function startVoiceRecording() {
+    if (recordingActiveRef.current || recordingBusy || sending || editingMessage) {
+      return;
+    }
+    if (pendingImages.length > 0) {
+      setError('Сначала отправьте или удалите выбранные изображения');
+      return;
+    }
+
+    setRecordingBusy(true);
+    setError(null);
+
+    try {
+      const permitted = await ensureRecordAudioPermission();
+      if (!permitted) {
+        setError('Разрешите доступ к микрофону, чтобы записать голосовое сообщение');
+        return;
+      }
+
+      Sound.setSubscriptionDuration(0.25);
+      Sound.removeRecordBackListener();
+      Sound.addRecordBackListener(event => {
+        const seconds = Math.max(
+          0,
+          Math.floor((event.currentPosition || event.recordSecs || 0) / 1000),
+        );
+        recordingSecondsRef.current = seconds;
+        setRecordingSeconds(seconds);
+      });
+
+      await Sound.startRecorder(undefined, voiceAudioSet, false);
+      recordingStartedAtRef.current = Date.now();
+      recordingSecondsRef.current = 0;
+      recordingActiveRef.current = true;
+      setRecordingSeconds(0);
+      setRecording(true);
+      recordingMaxTimerRef.current = setTimeout(() => {
+        stopVoiceRecording(true).catch(() => undefined);
+      }, CHAT_VOICE_MAX_DURATION_SECONDS * 1000);
+    } catch (apiError) {
+      Sound.removeRecordBackListener();
+      setError(getApiErrorMessage(apiError));
+    } finally {
+      setRecordingBusy(false);
+    }
+  }
+
+  async function stopVoiceRecording(send: boolean) {
+    if (!recordingActiveRef.current || recordingBusy) {
+      return;
+    }
+
+    setRecordingBusy(true);
+    clearRecordingLimitTimer();
+    Sound.removeRecordBackListener();
+
+    let path = '';
+    try {
+      path = await Sound.stopRecorder();
+    } catch (apiError) {
+      if (send) {
+        setError(getApiErrorMessage(apiError));
+      }
+    }
+
+    const fallbackSeconds = Math.ceil(
+      (Date.now() - recordingStartedAtRef.current) / 1000,
+    );
+    const durationSeconds = Math.max(
+      1,
+      recordingSecondsRef.current || fallbackSeconds,
+    );
+
+    recordingActiveRef.current = false;
+    recordingStartedAtRef.current = 0;
+    recordingSecondsRef.current = 0;
+    setRecording(false);
+    setRecordingSeconds(0);
+    setRecordingBusy(false);
+
+    if (send && path) {
+      await sendVoiceMessage(path, durationSeconds);
+    }
+  }
+
+  async function sendVoiceMessage(path: string, durationSeconds: number) {
+    const uri =
+      path.startsWith('file://') || path.startsWith('content://')
+        ? path
+        : `file://${path}`;
+    const voice: LocalVoiceMessage = {
+      uri,
+      type: CHAT_VOICE_MIME_TYPE,
+      fileName: `voice-message-${Date.now()}.webm`,
+      durationSeconds,
+    };
+    const validationError = validateLocalVoiceMessage(voice);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    setSending('uploadingVoice');
+    setUploadProgress(null);
+    setError(null);
+
+    try {
+      const attachment = await messageApi.uploadVoice(voice);
+      const attachments = [attachment];
+
+      setSending('sending');
+      if (chatSocket.isConnected()) {
+        chatSocket.sendMessage(otherUserId, '', attachments);
+      } else {
+        const sent = await messageApi.sendMessage(otherUserId, '', attachments);
+        shouldScrollToEndRef.current = true;
+        setMessages(previous => [...previous, sent]);
+        signalChatDataChanged();
+      }
+    } catch (apiError) {
+      setError(getApiErrorMessage(apiError));
+    } finally {
+      setSending(null);
+      setUploadProgress(null);
+    }
+  }
+
   async function sendMessage() {
     const trimmed = input.trim();
 
@@ -638,6 +838,36 @@ export default function ChatScreen({ route }: Props) {
     setCopyNotice(notice);
   }
 
+  async function toggleVoicePlayback(url: string) {
+    try {
+      if (playingVoiceUrlRef.current === url) {
+        await Sound.stopPlayer();
+        Sound.removePlaybackEndListener();
+        setPlayingVoiceUrl(null);
+        return;
+      }
+
+      if (playingVoiceUrlRef.current) {
+        await Sound.stopPlayer().catch(() => undefined);
+      }
+
+      Sound.removePlaybackEndListener();
+      Sound.addPlaybackEndListener(() => {
+        Sound.removePlaybackEndListener();
+        setPlayingVoiceUrl(null);
+      });
+
+      const cookieHeader = await getCookieHeader();
+      const headers = cookieHeader ? { Cookie: cookieHeader } : undefined;
+      await Sound.startPlayer(url, headers);
+      setPlayingVoiceUrl(url);
+    } catch (apiError) {
+      Sound.removePlaybackEndListener();
+      setPlayingVoiceUrl(null);
+      setError(getApiErrorMessage(apiError));
+    }
+  }
+
   async function deleteSelectedMessage(message: Message) {
     setSelectedMessage(null);
 
@@ -719,6 +949,8 @@ export default function ChatScreen({ route }: Props) {
               message={item}
               outgoing={item.from_id === user?.id}
               onImagePress={setSelectedImageUrl}
+              onVoicePress={url => toggleVoicePlayback(url)}
+              playingVoiceUrl={playingVoiceUrl}
               onLongPress={() => openMessageActions(item)}
             />
           )}
@@ -737,7 +969,7 @@ export default function ChatScreen({ route }: Props) {
           ListEmptyComponent={
             <EmptyState
               title="Сообщений пока нет"
-              text="Напишите первым или отправьте изображение."
+              text="Напишите первым, отправьте изображение или голосовое."
             />
           }
         />
@@ -764,7 +996,9 @@ export default function ChatScreen({ route }: Props) {
         <View style={styles.sendStatus}>
           <ActivityIndicator color={colors.accent} />
           <Text style={styles.sendStatusText}>
-            {sending === 'uploading'
+            {sending === 'uploadingVoice'
+              ? 'Загружаем голосовое сообщение'
+              : sending === 'uploading'
               ? uploadProgress
                 ? `Загружаем изображения: ${uploadProgress.current} из ${uploadProgress.total}`
                 : 'Загружаем изображение'
@@ -791,12 +1025,50 @@ export default function ChatScreen({ route }: Props) {
         </View>
       ) : null}
 
+      {recording ? (
+        <View style={styles.recordingBar}>
+          <View style={styles.recordingDot} />
+          <Text style={styles.recordingTime}>{formatDuration(recordingSeconds)}</Text>
+          <Text style={styles.recordingText} numberOfLines={1}>
+            Запись голосового сообщения
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            style={styles.recordingCancel}
+            disabled={recordingBusy}
+            onPress={() => stopVoiceRecording(false)}
+          >
+            <Text style={styles.recordingCancelText}>Отмена</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            style={styles.recordingSend}
+            disabled={recordingBusy}
+            onPress={() => stopVoiceRecording(true)}
+          >
+            <Text style={styles.recordingSendText}>Отправить</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
       <View style={styles.composer}>
         <AppButton
           title="Фото"
           variant="secondary"
-          disabled={Boolean(sending) || Boolean(editingMessage)}
+          disabled={Boolean(sending) || Boolean(editingMessage) || recording}
           onPress={pickImages}
+        />
+        <AppButton
+          title="Голос"
+          variant="secondary"
+          disabled={
+            Boolean(sending) ||
+            Boolean(editingMessage) ||
+            pendingImages.length > 0 ||
+            recording ||
+            recordingBusy
+          }
+          onPress={startVoiceRecording}
         />
         <TextInput
           value={input}
@@ -809,7 +1081,7 @@ export default function ChatScreen({ route }: Props) {
           multiline
           scrollEnabled={inputHeight >= composerInputMaxHeight}
           maxLength={1000}
-          editable={!sending}
+          editable={!sending && !recording}
           textAlignVertical="top"
           style={[styles.input, { height: inputHeight }]}
         />
@@ -817,6 +1089,7 @@ export default function ChatScreen({ route }: Props) {
           title={editingMessage ? 'Сохранить' : 'Отправить'}
           disabled={
             Boolean(sending) ||
+            recording ||
             (!input.trim() && !editingMessage && pendingImages.length === 0)
           }
           loading={Boolean(sending)}
@@ -888,11 +1161,15 @@ function MessageBubble({
   message,
   outgoing,
   onImagePress,
+  onVoicePress,
+  playingVoiceUrl,
   onLongPress,
 }: {
   message: Message;
   outgoing: boolean;
   onImagePress: (url: string) => void;
+  onVoicePress: (url: string) => void;
+  playingVoiceUrl: string | null;
   onLongPress: () => void;
 }) {
   return (
@@ -933,16 +1210,64 @@ function MessageBubble({
         ) : null}
 
         {message.attachments?.map(attachment => {
-          const imageUrl = assetURL(attachment.file_url);
+          const attachmentUrl = assetURL(attachment.file_url);
+
+          if (attachment.file_type === 'voice') {
+            const isPlaying = playingVoiceUrl === attachmentUrl;
+            return (
+              <Pressable
+                key={attachment.id ?? attachment.file_url}
+                accessibilityRole="button"
+                style={[
+                  styles.voiceAttachment,
+                  outgoing && styles.voiceAttachmentOutgoing,
+                ]}
+                onPress={() => onVoicePress(attachmentUrl)}
+                onLongPress={onLongPress}
+              >
+                <View
+                  style={[
+                    styles.voicePlayButton,
+                    isPlaying && styles.voicePlayButtonActive,
+                  ]}
+                >
+                  <Text style={styles.voicePlayText}>
+                    {isPlaying ? 'Ⅱ' : '▶'}
+                  </Text>
+                </View>
+                <View style={styles.voiceInfo}>
+                  <Text
+                    style={[
+                      styles.voiceTitle,
+                      outgoing && styles.voiceTitleOutgoing,
+                    ]}
+                  >
+                    Голосовое сообщение
+                  </Text>
+                  <Text
+                    style={[
+                      styles.voiceDuration,
+                      outgoing && styles.voiceDurationOutgoing,
+                    ]}
+                  >
+                    {formatDuration(
+                      attachment.duration_seconds ?? attachment.duration,
+                    )}
+                  </Text>
+                </View>
+              </Pressable>
+            );
+          }
+
           return (
             <Pressable
               key={attachment.id ?? attachment.file_url}
               accessibilityRole="imagebutton"
-              onPress={() => onImagePress(imageUrl)}
+              onPress={() => onImagePress(attachmentUrl)}
               onLongPress={onLongPress}
             >
               <Image
-                source={{ uri: imageUrl }}
+                source={{ uri: attachmentUrl }}
                 style={styles.messageImage}
                 resizeMode="cover"
               />
@@ -995,7 +1320,7 @@ function MessageActionSheet({
           <View style={styles.sheetHandle} />
           <Text style={styles.sheetTitle}>Сообщение</Text>
 
-          {message && isOwn ? (
+          {message && isOwn && trimmedText ? (
             <Pressable
               accessibilityRole="button"
               style={styles.sheetAction}
@@ -1134,6 +1459,57 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: colors.surfaceMuted,
   },
+  voiceAttachment: {
+    minWidth: 220,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    backgroundColor: colors.surfaceMuted,
+  },
+  voiceAttachmentOutgoing: {
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+  },
+  voicePlayButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent,
+  },
+  voicePlayButtonActive: {
+    backgroundColor: colors.accentStrong,
+  },
+  voicePlayText: {
+    color: '#ffffff',
+    fontSize: 15,
+    lineHeight: 18,
+    fontWeight: '800',
+  },
+  voiceInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+  voiceTitle: {
+    color: colors.text,
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '700',
+  },
+  voiceTitleOutgoing: {
+    color: '#ffffff',
+  },
+  voiceDuration: {
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  voiceDurationOutgoing: {
+    color: 'rgba(255, 255, 255, 0.78)',
+  },
   previewStrip: {
     flexDirection: 'row',
     gap: 8,
@@ -1225,6 +1601,57 @@ const styles = StyleSheet.create({
     fontSize: 24,
     lineHeight: 26,
     fontWeight: '600',
+  },
+  recordingBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    backgroundColor: '#eff8ff',
+  },
+  recordingDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    backgroundColor: colors.danger,
+  },
+  recordingTime: {
+    minWidth: 38,
+    color: colors.accentStrong,
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '800',
+  },
+  recordingText: {
+    flex: 1,
+    color: colors.muted,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  recordingCancel: {
+    borderRadius: 12,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+    backgroundColor: colors.surface,
+  },
+  recordingCancelText: {
+    color: colors.muted,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  recordingSend: {
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    backgroundColor: colors.accent,
+  },
+  recordingSendText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '800',
   },
   composer: {
     flexDirection: 'row',

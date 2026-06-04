@@ -69,7 +69,20 @@ func GetConversations(db *gorm.DB, userID uint) ([]map[string]interface{}, error
                 u.avatar_position_x,
                 u.avatar_position_y,
                 u.avatar_scale,
-                m.content as last_message,
+                COALESCE(
+                    NULLIF(m.content, ''),
+                    CASE
+                        WHEN EXISTS (
+                            SELECT 1 FROM message_attachments ma
+                            WHERE ma.message_id = m.id AND ma.file_type = 'voice'
+                        ) THEN 'Голосовое сообщение'
+                        WHEN EXISTS (
+                            SELECT 1 FROM message_attachments ma
+                            WHERE ma.message_id = m.id AND ma.file_type = 'image'
+                        ) THEN 'Изображение'
+                        ELSE ''
+                    END
+                ) as last_message,
                 m.created_at as last_message_at,
                 m.from_id as last_sender_id,
                 sender.name as last_sender_name,

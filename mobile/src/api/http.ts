@@ -289,10 +289,31 @@ export function getApiErrorMessage(error: unknown) {
       'Сообщения можно отправлять только друзьям',
     'message content or image is required':
       'Введите сообщение или выберите изображение',
+    'message content or attachment is required':
+      'Введите сообщение или добавьте вложение',
     'message content must be 1000 characters or less':
       'Сообщение должно быть не длиннее 1000 символов',
     'image is too large': 'Изображение должно быть не больше 10 МБ',
     'image must be jpeg, png or webp': 'Поддерживаются только JPEG, PNG и WebP',
+    'unsupported attachment type': 'Этот тип вложения не поддерживается',
+    'cannot mix image and voice attachments':
+      'Голосовое сообщение нельзя отправить вместе с изображениями',
+    'only one voice attachment is supported':
+      'Можно отправить только одно голосовое сообщение за раз',
+    'voice is required': 'Запишите голосовое сообщение',
+    'voice is too large': 'Голосовое сообщение должно быть не больше 12 МБ',
+    'voice must be webm or ogg':
+      'Голосовое сообщение должно быть в формате WebM или Ogg',
+    'voice content does not match content type':
+      'Файл поврежден или не является корректным аудио',
+    'invalid voice': 'Файл поврежден или не является корректным аудио',
+    'failed to read voice':
+      'Не удалось прочитать голосовое сообщение. Попробуйте записать снова.',
+    'failed to save voice':
+      'Не удалось сохранить голосовое сообщение. Попробуйте позже.',
+    'voice duration is required':
+      'Не удалось определить длительность голосового сообщения',
+    'voice is too long': 'Голосовое сообщение должно быть не длиннее 5 минут',
     'avatar is too large': 'Аватар должен быть не больше 5 МБ',
     'avatar is required': 'Выберите изображение для аватара',
     'avatar must be jpeg, png or webp':

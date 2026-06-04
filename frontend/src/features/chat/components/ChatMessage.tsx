@@ -3,6 +3,7 @@ import type { Message } from "@/shared/types/domain.js";
 import { Avatar } from "@/shared/ui/Avatar.js";
 import { ImageViewer } from "@/shared/ui/ImageViewer.js";
 import { messageAuthorName, messagePreviewText } from "@/features/chat/lib/messagePreview.js";
+import { formatDuration } from "@/shared/utils/uploadValidation.js";
 
 const urlPattern = /(https?:\/\/[^\s<]+|www\.[^\s<]+)/gi;
 
@@ -124,6 +125,8 @@ const ChatMessageComponent = ({
     const suppressNextClickRef = useRef(false);
     const touchStartRef = useRef<{ x: number; y: number } | null>(null);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+    const imageAttachments = message.attachments?.filter(attachment => attachment.file_type === 'image') || [];
+    const voiceAttachments = message.attachments?.filter(attachment => attachment.file_type === 'voice') || [];
 
     const clearLongPressTimer = () => {
         if (longPressTimer.current) {
@@ -319,9 +322,45 @@ const ChatMessageComponent = ({
                                 </button>
                             )}
 
-                            {message.attachments?.length ? (
-                                <div className={`grid gap-2 ${message.attachments.length > 1 ? 'grid-cols-2' : 'grid-cols-1'} ${message.content ? 'mb-2' : ''}`}>
-                                    {message.attachments.map(attachment => (
+                            {voiceAttachments.length ? (
+                                <div className={message.content || imageAttachments.length ? 'mb-2 space-y-2' : 'space-y-2'}>
+                                    {voiceAttachments.map(attachment => (
+                                        <div
+                                            key={attachment.id ?? attachment.file_url}
+                                            className={`flex min-w-56 items-center gap-2 rounded-xl px-3 py-2 ${isOwn ? 'bg-white/70' : 'bg-gray-50'}`}
+                                            onClick={event => {
+                                                if (selectionMode) {
+                                                    event.preventDefault();
+                                                    event.stopPropagation();
+                                                    if (canSelect) {
+                                                        onSelectMessage();
+                                                    }
+                                                    return;
+                                                }
+                                                event.stopPropagation();
+                                            }}
+                                        >
+                                            <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-sky-600 text-sm text-white">
+                                                ▶
+                                            </span>
+                                            <audio
+                                                controls
+                                                preload="metadata"
+                                                src={attachment.file_url}
+                                                className="h-9 min-w-0 flex-1"
+                                                onClick={event => event.stopPropagation()}
+                                            />
+                                            <span className="text-xs font-medium text-gray-500">
+                                                {formatDuration(attachment.duration_seconds || attachment.duration)}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : null}
+
+                            {imageAttachments.length ? (
+                                <div className={`grid gap-2 ${imageAttachments.length > 1 ? 'grid-cols-2' : 'grid-cols-1'} ${message.content ? 'mb-2' : ''}`}>
+                                    {imageAttachments.map(attachment => (
                                         <button
                                             type="button"
                                             key={attachment.file_url}

@@ -1,11 +1,14 @@
 package handlers
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"image"
+	"io"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"tester/internal/repository"
@@ -106,6 +109,109 @@ func UploadMessageImage(db *gorm.DB) gin.HandlerFunc {
 			Size:     file.Size,
 		})
 	}
+}
+
+func UploadMessageVoice(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, ok := authenticatedUserID(c)
+		if !ok {
+			return
+		}
+
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, services.ChatVoiceMaxRequestSize)
+
+		file, err := c.FormFile("voice")
+		if err != nil {
+			var maxBytesError *http.MaxBytesError
+			if errors.As(err, &maxBytesError) {
+				c.JSON(413, gin.H{"error": "voice is too large"})
+				return
+			}
+
+			c.JSON(400, gin.H{"error": "voice is required"})
+			return
+		}
+
+		if file.Size <= 0 {
+			c.JSON(400, gin.H{"error": "voice is required"})
+			return
+		}
+		if file.Size > services.ChatVoiceMaxSize {
+			c.JSON(413, gin.H{"error": "voice is too large"})
+			return
+		}
+
+		src, err := file.Open()
+		if err != nil {
+			c.JSON(400, gin.H{"error": "failed to read voice"})
+			return
+		}
+		defer src.Close()
+
+		data, err := io.ReadAll(src)
+		if err != nil {
+			c.JSON(400, gin.H{"error": "failed to read voice"})
+			return
+		}
+		if int64(len(data)) > services.ChatVoiceMaxSize {
+			c.JSON(413, gin.H{"error": "voice is too large"})
+			return
+		}
+
+		contentType, ext, err := services.ValidateChatVoiceUpload(data, file.Header.Get("Content-Type"))
+		if err != nil {
+			c.JSON(415, gin.H{"error": err.Error()})
+			return
+		}
+
+		durationSeconds, hasDuration := voiceDurationSecondsFromForm(c)
+		if !hasDuration {
+			c.JSON(400, gin.H{"error": "voice duration is required"})
+			return
+		}
+		durationSeconds, err = services.ValidateChatVoiceDurationSeconds(durationSeconds)
+		if err != nil {
+			c.JSON(400, gin.H{"error": err.Error()})
+			return
+		}
+
+		key, err := storage.NewObjectKey(fmt.Sprintf("voice/user_%d", userID), ext)
+		if err != nil {
+			c.JSON(500, gin.H{"error": "failed to create voice filename"})
+			return
+		}
+		filename := filepath.Base(key)
+
+		store, err := storage.Default()
+		if err != nil {
+			c.JSON(500, gin.H{"error": "failed to prepare upload storage"})
+			return
+		}
+
+		if err := store.Upload(c.Request.Context(), key, bytes.NewReader(data), contentType); err != nil {
+			c.JSON(500, gin.H{"error": "failed to save voice"})
+			return
+		}
+		services.RememberChatUploadOwner(filename, userID)
+
+		c.JSON(201, services.MessageAttachmentInput{
+			AttachmentID:    strings.TrimSuffix(filename, filepath.Ext(filename)),
+			FileURL:         services.PrivateUploadURL(filename),
+			FileType:        "voice",
+			Duration:        durationSeconds,
+			DurationSeconds: durationSeconds,
+			Size:            int64(len(data)),
+		})
+	}
+}
+
+func voiceDurationSecondsFromForm(c *gin.Context) (int, bool) {
+	for _, key := range []string{"duration", "duration_seconds"} {
+		if duration, ok := services.ParseChatVoiceDurationSeconds(c.PostForm(key)); ok {
+			return duration, true
+		}
+	}
+	return 0, false
 }
 
 func GetUploadedMessageImage() gin.HandlerFunc {
