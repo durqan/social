@@ -1805,11 +1805,6 @@ function MessageBubble({
                     onEnd={() => onVideoNotePress(attachmentUrl)}
                     controls={false}
                     repeat={false}
-                    onError={(e: any) => {
-                      // eslint-disable-next-line no-console
-                      console.warn('[VideoNote] playback error', attachmentUrl, e);
-                      onVideoNotePress(attachmentUrl);
-                    }}
                   />
                 ) : (
                   <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.4)' }}>

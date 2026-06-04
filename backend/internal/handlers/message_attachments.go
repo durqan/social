@@ -288,32 +288,7 @@ func GetMessageAttachment(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-func contentTypeForKey(key string) string {
-	ext := strings.ToLower(filepath.Ext(key))
-	switch ext {
-	case ".webm":
-		return "video/webm"
-	case ".mp4":
-		return "video/mp4"
-	case ".ogg":
-		return "audio/ogg"
-	case ".jpg", ".jpeg":
-		return "image/jpeg"
-	case ".png":
-		return "image/png"
-	case ".webp":
-		return "image/webp"
-	default:
-		return "application/octet-stream"
-	}
-}
-
 func serveStoredObject(c *gin.Context, store storage.Storage, key string) {
-	contentType := contentTypeForKey(key)
-	c.Header("Content-Type", contentType)
-	c.Header("Content-Disposition", "inline")
-	c.Header("Accept-Ranges", "bytes")
-
 	if filePath, ok := storage.LocalPath(store, key); ok {
 		c.File(filePath)
 		return
