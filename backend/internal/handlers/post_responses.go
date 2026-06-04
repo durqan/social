@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"tester/internal/dto"
 	"tester/internal/models"
 	"tester/internal/repository"
 
@@ -8,25 +9,25 @@ import (
 )
 
 type PostResponse struct {
-	ID            uint        `json:"id"`
-	Content       string      `json:"content"`
-	CreatedAt     string      `json:"created_at"`
-	UpdatedAt     string      `json:"updated_at"`
-	User          models.User `json:"user"`
-	LikesCount    int64       `json:"likes_count"`
-	CommentsCount int64       `json:"comments_count"`
-	IsLiked       bool        `json:"is_liked"`
+	ID            uint             `json:"id"`
+	Content       string           `json:"content"`
+	CreatedAt     string           `json:"created_at"`
+	UpdatedAt     string           `json:"updated_at"`
+	User          dto.UserResponse `json:"user"`
+	LikesCount    int64            `json:"likes_count"`
+	CommentsCount int64            `json:"comments_count"`
+	IsLiked       bool             `json:"is_liked"`
 }
 
 type CommentResponse struct {
-	ID         uint        `json:"id"`
-	Content    string      `json:"content"`
-	CreatedAt  string      `json:"created_at"`
-	UpdatedAt  string      `json:"updated_at"`
-	User       models.User `json:"user"`
-	PostID     uint        `json:"post_id"`
-	LikesCount int64       `json:"likes_count"`
-	IsLiked    bool        `json:"is_liked"`
+	ID         uint             `json:"id"`
+	Content    string           `json:"content"`
+	CreatedAt  string           `json:"created_at"`
+	UpdatedAt  string           `json:"updated_at"`
+	User       dto.UserResponse `json:"user"`
+	PostID     uint             `json:"post_id"`
+	LikesCount int64            `json:"likes_count"`
+	IsLiked    bool             `json:"is_liked"`
 }
 
 func buildPostResponse(db *gorm.DB, post models.Post, currentUserID uint) PostResponse {
@@ -39,7 +40,7 @@ func buildPostResponse(db *gorm.DB, post models.Post, currentUserID uint) PostRe
 		Content:       post.Content,
 		CreatedAt:     post.CreatedAt.Format("2006-01-02 15:04:05"),
 		UpdatedAt:     post.UpdatedAt.Format("2006-01-02 15:04:05"),
-		User:          post.User,
+		User:          dto.ToUserResponse(post.User),
 		LikesCount:    likesCount,
 		CommentsCount: commentsCount,
 		IsLiked:       isLiked,
@@ -63,7 +64,7 @@ func buildCommentResponse(db *gorm.DB, comment models.Comment, currentUserID uin
 		ID:         comment.ID,
 		Content:    comment.Content,
 		CreatedAt:  comment.CreatedAt.Format("2006-01-02 15:04:05"),
-		User:       comment.User,
+		User:       dto.ToUserResponse(comment.User),
 		PostID:     comment.PostID,
 		LikesCount: likesCount,
 		IsLiked:    isLiked,

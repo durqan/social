@@ -1,8 +1,11 @@
 package dto
 
 import (
-	"tester/internal/models"
+	"fmt"
+	"strings"
 	"time"
+
+	"tester/internal/models"
 )
 
 type UserResponse struct {
@@ -35,6 +38,7 @@ type ChangePasswordRequest struct {
 }
 
 func ToUserResponse(user models.User) UserResponse {
+	user = WithResolvedAvatar(user)
 	return UserResponse{
 		ID:              user.ID,
 		Name:            user.Name,
@@ -56,4 +60,23 @@ func ToUserResponses(users []models.User) []UserResponse {
 		responses = append(responses, ToUserResponse(user))
 	}
 	return responses
+}
+
+func WithResolvedAvatar(user models.User) models.User {
+	user.Avatar = AvatarEndpoint(user.ID, user.Avatar)
+	return user
+}
+
+func WithResolvedAvatars(users []models.User) []models.User {
+	for i := range users {
+		users[i] = WithResolvedAvatar(users[i])
+	}
+	return users
+}
+
+func AvatarEndpoint(userID uint, storedAvatar string) string {
+	if userID == 0 || strings.TrimSpace(storedAvatar) == "" {
+		return ""
+	}
+	return fmt.Sprintf("/api/avatars/users/%d", userID)
 }

@@ -118,20 +118,28 @@ docker compose -f docker-compose.prod.yml --profile turn up -d
 
 ### Storage
 
-По умолчанию backend использует локальное хранилище `uploads`. S3-compatible storage включается через:
+Для локальной разработки backend использует `STORAGE_DRIVER=local` и директорию `uploads`.
+В production compose по умолчанию включен `STORAGE_DRIVER=s3`:
 
 ```bash
 STORAGE_DRIVER=s3
 S3_ENDPOINT=https://<provider-endpoint>
 S3_REGION=auto
 S3_BUCKET=<bucket>
-S3_ACCESS_KEY_ID=<access-key>
-S3_SECRET_ACCESS_KEY=<secret-key>
-S3_PUBLIC_BASE_URL=https://<public-or-cdn-host>
+S3_ACCESS_KEY=<access-key>
+S3_SECRET_KEY=<secret-key>
+S3_PUBLIC_BASE_URL=
 S3_FORCE_PATH_STYLE=true
 ```
 
-Если `S3_PUBLIC_BASE_URL` не задан, backend все равно умеет генерировать signed URL для приватной выдачи вложений, но публичные аватары лучше отдавать через public bucket/CDN URL.
+`S3_PUBLIC_BASE_URL` опционален и нужен только если вы осознанно отдаете файлы через публичный CDN/base URL. Для приватного bucket оставьте его пустым: backend отдает вложения и аватары через backend endpoints с signed redirect.
+
+Для проверки S3 локально:
+
+```bash
+docker compose up -d minio minio-create-bucket
+cd backend && STORAGE_DRIVER=s3 S3_ENDPOINT=http://localhost:9000 S3_REGION=us-east-1 S3_BUCKET=social-local S3_ACCESS_KEY=minioadmin S3_SECRET_KEY=minioadmin S3_PUBLIC_BASE_URL= S3_FORCE_PATH_STYLE=true go run ./cmd/api
+```
 
 ## Проверка
 

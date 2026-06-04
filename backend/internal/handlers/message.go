@@ -179,8 +179,58 @@ func GetConversations(db *gorm.DB) gin.HandlerFunc {
 			c.JSON(500, gin.H{"error": "failed to get conversations"})
 			return
 		}
+		for i := range conversations {
+			if avatar, ok := conversations[i]["avatar"].(string); ok {
+				conversations[i]["avatar"] = dto.AvatarEndpoint(conversationUserID(conversations[i]["user_id"]), avatar)
+			}
+		}
 
 		c.JSON(200, conversations)
+	}
+}
+
+func conversationUserID(value interface{}) uint {
+	switch v := value.(type) {
+	case uint:
+		return v
+	case uint64:
+		return uint(v)
+	case uint32:
+		return uint(v)
+	case int:
+		if v < 0 {
+			return 0
+		}
+		return uint(v)
+	case int64:
+		if v < 0 {
+			return 0
+		}
+		return uint(v)
+	case int32:
+		if v < 0 {
+			return 0
+		}
+		return uint(v)
+	case float64:
+		if v < 0 {
+			return 0
+		}
+		return uint(v)
+	case []byte:
+		id, err := strconv.ParseUint(string(v), 10, 32)
+		if err != nil {
+			return 0
+		}
+		return uint(id)
+	case string:
+		id, err := strconv.ParseUint(v, 10, 32)
+		if err != nil {
+			return 0
+		}
+		return uint(id)
+	default:
+		return 0
 	}
 }
 
@@ -225,7 +275,7 @@ func UpdateMessage(db *gorm.DB) gin.HandlerFunc {
 
 		broadcastMessageUpdate(c.Request.Context(), message)
 
-		c.JSON(200, message)
+		c.JSON(200, services.WithPrivateAttachmentURLs(message))
 	}
 }
 
@@ -291,17 +341,13 @@ func DeleteMessagesBatch(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		var messages []models.Message
-		if err := db.
-			Select("id", "from_id", "to_id").
-			Where("id IN ? AND (from_id = ? OR to_id = ?)", req.MessageIDs, userID, userID).
-			Find(&messages).Error; err != nil {
-			c.JSON(500, gin.H{"error": "failed to delete messages"})
+		messages, err := services.DeleteMessagesBatchForUser(db, req.MessageIDs, userID)
+		if errors.Is(err, services.ErrMessageForbidden) {
+			c.JSON(403, gin.H{"error": "permission denied"})
 			return
 		}
-
-		if err := repository.DeleteMessagesBatch(db, req.MessageIDs, userID); err != nil {
-			c.JSON(403, gin.H{"error": err.Error()})
+		if err != nil {
+			c.JSON(500, gin.H{"error": "failed to delete messages"})
 			return
 		}
 

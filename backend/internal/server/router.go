@@ -28,6 +28,8 @@ func NewRouter(database *gorm.DB, cfg config.Config) *gin.Engine {
 		MaxAge:           12 * time.Hour,
 	}))
 
+	router.GET("/avatars/users/:id", handlers.GetUserAvatar(database))
+
 	registerAuthRoutes(router, database)
 	registerUserRoutes(router, database)
 	registerPostRoutes(router, database)

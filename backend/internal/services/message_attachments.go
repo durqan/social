@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"tester/internal/cache"
+	"tester/internal/dto"
 	"tester/internal/models"
 	"tester/internal/storage"
 
@@ -77,14 +78,14 @@ func NormalizeMessageAttachments(input []MessageAttachmentInput, userID uint) ([
 			return nil, errors.New("invalid image owner")
 		}
 
-		key := ChatUploadKey(filename)
-		objectURL, width, height, size, err := attachmentStorageMetadata(key, item)
+		key := ChatUploadKey(filename, userID)
+		storedKey, width, height, size, err := attachmentStorageMetadata(key, item)
 		if err != nil {
 			return nil, err
 		}
 
 		attachments = append(attachments, models.MessageAttachment{
-			FileURL:  objectURL,
+			FileURL:  storedKey,
 			FileType: "image",
 			Width:    &width,
 			Height:   &height,
@@ -133,6 +134,12 @@ func chatUploadOwnerKey(filename string) string {
 }
 
 func WithPrivateAttachmentURLs(message models.Message) models.Message {
+	message.From = dto.WithResolvedAvatar(message.From)
+	message.To = dto.WithResolvedAvatar(message.To)
+	if message.ForwardedFromUser != nil {
+		user := dto.WithResolvedAvatar(*message.ForwardedFromUser)
+		message.ForwardedFromUser = &user
+	}
 	for i := range message.Attachments {
 		message.Attachments[i].FileURL = PrivateAttachmentURL(message.Attachments[i].ID)
 	}
@@ -165,15 +172,22 @@ func ChatUploadPath(filename string) (string, bool) {
 	return filepath.Join("uploads", "chat", filename), true
 }
 
-func ChatUploadKey(filename string) string {
-	return filepath.ToSlash(filepath.Join("chat", filename))
+func ChatUploadKey(filename string, userID uint) string {
+	if strings.HasPrefix(filename, fmt.Sprintf("%d_", userID)) {
+		return filepath.ToSlash(filepath.Join("chat", filename))
+	}
+	return filepath.ToSlash(filepath.Join("messages", fmt.Sprintf("user_%d", userID), filename))
 }
 
-func ChatUploadKeyFromFilename(filename string) (string, bool) {
+func ChatUploadKeyFromFilename(filename string, userID uint) (string, bool) {
 	if filename == "" || filename != filepath.Base(filename) {
 		return "", false
 	}
-	return ChatUploadKey(filename), true
+	return ChatUploadKey(filename, userID), true
+}
+
+func AttachmentObjectKey(storedValue string) (string, bool) {
+	return storage.KeyFromStoredValue(storedValue)
 }
 
 func attachmentStorageMetadata(key string, item MessageAttachmentInput) (string, int, int, int64, error) {
@@ -182,12 +196,12 @@ func attachmentStorageMetadata(key string, item MessageAttachmentInput) (string,
 		return "", 0, 0, 0, errors.New("failed to load storage")
 	}
 
-	objectURL, err := store.GetURL(context.Background(), key)
+	cleanKey, err := storage.CleanKey(key)
 	if err != nil {
 		return "", 0, 0, 0, errors.New("invalid image url")
 	}
 
-	if filePath, ok := storage.LocalPath(store, key); ok {
+	if filePath, ok := storage.LocalPath(store, cleanKey); ok {
 		info, err := os.Stat(filePath)
 		if err != nil || info.IsDir() {
 			return "", 0, 0, 0, errors.New("image not found")
@@ -204,12 +218,31 @@ func attachmentStorageMetadata(key string, item MessageAttachmentInput) (string,
 			return "", 0, 0, 0, errors.New("invalid image")
 		}
 
-		return objectURL, cfg.Width, cfg.Height, info.Size(), nil
+		return cleanKey, cfg.Width, cfg.Height, info.Size(), nil
 	}
 
 	if item.Width <= 0 || item.Height <= 0 || item.Size <= 0 || item.Size > ChatImageMaxSize {
 		return "", 0, 0, 0, errors.New("invalid image")
 	}
 
-	return objectURL, item.Width, item.Height, item.Size, nil
+	return cleanKey, item.Width, item.Height, item.Size, nil
+}
+
+func DeleteObjectKeys(ctx context.Context, values []string) {
+	store, err := storage.Default()
+	if err != nil {
+		return
+	}
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		key, ok := storage.KeyFromStoredValue(value)
+		if !ok {
+			continue
+		}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		_ = store.Delete(ctx, key)
+	}
 }

@@ -24,54 +24,55 @@ const (
 )
 
 type S3Storage struct {
-	endpoint        string
-	region          string
-	bucket          string
-	accessKeyID     string
-	secretAccessKey string
-	sessionToken    string
-	publicBase      string
-	pathStyle       bool
-	client          *http.Client
+	endpoint     string
+	region       string
+	bucket       string
+	accessKey    string
+	secretKey    string
+	sessionToken string
+	publicBase   string
+	pathStyle    bool
+	client       *http.Client
 }
 
 func NewS3StorageFromEnv() (*S3Storage, error) {
 	store := &S3Storage{
-		endpoint:        strings.TrimRight(strings.TrimSpace(os.Getenv("S3_ENDPOINT")), "/"),
-		region:          getEnv("S3_REGION", "auto"),
-		bucket:          strings.TrimSpace(os.Getenv("S3_BUCKET")),
-		accessKeyID:     strings.TrimSpace(os.Getenv("S3_ACCESS_KEY_ID")),
-		secretAccessKey: strings.TrimSpace(os.Getenv("S3_SECRET_ACCESS_KEY")),
-		sessionToken:    strings.TrimSpace(os.Getenv("S3_SESSION_TOKEN")),
-		publicBase:      strings.TrimRight(strings.TrimSpace(os.Getenv("S3_PUBLIC_BASE_URL")), "/"),
-		pathStyle:       strings.ToLower(strings.TrimSpace(os.Getenv("S3_FORCE_PATH_STYLE"))) != "false",
-		client:          &http.Client{Timeout: 30 * time.Second},
+		endpoint:     strings.TrimRight(strings.TrimSpace(os.Getenv("S3_ENDPOINT")), "/"),
+		region:       getEnv("S3_REGION", "auto"),
+		bucket:       strings.TrimSpace(os.Getenv("S3_BUCKET")),
+		accessKey:    firstEnv("S3_ACCESS_KEY", "S3_ACCESS_KEY_ID"),
+		secretKey:    firstEnv("S3_SECRET_KEY", "S3_SECRET_ACCESS_KEY"),
+		sessionToken: strings.TrimSpace(os.Getenv("S3_SESSION_TOKEN")),
+		publicBase:   strings.TrimRight(strings.TrimSpace(os.Getenv("S3_PUBLIC_BASE_URL")), "/"),
+		pathStyle:    strings.ToLower(strings.TrimSpace(os.Getenv("S3_FORCE_PATH_STYLE"))) != "false",
+		client:       &http.Client{Timeout: 30 * time.Second},
 	}
 
-	if store.endpoint == "" || store.bucket == "" || store.accessKeyID == "" || store.secretAccessKey == "" {
-		return nil, fmt.Errorf("S3 storage requires S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY")
+	if store.endpoint == "" || store.bucket == "" || store.accessKey == "" || store.secretKey == "" {
+		return nil, fmt.Errorf("S3 storage requires S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY and S3_SECRET_KEY")
 	}
 
 	return store, nil
 }
 
-func (s *S3Storage) Upload(ctx context.Context, key string, reader io.Reader, size int64, contentType string) (Object, error) {
+func (s *S3Storage) Upload(ctx context.Context, key string, reader io.Reader, contentType string) error {
 	cleanedKey, err := cleanKey(key)
 	if err != nil {
-		return Object{}, err
+		return err
 	}
 
 	body, err := io.ReadAll(reader)
 	if err != nil {
-		return Object{}, err
+		return err
 	}
-	if size <= 0 {
-		size = int64(len(body))
+
+	if strings.TrimSpace(contentType) == "" {
+		contentType = "application/octet-stream"
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, s.objectEndpoint(cleanedKey), bytes.NewReader(body))
 	if err != nil {
-		return Object{}, err
+		return err
 	}
 	req.Header.Set("Content-Type", contentType)
 	payloadHash := sha256Hex(body)
@@ -82,23 +83,13 @@ func (s *S3Storage) Upload(ctx context.Context, key string, reader io.Reader, si
 		defer resp.Body.Close()
 	}
 	if err != nil {
-		return Object{}, err
+		return err
 	}
 	if resp.StatusCode >= http.StatusBadRequest {
-		return Object{}, fmt.Errorf("S3 upload failed with status %d", resp.StatusCode)
+		return fmt.Errorf("S3 upload failed with status %d", resp.StatusCode)
 	}
 
-	objectURL, err := s.GetURL(ctx, cleanedKey)
-	if err != nil {
-		return Object{}, err
-	}
-
-	return Object{
-		Key:         cleanedKey,
-		URL:         objectURL,
-		ContentType: contentType,
-		Size:        size,
-	}, nil
+	return nil
 }
 
 func (s *S3Storage) Delete(ctx context.Context, key string) error {
@@ -120,13 +111,16 @@ func (s *S3Storage) Delete(ctx context.Context, key string) error {
 	if err != nil {
 		return err
 	}
+	if resp.StatusCode == http.StatusNotFound {
+		return nil
+	}
 	if resp.StatusCode >= http.StatusBadRequest {
 		return fmt.Errorf("S3 delete failed with status %d", resp.StatusCode)
 	}
 	return nil
 }
 
-func (s *S3Storage) GetURL(_ context.Context, key string) (string, error) {
+func (s *S3Storage) URL(_ context.Context, key string) (string, error) {
 	cleanedKey, err := cleanKey(key)
 	if err != nil {
 		return "", err
@@ -153,7 +147,7 @@ func (s *S3Storage) SignedURL(_ context.Context, key string, ttl time.Duration) 
 	now := time.Now().UTC()
 	date := now.Format("20060102")
 	amzDate := now.Format("20060102T150405Z")
-	credentialScope := fmt.Sprintf("%s/%s/aws4_request", date, s.region)
+	credentialScope := fmt.Sprintf("%s/%s/%s/aws4_request", date, s.region, awsService)
 	rawURL := s.objectEndpoint(cleanedKey)
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
@@ -162,7 +156,7 @@ func (s *S3Storage) SignedURL(_ context.Context, key string, ttl time.Duration) 
 
 	query := parsed.Query()
 	query.Set("X-Amz-Algorithm", awsAlgorithm)
-	query.Set("X-Amz-Credential", fmt.Sprintf("%s/%s", s.accessKeyID, credentialScope))
+	query.Set("X-Amz-Credential", fmt.Sprintf("%s/%s", s.accessKey, credentialScope))
 	query.Set("X-Amz-Date", amzDate)
 	query.Set("X-Amz-Expires", fmt.Sprintf("%d", int(ttl.Seconds())))
 	query.Set("X-Amz-SignedHeaders", "host")
@@ -210,7 +204,7 @@ func (s *S3Storage) objectEndpoint(key string) string {
 func (s *S3Storage) signHeaderRequest(req *http.Request, payloadHash string, now time.Time) {
 	date := now.Format("20060102")
 	amzDate := now.Format("20060102T150405Z")
-	credentialScope := fmt.Sprintf("%s/%s/aws4_request", date, s.region)
+	credentialScope := fmt.Sprintf("%s/%s/%s/aws4_request", date, s.region, awsService)
 
 	req.Header.Set("X-Amz-Date", amzDate)
 	req.Header.Set("X-Amz-Content-Sha256", payloadHash)
@@ -245,7 +239,7 @@ func (s *S3Storage) signHeaderRequest(req *http.Request, payloadHash string, now
 	req.Header.Set("Authorization", fmt.Sprintf(
 		"%s Credential=%s/%s, SignedHeaders=%s, Signature=%s",
 		awsAlgorithm,
-		s.accessKeyID,
+		s.accessKey,
 		credentialScope,
 		signedHeaders,
 		signature,
@@ -253,10 +247,19 @@ func (s *S3Storage) signHeaderRequest(req *http.Request, payloadHash string, now
 }
 
 func (s *S3Storage) signingKey(date string) []byte {
-	dateKey := hmacSHA256([]byte("AWS4"+s.secretAccessKey), date)
+	dateKey := hmacSHA256([]byte("AWS4"+s.secretKey), date)
 	regionKey := hmacSHA256(dateKey, s.region)
 	serviceKey := hmacSHA256(regionKey, awsService)
 	return hmacSHA256(serviceKey, "aws4_request")
+}
+
+func firstEnv(keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func hmacSHA256(key []byte, value string) []byte {

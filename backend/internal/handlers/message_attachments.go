@@ -2,16 +2,15 @@ package handlers
 
 import (
 	"errors"
+	"fmt"
 	"image"
 	"net/http"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"tester/internal/repository"
 	"tester/internal/services"
 	"tester/internal/storage"
-	"tester/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -80,19 +79,20 @@ func UploadMessageImage(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		randomName, err := utils.GenerateSecureToken()
+		key, err := storage.NewObjectKey(fmt.Sprintf("messages/user_%d", userID), ext)
 		if err != nil {
 			c.JSON(500, gin.H{"error": "failed to create image filename"})
 			return
 		}
-		filename := randomName + ext
+		filename := filepath.Base(key)
+
 		store, err := storage.Default()
 		if err != nil {
 			c.JSON(500, gin.H{"error": "failed to prepare upload storage"})
 			return
 		}
 
-		if _, err := store.Upload(c.Request.Context(), services.ChatUploadKey(filename), src, file.Size, contentType); err != nil {
+		if err := store.Upload(c.Request.Context(), key, src, contentType); err != nil {
 			c.JSON(500, gin.H{"error": "failed to save image"})
 			return
 		}
@@ -121,7 +121,7 @@ func GetUploadedMessageImage() gin.HandlerFunc {
 			return
 		}
 
-		key, ok := services.ChatUploadKeyFromFilename(filename)
+		key, ok := services.ChatUploadKeyFromFilename(filename, userID)
 		if !ok {
 			c.JSON(400, gin.H{"error": "invalid filename"})
 			return
@@ -158,8 +158,7 @@ func GetMessageAttachment(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		filename := filepath.Base(strings.Split(attachment.FileURL, "?")[0])
-		key, ok := services.ChatUploadKeyFromFilename(filename)
+		key, ok := services.AttachmentObjectKey(attachment.FileURL)
 		if !ok {
 			c.JSON(500, gin.H{"error": "invalid attachment path"})
 			return
@@ -180,7 +179,7 @@ func serveStoredObject(c *gin.Context, store storage.Storage, key string) {
 		return
 	}
 
-	signedURL, err := store.SignedURL(c.Request.Context(), key, 15*time.Minute)
+	signedURL, err := storage.SignedURL(c.Request.Context(), store, key, 15*time.Minute)
 	if err != nil {
 		c.JSON(404, gin.H{"error": "attachment file not found"})
 		return

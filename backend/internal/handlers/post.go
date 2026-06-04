@@ -84,7 +84,7 @@ func CreatePost(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		db.Preload("User").First(&post, post.ID)
-		c.JSON(201, post)
+		c.JSON(201, buildPostResponse(db, post, userID))
 	}
 }
 
@@ -125,7 +125,7 @@ func UpdatePost(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		post, _ := repository.GetPostByID(db, postID)
-		c.JSON(200, post)
+		c.JSON(200, buildPostResponse(db, post, userID))
 	}
 }
 

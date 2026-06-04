@@ -82,6 +82,6 @@ func CreateComment(db *gorm.DB) gin.HandlerFunc {
 		publishNotification(post.UserID, userID, dto.NotificationTypeCommentCreated, comment.ID)
 
 		db.Preload("User").First(&comment, comment.ID)
-		c.JSON(201, comment)
+		c.JSON(201, buildCommentResponse(db, comment, userID))
 	}
 }

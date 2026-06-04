@@ -62,7 +62,7 @@ func GetFriendsList(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		c.JSON(200, friends)
+		c.JSON(200, dto.ToUserResponses(friends))
 	}
 }
 
@@ -77,6 +77,11 @@ func GetFriendRequests(db *gorm.DB) gin.HandlerFunc {
 		if err != nil {
 			c.JSON(500, gin.H{"error": "failed to get friend requests"})
 			return
+		}
+
+		for i := range requests {
+			requests[i].User = dto.WithResolvedAvatar(requests[i].User)
+			requests[i].Friend = dto.WithResolvedAvatar(requests[i].Friend)
 		}
 
 		c.JSON(200, requests)

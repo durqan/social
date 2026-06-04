@@ -1,10 +1,10 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -13,6 +13,7 @@ import (
 	"tester/internal/cache"
 	"tester/internal/models"
 	"tester/internal/repository"
+	"tester/internal/storage"
 
 	"gorm.io/gorm"
 )
@@ -40,7 +41,7 @@ func DeleteUserAccount(db *gorm.DB, userID uint) error {
 
 	revokeUserSessions(userID)
 	invalidateUserDeletionCaches()
-	removeUserUploads(userID, artifacts.UploadPaths)
+	removeUserUploads(db, userID, artifacts.UploadPaths)
 
 	return nil
 }
@@ -91,7 +92,7 @@ func deleteExpiredUnverifiedUserAccount(db *gorm.DB, userID uint, cutoff time.Ti
 
 	revokeUserSessions(userID)
 	invalidateUserDeletionCaches()
-	removeUserUploads(userID, artifacts.UploadPaths)
+	removeUserUploads(db, userID, artifacts.UploadPaths)
 
 	return true, nil
 }
@@ -121,25 +122,60 @@ func invalidateUserDeletionCaches() {
 	}
 }
 
-func removeUserUploads(userID uint, paths []string) {
+func removeUserUploads(db *gorm.DB, userID uint, paths []string) {
 	paths = append(paths, userUploadGlob("uploads/avatars", userID)...)
 	paths = append(paths, userUploadGlob("uploads/chat", userID)...)
 
+	store, err := storage.Default()
+	if err != nil {
+		log.Printf("failed to load storage for user upload cleanup: %v", err)
+		return
+	}
+
+	ctx := context.Background()
 	seen := make(map[string]struct{}, len(paths))
 	for _, path := range paths {
-		cleanPath, ok := cleanUploadPath(path)
+		key, ok := storage.KeyFromStoredValue(path)
 		if !ok {
 			continue
 		}
-		if _, exists := seen[cleanPath]; exists {
+		if _, exists := seen[key]; exists {
 			continue
 		}
-		seen[cleanPath] = struct{}{}
+		seen[key] = struct{}{}
 
-		if err := os.Remove(cleanPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-			log.Printf("failed to remove user upload %s: %v", cleanPath, err)
+		referenced, err := userUploadStillReferenced(db, key)
+		if err != nil {
+			log.Printf("failed to check upload references for %s: %v", key, err)
+			continue
+		}
+		if referenced {
+			continue
+		}
+
+		if err := store.Delete(ctx, key); err != nil {
+			log.Printf("failed to remove user upload %s: %v", key, err)
 		}
 	}
+}
+
+func userUploadStillReferenced(db *gorm.DB, key string) (bool, error) {
+	if !strings.HasPrefix(key, "chat/") && !strings.HasPrefix(key, "messages/") {
+		return false, nil
+	}
+
+	variants := []string{key}
+	if strings.HasPrefix(key, "chat/") {
+		filename := filepath.Base(key)
+		variants = append(variants, "/uploads/chat/"+filename, "uploads/chat/"+filename)
+	}
+
+	var count int64
+	err := db.Table("message_attachments").
+		Joins("JOIN messages ON messages.id = message_attachments.message_id").
+		Where("message_attachments.file_url IN ? AND messages.deleted_at IS NULL", variants).
+		Count(&count).Error
+	return count > 0, err
 }
 
 func userUploadGlob(dir string, userID uint) []string {
@@ -148,25 +184,4 @@ func userUploadGlob(dir string, userID uint) []string {
 		return nil
 	}
 	return matches
-}
-
-func cleanUploadPath(path string) (string, bool) {
-	path = strings.TrimPrefix(path, "/")
-	path = filepath.Clean(filepath.FromSlash(path))
-
-	if uploadPathAllowed(path, filepath.Join("uploads", "avatars")) {
-		return path, true
-	}
-	if uploadPathAllowed(path, filepath.Join("uploads", "chat")) {
-		return path, true
-	}
-	return "", false
-}
-
-func uploadPathAllowed(path string, root string) bool {
-	rel, err := filepath.Rel(root, path)
-	if err != nil {
-		return false
-	}
-	return rel != "." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && rel != ".."
 }

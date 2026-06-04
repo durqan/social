@@ -13,7 +13,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U social -d social -h 127.0.0.1 -p 5433" ]
+      test: [ "CMD-SHELL", "pg_isready -U social -d social -h 127.0.0.1 -p 5432" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -36,12 +36,40 @@ services:
   rabbitmq:
     image: rabbitmq:3-management
     container_name: social_rabbitmq_local
+    restart: unless-stopped
     ports:
       - "5672:5672"
       - "15672:15672"
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - rabbit_data:/var/lib/rabbitmq
+
+  minio:
+    image: minio/minio:latest
+    container_name: social_minio_local
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+  minio-create-bucket:
+    image: minio/mc:latest
+    container_name: social_minio_create_bucket_local
+    depends_on:
+      - minio
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - >
+        until mc alias set local http://minio:9000 minioadmin minioadmin; do sleep 2; done &&
+        mc mb --ignore-existing local/social-local
 
 volumes:
   postgres_data:
@@ -50,3 +78,5 @@ volumes:
     name: social_redis_local_data
   rabbit_data:
     name: social_rabbit_local_data
+  minio_data:
+    name: social_minio_local_data

@@ -9,10 +9,15 @@ import (
 	"tester/internal/rabbit"
 	"tester/internal/server"
 	"tester/internal/services"
+	"tester/internal/storage"
 )
 
 func main() {
 	cfg := config.Load()
+
+	if _, err := storage.Default(); err != nil {
+		log.Fatal("failed to configure storage:", err)
+	}
 
 	database, err := db.NewDB(cfg)
 	if err != nil {
