@@ -441,7 +441,7 @@ function Chat() {
 
     return (
         <div
-            className="relative flex h-full flex-col overflow-hidden bg-bg sm:h-[calc(100vh-120px)] sm:rounded-2xl sm:border sm:border-border"
+            className="relative flex h-full flex-col overflow-hidden bg-[#f4f5f7] sm:h-[calc(100vh-120px)] sm:rounded-2xl sm:border sm:border-gray-200/80"
             onDragEnter={handleDragEnter}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
@@ -449,12 +449,12 @@ function Chat() {
             onPaste={handlePaste}
         >
             {draggingImage && (
-                <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-black/30 p-4 backdrop-blur-[1px]">
-                    <div className="rounded-2xl border-2 border-dashed border-primary/60 bg-surface/90 px-6 py-5 text-center shadow-app">
-                        <p className="text-sm font-semibold text-text sm:text-base">
+                <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-slate-950/35 p-4 backdrop-blur-[1px]">
+                    <div className="rounded-2xl border-2 border-dashed border-white/80 bg-white/90 px-6 py-5 text-center shadow-xl">
+                        <p className="text-sm font-semibold text-gray-900 sm:text-base">
                             Отпустите изображение для отправки
                         </p>
-                        <p className="mt-1 text-xs text-text-secondary">
+                        <p className="mt-1 text-xs text-gray-500">
                             Перед отправкой появится предпросмотр
                         </p>
                     </div>
@@ -517,7 +517,7 @@ function Chat() {
                 formatDate={formatMonthDayDate}
                 formatTime={formatTime}
             />
-            {otherTyping && <div className="px-4 pb-2 text-sm text-text-secondary">{recipient?.name} печатает...</div>}
+            {otherTyping && <div className="px-4 pb-2 text-sm text-gray-500">{recipient?.name} печатает...</div>}
             <ChatInput
                 value={newMessage}
                 onChange={e => {
@@ -540,33 +540,33 @@ function Chat() {
                     <div className="app-card w-full max-w-md p-4 shadow-xl sm:p-5">
                         <div className="mb-3 flex items-start justify-between gap-3">
                             <div className="min-w-0">
-                                <h2 className="text-lg font-semibold text-text">Переслать сообщение</h2>
-                                <p className="truncate text-sm text-text-secondary">{messagePreviewText(forwardMessage)}</p>
+                                <h2 className="text-lg font-semibold text-gray-950">Переслать сообщение</h2>
+                                <p className="truncate text-sm text-gray-500">{messagePreviewText(forwardMessage)}</p>
                             </div>
                             <button
                                 type="button"
                                 onClick={closeForwardDialog}
                                 disabled={forwardLoading}
-                                className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-text-secondary transition hover:bg-surface-hover"
+                                className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-gray-500 transition hover:bg-gray-100"
                                 aria-label="Закрыть"
                             >
                                 x
                             </button>
                         </div>
 
-                        <div className="max-h-72 overflow-y-auto rounded-xl border border-border">
+                        <div className="max-h-72 overflow-y-auto rounded-xl border border-gray-100">
                             {forwardLoading && forwardFriends.length === 0 ? (
                                 <div className="flex justify-center p-5"><Spinner size="sm" /></div>
                             ) : forwardFriends.length === 0 ? (
-                                <div className="p-4 text-center text-sm text-text-secondary">Нет доступных получателей</div>
+                                <div className="p-4 text-center text-sm text-gray-500">Нет доступных получателей</div>
                             ) : (
                                 forwardFriends.map(friend => (
-                                    <label key={friend.id} className="flex cursor-pointer items-center gap-3 border-b border-border p-3 last:border-b-0 hover:bg-surface-hover">
+                                    <label key={friend.id} className="flex cursor-pointer items-center gap-3 border-b border-gray-100 p-3 last:border-b-0 hover:bg-gray-50">
                                         <input
                                             type="checkbox"
                                             checked={Boolean(friend.id && forwardSelectedIds.has(friend.id))}
                                             onChange={() => toggleForwardRecipient(friend.id)}
-                                            className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
+                                            className="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500"
                                         />
                                         <Avatar
                                             name={friend.name}
@@ -576,7 +576,7 @@ function Chat() {
                                             positionY={friend.avatarPositionY}
                                             scale={friend.avatarScale}
                                         />
-                                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-text">
+                                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-800">
                                             {friend.name || friend.email}
                                         </span>
                                     </label>
@@ -585,7 +585,7 @@ function Chat() {
                         </div>
 
                         {forwardError && (
-                            <div className="mt-3 rounded-lg border border-danger bg-danger-soft px-3 py-2 text-sm text-danger">
+                            <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                                 {forwardError}
                             </div>
                         )}
@@ -595,7 +595,7 @@ function Chat() {
                                 type="button"
                                 onClick={submitForward}
                                 disabled={forwardLoading || forwardSelectedIds.size === 0}
-                                className="flex-1 rounded-xl bg-primary px-4 py-2 text-white transition hover:bg-primary-hover disabled:opacity-50"
+                                className="flex-1 rounded-xl bg-sky-600 px-4 py-2 text-white transition hover:bg-sky-700 disabled:opacity-50"
                             >
                                 {forwardLoading ? 'Отправляем...' : 'Переслать'}
                             </button>
@@ -603,7 +603,7 @@ function Chat() {
                                 type="button"
                                 onClick={closeForwardDialog}
                                 disabled={forwardLoading}
-                                className="flex-1 rounded-xl bg-surface-hover px-4 py-2 text-text transition hover:bg-surface disabled:opacity-50"
+                                className="flex-1 rounded-xl bg-gray-100 px-4 py-2 text-gray-800 transition hover:bg-gray-200 disabled:opacity-50"
                             >
                                 Отмена
                             </button>

@@ -51,13 +51,13 @@ function showNotificationToast({
                 toast.dismiss(toastRef.id);
                 onClick();
             }}
-            className={`mx-3 max-w-sm cursor-pointer rounded-2xl border border-border bg-surface p-4 shadow-app transition-colors hover:bg-surface-hover ${borderClass}`}
+            className={`mx-3 max-w-sm cursor-pointer rounded-2xl border border-gray-200 bg-white p-4 shadow-xl shadow-gray-900/10 transition-colors hover:bg-gray-50 ${borderClass}`}
         >
             <div className="flex items-center gap-3">
                 <Avatar name={title} userId={actorId} />
                 <div className="min-w-0 flex-1">
-                    <p className="truncate font-semibold text-text">{title}</p>
-                    <p className="truncate text-sm text-text-secondary">{message}</p>
+                    <p className="truncate font-semibold text-gray-900">{title}</p>
+                    <p className="truncate text-sm text-gray-600">{message}</p>
                 </div>
             </div>
         </div>

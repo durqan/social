@@ -216,14 +216,14 @@ function pushStatusCopy(status: PushNotificationStatus, subscribed: boolean) {
 
 const pushIndicatorClass: Record<PushViewState, string> = {
     enabled: 'bg-emerald-500 shadow-emerald-500/30',
-    disabled: 'bg-surface-muted shadow-border/30',
+    disabled: 'bg-gray-400 shadow-gray-400/25',
     blocked: 'bg-red-500 shadow-red-500/30',
     unsupported: 'bg-amber-400 shadow-amber-400/30',
 };
 
 const pushContainerClass: Record<PushViewState, string> = {
     enabled: 'border-emerald-100 bg-emerald-50/70',
-    disabled: 'border-border bg-surface-muted',
+    disabled: 'border-gray-200 bg-gray-50',
     blocked: 'border-red-100 bg-red-50/70',
     unsupported: 'border-amber-100 bg-amber-50/70',
 };
@@ -589,32 +589,32 @@ export function NotificationBell({ userId, compact = false }: NotificationBellPr
             </button>
 
             {open && (
-                <div className="fixed left-3 right-3 top-16 z-50 overflow-hidden rounded-2xl border border-border bg-surface shadow-app sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-[min(360px,calc(100vw-24px))] glass-panel">
-                    <div className="flex items-center justify-between border-b border-border px-4 py-3">
-                        <p className="font-semibold text-text">Уведомления</p>
+                <div className="fixed left-3 right-3 top-16 z-50 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl shadow-gray-900/10 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-[min(360px,calc(100vw-24px))]">
+                    <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+                        <p className="font-semibold text-gray-950">Уведомления</p>
                         {unreadCount > 0 && (
-                            <span className="rounded-full bg-danger/10 px-2 py-1 text-xs font-semibold text-danger">
+                            <span className="rounded-full bg-red-50 px-2 py-1 text-xs font-semibold text-red-600">
                                 {unreadCount}
                             </span>
                         )}
                     </div>
 
-                    <div className="border-b border-border px-3 py-3 sm:px-4">
+                    <div className="border-b border-gray-100 px-3 py-3 sm:px-4">
                         <div className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${pushContainerClass[pushCopy.state]}`}>
-                            <span className="relative flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-surface text-text-secondary shadow-sm border border-border">
+                            <span className="relative flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-white text-gray-700 shadow-sm">
                                 <Icon name="bell" className="h-4 w-4" />
                                 <span className={`absolute right-1 top-1 h-2.5 w-2.5 rounded-full shadow-md ${pushIndicatorClass[pushCopy.state]}`} />
                             </span>
                             <span className="min-w-0 flex-1">
-                                <span className="block truncate text-sm font-semibold text-text">{pushCopy.title}</span>
-                                <span className="block truncate text-xs text-text-muted">{pushCopy.description}</span>
+                                <span className="block truncate text-sm font-semibold text-gray-950">{pushCopy.title}</span>
+                                <span className="block truncate text-xs text-gray-500">{pushCopy.description}</span>
                             </span>
                             {pushAction && (
                                 <button
                                     type="button"
                                     onClick={pushAction.onClick}
                                     disabled={pushLoading}
-                                    className="flex-shrink-0 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs font-semibold text-text-secondary transition hover:bg-surface-hover disabled:opacity-60"
+                                    className="flex-shrink-0 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 disabled:opacity-60"
                                 >
                                     {pushLoading ? '...' : pushAction.label}
                                 </button>
@@ -635,22 +635,22 @@ export function NotificationBell({ userId, compact = false }: NotificationBellPr
                         {errorMessage && notifications.length === 0 ? (
                             <div className="px-4 py-6 text-center text-sm text-red-500">{errorMessage}</div>
                         ) : loading && notifications.length === 0 ? (
-                            <div className="px-4 py-6 text-center text-sm text-text-muted">Загрузка...</div>
+                            <div className="px-4 py-6 text-center text-sm text-gray-500">Загрузка...</div>
                         ) : notifications.length === 0 ? (
-                            <div className="px-4 py-6 text-center text-sm text-text-muted">Нет уведомлений</div>
+                            <div className="px-4 py-6 text-center text-sm text-gray-500">Нет уведомлений</div>
                         ) : (
                             visibleNotifications.map(notification => (
                                 <button
                                     key={notification.id}
                                     type="button"
                                     onClick={() => handleNotificationClick(notification)}
-                                    className={`block w-full border-b border-border px-4 py-3 text-left transition last:border-b-0 hover:bg-surface-hover ${
-                                        notification.is_read ? 'bg-surface' : 'bg-primary/10'
+                                    className={`block w-full border-b border-gray-100 px-4 py-3 text-left transition last:border-b-0 hover:bg-gray-50 ${
+                                        notification.is_read ? 'bg-white' : 'bg-sky-50/70'
                                     }`}
                                 >
                                     <div className="flex gap-3">
                                         <span className={`mt-1 h-2 w-2 flex-shrink-0 rounded-full ${
-                                            notification.is_read ? 'bg-border' : 'bg-primary'
+                                            notification.is_read ? 'bg-gray-300' : 'bg-sky-500'
                                         }`} />
                                         <Avatar
                                             name={actorNames[notification.actor_id] || fallbackActorName}
@@ -658,13 +658,13 @@ export function NotificationBell({ userId, compact = false }: NotificationBellPr
                                             size="sm"
                                         />
                                         <span className="min-w-0 flex-1">
-                                            <span className="block text-sm font-semibold text-text">
+                                            <span className="block text-sm font-semibold text-gray-950">
                                                 {getNotificationTitle(notification, actorNames[notification.actor_id])}
                                             </span>
-                                            <span className="mt-0.5 block truncate text-sm text-text-secondary">
+                                            <span className="mt-0.5 block truncate text-sm text-gray-600">
                                                 {getNotificationDetails(notification)}
                                             </span>
-                                            <span className="mt-1 block text-xs text-text-muted">
+                                            <span className="mt-1 block text-xs text-gray-400">
                                                 {formatRelativeDate(notification.created_at)}
                                             </span>
                                         </span>
@@ -673,7 +673,7 @@ export function NotificationBell({ userId, compact = false }: NotificationBellPr
                             ))
                         )}
                         {hiddenNotificationCount > 0 && (
-                            <div className="px-4 py-2 text-center text-xs text-text-muted">
+                            <div className="px-4 py-2 text-center text-xs text-gray-400">
                                 Показаны последние 5 из {notifications.length}
                             </div>
                         )}

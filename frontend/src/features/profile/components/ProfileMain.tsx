@@ -29,9 +29,9 @@ function ProfileMain() {
         <div className="mx-auto max-w-2xl">
             <div className="app-card overflow-hidden">
                 <div className="relative">
-                    <div className="h-24 bg-[linear-gradient(135deg,var(--app-surface-muted),var(--app-bg))] sm:h-32"></div>
+                    <div className="h-24 bg-[linear-gradient(135deg,#eef2f7,#dbeafe)] sm:h-32"></div>
                     <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 sm:-bottom-12 sm:left-6 sm:translate-x-0">
-                        <div className="w-20 h-20 bg-surface rounded-full p-1 ring-1 ring-border sm:w-24 sm:h-24">
+                        <div className="w-20 h-20 bg-white rounded-full p-1 sm:w-24 sm:h-24">
                             <button
                                 type="button"
                                 onClick={() => user?.avatar && setAvatarViewerOpen(true)}
@@ -56,18 +56,18 @@ function ProfileMain() {
                 <div className="px-4 pb-5 pt-14 sm:px-6 sm:pb-6 sm:pt-16">
                     <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                         <div className="min-w-0 text-center sm:text-left">
-                            <h1 className="break-words text-2xl font-bold text-text">{user?.name || 'Пользователь'}
+                            <h1 className="break-words text-2xl font-bold text-gray-800">{user?.name || 'Пользователь'}
                                 {online && (
                                 <span className="ml-2 text-green-500">●</span>
                                 )}
                             </h1>
-                            <p className="mt-1 break-words text-sm text-text-muted sm:text-base">{user?.email}</p>
+                            <p className="mt-1 break-words text-sm text-gray-500 sm:text-base">{user?.email}</p>
                             {user?.bio && (
-                                <p className="mt-3 border-t border-border pt-3 text-left text-text-secondary">
+                                <p className="mt-3 border-t border-gray-100 pt-3 text-left text-gray-700">
                                     {user.bio}
                                 </p>
                             )}
-                            <div className="mt-4 flex flex-col gap-2 text-sm text-text-muted sm:flex-row sm:flex-wrap sm:gap-x-4">
+                            <div className="mt-4 flex flex-col gap-2 text-sm text-gray-500 sm:flex-row sm:flex-wrap sm:gap-x-4">
                                 {user?.createdAt && (
                                     <span>Участник с {formatLongDate(user.createdAt)}</span>
                                 )}
@@ -80,7 +80,7 @@ function ProfileMain() {
                             {!isOwner && friendStatus === 'accepted' && currentUser && (
                                 <button
                                     onClick={() => navigate(`/users/${currentUser.id}/chat/${user.id}`)}
-                                    className="mt-4 w-full rounded-xl bg-primary px-4 py-2 text-sm text-white transition hover:bg-primary-hover sm:w-auto"
+                                    className="mt-4 w-full rounded-xl bg-sky-600 px-4 py-2 text-sm text-white transition hover:bg-sky-700 sm:w-auto"
                                 >
                                     Написать сообщение
                                 </button>
@@ -95,10 +95,10 @@ function ProfileMain() {
                                     onClick={handleFriendAction}
                                     className={`w-full px-4 py-2 rounded-lg text-sm transition sm:w-auto ${
                                         friendStatus === 'pending'
-                                            ? 'bg-surface-muted text-text-muted cursor-not-allowed'
+                                            ? 'bg-gray-100 text-gray-500 cursor-not-allowed'
                                             : friendStatus === 'accepted'
-                                                ? 'bg-danger text-white hover:bg-danger'
-                                                : 'bg-primary text-white hover:bg-primary-hover'
+                                                ? 'bg-red-500 text-white hover:bg-red-600'
+                                                : 'bg-sky-600 text-white hover:bg-sky-700'
                                     }`}
                                     disabled={friendStatus === 'pending'}
                                 >

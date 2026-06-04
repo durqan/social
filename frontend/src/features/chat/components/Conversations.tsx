@@ -147,10 +147,10 @@ function Conversations() {
 
     return (
         <div className="mx-auto max-w-2xl">
-            <h1 className="mb-3 text-xl font-semibold tracking-tight text-text sm:mb-4 sm:text-2xl">Сообщения</h1>
+            <h1 className="mb-3 text-xl font-semibold tracking-tight text-gray-950 sm:mb-4 sm:text-2xl">Сообщения</h1>
             <div className="app-card overflow-hidden">
                 {!conversations || conversations.length === 0 ? (
-                    <div className="p-6 text-center text-text-secondary sm:p-8">Нет диалогов</div>
+                    <div className="p-6 text-center text-gray-500 sm:p-8">Нет диалогов</div>
                 ) : (
                     conversations.map(conv => (
                         <ConversationItem
@@ -166,7 +166,7 @@ function Conversations() {
             {menu?.mode === 'mobile' && selectedConversation && (
                 <button
                     type="button"
-                    className="fixed inset-0 z-40 cursor-default bg-black/30 backdrop-blur-[1px]"
+                    className="fixed inset-0 z-40 cursor-default bg-slate-950/35 backdrop-blur-[1px]"
                     aria-label="Закрыть меню чата"
                     onClick={() => setMenu(null)}
                     onContextMenu={event => {
@@ -177,17 +177,17 @@ function Conversations() {
             )}
             {menu && selectedConversation && (
                 <div
-                    className="fixed z-50 w-52 overflow-hidden rounded-xl border border-border bg-surface py-1 shadow-app"
+                    className="fixed z-50 w-52 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl shadow-slate-900/10"
                     style={{ left: menu.x, top: menu.y }}
                     onClick={event => event.stopPropagation()}
                     onContextMenu={event => event.preventDefault()}
                 >
                     <button
                         type="button"
-                        className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm text-danger transition hover:bg-danger-soft"
+                        className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm text-red-600 transition hover:bg-red-50"
                         onClick={() => requestDeleteConversation(selectedConversation.user_id)}
                     >
-                        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-danger-soft">
+                        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-red-50">
                             <Icon name="delete" className="h-3.5 w-3.5" />
                         </span>
                         Удалить чат
@@ -197,8 +197,8 @@ function Conversations() {
             {confirmConversation && (
                 <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 px-4">
                     <div className="app-card w-full max-w-sm p-5 shadow-xl sm:p-6">
-                        <h2 className="mb-2 text-lg font-semibold text-text">Удалить чат?</h2>
-                        <p className="mb-4 text-sm leading-5 text-text-secondary">
+                        <h2 className="mb-2 text-lg font-semibold text-gray-950">Удалить чат?</h2>
+                        <p className="mb-4 text-sm leading-5 text-gray-600">
                             Будет удалена переписка с {confirmConversation.name}. Действие нельзя отменить.
                         </p>
                         <div className="flex gap-3">
@@ -206,7 +206,7 @@ function Conversations() {
                                 type="button"
                                 onClick={confirmDeleteConversation}
                                 disabled={deletingUserId === confirmConversation.user_id}
-                                className="flex-1 rounded-xl bg-danger px-4 py-2 text-white transition hover:bg-danger disabled:opacity-60"
+                                className="flex-1 rounded-xl bg-red-500 px-4 py-2 text-white transition hover:bg-red-600 disabled:opacity-60"
                             >
                                 {deletingUserId === confirmConversation.user_id ? 'Удаляем...' : 'Удалить'}
                             </button>
@@ -214,7 +214,7 @@ function Conversations() {
                                 type="button"
                                 onClick={() => setConfirmUserId(null)}
                                 disabled={Boolean(deletingUserId)}
-                                className="flex-1 rounded-xl bg-surface-hover px-4 py-2 text-text transition hover:bg-surface disabled:opacity-60"
+                                className="flex-1 rounded-xl bg-gray-100 px-4 py-2 text-gray-800 transition hover:bg-gray-200 disabled:opacity-60"
                             >
                                 Отмена
                             </button>
@@ -315,7 +315,7 @@ function ConversationItem({
             onTouchEnd={handleTouchEnd}
             onTouchCancel={handleTouchEnd}
             onTouchMove={handleTouchMove}
-            className={`flex select-none items-center gap-3 border-b border-border p-3 transition last:border-b-0 [-webkit-touch-callout:none] [-webkit-user-select:none] hover:bg-surface-hover sm:p-4 ${active ? 'relative z-[60] bg-surface shadow-2xl ring-2 ring-primary/50' : ''}`}
+            className={`flex select-none items-center gap-3 border-b border-gray-100 p-3 transition last:border-b-0 [-webkit-touch-callout:none] [-webkit-user-select:none] hover:bg-gray-50 sm:p-4 ${active ? 'relative z-[60] bg-white shadow-2xl ring-2 ring-white/80' : ''}`}
             style={{ touchAction: 'manipulation' }}
         >
             <Avatar
@@ -329,25 +329,25 @@ function ConversationItem({
             />
             <div className="min-w-0 flex-1">
                 <div className="flex items-start justify-between gap-3">
-                    <p className="truncate font-semibold text-text">{conversation.name}</p>
-                    <p className="flex-shrink-0 text-xs text-text-muted">
+                    <p className="truncate font-semibold text-gray-950">{conversation.name}</p>
+                    <p className="flex-shrink-0 text-xs text-gray-500">
                         {formatMonthDayDate(conversation.last_message_at)}
                     </p>
                 </div>
-                <p className="flex min-w-0 items-center gap-1 text-sm text-text-secondary">
+                <p className="flex min-w-0 items-center gap-1 text-sm text-gray-500">
                     <span className="min-w-0 flex-1 truncate">
-                        <span className="font-medium text-text-secondary">{lastSenderLabel}: </span>
+                        <span className="font-medium text-gray-600">{lastSenderLabel}: </span>
                         {lastMessageText}
                     </span>
                     {conversation.last_is_mine && (
-                        <span className="flex-shrink-0 text-primary">
+                        <span className="flex-shrink-0 text-sky-600">
                             {conversation.last_read ? '✓✓' : '✓'}
                         </span>
                     )}
                 </p>
             </div>
             {conversation.unread_count > 0 && (
-                <div className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs text-white">
+                <div className="flex h-5 min-w-5 items-center justify-center rounded-full bg-sky-500 px-1.5 text-xs text-white">
                     {conversation.unread_count}
                 </div>
             )}

@@ -6,7 +6,6 @@ import { userService } from "@/shared/api/userService.js";
 import type { PasswordChangeData, ProfileContextType } from "@/shared/types/domain.js";
 import { avatarMaxSize, validateImageFile } from "@/shared/utils/uploadValidation.js";
 import {
-    AppearanceForm,
     PasswordForm,
     ProfileEditStatus,
     ProfileEditTabs,
@@ -182,10 +181,6 @@ function ProfileEdit() {
                             onSubmit={handlePasswordSubmit}
                             onChange={handlePasswordChange}
                         />
-                    )}
-
-                    {activeTab === 'appearance' && (
-                        <AppearanceForm />
                     )}
                 </div>
             </div>

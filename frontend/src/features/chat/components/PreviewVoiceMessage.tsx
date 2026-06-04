@@ -42,13 +42,13 @@ export const PreviewVoiceMessage = ({
   const sizeLabel = formatFileSize(sizeBytes);
 
   return (
-    <div className="mb-3 rounded-xl border border-border bg-surface-muted p-3 shadow-app voice-preview-card">
+    <div className="mb-3 rounded-xl border border-gray-200 bg-gray-50 p-3 shadow-sm">
       {/* Player row */}
       <div className="flex items-center gap-3">
         <button
           type="button"
           onClick={() => void player.togglePlay()}
-          className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-primary text-white shadow-sm transition hover:bg-primary-hover active:bg-primary"
+          className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-sky-600 text-white shadow-sm transition hover:bg-sky-700 active:bg-sky-800"
           aria-label={player.isPlaying ? 'Пауза' : 'Воспроизвести запись'}
           title={player.isPlaying ? 'Пауза' : 'Воспроизвести'}
           disabled={sending}
@@ -66,31 +66,31 @@ export const PreviewVoiceMessage = ({
           aria-valuenow={Math.floor(player.currentTime)}
           aria-label="Позиция воспроизведения записанного голосового"
         >
-          <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-border">
+          <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-gray-300/70">
             <div
-              className="absolute left-0 top-0 h-1.5 rounded-full bg-primary transition-[width] duration-75"
+              className="absolute left-0 top-0 h-1.5 rounded-full bg-sky-500 transition-[width] duration-75"
               style={{ width: `${player.progressPercent}%` }}
             />
           </div>
         </div>
 
-        <div className="w-[5.5rem] flex-shrink-0 text-right text-[10px] tabular-nums font-medium tracking-tight text-text-secondary">
+        <div className="w-[5.5rem] flex-shrink-0 text-right text-[10px] tabular-nums font-medium tracking-tight text-gray-500">
           {formatDuration(player.currentTime)} / {formatDuration(displayDuration)}
         </div>
       </div>
 
       {/* Meta row: duration + size */}
-      <div className="mt-1 pl-11 text-[10px] text-text-secondary">
+      <div className="mt-1 pl-11 text-[10px] text-gray-500">
         {formatDuration(displayDuration)} • {sizeLabel}
       </div>
 
       {/* Actions */}
-      <div className="mt-2 flex items-center justify-between border-t border-border pt-2 pl-11 text-sm">
+      <div className="mt-2 flex items-center justify-between border-t border-gray-200 pt-2 pl-11 text-sm">
         <button
           type="button"
           onClick={onDelete}
           disabled={sending}
-          className="flex items-center gap-1 rounded-md px-2.5 py-1 text-danger transition hover:bg-danger-soft active:bg-danger-soft disabled:opacity-50"
+          className="flex items-center gap-1 rounded-md px-2.5 py-1 text-red-600 transition hover:bg-red-50 active:bg-red-100 disabled:opacity-50"
           title="Удалить запись"
         >
           <Icon name="delete" className="h-3.5 w-3.5" />
@@ -101,7 +101,7 @@ export const PreviewVoiceMessage = ({
           type="button"
           onClick={onSend}
           disabled={sending}
-          className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 font-medium text-white transition hover:bg-primary-hover active:bg-primary disabled:opacity-50"
+          className="flex items-center gap-1 rounded-md bg-sky-600 px-2.5 py-1 font-medium text-white transition hover:bg-sky-700 active:bg-sky-800 disabled:opacity-50"
           title="Отправить голосовое сообщение"
         >
           <Icon name="send" className="h-3.5 w-3.5" />

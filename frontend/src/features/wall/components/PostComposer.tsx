@@ -26,11 +26,11 @@ export function PostComposer({
                         className="app-input w-full px-4 py-2 resize-none"
                     />
                     <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <p className="text-xs text-text-muted">{content.length}/500</p>
+                        <p className="text-xs text-gray-500">{content.length}/500</p>
                         <button
                             type="submit"
                             disabled={submitting || !content.trim()}
-                            className="w-full rounded-xl bg-primary px-4 py-2 text-white transition hover:bg-primary-hover disabled:opacity-50 cursor-pointer sm:w-auto"
+                            className="w-full rounded-xl bg-sky-600 px-4 py-2 text-white transition hover:bg-sky-700 disabled:opacity-50 cursor-pointer sm:w-auto"
                         >
                             {submitting ? 'Публикация...' : 'Опубликовать'}
                         </button>

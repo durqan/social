@@ -1,226 +1,17 @@
 @import "tailwindcss";
 
-:root,
-[data-theme="classic"] {
+:root {
     color-scheme: light;
-    --app-bg: #f4f6f9;
+    --app-bg: #f7f7f8;
     --app-surface: #ffffff;
-    --app-surface-hover: #f9fafb;
-    --app-surface-muted: #eef1f5;
-    --app-border: #e2e8f0;
-    --app-text: #0f172a;
-    --app-text-secondary: #475569;
-    --app-text-muted: #64748b;
-    --app-primary: #0284c7;
-    --app-primary-hover: #0369a1;
+    --app-surface-muted: #f1f2f4;
+    --app-border: #e5e7eb;
+    --app-text: #111827;
+    --app-muted: #6b7280;
+    --app-soft: #9ca3af;
+    --app-accent: #229ed9;
+    --app-accent-strong: #168ac0;
     --app-danger: #ef4444;
-    --app-danger-soft: #fef2f2;
-    --app-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
-    --app-glass-bg: rgba(255, 255, 255, 0.7);
-    --app-glass-border: rgba(226, 232, 240, 0.6);
-}
-
-/* Liquid Glass - modern glassmorphism with depth and reflections */
-[data-theme="liquidGlass"] {
-    color-scheme: light;
-    --app-bg: #e8eef5;
-    --app-surface: rgba(255, 255, 255, 0.58);
-    --app-surface-hover: rgba(255, 255, 255, 0.78);
-    --app-surface-muted: rgba(240, 245, 250, 0.45);
-    --app-border: rgba(226, 232, 240, 0.55);
-    --app-text: #0f172a;
-    --app-text-secondary: #334155;
-    --app-text-muted: #475569;
-    --app-primary: #0ea5e9;
-    --app-primary-hover: #0284c8;
-    --app-danger: #ef4444;
-    --app-danger-soft: #fef2f2;
-    --app-shadow: 0 10px 40px rgba(15, 23, 42, 0.12), 0 2px 8px rgba(15, 23, 42, 0.06);
-    --app-glass-bg: rgba(255, 255, 255, 0.48);
-    --app-glass-border: rgba(255, 255, 255, 0.45);
-    --app-glass-highlight: rgba(255, 255, 255, 0.35);
-}
-
-/* Midnight - premium dark messenger with depth and strong accents */
-[data-theme="midnight"] {
-    color-scheme: dark;
-    --app-bg: #0a101f;
-    --app-surface: #1a2436;
-    --app-surface-hover: #2a3a52;
-    --app-surface-muted: #162030;
-    --app-border: #3f4c63;
-    --app-text: #e2e8f0;
-    --app-text-secondary: #94a3b8;
-    --app-text-muted: #64748b;
-    --app-primary: #67e8f9;
-    --app-primary-hover: #22d3ee;
-    --app-danger: #fb7185;
-    --app-danger-soft: #3f1f1f;
-    --app-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
-    --app-glass-bg: rgba(26, 36, 54, 0.75);
-    --app-glass-border: rgba(63, 76, 99, 0.7);
-}
-
-/* Soft Blue - calm, airy, pastel fresh interface */
-[data-theme="softBlue"] {
-    color-scheme: light;
-    --app-bg: #e8f3fc;
-    --app-surface: #f8fbff;
-    --app-surface-hover: #e0f0fe;
-    --app-surface-muted: #e4f0fa;
-    --app-border: #b8d9f0;
-    --app-text: #0f172a;
-    --app-text-secondary: #3b4c5e;
-    --app-text-muted: #5d6f82;
-    --app-primary: #3b82f6;
-    --app-primary-hover: #2563eb;
-    --app-danger: #f87171;
-    --app-danger-soft: #fef2f2;
-    --app-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
-    --app-glass-bg: #f8fbff;
-    --app-glass-border: #b8d9f0;
-}
-
-/* Theme-specific visual treatments (no JS conditionals) */
-
-/* Liquid Glass enhancements - noticeable modern glassmorphism with depth */
-
-/* Visual glass styles for layout-critical elements (preserve fixed/sticky) */
-[data-theme="liquidGlass"] .app-header,
-[data-theme="liquidGlass"] .app-sidebar {
-    background: var(--app-glass-bg);
-    border: 1px solid var(--app-glass-border);
-    box-shadow: var(--app-shadow);
-    backdrop-filter: blur(18px) saturate(1.1);
-    -webkit-backdrop-filter: blur(18px) saturate(1.1);
-}
-
-/* Glass styles + positioning context for panels that use ::before highlights */
-[data-theme="liquidGlass"] .app-card,
-[data-theme="liquidGlass"] .glass-panel {
-    background: var(--app-glass-bg);
-    border: 1px solid var(--app-glass-border);
-    box-shadow: var(--app-shadow);
-    backdrop-filter: blur(18px) saturate(1.1);
-    -webkit-backdrop-filter: blur(18px) saturate(1.1);
-    position: relative;
-}
-
-/* Visual glass for dropdown and bottom nav (preserve their absolute/fixed positioning) */
-[data-theme="liquidGlass"] .search-dropdown,
-[data-theme="liquidGlass"] .mobile-bottom-nav {
-    background: var(--app-glass-bg);
-    border: 1px solid var(--app-glass-border);
-    box-shadow: var(--app-shadow);
-    backdrop-filter: blur(18px) saturate(1.1);
-    -webkit-backdrop-filter: blur(18px) saturate(1.1);
-}
-
-/* Light reflection highlight for glass effect */
-[data-theme="liquidGlass"] .glass-panel::before,
-[data-theme="liquidGlass"] .app-card::before,
-[data-theme="liquidGlass"] .app-header::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 1px;
-    background: linear-gradient(to right, transparent, var(--app-glass-highlight), transparent);
-    pointer-events: none;
-    border-radius: 14px 14px 0 0;
-}
-
-[data-theme="liquidGlass"] .app-input {
-    background: rgba(255, 255, 255, 0.35);
-    border-color: rgba(255, 255, 255, 0.5);
-}
-
-@supports not (backdrop-filter: blur(1px)) {
-    [data-theme="liquidGlass"] .app-header,
-    [data-theme="liquidGlass"] .app-sidebar {
-        background: var(--app-surface);
-        border: 1px solid var(--app-border);
-    }
-
-    [data-theme="liquidGlass"] .app-card,
-    [data-theme="liquidGlass"] .glass-panel {
-        background: var(--app-surface);
-        border: 1px solid var(--app-border);
-    }
-
-    [data-theme="liquidGlass"] .search-dropdown,
-    [data-theme="liquidGlass"] .mobile-bottom-nav {
-        background: var(--app-surface);
-        border: 1px solid var(--app-border);
-    }
-}
-
-/* Ensure chat messages stay solid and readable in Liquid Glass (no glass on bubbles) */
-[data-theme="liquidGlass"] .bubble-own {
-    background-color: #ffffff;
-    border: 1px solid #e5e7eb;
-    color: #0f172a;
-}
-
-[data-theme="liquidGlass"] .bubble-other {
-    background-color: #f1f5f9;
-    border: 1px solid #e2e8f0;
-    color: #0f172a;
-}
-
-/* Voice preview card should stay legible and solid even in glass theme */
-[data-theme="liquidGlass"] .voice-preview-card {
-    background: #ffffff !important;
-    border: 1px solid #e5e7eb !important;
-    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
-}
-
-[data-theme="midnight"] .app-card {
-    border-color: var(--app-border);
-}
-
-/* Classic: stronger separation, less flat, more premium default */
-[data-theme="classic"] .app-header {
-    background: rgba(255, 255, 255, 0.96);
-    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.03);
-    border-bottom-color: var(--app-border);
-}
-
-[data-theme="classic"] .app-sidebar {
-    background: var(--app-surface);
-    border-right-color: var(--app-border);
-}
-
-[data-theme="classic"] .app-card {
-    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05), 0 1px 2px rgba(15, 23, 42, 0.03);
-}
-
-/* Soft Blue: more blue character, fresh surfaces */
-[data-theme="softBlue"] .app-header {
-    background: #f0f8ff;
-    border-bottom-color: #a8d4f0;
-}
-
-[data-theme="softBlue"] .app-sidebar {
-    background: #f0f7fc;
-    border-right-color: #b8d9f0;
-}
-
-[data-theme="softBlue"] .app-card {
-    background: #f8fbff;
-    box-shadow: 0 1px 2px rgba(59, 130, 246, 0.06);
-}
-
-/* Midnight: sidebar as distinct panel, cards pop */
-[data-theme="midnight"] .app-sidebar {
-    background: #121b2e;
-    border-right-color: #2a3a52;
-}
-
-[data-theme="midnight"] .app-header {
-    background: #121b2e;
-    border-bottom-color: #2a3a52;
 }
 
 * {
@@ -255,25 +46,25 @@ button {
 @layer components {
     .app-card {
         background: var(--app-surface);
-        border: 1px solid var(--app-border);
+        border: 1px solid rgba(17, 24, 39, 0.06);
         border-radius: 14px;
-        box-shadow: var(--app-shadow);
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
     }
 
     .app-input {
         width: 100%;
         border: 1px solid var(--app-border);
         border-radius: 12px;
-        background: var(--app-surface-muted);
+        background: #f9fafb;
         color: var(--app-text);
         outline: none;
         transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
     }
 
     .app-input:focus {
-        border-color: var(--app-primary);
-        background: var(--app-surface);
-        box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.12);
+        border-color: rgba(34, 158, 217, 0.55);
+        background: #ffffff;
+        box-shadow: 0 0 0 3px rgba(34, 158, 217, 0.12);
     }
 
     .icon-button {
@@ -281,12 +72,12 @@ button {
         align-items: center;
         justify-content: center;
         border-radius: 999px;
-        color: var(--app-text-secondary);
+        color: #4b5563;
         transition: background 160ms ease, color 160ms ease, transform 160ms ease;
     }
 
     .icon-button:hover {
-        background: var(--app-surface-hover);
+        background: #f1f5f9;
         color: var(--app-text);
     }
 
@@ -302,22 +93,22 @@ button {
         width: 36px;
         height: 36px;
         border-radius: 999px;
-        border: 1px solid var(--app-border);
-        background: var(--app-surface);
-        color: var(--app-text-secondary);
+        border: 1px solid #e5e7eb;
+        background: #ffffff;
+        color: #6b7280;
         transition: background 160ms ease, color 160ms ease, border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
         flex-shrink: 0;
     }
 
     .composer-button:hover:not(:disabled) {
-        background: var(--app-surface-hover);
-        color: var(--app-text);
-        border-color: var(--app-border);
+        background: #f8fafc;
+        color: #111827;
+        border-color: #e5e7eb;
     }
 
     .composer-button:active:not(:disabled) {
         transform: scale(0.96);
-        background: var(--app-surface-muted);
+        background: #f1f5f9;
     }
 
     .composer-button:disabled {
@@ -326,13 +117,13 @@ button {
     }
 
     .composer-button.recording {
-        background: var(--app-danger);
-        border-color: #b91c1c;
+        background: #ef4444;
+        border-color: #dc2626;
         color: #ffffff;
     }
 
     .composer-button.recording:hover:not(:disabled) {
-        background: #b91c1c;
+        background: #dc2626;
     }
 
     @media (min-width: 640px) {
@@ -350,20 +141,20 @@ button {
         width: 36px;
         height: 36px;
         border-radius: 999px;
-        background: var(--app-primary);
+        background: #0284c7;
         color: #ffffff;
         transition: background 160ms ease, transform 160ms ease, box-shadow 160ms ease;
         flex-shrink: 0;
-        box-shadow: var(--app-shadow);
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
     }
 
     .composer-send:hover:not(:disabled) {
-        background: var(--app-primary-hover);
+        background: #0369a1;
     }
 
     .composer-send:active:not(:disabled) {
         transform: scale(0.96);
-        background: var(--app-primary);
+        background: #075985;
     }
 
     .composer-send:disabled {
@@ -377,54 +168,4 @@ button {
             height: 40px;
         }
     }
-
-    /* Glass / translucent surfaces for Liquid Glass + others */
-    .glass-surface {
-        background: var(--app-glass-bg);
-        border: 1px solid var(--app-glass-border);
-        backdrop-filter: blur(16px);
-        -webkit-backdrop-filter: blur(16px);
-    }
-
-    @supports not (backdrop-filter: blur(1px)) {
-        .glass-surface {
-            background: var(--app-surface);
-            border: 1px solid var(--app-border);
-        }
-    }
-}
-
-/* Semantic tokens as utilities (use instead of hard-coded gray/white/sky colors) */
-@layer utilities {
-    .bg-bg { background-color: var(--app-bg); }
-    .bg-surface { background-color: var(--app-surface); }
-    .bg-surface-hover { background-color: var(--app-surface-hover); }
-    .bg-surface-muted { background-color: var(--app-surface-muted); }
-    .bg-primary { background-color: var(--app-primary); }
-    .bg-danger { background-color: var(--app-danger); }
-    .bg-danger-soft { background-color: var(--app-danger-soft); }
-
-    .text-text { color: var(--app-text); }
-    .text-text-secondary { color: var(--app-text-secondary); }
-    .text-text-muted { color: var(--app-text-muted); }
-    .text-primary { color: var(--app-primary); }
-    .text-danger { color: var(--app-danger); }
-
-    .border-border { border-color: var(--app-border); }
-    .border-primary { border-color: var(--app-primary); }
-    .border-danger { border-color: var(--app-danger); }
-
-    .shadow-app { box-shadow: var(--app-shadow); }
-
-    /* Message bubbles theme aware */
-    .bubble-own {
-        background-color: var(--app-surface);
-        color: var(--app-text);
-    }
-    .bubble-other {
-        background-color: var(--app-surface-muted);
-        color: var(--app-text);
-    }
-
-    /* Legacy glass utility kept for compatibility, but main is data-theme + .glass-panel */
 }

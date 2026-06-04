@@ -2,9 +2,8 @@ import { useRef, type ChangeEvent, type FormEvent, type PointerEvent, type Wheel
 
 import type { PasswordChangeData } from "@/shared/types/domain.js";
 import { Avatar } from "@/shared/ui/Avatar.js";
-import { useSettings, type Theme } from '@/app/providers/SettingsContext.js';
 
-export type ProfileEditTab = 'profile' | 'password' | 'appearance';
+export type ProfileEditTab = 'profile' | 'password';
 
 export type ProfileFormData = {
     name: string;
@@ -38,22 +37,19 @@ export function ProfileEditTabs({ activeTab, onChange }: TabsProps) {
     const tabClass = (tab: ProfileEditTab) => (
         `flex-1 px-2 py-3 text-sm font-medium transition-colors sm:px-4 ${
             activeTab === tab
-                ? 'text-primary border-b-2 border-primary'
-                : 'text-text-muted hover:text-text-secondary'
+                ? 'text-sky-700 border-b-2 border-sky-600'
+                : 'text-gray-500 hover:text-gray-700'
         }`
     );
 
     return (
-        <div className="border-b border-border">
+        <div className="border-b border-gray-200">
             <div className="flex">
                 <button onClick={() => onChange('profile')} className={tabClass('profile')}>
                     Редактировать профиль
                 </button>
                 <button onClick={() => onChange('password')} className={tabClass('password')}>
                     Сменить пароль
-                </button>
-                <button onClick={() => onChange('appearance')} className={tabClass('appearance')}>
-                    Внешний вид
                 </button>
             </div>
         </div>
@@ -110,17 +106,17 @@ export function ProfileForm({
                 />
 
                 <div>
-                    <label className="block text-sm font-medium text-text-secondary mb-1">Аватар</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Аватар</label>
                     <input
                         type="file"
                         accept="image/jpeg,image/png,image/webp"
                         onChange={onAvatarChange}
-                        className="block w-full text-sm text-text-secondary file:mr-3 file:rounded-lg file:border-0 file:bg-surface-muted file:px-3 file:py-2 file:text-sm file:text-text"
+                        className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-gray-100 file:px-3 file:py-2 file:text-sm file:text-gray-700"
                     />
-                    <p className="mt-1 text-xs text-text-muted">JPG, PNG или WebP, максимум 5 МБ.</p>
+                    <p className="mt-1 text-xs text-gray-500">JPG, PNG или WebP, максимум 5 МБ.</p>
                 </div>
 
-                <div className="rounded-xl border border-border bg-surface-muted p-3">
+                <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
                     <RangeControl
                         label="Масштаб"
                         value={data.avatarScale}
@@ -136,7 +132,7 @@ export function ProfileForm({
             <LabeledInput label="Email" name="email" type="email" value={data.email} onChange={onChange} />
 
             <div>
-                <label className="block text-sm font-medium text-text-secondary mb-1">О себе</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">О себе</label>
                 <textarea
                     name="bio"
                     value={data.bio}
@@ -146,14 +142,14 @@ export function ProfileForm({
                     className="app-input px-4 py-2 resize-none"
                     placeholder="Расскажите о себе..."
                 />
-                <p className="text-xs text-text-muted mt-1">{data.bio.length}/150 символов</p>
+                <p className="text-xs text-gray-500 mt-1">{data.bio.length}/150 символов</p>
             </div>
 
             <div className="flex flex-col gap-2 pt-4 sm:flex-row sm:gap-3">
                 <button
                     type="submit"
                     disabled={loading}
-                    className="w-full rounded-xl bg-primary px-6 py-2 text-white transition hover:bg-primary-hover disabled:opacity-50 cursor-pointer sm:w-auto"
+                    className="w-full rounded-xl bg-sky-600 px-6 py-2 text-white transition hover:bg-sky-700 disabled:opacity-50 cursor-pointer sm:w-auto"
                 >
                     {loading ? 'Сохранение...' : 'Сохранить изменения'}
                 </button>
@@ -161,7 +157,7 @@ export function ProfileForm({
                 <button
                     type="button"
                     onClick={onCancel}
-                    className="w-full rounded-xl bg-surface-muted px-6 py-2 text-text transition hover:bg-surface-hover cursor-pointer sm:w-auto"
+                    className="w-full rounded-xl bg-gray-100 px-6 py-2 text-gray-800 transition hover:bg-gray-200 cursor-pointer sm:w-auto"
                 >
                     Отмена
                 </button>
@@ -325,7 +321,7 @@ function AvatarPositionEditor({
                     positionY={positionY}
                     scale={scale}
                     size="xl"
-                    className="border border-border shadow-sm"
+                    className="border border-gray-200 shadow-sm"
                 />
             </div>
         </div>
@@ -349,7 +345,7 @@ function RangeControl({
 }) {
     return (
         <label className="block">
-            <span className="mb-1 block text-xs font-medium text-text-secondary">{label}</span>
+            <span className="mb-1 block text-xs font-medium text-gray-600">{label}</span>
             <input
                 type="range"
                 min={min}
@@ -357,7 +353,7 @@ function RangeControl({
                 step={step}
                 value={value}
                 onChange={event => onChange(Number(event.target.value))}
-                className="w-full accent-primary"
+                className="w-full accent-sky-600"
             />
         </label>
     );
@@ -392,7 +388,7 @@ export function PasswordForm({ data, loading, onSubmit, onChange }: PasswordForm
                     required
                     minLength={6}
                 />
-                <p className="text-xs text-text-muted mt-1">Минимум 6 символов</p>
+                <p className="text-xs text-gray-500 mt-1">Минимум 6 символов</p>
             </div>
 
             <LabeledInput
@@ -408,7 +404,7 @@ export function PasswordForm({ data, loading, onSubmit, onChange }: PasswordForm
                 <button
                     type="submit"
                     disabled={loading}
-                    className="w-full rounded-xl bg-primary px-6 py-2 text-white transition hover:bg-primary-hover disabled:opacity-50 cursor-pointer sm:w-auto"
+                    className="w-full rounded-xl bg-sky-600 px-6 py-2 text-white transition hover:bg-sky-700 disabled:opacity-50 cursor-pointer sm:w-auto"
                 >
                     {loading ? 'Смена пароля...' : 'Сменить пароль'}
                 </button>
@@ -438,7 +434,7 @@ function LabeledInput({
 }: LabeledInputProps) {
     return (
         <div>
-            <label className="block text-sm font-medium text-text-secondary mb-1">{label}</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
             <input
                 type={type}
                 name={name}
@@ -448,42 +444,6 @@ function LabeledInput({
                 minLength={minLength}
                 className="app-input px-4 py-2"
             />
-        </div>
-    );
-}
-
-export function AppearanceForm() {
-    const { theme, setTheme, themes } = useSettings();
-
-    return (
-        <div className="space-y-4">
-            <div>
-                <label className="block text-sm font-medium text-text-secondary mb-2">Стиль интерфейса</label>
-                <div className="space-y-2">
-                    {themes.map((t) => (
-                        <label
-                            key={t.value}
-                            className={`flex items-center gap-3 rounded-xl border px-4 py-3 cursor-pointer transition ${theme === t.value ? 'border-primary bg-surface-muted' : 'border-border bg-surface hover:bg-surface-hover'}`}
-                        >
-                            <input
-                                type="radio"
-                                name="theme"
-                                value={t.value}
-                                checked={theme === t.value}
-                                onChange={() => setTheme(t.value as Theme)}
-                                className="h-4 w-4 accent-primary"
-                            />
-                            <span className="text-sm font-medium text-text">{t.label}</span>
-                            {theme === t.value && (
-                                <span className="ml-auto text-xs text-primary">Активно</span>
-                            )}
-                        </label>
-                    ))}
-                </div>
-                <p className="mt-2 text-xs text-text-muted">
-                    Изменения применяются мгновенно. Выбор сохраняется в браузере.
-                </p>
-            </div>
         </div>
     );
 }

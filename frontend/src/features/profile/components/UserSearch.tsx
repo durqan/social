@@ -52,10 +52,10 @@ export function UserSearch({ className = '' }: UserSearchProps) {
                     placeholder="Поиск пользователей..."
                     className="app-input px-4 py-2 pl-10 pr-4"
                 />
-                <Icon name="search" className="absolute left-3 top-2.5 w-5 h-5 text-text-muted" />
+                <Icon name="search" className="absolute left-3 top-2.5 w-5 h-5 text-gray-400" />
 
                 {results.length > 0 && (
-                    <div className="absolute top-full left-0 right-0 mt-2 overflow-hidden rounded-2xl border border-border bg-surface shadow-app z-20 max-h-80 overflow-y-auto search-dropdown glass-panel">
+                    <div className="absolute top-full left-0 right-0 mt-2 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl shadow-gray-900/10 z-20 max-h-80 overflow-y-auto">
                         {results.map(user => {
                             const userID = user.id;
                             if (!userID) return null;
@@ -65,7 +65,7 @@ export function UserSearch({ className = '' }: UserSearchProps) {
                                     key={userID}
                                     type="button"
                                     onClick={() => openUser(userID)}
-                                    className="flex w-full items-center gap-3 p-3 text-left transition hover:bg-surface-hover"
+                                    className="flex w-full items-center gap-3 p-3 text-left transition hover:bg-gray-50"
                                 >
                                     <Avatar
                                         name={user.name}
@@ -76,10 +76,10 @@ export function UserSearch({ className = '' }: UserSearchProps) {
                                         scale={user.avatarScale}
                                     />
                                     <span className="min-w-0">
-                                        <span className="block truncate font-semibold text-text">
+                                        <span className="block truncate font-semibold text-gray-800">
                                             {user.name || 'Пользователь'}
                                         </span>
-                                        <span className="block truncate text-xs text-text-secondary">
+                                        <span className="block truncate text-xs text-gray-500">
                                             {user.email}
                                         </span>
                                     </span>

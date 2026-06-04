@@ -99,7 +99,7 @@ export function FriendItem({ friend, active, onOpenMenu }: FriendItemProps) {
             onTouchEnd={handleTouchEnd}
             onTouchCancel={handleTouchEnd}
             onTouchMove={handleTouchMove}
-            className={`flex w-full select-none items-center gap-3 rounded-xl p-3 text-left transition [-webkit-touch-callout:none] [-webkit-user-select:none] hover:bg-surface-hover ${active ? 'relative z-[60] bg-surface shadow-2xl ring-2 ring-primary/50' : ''}`}
+            className={`flex w-full select-none items-center gap-3 rounded-xl p-3 text-left transition [-webkit-touch-callout:none] [-webkit-user-select:none] hover:bg-gray-50 ${active ? 'relative z-[60] bg-white shadow-2xl ring-2 ring-white/80' : ''}`}
             style={{ touchAction: 'manipulation' }}
         >
             <Avatar
@@ -112,13 +112,13 @@ export function FriendItem({ friend, active, onOpenMenu }: FriendItemProps) {
                 size="list"
             />
             <span className="min-w-0">
-                <span className="block truncate font-semibold text-text">
+                <span className="block truncate font-semibold text-gray-800">
                     {friend.name || 'Пользователь'}
                 </span>
-                <span className="block truncate text-sm text-text-muted">
+                <span className="block truncate text-sm text-gray-500">
                     {friend.email}
                 </span>
-                <span className={online ? 'block text-sm text-emerald-500' : 'block text-sm text-text-muted'}>
+                <span className={online ? 'block text-sm text-green-500' : 'block text-sm text-gray-400'}>
                     {online ? 'Online' : 'Offline'}
                 </span>
             </span>

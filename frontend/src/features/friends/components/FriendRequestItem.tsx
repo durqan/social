@@ -19,7 +19,7 @@ export function FriendRequestItem({ request, onAccept }: FriendRequestItemProps)
     const userId = user.id;
 
     return (
-        <div className="flex flex-col gap-3 rounded-xl p-3 transition hover:bg-surface-hover sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 rounded-xl p-3 transition hover:bg-gray-50 sm:flex-row sm:items-center sm:justify-between">
             <button
                 type="button"
                 className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
@@ -35,10 +35,10 @@ export function FriendRequestItem({ request, onAccept }: FriendRequestItemProps)
                     size="list"
                 />
                 <span className="min-w-0">
-                    <span className="block truncate font-semibold text-text">
+                    <span className="block truncate font-semibold text-gray-800">
                         {user.name || 'Пользователь'}
                     </span>
-                    <span className="block truncate text-sm text-text-muted">
+                    <span className="block truncate text-sm text-gray-500">
                         {user.email}
                     </span>
                 </span>

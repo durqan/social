@@ -365,7 +365,7 @@ export const ChatMessageList = ({
                 </div>
             )}
             {messages.length === 0 ? (
-                <div className="flex h-full items-center justify-center px-6 text-center text-text-muted">
+                <div className="flex h-full items-center justify-center px-6 text-center text-gray-400">
                     Нет сообщений. Напишите что-нибудь...
                 </div>
             ) : (
@@ -421,7 +421,7 @@ export const ChatMessageList = ({
             )}
             {contextMenu && contextMessage && !isMobileMenu && (
                 <div
-                    className="fixed z-50 w-56 overflow-hidden rounded-xl border border-border bg-surface py-1 shadow-app search-dropdown"
+                    className="fixed z-50 w-56 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl shadow-slate-900/10"
                     style={{ left: contextMenu.x, top: contextMenu.y }}
                     onClick={event => event.stopPropagation()}
                     onContextMenu={event => event.preventDefault()}
@@ -437,7 +437,7 @@ export const ChatMessageList = ({
             )}
             {contextMenu && contextMessage && isMobileMenu && (
                 <div
-                    className="fixed z-[70] w-64 overflow-hidden rounded-xl border border-border bg-surface py-1 shadow-app"
+                    className="fixed z-[70] w-64 overflow-hidden rounded-xl border border-gray-100 bg-white py-1 shadow-2xl"
                     style={{ left: contextMenu.x, top: contextMenu.y }}
                     onClick={event => event.stopPropagation()}
                     onContextMenu={event => event.preventDefault()}
@@ -471,10 +471,10 @@ function ContextMenuAction({
     return (
         <button
             type="button"
-            className={`flex w-full items-center gap-3 text-left transition ${mobile ? 'px-4 py-3 text-[15px]' : 'px-3 py-2.5 text-sm'} ${danger ? 'text-danger hover:bg-danger-soft' : 'text-text hover:bg-surface-hover'}`}
+            className={`flex w-full items-center gap-3 text-left transition ${mobile ? 'px-4 py-3 text-[15px]' : 'px-3 py-2.5 text-sm'} ${danger ? 'text-red-600 hover:bg-red-50' : 'text-gray-800 hover:bg-gray-50'}`}
             onClick={onSelect}
         >
-            <span className={`flex h-7 w-7 items-center justify-center rounded-full ${danger ? 'bg-danger-soft' : action.icon === 'link' ? 'bg-primary/10 text-primary' : 'bg-surface-muted text-text-secondary'}`}>
+            <span className={`flex h-7 w-7 items-center justify-center rounded-full ${danger ? 'bg-red-50' : action.icon === 'link' ? 'bg-sky-50 text-sky-700' : 'bg-gray-100 text-gray-600'}`}>
                 {action.icon === 'edit' && <Icon name="edit" className="h-3.5 w-3.5" />}
                 {action.icon === 'delete' && <Icon name="delete" className="h-3.5 w-3.5" />}
                 {action.icon === 'text' && <span className="text-xs font-semibold">T</span>}

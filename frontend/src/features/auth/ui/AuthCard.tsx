@@ -16,14 +16,14 @@ export function AuthCard({ title, error, footer, children }: AuthCardProps) {
                 </h2>
 
                 {error && (
-                    <div className="mb-4 rounded-xl border border-danger bg-danger-soft p-3 text-danger">
+                    <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-red-700">
                         {error}
                     </div>
                 )}
 
                 {children}
 
-                <p className="mt-4 text-center text-sm text-text-secondary sm:text-base">
+                <p className="mt-4 text-center text-sm text-gray-600 sm:text-base">
                     {footer}
                 </p>
             </div>

@@ -54,12 +54,12 @@ function CountBadge({
 
 const desktopNavClass = ({ isActive }: { isActive: boolean }) =>
     `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
-        isActive ? 'bg-primary/10 text-primary' : 'text-text-secondary hover:bg-surface-hover hover:text-text'
+        isActive ? 'bg-sky-50 text-sky-700' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-950'
     }`;
 
 const mobileNavClass = ({ isActive }: { isActive: boolean }) =>
     `relative flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-[11px] font-medium transition-colors ${
-        isActive ? 'text-primary' : 'text-text-muted'
+        isActive ? 'text-sky-700' : 'text-gray-500'
     }`;
 
 function Sidebar({
@@ -180,8 +180,8 @@ function Sidebar({
 
     return (
         <>
-            <aside className="fixed left-0 top-0 z-40 hidden h-full w-72 flex-col border-r border-border bg-surface/95 px-3 py-4 shadow-app backdrop-blur lg:flex app-sidebar">
-                <div className="mb-4 rounded-2xl border border-border bg-surface-muted/80 p-3">
+            <aside className="fixed left-0 top-0 z-40 hidden h-full w-72 flex-col border-r border-gray-200/80 bg-white/95 px-3 py-4 shadow-sm backdrop-blur lg:flex">
+                <div className="mb-4 rounded-2xl border border-gray-100 bg-gray-50/80 p-3">
                     <div className="flex min-w-0 items-center gap-3">
                         <Avatar
                             name={userName}
@@ -192,8 +192,8 @@ function Sidebar({
                             scale={userAvatarScale}
                         />
                         <div className="min-w-0">
-                            <p className="truncate font-semibold text-text">{userName || 'Пользователь'}</p>
-                            <p className={userPresence?.online ? 'text-xs text-emerald-600' : 'text-xs text-text-muted'}>
+                            <p className="truncate font-semibold text-gray-900">{userName || 'Пользователь'}</p>
+                            <p className={userPresence?.online ? 'text-xs text-emerald-600' : 'text-xs text-gray-400'}>
                                 {userPresence?.online ? 'Online' : 'Offline'}
                             </p>
                         </div>
@@ -212,7 +212,7 @@ function Sidebar({
             </aside>
 
             {!isChatPage && (
-                <nav className="fixed inset-x-3 bottom-3 z-40 flex rounded-2xl border border-border bg-surface/95 p-1.5 shadow-app backdrop-blur lg:hidden mobile-bottom-nav">
+                <nav className="fixed inset-x-3 bottom-3 z-40 flex rounded-2xl border border-gray-200/80 bg-white/95 p-1.5 shadow-lg shadow-gray-900/10 backdrop-blur lg:hidden">
                     {navItems.map(item => (
                         <NavLink key={item.key} to={item.to} end={item.end} className={mobileNavClass}>
                             <span className="relative">

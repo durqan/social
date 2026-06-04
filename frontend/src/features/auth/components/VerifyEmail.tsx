@@ -42,7 +42,7 @@ function VerifyEmail() {
                     {state === 'success' ? '✓' : state === 'error' ? '!' : '...'}
                 </div>
 
-                <h1 className="text-xl font-bold text-text mb-3 sm:text-2xl">
+                <h1 className="text-xl font-bold text-gray-800 mb-3 sm:text-2xl">
                     {state === 'success'
                         ? 'Email подтвержден'
                         : state === 'error'
@@ -50,7 +50,7 @@ function VerifyEmail() {
                             : 'Подтверждение email'}
                 </h1>
 
-                <p className="text-text-secondary mb-6">{message}</p>
+                <p className="text-gray-600 mb-6">{message}</p>
 
                 <Link
                     to="/"
