@@ -95,7 +95,7 @@
     -webkit-backdrop-filter: blur(18px) saturate(1.1);
 }
 
-/* Glass styles for panels (dropdowns, bars, cards etc). Positioning context only for cards that need contained ::before highlights (to avoid overriding fixed/absolute/sticky on UI elements like dropdowns) */
+/* Glass styles + positioning context for panels that use ::before highlights */
 [data-theme="liquidGlass"] .app-card,
 [data-theme="liquidGlass"] .glass-panel {
     background: var(--app-glass-bg);
@@ -103,9 +103,6 @@
     box-shadow: var(--app-shadow);
     backdrop-filter: blur(18px) saturate(1.1);
     -webkit-backdrop-filter: blur(18px) saturate(1.1);
-}
-
-[data-theme="liquidGlass"] .app-card {
     position: relative;
 }
 
@@ -119,7 +116,8 @@
     -webkit-backdrop-filter: blur(18px) saturate(1.1);
 }
 
-/* Light reflection highlight for glass effect (only on cards and header; not on .glass-panel dropdowns/bars to avoid layout/position side effects) */
+/* Light reflection highlight for glass effect */
+[data-theme="liquidGlass"] .glass-panel::before,
 [data-theme="liquidGlass"] .app-card::before,
 [data-theme="liquidGlass"] .app-header::before {
     content: '';
