@@ -84,4 +84,88 @@ button {
     .icon-button:active {
         transform: scale(0.96);
     }
+
+    /* Composer action buttons (attach, emoji, mic) - lighter, balanced, responsive */
+    .composer-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        border-radius: 999px;
+        border: 1px solid #e5e7eb;
+        background: #ffffff;
+        color: #6b7280;
+        transition: background 160ms ease, color 160ms ease, border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+        flex-shrink: 0;
+    }
+
+    .composer-button:hover:not(:disabled) {
+        background: #f8fafc;
+        color: #111827;
+        border-color: #e5e7eb;
+    }
+
+    .composer-button:active:not(:disabled) {
+        transform: scale(0.96);
+        background: #f1f5f9;
+    }
+
+    .composer-button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .composer-button.recording {
+        background: #ef4444;
+        border-color: #dc2626;
+        color: #ffffff;
+    }
+
+    .composer-button.recording:hover:not(:disabled) {
+        background: #dc2626;
+    }
+
+    @media (min-width: 640px) {
+        .composer-button {
+            width: 40px;
+            height: 40px;
+        }
+    }
+
+    /* Primary send button in composer */
+    .composer-send {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        border-radius: 999px;
+        background: #0284c7;
+        color: #ffffff;
+        transition: background 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+        flex-shrink: 0;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+    }
+
+    .composer-send:hover:not(:disabled) {
+        background: #0369a1;
+    }
+
+    .composer-send:active:not(:disabled) {
+        transform: scale(0.96);
+        background: #075985;
+    }
+
+    .composer-send:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    @media (min-width: 640px) {
+        .composer-send {
+            width: 40px;
+            height: 40px;
+        }
+    }
 }

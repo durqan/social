@@ -48,12 +48,12 @@ export const PreviewVoiceMessage = ({
         <button
           type="button"
           onClick={() => void player.togglePlay()}
-          className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-sky-600 text-white shadow-sm transition hover:bg-sky-700 active:bg-sky-800"
+          className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-sky-600 text-white shadow-sm transition hover:bg-sky-700 active:bg-sky-800"
           aria-label={player.isPlaying ? 'Пауза' : 'Воспроизвести запись'}
           title={player.isPlaying ? 'Пауза' : 'Воспроизвести'}
           disabled={sending}
         >
-          <Icon name={player.isPlaying ? 'pause' : 'play'} className="h-4 w-4" filled />
+          <Icon name={player.isPlaying ? 'pause' : 'play'} className="h-3.5 w-3.5" filled />
         </button>
 
         <div
@@ -80,20 +80,20 @@ export const PreviewVoiceMessage = ({
       </div>
 
       {/* Meta row: duration + size */}
-      <div className="mt-1 pl-12 text-[10px] text-gray-500">
+      <div className="mt-1 pl-11 text-[10px] text-gray-500">
         {formatDuration(displayDuration)} • {sizeLabel}
       </div>
 
       {/* Actions */}
-      <div className="mt-2 flex items-center justify-between border-t border-gray-200 pt-2">
+      <div className="mt-2 flex items-center justify-between border-t border-gray-200 pt-2 pl-11 text-sm">
         <button
           type="button"
           onClick={onDelete}
           disabled={sending}
-          className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm text-red-600 transition hover:bg-red-50 disabled:opacity-50"
+          className="flex items-center gap-1 rounded-md px-2.5 py-1 text-red-600 transition hover:bg-red-50 active:bg-red-100 disabled:opacity-50"
           title="Удалить запись"
         >
-          <Icon name="delete" className="h-4 w-4" />
+          <Icon name="delete" className="h-3.5 w-3.5" />
           <span>Удалить</span>
         </button>
 
@@ -101,10 +101,10 @@ export const PreviewVoiceMessage = ({
           type="button"
           onClick={onSend}
           disabled={sending}
-          className="flex items-center gap-1.5 rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-sky-700 disabled:opacity-50"
+          className="flex items-center gap-1 rounded-md bg-sky-600 px-2.5 py-1 font-medium text-white transition hover:bg-sky-700 active:bg-sky-800 disabled:opacity-50"
           title="Отправить голосовое сообщение"
         >
-          <Icon name="send" className="h-4 w-4" />
+          <Icon name="send" className="h-3.5 w-3.5" />
           <span>{sending ? 'Отправка...' : 'Отправить'}</span>
         </button>
       </div>

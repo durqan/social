@@ -556,7 +556,7 @@ export const ChatInput = ({
                 />
             )}
 
-            <div className="relative flex gap-2 items-end">
+            <div className="relative flex gap-1.5 sm:gap-2 items-end">
                 <input
                     ref={fileInputRef}
                     type="file"
@@ -574,10 +574,10 @@ export const ChatInput = ({
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     disabled={isRecording || sending || !!pendingVoice}
-                    className="w-10 h-10 rounded-full border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 transition flex items-center justify-center flex-shrink-0 disabled:opacity-50"
+                    className="composer-button"
                     title="Прикрепить картинку"
                 >
-                    <Icon name="image" />
+                    <Icon name="image" className="w-4 h-4" />
                 </button>
 
                 <textarea
@@ -606,7 +606,7 @@ export const ChatInput = ({
                     type="button"
                     onClick={() => setShowEmojiPicker(prev => !prev)}
                     disabled={isRecording}
-                    className="w-10 h-10 rounded-full border border-gray-200 bg-white hover:bg-gray-50 transition flex items-center justify-center flex-shrink-0 disabled:opacity-50"
+                    className="composer-button text-base leading-none"
                     title="Эмодзи">
                     😊
                 </button>
@@ -640,21 +640,30 @@ export const ChatInput = ({
                     onPointerCancel={e => handleMicPointerEnd(e, true)}
                     onPointerLeave={handleMicPointerLeave}
                     disabled={selectedFiles.length > 0 || sending || recordingStopping || !!pendingVoice}
-                    className={`w-10 h-10 rounded-full border transition flex items-center justify-center flex-shrink-0 disabled:opacity-50 ${
+                    className={`composer-button ${isRecording ? 'recording' : pendingVoice ? 'text-gray-400' : ''}`}
+                    title={
                         isRecording
-                            ? 'bg-red-500 border-red-600 text-white'
-                            : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
-                    }`}
-                    title={isRecording ? 'Удерживайте для записи, отпустите чтобы завершить, сдвиньте влево для отмены' : 'Записать голосовое (удерживайте)'}
+                            ? 'Удерживайте для записи, отпустите чтобы завершить, сдвиньте влево для отмены'
+                            : pendingVoice
+                              ? 'Сначала отправьте или удалите записанное голосовое'
+                              : 'Записать голосовое (удерживайте)'
+                    }
                     aria-label="Записать голосовое сообщение"
                 >
-                    <Icon name="mic" className={isRecording ? 'animate-pulse' : ''} />
+                    {isRecording ? (
+                        <Icon name="mic" className="w-4 h-4 animate-pulse" />
+                    ) : pendingVoice ? (
+                        <Icon name="micOff" className="w-4 h-4" />
+                    ) : (
+                        <Icon name="mic" className="w-4 h-4" />
+                    )}
                 </button>
                 <button
                     onClick={() => void handleSend()}
                     disabled={!canSend || sending || isRecording || !!pendingVoice}
-                    className="w-10 h-10 bg-sky-600 text-white rounded-full hover:bg-sky-700 transition disabled:opacity-50 flex items-center justify-center flex-shrink-0">
-                    <Icon name="send" />
+                    className="composer-send"
+                >
+                    <Icon name="send" className="w-4 h-4" />
                 </button>
             </div>
             {errorMessage && (
