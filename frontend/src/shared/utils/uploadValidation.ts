@@ -1,14 +1,11 @@
 const imageTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const voiceTypes = new Set(['audio/webm', 'audio/ogg']);
-const videoNoteTypes = new Set(['video/webm', 'video/mp4']);
 
 export const avatarMaxSize = 5 * 1024 * 1024;
 export const chatImageMaxSize = 10 * 1024 * 1024;
 export const chatImageMaxCount = 5;
 export const chatVoiceMaxSize = 12 * 1024 * 1024;
 export const chatVoiceMaxDurationSeconds = 5 * 60;
-export const chatVideoNoteMaxSize = 25 * 1024 * 1024;
-export const chatVideoNoteMaxDurationSeconds = 60;
 
 export function formatFileSize(bytes: number) {
     if (bytes >= 1024 * 1024) {
@@ -162,28 +159,4 @@ export function uploadErrorMessage(error: unknown, fallback: string) {
     }
 
     return fallback;
-}
-
-export function validateVideoNoteFile(file: File, durationSeconds: number) {
-    if (file.size <= 0) {
-        return 'Видео-сообщение пустое. Попробуйте записать ещё раз.';
-    }
-
-    if (!videoNoteTypes.has(file.type)) {
-        return 'Поддерживаются только видео-сообщения WebM или MP4.';
-    }
-
-    if (file.size > chatVideoNoteMaxSize) {
-        return `Видео-сообщение слишком большое: ${formatFileSize(file.size)}. Максимум ${formatFileSize(chatVideoNoteMaxSize)}.`;
-    }
-
-    if (durationSeconds < 1) {
-        return 'Видео-сообщение слишком короткое (минимум 1 секунда).';
-    }
-
-    if (durationSeconds > chatVideoNoteMaxDurationSeconds) {
-        return `Видео-сообщение должно быть не длиннее ${formatDuration(chatVideoNoteMaxDurationSeconds)}.`;
-    }
-
-    return '';
 }

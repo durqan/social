@@ -314,24 +314,6 @@ export function getApiErrorMessage(error: unknown) {
     'voice duration is required':
       'Не удалось определить длительность голосового сообщения',
     'voice is too long': 'Голосовое сообщение должно быть не длиннее 5 минут',
-    'cannot mix video note with other attachments':
-      'Видео-сообщение нельзя отправить вместе с другими вложениями',
-    'only one video note attachment is supported':
-      'Можно отправить только одно видео-сообщение за раз',
-    'video note is required': 'Запишите видео-сообщение',
-    'video note is too large': 'Видео-сообщение должно быть не больше 25 МБ',
-    'video note must be webm or mp4':
-      'Видео-сообщение должно быть в формате WebM или MP4',
-    'video note content does not match content type':
-      'Файл поврежден или не является корректным видео',
-    'invalid video note': 'Файл поврежден или не является корректным видео',
-    'failed to read video note':
-      'Не удалось прочитать видео-сообщение. Попробуйте записать снова.',
-    'failed to save video note':
-      'Не удалось сохранить видео-сообщение. Попробуйте позже.',
-    'video note duration is required':
-      'Не удалось определить длительность видео-сообщения',
-    'video note is too long': 'Видео-сообщение должно быть не длиннее 60 секунд',
     'avatar is too large': 'Аватар должен быть не больше 5 МБ',
     'avatar is required': 'Выберите изображение для аватара',
     'avatar must be jpeg, png or webp':

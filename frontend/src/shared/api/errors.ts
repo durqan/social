@@ -58,17 +58,6 @@ const uploadErrorText: Record<string, string> = {
     'failed to save voice': 'Не удалось сохранить голосовое сообщение. Попробуйте еще раз.',
     'voice duration is required': 'Не удалось определить длительность голосового сообщения.',
     'voice is too long': 'Голосовое сообщение слишком длинное. Максимум 5 минут.',
-    'cannot mix video note with other attachments': 'Видео-сообщение нельзя отправить вместе с другими вложениями.',
-    'only one video note attachment is supported': 'Можно отправить только одно видео-сообщение за раз.',
-    'video note is required': 'Запишите видео-сообщение.',
-    'video note is too large': 'Видео-сообщение слишком большое. Максимум 25 МБ.',
-    'video note must be webm or mp4': 'Видео-сообщение должно быть в формате WebM или MP4.',
-    'video note content does not match content type': 'Файл поврежден или не является корректным видео.',
-    'invalid video note': 'Файл поврежден или не является корректным видео.',
-    'failed to read video note': 'Не удалось прочитать видео-сообщение. Попробуйте записать ещё раз.',
-    'failed to save video note': 'Не удалось сохранить видео-сообщение. Попробуйте ещё раз.',
-    'video note duration is required': 'Не удалось определить длительность видео-сообщения.',
-    'video note is too long': 'Видео-сообщение слишком длинное. Максимум 60 секунд.',
 };
 
 export const getUploadErrorMessage = (error: unknown, fallback: string) => {

@@ -16,9 +16,8 @@ import {
   View,
 } from 'react-native';
 import type { GestureResponderEvent, NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
-import { launchImageLibrary, launchCamera } from 'react-native-image-picker';
+import { launchImageLibrary } from 'react-native-image-picker';
 import type { Asset } from 'react-native-image-picker';
-import Video from 'react-native-video';
 import Sound, {
   AudioEncoderAndroidType,
   AudioSourceAndroidType,
@@ -33,18 +32,14 @@ import {
   CHAT_IMAGE_MIME_TYPES,
   CHAT_VOICE_MAX_DURATION_SECONDS,
   CHAT_VOICE_MIME_TYPE,
-  CHAT_VIDEO_NOTE_MAX_DURATION_SECONDS,
 } from '../../config/env';
 import { getApiErrorMessage, getCookieHeader } from '../../api/http';
 import {
   messageApi,
-  normalizeVideoNoteMimeForUpload,
   validateLocalChatImage,
   validateLocalVoiceMessage,
-  validateLocalVideoNoteMessage,
   type LocalChatImage,
   type LocalVoiceMessage,
-  type LocalVideoNoteMessage,
 } from '../../api/messages';
 import type { Message, MessageAttachment } from '../../api/types';
 import { chatSocket, type WsEvent } from '../../api/ws';
@@ -189,7 +184,6 @@ export default function ChatScreen({ route }: Props) {
   const playingVoiceUrlRef = useRef<string | null>(null);
   const previewPlayingRef = useRef<boolean>(false);
   const pendingVoiceRef = useRef<LocalVoiceMessage | null>(null);
-  const pendingVideoNoteRef = useRef<LocalVideoNoteMessage | null>(null);
   const previewProgressBarRef = useRef<View>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -204,7 +198,7 @@ export default function ChatScreen({ route }: Props) {
   const [hasMore, setHasMore] = useState(true);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [sending, setSending] = useState<
-    'uploading' | 'uploadingVoice' | 'uploadingVideoNote' | 'sending' | null
+    'uploading' | 'uploadingVoice' | 'sending' | null
   >(null);
   const [uploadProgress, setUploadProgress] = useState<{
     current: number;
@@ -215,17 +209,15 @@ export default function ChatScreen({ route }: Props) {
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [isVoiceCancelling, setIsVoiceCancelling] = useState(false);
   const [playingVoiceUrl, setPlayingVoiceUrl] = useState<string | null>(null);
-  const [playingVideoNoteUrl, setPlayingVideoNoteUrl] = useState<string | null>(null);
 
   const [pendingVoice, setPendingVoice] = useState<LocalVoiceMessage | null>(null);
-  const [pendingVideoNote, setPendingVideoNote] = useState<LocalVideoNoteMessage | null>(null);
   const [previewPlaying, setPreviewPlaying] = useState(false);
   const [previewPosition, setPreviewPosition] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [copyNotice, setCopyNotice] = useState<string | null>(null);
 
   const pendingImagesRef = useRef<LocalChatImage[]>([]);
-  const sendingRef = useRef<'uploading' | 'uploadingVoice' | 'uploadingVideoNote' | 'sending' | null>(null);
+  const sendingRef = useRef<'uploading' | 'uploadingVoice' | 'sending' | null>(null);
   const editingMessageRef = useRef<Message | null>(null);
   const recordingBusyRef = useRef<boolean>(false);
   const startVoiceRecordingRef = useRef<() => Promise<void> | void>(null as any);
@@ -251,10 +243,6 @@ export default function ChatScreen({ route }: Props) {
   useEffect(() => {
     pendingVoiceRef.current = pendingVoice;
   }, [pendingVoice]);
-
-  useEffect(() => {
-    pendingVideoNoteRef.current = pendingVideoNote;
-  }, [pendingVideoNote]);
 
   useEffect(() => {
     previewPlayingRef.current = previewPlaying;
@@ -287,8 +275,6 @@ export default function ChatScreen({ route }: Props) {
       Sound.removePlayBackListener();
       Sound.stopPlayer().catch(() => undefined);
       Sound.stopRecorder().catch(() => undefined);
-      setPlayingVoiceUrl(null);
-      setPlayingVideoNoteUrl(null);
     };
   }, []);
 
@@ -482,18 +468,6 @@ export default function ChatScreen({ route }: Props) {
     loadMessages('silent').catch(() => undefined);
   }, [isFocused, loadMessages, networkConnected]);
 
-  // Stop any media playback (voice via Sound, video note via state which unmounts <Video>)
-  // when leaving the chat screen. Covers: leave chat, unmount, focus loss.
-  useEffect(() => {
-    if (!isFocused) {
-      Sound.stopPlayer().catch(() => undefined);
-      Sound.removePlaybackEndListener();
-      Sound.removePlayBackListener();
-      setPlayingVoiceUrl(null);
-      setPlayingVideoNoteUrl(null);
-    }
-  }, [isFocused]);
-
   const restoreDraftAfterSendError = useCallback(() => {
     if (!draftRef.current) {
       return;
@@ -663,39 +637,6 @@ export default function ChatScreen({ route }: Props) {
     setPendingImages(previous =>
       [...previous, ...images].slice(0, CHAT_IMAGE_MAX_COUNT),
     );
-  }
-
-  async function openVideoNoteRecorder() {
-    if (pendingVoiceRef.current || pendingVideoNoteRef.current || sendingRef.current || recordingActiveRef.current || editingMessageRef.current) {
-      setError('Сначала отправьте или удалите записанное вложение');
-      return;
-    }
-    try {
-      const result = await launchCamera({
-        mediaType: 'video',
-        durationLimit: CHAT_VIDEO_NOTE_MAX_DURATION_SECONDS,
-        videoQuality: 'low',
-        saveToPhotos: false,
-        includeExtra: true,
-      });
-      if (result.didCancel || !result.assets || result.assets.length === 0) {
-        return;
-      }
-      const asset = result.assets[0];
-      const vn = assetToLocalVideoNote(asset);
-      if (!vn) {
-        setError('Не удалось получить видео для отправки');
-        return;
-      }
-      const vErr = validateLocalVideoNoteMessage(vn);
-      if (vErr) {
-        setError(vErr);
-        return;
-      }
-      setPendingVideoNote(vn);
-    } catch (e) {
-      setError(getApiErrorMessage(e));
-    }
   }
 
   async function ensureRecordAudioPermission() {
@@ -883,52 +824,6 @@ export default function ChatScreen({ route }: Props) {
     }
   }
 
-  async function sendVideoNoteMessage(video: LocalVideoNoteMessage): Promise<boolean> {
-    const normalizedUri =
-      video.uri.startsWith('file://') || video.uri.startsWith('content://')
-        ? video.uri
-        : `file://${video.uri}`;
-    const videoToSend: LocalVideoNoteMessage = { ...video, uri: normalizedUri };
-
-    const validationError = validateLocalVideoNoteMessage(videoToSend);
-    if (validationError) {
-      setError(validationError);
-      return false;
-    }
-
-    const content = (input ?? '').trim();
-
-    setSending('uploadingVideoNote');
-    setUploadProgress(null);
-    setError(null);
-
-    try {
-      const attachment = await messageApi.uploadVideoNote(videoToSend);
-      const attachments = [attachment];
-
-      setSending('sending');
-      if (chatSocket.isConnected()) {
-        chatSocket.sendMessage(otherUserId, content, attachments);
-      } else {
-        const sent = await messageApi.sendMessage(otherUserId, content, attachments);
-        shouldScrollToEndRef.current = true;
-        setMessages(previous => [...previous, sent]);
-        signalChatDataChanged();
-      }
-      if (content) {
-        setInput('');
-        setInputHeight(composerInputMinHeight);
-      }
-      return true;
-    } catch (apiError) {
-      setError(getApiErrorMessage(apiError));
-      return false;
-    } finally {
-      setSending(null);
-      setUploadProgress(null);
-    }
-  }
-
   // Preview voice (local, pre-send) playback using Sound (reuses same engine as sent voices)
   async function togglePreviewPlayback() {
     if (!pendingVoice) return;
@@ -951,11 +846,6 @@ export default function ChatScreen({ route }: Props) {
       if (playingVoiceUrlRef.current) {
         await Sound.stopPlayer().catch(() => undefined);
         setPlayingVoiceUrl(null);
-      }
-
-      // Stop video note playback (mutual exclusion with preview voice)
-      if (playingVideoNoteUrl) {
-        setPlayingVideoNoteUrl(null);
       }
 
       Sound.removePlaybackEndListener();
@@ -1016,20 +906,6 @@ export default function ChatScreen({ route }: Props) {
     if (!ok) {
       // restore preview so user can retry send/delete
       setPendingVoice(voiceToSend);
-    }
-  }
-
-  async function deletePendingVideoNote() {
-    setPendingVideoNote(null);
-  }
-
-  async function sendPendingVideoNote() {
-    if (!pendingVideoNote) return;
-    const videoToSend = pendingVideoNote;
-    setPendingVideoNote(null);
-    const ok = await sendVideoNoteMessage(videoToSend);
-    if (!ok) {
-      setPendingVideoNote(videoToSend);
     }
   }
 
@@ -1208,11 +1084,6 @@ export default function ChatScreen({ route }: Props) {
         setPreviewPosition(0);
       }
 
-      // Stop video note playback (mutual exclusion: voice + video note)
-      if (playingVideoNoteUrl) {
-        setPlayingVideoNoteUrl(null);
-      }
-
       if (playingVoiceUrlRef.current === url) {
         await Sound.stopPlayer();
         Sound.removePlaybackEndListener();
@@ -1239,27 +1110,6 @@ export default function ChatScreen({ route }: Props) {
       setPlayingVoiceUrl(null);
       setError(getApiErrorMessage(apiError));
     }
-  }
-
-  function toggleVideoNotePlayback(url: string) {
-    if (playingVideoNoteUrl === url) {
-      setPlayingVideoNoteUrl(null);
-      return;
-    }
-    if (playingVoiceUrl) {
-      Sound.stopPlayer().catch(() => undefined);
-      setPlayingVoiceUrl(null);
-    }
-    // Stop preview voice too (full mutual: video note stops any voice)
-    if (previewPlayingRef.current) {
-      Sound.stopPlayer().catch(() => undefined);
-      Sound.removePlayBackListener();
-      Sound.removePlaybackEndListener();
-      setPreviewPlaying(false);
-      previewPlayingRef.current = false;
-      setPreviewPosition(0);
-    }
-    setPlayingVideoNoteUrl(url);
   }
 
   async function deleteSelectedMessage(message: Message) {
@@ -1345,8 +1195,6 @@ export default function ChatScreen({ route }: Props) {
               onImagePress={setSelectedImageUrl}
               onVoicePress={url => toggleVoicePlayback(url)}
               playingVoiceUrl={playingVoiceUrl}
-              onVideoNotePress={toggleVideoNotePlayback}
-              playingVideoNoteUrl={playingVideoNoteUrl}
               onLongPress={() => openMessageActions(item)}
             />
           )}
@@ -1394,8 +1242,6 @@ export default function ChatScreen({ route }: Props) {
           <Text style={styles.sendStatusText}>
             {sending === 'uploadingVoice'
               ? 'Загружаем голосовое сообщение'
-              : sending === 'uploadingVideoNote'
-              ? 'Загружаем видео-сообщение'
               : sending === 'uploading'
               ? uploadProgress
                 ? `Загружаем изображения: ${uploadProgress.current} из ${uploadProgress.total}`
@@ -1513,38 +1359,6 @@ export default function ChatScreen({ route }: Props) {
         </View>
       ) : null}
 
-      {pendingVideoNote ? (
-        <View style={styles.previewVoiceCard}>
-          <View style={styles.previewVoiceRow}>
-            <View style={[styles.previewPlayButton, { backgroundColor: '#111' }]}>
-              <Text style={styles.previewPlayText}>▶</Text>
-            </View>
-            <Text style={styles.previewDuration}>
-              {formatDuration(pendingVideoNote.durationSeconds)}
-            </Text>
-          </View>
-          <View style={styles.previewMeta}>
-            <Text style={styles.previewMetaText}>Видео-сообщение • {pendingVideoNote.fileSize ? Math.round(pendingVideoNote.fileSize / 1024) + ' КБ' : ''}</Text>
-          </View>
-          <View style={styles.previewActions}>
-            <Pressable
-              onPress={() => { deletePendingVideoNote().catch(() => undefined); }}
-              style={styles.previewDeleteBtn}
-              disabled={Boolean(sending)}
-            >
-              <Text style={styles.previewDeleteText}>🗑 Удалить</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => { sendPendingVideoNote().catch(() => undefined); }}
-              style={styles.previewSendBtn}
-              disabled={Boolean(sending)}
-            >
-              <Text style={styles.previewSendText}>➤ Отправить</Text>
-            </Pressable>
-          </View>
-        </View>
-      ) : null}
-
       <View style={styles.composer}>
         <AppButton
           title="Фото"
@@ -1553,15 +1367,9 @@ export default function ChatScreen({ route }: Props) {
           onPress={pickImages}
         />
         <AppButton
-          title="Кружок"
-          variant="secondary"
-          disabled={Boolean(sending) || Boolean(editingMessage) || pendingImages.length > 0 || recordingBusy || Boolean(pendingVoice) || Boolean(pendingVideoNote)}
-          onPress={() => { void openVideoNoteRecorder(); }}
-        />
-        <AppButton
           title="Голос"
           variant="secondary"
-          disabled={Boolean(sending) || Boolean(editingMessage) || pendingImages.length > 0 || recordingBusy || Boolean(pendingVoice) || Boolean(pendingVideoNote)}
+          disabled={Boolean(sending) || Boolean(editingMessage) || pendingImages.length > 0 || recordingBusy || Boolean(pendingVoice)}
           onPress={() => {}}
           style={recording ? styles.voiceButtonRecording : undefined}
           {...voicePanResponder.panHandlers}
@@ -1586,9 +1394,8 @@ export default function ChatScreen({ route }: Props) {
           disabled={
             Boolean(sending) ||
             recording ||
-            (!input.trim() && !editingMessage && pendingImages.length === 0 && !pendingVoice && !pendingVideoNote) ||
-            Boolean(pendingVoice) ||
-            Boolean(pendingVideoNote)
+            (!input.trim() && !editingMessage && pendingImages.length === 0 && !pendingVoice) ||
+            Boolean(pendingVoice)
           }
           loading={Boolean(sending)}
           onPress={sendMessage}
@@ -1655,39 +1462,12 @@ function assetToLocalImage(asset: Asset): LocalChatImage | null {
   };
 }
 
-function assetToLocalVideoNote(asset: Asset): LocalVideoNoteMessage | null {
-  if (!asset.uri || !asset.type) {
-    return null;
-  }
-  const isVideo = asset.type.startsWith('video/');
-  if (!isVideo) {
-    return null;
-  }
-  const type = normalizeVideoNoteMimeForUpload(asset.type);
-  const durSec = typeof asset.duration === 'number' && asset.duration > 0
-    ? Math.ceil(asset.duration)
-    : 1;
-  let fileName = asset.fileName || `video-note-${Date.now()}.mp4`;
-  if (!/\.(webm|mp4)$/i.test(fileName)) {
-    fileName = fileName.replace(/\.[^/.]+$/, '') + '.mp4';
-  }
-  return {
-    uri: asset.uri,
-    type,
-    fileName,
-    durationSeconds: Math.max(1, durSec),
-    fileSize: asset.fileSize,
-  };
-}
-
 function MessageBubble({
   message,
   outgoing,
   onImagePress,
   onVoicePress,
   playingVoiceUrl,
-  onVideoNotePress,
-  playingVideoNoteUrl,
   onLongPress,
 }: {
   message: Message;
@@ -1695,8 +1475,6 @@ function MessageBubble({
   onImagePress: (url: string) => void;
   onVoicePress: (url: string) => void;
   playingVoiceUrl: string | null;
-  onVideoNotePress: (url: string) => void;
-  playingVideoNoteUrl: string | null;
   onLongPress: () => void;
 }) {
   return (
@@ -1782,38 +1560,6 @@ function MessageBubble({
                     )}
                   </Text>
                 </View>
-              </Pressable>
-            );
-          }
-
-          if (attachment.file_type === 'video_note') {
-            const isPlaying = playingVideoNoteUrl === attachmentUrl;
-            const size = 72;
-            return (
-              <Pressable
-                key={attachment.id ?? attachment.file_url}
-                style={{ width: size, height: size, borderRadius: size / 2, overflow: 'hidden', backgroundColor: '#111' }}
-                onPress={() => onVideoNotePress(attachmentUrl)}
-                onLongPress={onLongPress}
-              >
-                {isPlaying ? (
-                  <Video
-                    source={{ uri: attachmentUrl }}
-                    style={{ width: size, height: size }}
-                    resizeMode="cover"
-                    paused={false}
-                    onEnd={() => onVideoNotePress(attachmentUrl)}
-                    controls={false}
-                    repeat={false}
-                  />
-                ) : (
-                  <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.4)' }}>
-                    <Text style={{ color: '#fff', fontSize: 22 }}>▶</Text>
-                    <Text style={{ color: '#fff', fontSize: 10, marginTop: 2 }}>
-                      {formatDuration(attachment.duration_seconds ?? attachment.duration)}
-                    </Text>
-                  </View>
-                )}
               </Pressable>
             );
           }
