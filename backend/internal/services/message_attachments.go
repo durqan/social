@@ -118,8 +118,8 @@ func ParseChatVoiceDurationSeconds(value string) (int, bool) {
 }
 
 func ValidateChatVoiceDurationSeconds(duration int) (int, error) {
-	if duration <= 0 {
-		return 0, errors.New("voice duration is required")
+	if duration < 1 {
+		return 0, errors.New("voice duration must be at least 1 second")
 	}
 	if duration > ChatVoiceMaxDuration {
 		return 0, errors.New("voice is too long")

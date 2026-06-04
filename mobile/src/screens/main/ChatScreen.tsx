@@ -8,6 +8,7 @@ import {
   Modal,
   PermissionsAndroid,
   Platform,
+  PanResponder,
   Pressable,
   StyleSheet,
   Text,
@@ -179,6 +180,7 @@ export default function ChatScreen({ route }: Props) {
   const recordingMaxTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const voicePressStartXRef = useRef(0);
   const playingVoiceUrlRef = useRef<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -202,9 +204,17 @@ export default function ChatScreen({ route }: Props) {
   const [recording, setRecording] = useState(false);
   const [recordingBusy, setRecordingBusy] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [isVoiceCancelling, setIsVoiceCancelling] = useState(false);
   const [playingVoiceUrl, setPlayingVoiceUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copyNotice, setCopyNotice] = useState<string | null>(null);
+
+  const pendingImagesRef = useRef<LocalChatImage[]>([]);
+  const sendingRef = useRef<'uploading' | 'uploadingVoice' | 'sending' | null>(null);
+  const editingMessageRef = useRef<Message | null>(null);
+  const recordingBusyRef = useRef<boolean>(false);
+  const startVoiceRecordingRef = useRef<() => Promise<void> | void>(null as any);
+  const stopVoiceRecordingRef = useRef<(send: boolean) => Promise<void> | void>(null as any);
 
   useEffect(() => {
     if (!copyNotice) {
@@ -228,6 +238,19 @@ export default function ChatScreen({ route }: Props) {
   }, [hasMore]);
 
   useEffect(() => {
+    pendingImagesRef.current = pendingImages;
+  }, [pendingImages]);
+  useEffect(() => {
+    sendingRef.current = sending;
+  }, [sending]);
+  useEffect(() => {
+    editingMessageRef.current = editingMessage;
+  }, [editingMessage]);
+  useEffect(() => {
+    recordingBusyRef.current = recordingBusy;
+  }, [recordingBusy]);
+
+  useEffect(() => {
     return () => {
       if (recordingMaxTimerRef.current) {
         clearTimeout(recordingMaxTimerRef.current);
@@ -238,6 +261,47 @@ export default function ChatScreen({ route }: Props) {
       Sound.stopRecorder().catch(() => undefined);
     };
   }, []);
+
+  const voicePanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: evt => {
+        if (recordingActiveRef.current || recordingBusyRef.current || sendingRef.current || editingMessageRef.current) {
+          return;
+        }
+        if (pendingImagesRef.current.length > 0) {
+          setError('Сначала отправьте или удалите выбранные изображения');
+          return;
+        }
+        voicePressStartXRef.current = evt.nativeEvent.pageX || 0;
+        setIsVoiceCancelling(false);
+        Promise.resolve((startVoiceRecordingRef.current || startVoiceRecording)()).catch(() => undefined);
+      },
+      onPanResponderMove: (_evt, gestureState) => {
+        if (!recordingActiveRef.current) {
+          return;
+        }
+        const leftDist = Math.max(0, -gestureState.dx);
+        const cancelling = leftDist > 80;
+        if (cancelling !== isVoiceCancelling) {
+          setIsVoiceCancelling(cancelling);
+        }
+      },
+      onPanResponderRelease: (_evt, gestureState) => {
+        const leftDist = Math.max(0, -gestureState.dx);
+        const shouldSend = leftDist <= 80;
+        Promise.resolve((stopVoiceRecordingRef.current || stopVoiceRecording)(shouldSend)).catch(() => undefined);
+        setIsVoiceCancelling(false);
+      },
+      onPanResponderTerminate: () => {
+        if (recordingActiveRef.current) {
+          Promise.resolve((stopVoiceRecordingRef.current || stopVoiceRecording)(false)).catch(() => undefined);
+        }
+        setIsVoiceCancelling(false);
+      },
+    }),
+  ).current;
 
   const scrollToLatestMessage = useCallback(() => {
     requestAnimationFrame(() => {
@@ -581,10 +645,10 @@ export default function ChatScreen({ route }: Props) {
   }
 
   async function startVoiceRecording() {
-    if (recordingActiveRef.current || recordingBusy || sending || editingMessage) {
+    if (recordingActiveRef.current || recordingBusyRef.current || sendingRef.current || editingMessageRef.current) {
       return;
     }
-    if (pendingImages.length > 0) {
+    if (pendingImagesRef.current.length > 0) {
       setError('Сначала отправьте или удалите выбранные изображения');
       return;
     }
@@ -617,11 +681,12 @@ export default function ChatScreen({ route }: Props) {
       setRecordingSeconds(0);
       setRecording(true);
       recordingMaxTimerRef.current = setTimeout(() => {
-        stopVoiceRecording(true).catch(() => undefined);
+        Promise.resolve((stopVoiceRecordingRef.current || stopVoiceRecording)(true)).catch(() => undefined);
       }, CHAT_VOICE_MAX_DURATION_SECONDS * 1000);
     } catch (apiError) {
       Sound.removeRecordBackListener();
       setError(getApiErrorMessage(apiError));
+      setIsVoiceCancelling(false);
     } finally {
       setRecordingBusy(false);
     }
@@ -629,6 +694,7 @@ export default function ChatScreen({ route }: Props) {
 
   async function stopVoiceRecording(send: boolean) {
     if (!recordingActiveRef.current || recordingBusy) {
+      setIsVoiceCancelling(false);
       return;
     }
 
@@ -649,7 +715,7 @@ export default function ChatScreen({ route }: Props) {
       (Date.now() - recordingStartedAtRef.current) / 1000,
     );
     const durationSeconds = Math.max(
-      1,
+      0,
       recordingSecondsRef.current || fallbackSeconds,
     );
 
@@ -659,11 +725,16 @@ export default function ChatScreen({ route }: Props) {
     setRecording(false);
     setRecordingSeconds(0);
     setRecordingBusy(false);
+    setIsVoiceCancelling(false);
 
-    if (send && path) {
+    const shouldSend = send && durationSeconds >= 1;
+    if (shouldSend && path) {
       await sendVoiceMessage(path, durationSeconds);
     }
   }
+
+  startVoiceRecordingRef.current = startVoiceRecording;
+  stopVoiceRecordingRef.current = stopVoiceRecording;
 
   async function sendVoiceMessage(path: string, durationSeconds: number) {
     const uri =
@@ -1029,25 +1100,20 @@ export default function ChatScreen({ route }: Props) {
         <View style={styles.recordingBar}>
           <View style={styles.recordingDot} />
           <Text style={styles.recordingTime}>{formatDuration(recordingSeconds)}</Text>
-          <Text style={styles.recordingText} numberOfLines={1}>
-            Запись голосового сообщения
+          <Text
+            style={[
+              styles.recordingText,
+              isVoiceCancelling ? styles.recordingTextCancelling : null,
+            ]}
+            numberOfLines={1}
+          >
+            {isVoiceCancelling ? 'Отпустите, чтобы отменить' : 'Отпустите, чтобы отправить'}
           </Text>
-          <Pressable
-            accessibilityRole="button"
-            style={styles.recordingCancel}
-            disabled={recordingBusy}
-            onPress={() => stopVoiceRecording(false)}
-          >
-            <Text style={styles.recordingCancelText}>Отмена</Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            style={styles.recordingSend}
-            disabled={recordingBusy}
-            onPress={() => stopVoiceRecording(true)}
-          >
-            <Text style={styles.recordingSendText}>Отправить</Text>
-          </Pressable>
+          {!isVoiceCancelling && (
+            <Text style={styles.recordingHint} numberOfLines={1}>
+              Сдвиньте влево для отмены
+            </Text>
+          )}
         </View>
       ) : null}
 
@@ -1061,14 +1127,10 @@ export default function ChatScreen({ route }: Props) {
         <AppButton
           title="Голос"
           variant="secondary"
-          disabled={
-            Boolean(sending) ||
-            Boolean(editingMessage) ||
-            pendingImages.length > 0 ||
-            recording ||
-            recordingBusy
-          }
-          onPress={startVoiceRecording}
+          disabled={Boolean(sending) || Boolean(editingMessage) || pendingImages.length > 0 || recordingBusy}
+          onPress={() => {}}
+          style={recording ? styles.voiceButtonRecording : undefined}
+          {...voicePanResponder.panHandlers}
         />
         <TextInput
           value={input}
@@ -1630,6 +1692,19 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 13,
     lineHeight: 18,
+  },
+  recordingHint: {
+    color: colors.muted,
+    fontSize: 11,
+    marginLeft: 6,
+  },
+  recordingTextCancelling: {
+    color: colors.danger,
+    fontWeight: '700',
+  },
+  voiceButtonRecording: {
+    backgroundColor: '#dc2626',
+    opacity: 1,
   },
   recordingCancel: {
     borderRadius: 12,

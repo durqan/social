@@ -75,6 +75,9 @@ export const ChatInput = ({
     const recordingStartedAtRef = useRef(0);
     const recordingTimerRef = useRef<number | null>(null);
     const recordingMaxTimerRef = useRef<number | null>(null);
+    const pointerStartXRef = useRef(0);
+    const pointerSlideRef = useRef(0);
+    const pendingVoiceStopRef = useRef<{ shouldSend: boolean } | null>(null);
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
     const [previews, setPreviews] = useState<string[]>([]);
     const canSend = Boolean(value.trim()) || selectedFiles.length > 0;
@@ -83,6 +86,7 @@ export const ChatInput = ({
     const [isRecording, setIsRecording] = useState(false);
     const [recordingElapsed, setRecordingElapsed] = useState(0);
     const [recordingStopping, setRecordingStopping] = useState(false);
+    const [isCancellingRecord, setIsCancellingRecord] = useState(false);
 
     const resizeTextarea = useCallback(() => {
         const textarea = textareaRef.current;
@@ -185,6 +189,8 @@ export const ChatInput = ({
             setIsRecording(false);
             setRecordingStopping(false);
             setRecordingElapsed(0);
+            setIsCancellingRecord(false);
+            pendingVoiceStopRef.current = null;
             return;
         }
 
@@ -193,7 +199,7 @@ export const ChatInput = ({
 
         recorder.onstop = async () => {
             const chunks = voiceChunksRef.current;
-            const durationSeconds = Math.max(1, Math.ceil((Date.now() - recordingStartedAtRef.current) / 1000));
+            const durationSeconds = Math.ceil((Date.now() - recordingStartedAtRef.current) / 1000);
             const mimeType = recorder.mimeType || supportedVoiceMimeType();
 
             mediaRecorderRef.current = null;
@@ -202,8 +208,10 @@ export const ChatInput = ({
             setIsRecording(false);
             setRecordingStopping(false);
             setRecordingElapsed(0);
+            setIsCancellingRecord(false);
+            pendingVoiceStopRef.current = null;
 
-            if (!send) {
+            if (!send || durationSeconds < 1) {
                 return;
             }
             if (!onSendVoice) {
@@ -275,6 +283,13 @@ export const ChatInput = ({
             recorder.start();
             setIsRecording(true);
             setRecordingElapsed(0);
+            setIsCancellingRecord(false);
+            if (pendingVoiceStopRef.current) {
+                const { shouldSend } = pendingVoiceStopRef.current;
+                pendingVoiceStopRef.current = null;
+                // stop shortly after recorder started
+                window.setTimeout(() => stopRecording(shouldSend), 0);
+            }
             recordingTimerRef.current = window.setInterval(() => {
                 setRecordingElapsed(Math.floor((Date.now() - recordingStartedAtRef.current) / 1000));
             }, 250);
@@ -284,6 +299,8 @@ export const ChatInput = ({
         } catch {
             clearRecordingTimers();
             stopVoiceStream();
+            setIsCancellingRecord(false);
+            pendingVoiceStopRef.current = null;
             onErrorMessageChange?.('Разрешите доступ к микрофону, чтобы записать голосовое сообщение.');
         }
     }, [
@@ -297,6 +314,78 @@ export const ChatInput = ({
         stopVoiceStream,
     ]);
 
+    const handleMicPointerDown = useCallback(
+        (e: React.PointerEvent<HTMLButtonElement>) => {
+            if (isRecording || sending || recordingStopping || selectedFiles.length > 0) {
+                return;
+            }
+            if (e.pointerType === 'mouse' && e.button !== 0) {
+                return;
+            }
+            e.preventDefault();
+            pointerStartXRef.current = e.clientX;
+            pointerSlideRef.current = 0;
+            pendingVoiceStopRef.current = null;
+            setIsCancellingRecord(false);
+            startRecording();
+            const target = e.currentTarget;
+            if (target && typeof (target as any).setPointerCapture === 'function') {
+                try {
+                    (target as any).setPointerCapture(e.pointerId);
+                } catch {
+                    // capture not supported, fallback to other events if any
+                }
+            }
+        },
+        [isRecording, sending, recordingStopping, selectedFiles.length, startRecording],
+    );
+
+    const handleMicPointerMove = useCallback(
+        (e: React.PointerEvent<HTMLButtonElement>) => {
+            if (!isRecording || recordingStopping) {
+                return;
+            }
+            const startX = pointerStartXRef.current;
+            if (!startX) {
+                return;
+            }
+            const dx = startX - e.clientX;
+            const offset = Math.max(0, dx);
+            pointerSlideRef.current = offset;
+            const nextCancelling = offset > 80;
+            if (nextCancelling !== isCancellingRecord) {
+                setIsCancellingRecord(nextCancelling);
+            }
+        },
+        [isRecording, recordingStopping, isCancellingRecord],
+    );
+
+    const handleMicPointerEnd = useCallback(
+        (e: React.PointerEvent<HTMLButtonElement>, forceCancel = false) => {
+            const target = e.currentTarget;
+            if (target && typeof (target as any).releasePointerCapture === 'function') {
+                try {
+                    (target as any).releasePointerCapture(e.pointerId);
+                } catch {}
+            }
+            const slide = pointerSlideRef.current;
+            pointerStartXRef.current = 0;
+            pointerSlideRef.current = 0;
+            setIsCancellingRecord(false);
+            const shouldSend = !forceCancel && slide <= 80;
+            if (!isRecording) {
+                pendingVoiceStopRef.current = { shouldSend };
+                return;
+            }
+            stopRecording(shouldSend);
+        },
+        [isRecording, stopRecording],
+    );
+
+    const handleMicPointerLeave = useCallback((_e: React.PointerEvent<HTMLButtonElement>) => {
+        // Do not break recording state on leave (capture should deliver up if supported)
+    }, []);
+
     useEffect(() => {
         return () => {
             clearRecordingTimers();
@@ -306,6 +395,8 @@ export const ChatInput = ({
                 recorder.stop();
             }
             stopVoiceStream();
+            setIsCancellingRecord(false);
+            pendingVoiceStopRef.current = null;
         };
     }, [clearRecordingTimers, stopVoiceStream]);
 
@@ -377,28 +468,29 @@ export const ChatInput = ({
             )}
 
             {isRecording && (
-                <div className="mb-3 flex items-center gap-3 rounded-xl border border-sky-100 bg-sky-50 px-3 py-2 text-sm text-sky-800">
+                <div
+                    className={`mb-3 flex items-center gap-3 rounded-xl px-3 py-2 text-sm ${
+                        isCancellingRecord
+                            ? 'border border-red-200 bg-red-50 text-red-800'
+                            : 'border border-sky-100 bg-sky-50 text-sky-800'
+                    }`}
+                >
                     <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />
                     <span className="font-semibold">{formatDuration(recordingElapsed)}</span>
-                    <span className="min-w-0 flex-1 truncate text-sky-700">
-                        Запись голосового сообщения
+                    <span
+                        className={`min-w-0 flex-1 truncate ${
+                            isCancellingRecord ? 'text-red-600 font-medium' : 'text-sky-700'
+                        }`}
+                    >
+                        {isCancellingRecord ? 'Отпустите, чтобы отменить' : 'Отпустите, чтобы отправить'}
                     </span>
-                    <button
-                        type="button"
-                        onClick={() => stopRecording(false)}
-                        disabled={recordingStopping}
-                        className="rounded-lg px-2 py-1 text-sky-700 transition hover:bg-white disabled:opacity-60"
+                    <span
+                        className={`text-[10px] sm:text-[11px] whitespace-nowrap ${
+                            isCancellingRecord ? 'text-red-500' : 'text-sky-600'
+                        }`}
                     >
-                        Отмена
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => stopRecording(true)}
-                        disabled={recordingStopping}
-                        className="rounded-lg bg-sky-600 px-3 py-1 font-medium text-white transition hover:bg-sky-700 disabled:opacity-60"
-                    >
-                        Отправить
-                    </button>
+                        {isCancellingRecord ? 'Отменить' : 'Сдвиньте влево для отмены'}
+                    </span>
                 </div>
             )}
 
@@ -480,13 +572,21 @@ export const ChatInput = ({
                 )}
                 <button
                     type="button"
-                    onClick={() => void startRecording()}
-                    disabled={selectedFiles.length > 0 || sending || isRecording || recordingStopping}
-                    className="w-10 h-10 rounded-full border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 transition flex items-center justify-center flex-shrink-0 disabled:opacity-50"
-                    title="Записать голосовое"
+                    onPointerDown={handleMicPointerDown}
+                    onPointerMove={handleMicPointerMove}
+                    onPointerUp={handleMicPointerEnd}
+                    onPointerCancel={e => handleMicPointerEnd(e, true)}
+                    onPointerLeave={handleMicPointerLeave}
+                    disabled={selectedFiles.length > 0 || sending || recordingStopping}
+                    className={`w-10 h-10 rounded-full border transition flex items-center justify-center flex-shrink-0 disabled:opacity-50 ${
+                        isRecording
+                            ? 'bg-red-500 border-red-600 text-white'
+                            : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
+                    }`}
+                    title={isRecording ? 'Удерживайте для записи, отпустите чтобы отправить, сдвиньте влево для отмены' : 'Записать голосовое (удерживайте)'}
                     aria-label="Записать голосовое сообщение"
                 >
-                    <Icon name="mic" />
+                    <Icon name="mic" className={isRecording ? 'animate-pulse' : ''} />
                 </button>
                 <button
                     onClick={() => void handleSend()}

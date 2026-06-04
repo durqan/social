@@ -51,8 +51,8 @@ export function validateLocalVoiceMessage(voice: LocalVoiceMessage) {
     return 'Голосовое сообщение должно быть не больше 12 МБ';
   }
 
-  if (voice.durationSeconds <= 0) {
-    return 'Голосовое сообщение слишком короткое';
+  if (voice.durationSeconds < 1) {
+    return 'Голосовое сообщение слишком короткое (минимум 1 секунда)';
   }
 
   if (voice.durationSeconds > CHAT_VOICE_MAX_DURATION_SECONDS) {

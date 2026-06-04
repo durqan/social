@@ -98,8 +98,8 @@ export function validateVoiceFile(file: File, durationSeconds: number) {
         return `Голосовое сообщение слишком большое: ${formatFileSize(file.size)}. Максимум ${formatFileSize(chatVoiceMaxSize)}.`;
     }
 
-    if (durationSeconds <= 0) {
-        return 'Голосовое сообщение слишком короткое.';
+    if (durationSeconds < 1) {
+        return 'Голосовое сообщение слишком короткое (минимум 1 секунда).';
     }
 
     if (durationSeconds > chatVoiceMaxDurationSeconds) {
