@@ -22,6 +22,7 @@ export const VideoNoteMessage = ({
   const src = attachment.file_url;
   const initialDuration = attachment.duration_seconds ?? attachment.duration ?? 0;
   const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(initialDuration);
 
   const togglePlay = useCallback(
@@ -74,10 +75,12 @@ export const VideoNoteMessage = ({
         setDuration(video.duration);
       }
     };
+    const onTimeUpdate = () => setCurrentTime(video.currentTime);
     const onPlay = () => setIsPlaying(true);
     const onPause = () => setIsPlaying(false);
     const onEnded = () => {
       setIsPlaying(false);
+      setCurrentTime(0);
       video.currentTime = 0;
     };
     const onError = () => {
@@ -86,6 +89,7 @@ export const VideoNoteMessage = ({
     };
 
     video.addEventListener('loadedmetadata', onLoadedMetadata);
+    video.addEventListener('timeupdate', onTimeUpdate);
     video.addEventListener('play', onPlay);
     video.addEventListener('pause', onPause);
     video.addEventListener('ended', onEnded);
@@ -97,6 +101,7 @@ export const VideoNoteMessage = ({
 
     return () => {
       video.removeEventListener('loadedmetadata', onLoadedMetadata);
+      video.removeEventListener('timeupdate', onTimeUpdate);
       video.removeEventListener('play', onPlay);
       video.removeEventListener('pause', onPause);
       video.removeEventListener('ended', onEnded);
@@ -107,14 +112,23 @@ export const VideoNoteMessage = ({
 
   useEffect(() => {
     setIsPlaying(false);
+    setCurrentTime(0);
     setDuration(initialDuration);
   }, [initialDuration, src]);
+
+  const sizeClass = isPlaying
+    ? 'h-[150px] w-[150px] sm:h-[180px] sm:w-[180px]'
+    : 'h-24 w-24';
+  const progressPercent = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
+  const timeLabel = isPlaying && duration > 0
+    ? `${formatDuration(currentTime)} / ${formatDuration(duration)}`
+    : formatDuration(duration);
 
   return (
     <button
       type="button"
       onClick={togglePlay}
-      className="group relative block h-32 w-32 overflow-hidden rounded-full bg-black shadow-sm outline-none ring-1 ring-black/5 transition active:scale-[0.98] sm:h-40 sm:w-40"
+      className={`group relative block overflow-hidden rounded-full bg-black shadow-sm outline-none ring-1 ring-black/5 transition-[width,height,transform] duration-200 ease-out active:scale-[0.98] ${sizeClass}`}
       aria-label={isPlaying ? 'Пауза' : 'Воспроизвести видео-сообщение'}
       title={isPlaying ? 'Пауза' : 'Воспроизвести видео-сообщение'}
     >
@@ -129,15 +143,21 @@ export const VideoNoteMessage = ({
 
       <div className="pointer-events-none absolute inset-0 rounded-full ring-1 ring-inset ring-white/20" />
       <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/15 opacity-100 transition group-hover:bg-black/20">
-        {!isPlaying && (
-          <span className={`flex h-10 w-10 items-center justify-center rounded-full shadow-sm ${isOwn ? 'bg-white/90 text-sky-700' : 'bg-white/90 text-sky-600'}`}>
-            <Icon name="play" className="ml-0.5 h-4 w-4" filled />
-          </span>
-        )}
+        <span
+          className={`flex items-center justify-center rounded-full shadow-sm transition ${isPlaying ? 'h-9 w-9 bg-black/35 text-white opacity-0 group-hover:opacity-100' : `h-10 w-10 ${isOwn ? 'bg-white/90 text-sky-700' : 'bg-white/90 text-sky-600'}`}`}
+        >
+          <Icon name={isPlaying ? 'pause' : 'play'} className={`${isPlaying ? '' : 'ml-0.5'} h-4 w-4`} filled />
+        </span>
       </div>
       {duration > 0 && (
-        <div className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-medium tabular-nums text-white">
-          {formatDuration(duration)}
+        <div className="pointer-events-none absolute bottom-2 left-1/2 w-[72%] -translate-x-1/2 overflow-hidden rounded-full bg-black/60 text-center text-[10px] font-medium tabular-nums text-white">
+          <div className="relative px-2 py-0.5">
+            <div
+              className="absolute inset-y-0 left-0 bg-white/20 transition-[width] duration-100"
+              style={{ width: `${progressPercent}%` }}
+            />
+            <span className="relative">{timeLabel}</span>
+          </div>
         </div>
       )}
     </button>

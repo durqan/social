@@ -826,7 +826,7 @@ export const ChatInput = ({
             {isVideoNoteRecording && (
                 <div className="mb-3 rounded-xl border border-sky-100 bg-sky-50 p-3 text-sky-800">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                        <div className="relative h-32 w-32 flex-shrink-0 overflow-hidden rounded-full bg-black shadow-sm ring-1 ring-black/10 sm:h-40 sm:w-40">
+                        <div className="relative h-[180px] w-[180px] flex-shrink-0 overflow-hidden rounded-full bg-black shadow-sm ring-1 ring-black/10 sm:h-[220px] sm:w-[220px]">
                             <video
                                 ref={videoNotePreviewRef}
                                 className="h-full w-full object-cover"

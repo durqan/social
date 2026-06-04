@@ -81,7 +81,7 @@ export const PreviewVideoNoteMessage = ({
           type="button"
           onClick={togglePlay}
           disabled={sending}
-          className="group relative h-32 w-32 flex-shrink-0 overflow-hidden rounded-full bg-black shadow-sm outline-none ring-1 ring-black/5 disabled:opacity-60 sm:h-40 sm:w-40"
+          className="group relative h-[150px] w-[150px] flex-shrink-0 overflow-hidden rounded-full bg-black shadow-sm outline-none ring-1 ring-black/5 disabled:opacity-60 sm:h-[180px] sm:w-[180px]"
           aria-label={isPlaying ? 'Пауза' : 'Воспроизвести записанный кружок'}
           title={isPlaying ? 'Пауза' : 'Воспроизвести записанный кружок'}
         >
