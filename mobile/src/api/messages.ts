@@ -4,6 +4,9 @@ import {
   CHAT_VOICE_MAX_BYTES,
   CHAT_VOICE_MAX_DURATION_SECONDS,
   CHAT_VOICE_MIME_TYPE,
+  CHAT_VIDEO_NOTE_MAX_BYTES,
+  CHAT_VIDEO_NOTE_MAX_DURATION_SECONDS,
+  CHAT_VIDEO_NOTE_MIME_TYPES,
 } from '../config/env';
 import { formatDuration } from '../utils/format';
 import { apiRequest, toQueryString } from './http';
@@ -23,6 +26,14 @@ export type LocalChatImage = {
 };
 
 export type LocalVoiceMessage = {
+  uri: string;
+  type: string;
+  fileName: string;
+  durationSeconds: number;
+  fileSize?: number;
+};
+
+export type LocalVideoNoteMessage = {
   uri: string;
   type: string;
   fileName: string;
@@ -57,6 +68,42 @@ export function validateLocalVoiceMessage(voice: LocalVoiceMessage) {
 
   if (voice.durationSeconds > CHAT_VOICE_MAX_DURATION_SECONDS) {
     return `Голосовое сообщение должно быть не длиннее ${formatDuration(CHAT_VOICE_MAX_DURATION_SECONDS)}`;
+  }
+
+  return null;
+}
+
+// normalizeVideoNoteMimeForUpload maps iOS camera outputs (video/quicktime, video/mov etc)
+// and other video/* to a backend-supported MIME (video/mp4) before upload and for validation.
+// This keeps web/Android (which already produce webm/mp4) unchanged, and lets backend magic
+// bytes validation still apply on the actual bytes.
+export function normalizeVideoNoteMimeForUpload(mime: string | undefined | null): string {
+  const t = (mime || '').toLowerCase().split(';')[0].trim();
+  if ((CHAT_VIDEO_NOTE_MIME_TYPES as readonly string[]).includes(t)) {
+    return t;
+  }
+  if (t.startsWith('video/')) {
+    return 'video/mp4';
+  }
+  return t || 'video/mp4';
+}
+
+export function validateLocalVideoNoteMessage(video: LocalVideoNoteMessage) {
+  const effectiveType = normalizeVideoNoteMimeForUpload(video.type);
+  if (!(CHAT_VIDEO_NOTE_MIME_TYPES as readonly string[]).includes(effectiveType)) {
+    return 'Поддерживаются только видео-сообщения WebM или MP4';
+  }
+
+  if (video.fileSize && video.fileSize > CHAT_VIDEO_NOTE_MAX_BYTES) {
+    return 'Видео-сообщение должно быть не больше 25 МБ';
+  }
+
+  if (video.durationSeconds < 1) {
+    return 'Видео-сообщение слишком короткое (минимум 1 секунда)';
+  }
+
+  if (video.durationSeconds > CHAT_VIDEO_NOTE_MAX_DURATION_SECONDS) {
+    return `Видео-сообщение должно быть не длиннее ${formatDuration(CHAT_VIDEO_NOTE_MAX_DURATION_SECONDS)}`;
   }
 
   return null;
@@ -142,6 +189,23 @@ export const messageApi = {
     formData.append('duration', String(voice.durationSeconds));
 
     return apiRequest<MessageAttachment>('/messages/upload-voice', {
+      method: 'POST',
+      body: formData,
+    });
+  },
+
+  async uploadVideoNote(video: LocalVideoNoteMessage) {
+    const formData = new FormData();
+    const uploadType = normalizeVideoNoteMimeForUpload(video.type);
+    const uploadName = video.fileName || `video-note-${Date.now()}.mp4`;
+    formData.append('video_note', {
+      uri: video.uri,
+      type: uploadType,
+      name: uploadName,
+    } as unknown as Blob);
+    formData.append('duration', String(video.durationSeconds));
+
+    return apiRequest<MessageAttachment>('/messages/upload-video-note', {
       method: 'POST',
       body: formData,
     });

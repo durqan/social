@@ -14,6 +14,9 @@ export function messagePreviewText(message?: Message | null) {
         if (message.attachments.some(attachment => attachment.file_type === 'voice')) {
             return 'Голосовое сообщение';
         }
+        if (message.attachments.some(attachment => attachment.file_type === 'video_note')) {
+            return 'Видео-сообщение';
+        }
         return 'Вложение';
     }
 

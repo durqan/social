@@ -214,6 +214,15 @@ func voiceDurationSecondsFromForm(c *gin.Context) (int, bool) {
 	return 0, false
 }
 
+func videoNoteDurationSecondsFromForm(c *gin.Context) (int, bool) {
+	for _, key := range []string{"duration", "duration_seconds"} {
+		if duration, ok := services.ParseChatVideoNoteDurationSeconds(c.PostForm(key)); ok {
+			return duration, true
+		}
+	}
+	return 0, false
+}
+
 func GetUploadedMessageImage() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID, ok := authenticatedUserID(c)
@@ -291,4 +300,98 @@ func serveStoredObject(c *gin.Context, store storage.Storage, key string) {
 		return
 	}
 	c.Redirect(http.StatusTemporaryRedirect, signedURL)
+}
+
+func UploadMessageVideoNote(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, ok := authenticatedUserID(c)
+		if !ok {
+			return
+		}
+
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, services.ChatVideoNoteMaxRequestSize)
+
+		file, err := c.FormFile("video_note")
+		if err != nil {
+			var maxBytesError *http.MaxBytesError
+			if errors.As(err, &maxBytesError) {
+				c.JSON(413, gin.H{"error": "video note is too large"})
+				return
+			}
+
+			c.JSON(400, gin.H{"error": "video note is required"})
+			return
+		}
+
+		if file.Size <= 0 {
+			c.JSON(400, gin.H{"error": "video note is required"})
+			return
+		}
+		if file.Size > services.ChatVideoNoteMaxSize {
+			c.JSON(413, gin.H{"error": "video note is too large"})
+			return
+		}
+
+		src, err := file.Open()
+		if err != nil {
+			c.JSON(400, gin.H{"error": "failed to read video note"})
+			return
+		}
+		defer src.Close()
+
+		data, err := io.ReadAll(src)
+		if err != nil {
+			c.JSON(400, gin.H{"error": "failed to read video note"})
+			return
+		}
+		if int64(len(data)) > services.ChatVideoNoteMaxSize {
+			c.JSON(413, gin.H{"error": "video note is too large"})
+			return
+		}
+
+		contentType, ext, err := services.ValidateChatVideoNoteUpload(data, file.Header.Get("Content-Type"))
+		if err != nil {
+			c.JSON(415, gin.H{"error": err.Error()})
+			return
+		}
+
+		durationSeconds, hasDuration := videoNoteDurationSecondsFromForm(c)
+		if !hasDuration {
+			c.JSON(400, gin.H{"error": "video note duration is required"})
+			return
+		}
+		durationSeconds, err = services.ValidateChatVideoNoteDurationSeconds(durationSeconds)
+		if err != nil {
+			c.JSON(400, gin.H{"error": err.Error()})
+			return
+		}
+
+		key, err := storage.NewObjectKey(fmt.Sprintf("video-notes/user_%d", userID), ext)
+		if err != nil {
+			c.JSON(500, gin.H{"error": "failed to create video note filename"})
+			return
+		}
+		filename := filepath.Base(key)
+
+		store, err := storage.Default()
+		if err != nil {
+			c.JSON(500, gin.H{"error": "failed to prepare upload storage"})
+			return
+		}
+
+		if err := store.Upload(c.Request.Context(), key, bytes.NewReader(data), contentType); err != nil {
+			c.JSON(500, gin.H{"error": "failed to save video note"})
+			return
+		}
+		services.RememberChatUploadOwner(filename, userID)
+
+		c.JSON(201, services.MessageAttachmentInput{
+			AttachmentID:    strings.TrimSuffix(filename, filepath.Ext(filename)),
+			FileURL:         services.PrivateUploadURL(filename),
+			FileType:        "video_note",
+			Duration:        durationSeconds,
+			DurationSeconds: durationSeconds,
+			Size:            int64(len(data)),
+		})
+	}
 }

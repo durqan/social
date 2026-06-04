@@ -3,12 +3,14 @@ import { Icon } from "@/shared/ui/Icon.js";
 import EmojiPickerModule, { EmojiStyle, type EmojiClickData, type Props as EmojiPickerProps } from 'emoji-picker-react';
 import {
     chatVoiceMaxDurationSeconds,
+    chatVideoNoteMaxDurationSeconds,
     formatFileSize,
     formatDuration,
     imageFilesFromClipboard,
     validateChatImages,
 } from "@/shared/utils/uploadValidation.js";
 import { PreviewVoiceMessage } from "@/features/chat/components/PreviewVoiceMessage.js";
+import { PreviewVideoNoteMessage } from "@/features/chat/components/PreviewVideoNoteMessage.js";
 
 const EmojiPicker = EmojiPickerModule as unknown as (props: EmojiPickerProps) => ReactElement | null;
 const textareaMaxHeight = 168;
@@ -19,12 +21,26 @@ const voiceMimeCandidates = [
     'audio/ogg',
 ];
 
+const videoNoteMimeCandidates = [
+    'video/webm;codecs=vp8,opus',
+    'video/webm;codecs=vp9,opus',
+    'video/webm',
+    'video/mp4',
+];
+
 function supportedVoiceMimeType() {
     if (typeof MediaRecorder === 'undefined') {
         return '';
     }
 
     return voiceMimeCandidates.find(type => MediaRecorder.isTypeSupported(type)) || '';
+}
+
+function supportedVideoNoteMimeType() {
+    if (typeof MediaRecorder === 'undefined') {
+        return '';
+    }
+    return videoNoteMimeCandidates.find(type => MediaRecorder.isTypeSupported(type)) || '';
 }
 
 function voiceFileType(mimeType: string) {
@@ -35,11 +51,21 @@ function voiceFileExtension(mimeType: string) {
     return voiceFileType(mimeType) === 'audio/ogg' ? 'ogg' : 'webm';
 }
 
+function videoNoteFileType(mimeType: string) {
+    return mimeType.split(';')[0] || mimeType;
+}
+
+function videoNoteFileExtension(mimeType: string) {
+    const t = videoNoteFileType(mimeType);
+    return t === 'video/mp4' ? 'mp4' : 'webm';
+}
+
 interface ChatInputProps {
     value: string;
     onChange: (e: ChangeEvent<HTMLTextAreaElement>) => void;
     onSend: (files?: File[]) => Promise<boolean> | boolean;
     onSendVoice?: (file: File, durationSeconds: number, text?: string) => Promise<boolean> | boolean;
+    onSendVideoNote?: (file: File, durationSeconds: number, text?: string) => Promise<boolean> | boolean;
     errorMessage?: string;
     onErrorMessageChange?: (message: string) => void;
     incomingFiles?: {
@@ -60,6 +86,7 @@ export const ChatInput = ({
     onChange,
     onSend,
     onSendVoice,
+    onSendVideoNote,
     errorMessage = '',
     onErrorMessageChange,
     incomingFiles,
@@ -79,6 +106,14 @@ export const ChatInput = ({
     const pointerStartXRef = useRef(0);
     const pointerSlideRef = useRef(0);
     const pendingVoiceStopRef = useRef<{ shouldSend: boolean } | null>(null);
+
+    // Video note recording (separate from voice)
+    const videoRecorderRef = useRef<MediaRecorder | null>(null);
+    const videoChunksRef = useRef<Blob[]>([]);
+    const videoStreamRef = useRef<MediaStream | null>(null);
+    const videoRecordingStartedAtRef = useRef(0);
+    const videoRecordingTimerRef = useRef<number | null>(null);
+    const videoRecordingMaxTimerRef = useRef<number | null>(null);
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
     const [previews, setPreviews] = useState<string[]>([]);
     const canSend = Boolean(value.trim()) || selectedFiles.length > 0;
@@ -89,6 +124,10 @@ export const ChatInput = ({
     const [recordingStopping, setRecordingStopping] = useState(false);
     const [isCancellingRecord, setIsCancellingRecord] = useState(false);
 
+    const [isVideoRecording, setIsVideoRecording] = useState(false);
+    const [videoRecordingElapsed, setVideoRecordingElapsed] = useState(0);
+    const [videoRecordingStopping, setVideoRecordingStopping] = useState(false);
+
     type PendingVoice = {
         blob: Blob;
         durationSeconds: number;
@@ -97,6 +136,15 @@ export const ChatInput = ({
         mimeType: string;
     };
     const [pendingVoice, setPendingVoice] = useState<PendingVoice | null>(null);
+
+    type PendingVideoNote = {
+        blob: Blob;
+        durationSeconds: number;
+        size: number;
+        objectUrl: string;
+        mimeType: string;
+    };
+    const [pendingVideoNote, setPendingVideoNote] = useState<PendingVideoNote | null>(null);
 
     const resizeTextarea = useCallback(() => {
         const textarea = textareaRef.current;
@@ -165,8 +213,17 @@ export const ChatInput = ({
         });
     }, []);
 
+    const clearPendingVideoNote = useCallback(() => {
+        setPendingVideoNote(prev => {
+            if (prev) {
+                URL.revokeObjectURL(prev.objectUrl);
+            }
+            return null;
+        });
+    }, []);
+
     const handleSend = async () => {
-        if (!canSend || sending || isRecording || pendingVoice) return;
+        if (!canSend || sending || isRecording || pendingVoice || pendingVideoNote) return;
         onErrorMessageChange?.('');
         setSending(true);
         const sent = await onSend(selectedFiles);
@@ -205,6 +262,27 @@ export const ChatInput = ({
         }
     }, [pendingVoice, sending, onSendVoice, onErrorMessageChange, value, clearPendingVoice]);
 
+    const handleSendPendingVideoNote = useCallback(async () => {
+        if (!pendingVideoNote || sending || !onSendVideoNote) {
+            return;
+        }
+        onErrorMessageChange?.('');
+        const file = new File([pendingVideoNote.blob], `video-note.${videoNoteFileExtension(pendingVideoNote.mimeType)}`, {
+            type: pendingVideoNote.mimeType,
+            lastModified: Date.now(),
+        });
+
+        setSending(true);
+        try {
+            const sent = await onSendVideoNote(file, pendingVideoNote.durationSeconds, value);
+            if (sent) {
+                clearPendingVideoNote();
+            }
+        } finally {
+            setSending(false);
+        }
+    }, [pendingVideoNote, sending, onSendVideoNote, onErrorMessageChange, value, clearPendingVideoNote]);
+
     const clearRecordingTimers = useCallback(() => {
         if (recordingTimerRef.current !== null) {
             window.clearInterval(recordingTimerRef.current);
@@ -216,9 +294,25 @@ export const ChatInput = ({
         }
     }, []);
 
+    const clearVideoRecordingTimers = useCallback(() => {
+        if (videoRecordingTimerRef.current !== null) {
+            window.clearInterval(videoRecordingTimerRef.current);
+            videoRecordingTimerRef.current = null;
+        }
+        if (videoRecordingMaxTimerRef.current !== null) {
+            window.clearTimeout(videoRecordingMaxTimerRef.current);
+            videoRecordingMaxTimerRef.current = null;
+        }
+    }, []);
+
     const stopVoiceStream = useCallback(() => {
         voiceStreamRef.current?.getTracks().forEach(track => track.stop());
         voiceStreamRef.current = null;
+    }, []);
+
+    const stopVideoStream = useCallback(() => {
+        videoStreamRef.current?.getTracks().forEach(track => track.stop());
+        videoStreamRef.current = null;
     }, []);
 
     const stopRecording = useCallback((commitToPreview: boolean) => {
@@ -283,6 +377,62 @@ export const ChatInput = ({
 
         recorder.stop();
     }, [clearRecordingTimers, onErrorMessageChange, stopVoiceStream]);
+
+    const stopVideoRecording = useCallback((commitToPreview: boolean) => {
+        const recorder = videoRecorderRef.current;
+
+        if (!recorder || recorder.state === 'inactive') {
+            clearVideoRecordingTimers();
+            stopVideoStream();
+            setIsVideoRecording(false);
+            setVideoRecordingStopping(false);
+            setVideoRecordingElapsed(0);
+            return;
+        }
+
+        setVideoRecordingStopping(true);
+        clearVideoRecordingTimers();
+
+        recorder.onstop = () => {
+            const chunks = videoChunksRef.current;
+            const durationSeconds = Math.ceil((Date.now() - videoRecordingStartedAtRef.current) / 1000);
+            const mimeType = recorder.mimeType || supportedVideoNoteMimeType();
+
+            videoRecorderRef.current = null;
+            videoChunksRef.current = [];
+            stopVideoStream();
+            setIsVideoRecording(false);
+            setVideoRecordingStopping(false);
+            setVideoRecordingElapsed(0);
+
+            if (!commitToPreview || durationSeconds < 1) {
+                return;
+            }
+            if (!chunks.length) {
+                onErrorMessageChange?.('Видео-сообщение пустое. Попробуйте записать ещё раз.');
+                return;
+            }
+
+            const type = videoNoteFileType(mimeType);
+            const blob = new Blob(chunks, { type });
+            const objectUrl = URL.createObjectURL(blob);
+
+            setPendingVideoNote(prev => {
+                if (prev) URL.revokeObjectURL(prev.objectUrl);
+                return null;
+            });
+
+            setPendingVideoNote({
+                blob,
+                durationSeconds,
+                size: blob.size,
+                objectUrl,
+                mimeType: type,
+            });
+        };
+
+        recorder.stop();
+    }, [clearVideoRecordingTimers, onErrorMessageChange, stopVideoStream]);
 
     const startRecording = useCallback(async () => {
         if (isRecording || sending || recordingStopping) {
@@ -354,6 +504,73 @@ export const ChatInput = ({
         sending,
         stopRecording,
         stopVoiceStream,
+    ]);
+
+    const startVideoRecording = useCallback(async () => {
+        if (isVideoRecording || sending || videoRecordingStopping) {
+            return;
+        }
+        if (!onSendVideoNote) {
+            onErrorMessageChange?.('Видео-сообщения недоступны.');
+            return;
+        }
+        if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+            onErrorMessageChange?.('Браузер не поддерживает запись видео.');
+            return;
+        }
+
+        const mimeType = supportedVideoNoteMimeType();
+        if (!mimeType) {
+            onErrorMessageChange?.('Браузер не поддерживает запись WebM/MP4 видео.');
+            return;
+        }
+
+        try {
+            onErrorMessageChange?.('');
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'user' },
+                audio: true,
+            });
+            const recorder = new MediaRecorder(stream, { mimeType: mimeType });
+
+            videoChunksRef.current = [];
+            videoStreamRef.current = stream;
+            videoRecorderRef.current = recorder;
+            videoRecordingStartedAtRef.current = Date.now();
+
+            recorder.ondataavailable = event => {
+                if (event.data.size > 0) {
+                    videoChunksRef.current.push(event.data);
+                }
+            };
+            recorder.onerror = () => {
+                onErrorMessageChange?.('Не удалось записать видео-сообщение.');
+                stopVideoRecording(false);
+            };
+
+            recorder.start();
+            setIsVideoRecording(true);
+            setVideoRecordingElapsed(0);
+            videoRecordingTimerRef.current = window.setInterval(() => {
+                setVideoRecordingElapsed(Math.floor((Date.now() - videoRecordingStartedAtRef.current) / 1000));
+            }, 250);
+            videoRecordingMaxTimerRef.current = window.setTimeout(() => {
+                stopVideoRecording(true);
+            }, chatVideoNoteMaxDurationSeconds * 1000);
+        } catch {
+            clearVideoRecordingTimers();
+            stopVideoStream();
+            onErrorMessageChange?.('Разрешите доступ к камере и микрофону, чтобы записать видео-сообщение.');
+        }
+    }, [
+        clearVideoRecordingTimers,
+        isVideoRecording,
+        onErrorMessageChange,
+        onSendVideoNote,
+        sending,
+        stopVideoRecording,
+        stopVideoStream,
+        videoRecordingStopping,
     ]);
 
     const handleMicPointerDown = useCallback(
@@ -444,8 +661,21 @@ export const ChatInput = ({
                 if (prev) URL.revokeObjectURL(prev.objectUrl);
                 return null;
             });
+
+            // video note cleanup
+            clearVideoRecordingTimers();
+            const vrec = videoRecorderRef.current;
+            if (vrec && vrec.state !== 'inactive') {
+                vrec.onstop = null;
+                vrec.stop();
+            }
+            stopVideoStream();
+            setPendingVideoNote(prev => {
+                if (prev) URL.revokeObjectURL(prev.objectUrl);
+                return null;
+            });
         };
-    }, [clearRecordingTimers, stopVoiceStream]);
+    }, [clearRecordingTimers, clearVideoRecordingTimers, stopVoiceStream, stopVideoStream]);
 
     const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
         const files = imageFilesFromClipboard(event.clipboardData);
@@ -556,6 +786,37 @@ export const ChatInput = ({
                 />
             )}
 
+            {isVideoRecording && (
+                <div className="mb-3 flex items-center gap-3 rounded-xl border border-primary/30 bg-surface-muted px-3 py-2 text-sm text-primary">
+                    <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-danger" />
+                    <span className="font-semibold">{formatDuration(videoRecordingElapsed)}</span>
+                    <span className="min-w-0 flex-1 truncate text-primary">Запись видео-сообщения…</span>
+                    <button
+                        type="button"
+                        onClick={() => stopVideoRecording(true)}
+                        className="rounded bg-primary px-2 py-0.5 text-xs text-white"
+                    >
+                        Завершить
+                    </button>
+                    <span className="text-[10px] sm:text-[11px] whitespace-nowrap text-primary">Макс. 60 сек</span>
+                </div>
+            )}
+
+            {pendingVideoNote && (
+                <PreviewVideoNoteMessage
+                    src={pendingVideoNote.objectUrl}
+                    durationSeconds={pendingVideoNote.durationSeconds}
+                    sizeBytes={pendingVideoNote.size}
+                    onDelete={() => {
+                        clearPendingVideoNote();
+                    }}
+                    onSend={() => {
+                        void handleSendPendingVideoNote();
+                    }}
+                    sending={sending}
+                />
+            )}
+
             <div className="relative flex gap-1.5 sm:gap-2 items-end">
                 <input
                     ref={fileInputRef}
@@ -573,11 +834,22 @@ export const ChatInput = ({
                 <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    disabled={isRecording || sending || !!pendingVoice}
+                    disabled={isRecording || sending || !!pendingVoice || !!pendingVideoNote || isVideoRecording}
                     className="composer-button"
                     title="Прикрепить картинку"
                 >
                     <Icon name="image" className="w-4 h-4" />
+                </button>
+
+                <button
+                    type="button"
+                    onClick={() => void startVideoRecording()}
+                    disabled={isVideoRecording || sending || recordingStopping || !!pendingVoice || !!pendingVideoNote || selectedFiles.length > 0}
+                    className={`composer-button ${isVideoRecording ? 'recording' : ''}`}
+                    title={isVideoRecording ? 'Идёт запись видео-сообщения' : 'Записать видео-сообщение (кружок)'}
+                    aria-label="Записать видео-сообщение"
+                >
+                    <Icon name="video" className="w-4 h-4" />
                 </button>
 
                 <textarea
@@ -639,13 +911,13 @@ export const ChatInput = ({
                     onPointerUp={handleMicPointerEnd}
                     onPointerCancel={e => handleMicPointerEnd(e, true)}
                     onPointerLeave={handleMicPointerLeave}
-                    disabled={selectedFiles.length > 0 || sending || recordingStopping || !!pendingVoice}
+                    disabled={selectedFiles.length > 0 || sending || recordingStopping || !!pendingVoice || !!pendingVideoNote || isVideoRecording}
                     className={`composer-button ${isRecording ? 'recording' : pendingVoice ? 'text-text-muted' : ''}`}
                     title={
                         isRecording
                             ? 'Удерживайте для записи, отпустите чтобы завершить, сдвиньте влево для отмены'
-                            : pendingVoice
-                              ? 'Сначала отправьте или удалите записанное голосовое'
+                            : pendingVoice || pendingVideoNote
+                              ? 'Сначала отправьте или удалите записанное медиа'
                               : 'Записать голосовое (удерживайте)'
                     }
                     aria-label="Записать голосовое сообщение"
@@ -660,7 +932,7 @@ export const ChatInput = ({
                 </button>
                 <button
                     onClick={() => void handleSend()}
-                    disabled={!canSend || sending || isRecording || !!pendingVoice}
+                    disabled={!canSend || sending || isRecording || !!pendingVoice || !!pendingVideoNote}
                     className="composer-send"
                 >
                     <Icon name="send" className="w-4 h-4" />

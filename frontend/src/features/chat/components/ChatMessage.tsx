@@ -4,6 +4,7 @@ import { Avatar } from "@/shared/ui/Avatar.js";
 import { ImageViewer } from "@/shared/ui/ImageViewer.js";
 import { messageAuthorName, messagePreviewText } from "@/features/chat/lib/messagePreview.js";
 import { VoiceMessage } from "@/features/chat/components/VoiceMessage.js";
+import { VideoNoteMessage } from "@/features/chat/components/VideoNoteMessage.js";
 
 const urlPattern = /(https?:\/\/[^\s<]+|www\.[^\s<]+)/gi;
 
@@ -127,6 +128,7 @@ const ChatMessageComponent = ({
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const imageAttachments = message.attachments?.filter(attachment => attachment.file_type === 'image') || [];
     const voiceAttachments = message.attachments?.filter(attachment => attachment.file_type === 'voice') || [];
+    const videoNoteAttachments = message.attachments?.filter(attachment => attachment.file_type === 'video_note') || [];
 
     const clearLongPressTimer = () => {
         if (longPressTimer.current) {
@@ -323,9 +325,24 @@ const ChatMessageComponent = ({
                             )}
 
                             {voiceAttachments.length ? (
-                                <div className={message.content || imageAttachments.length ? 'mb-2 space-y-2' : 'space-y-2'}>
+                                <div className={message.content || imageAttachments.length || videoNoteAttachments.length ? 'mb-2 space-y-2' : 'space-y-2'}>
                                     {voiceAttachments.map(attachment => (
                                         <VoiceMessage
+                                            key={attachment.id ?? attachment.file_url}
+                                            attachment={attachment}
+                                            isOwn={isOwn}
+                                            selectionMode={selectionMode}
+                                            canSelect={canSelect}
+                                            onSelectMessage={onSelectMessage}
+                                        />
+                                    ))}
+                                </div>
+                            ) : null}
+
+                            {videoNoteAttachments.length ? (
+                                <div className={message.content || imageAttachments.length ? 'mb-2' : ''}>
+                                    {videoNoteAttachments.map(attachment => (
+                                        <VideoNoteMessage
                                             key={attachment.id ?? attachment.file_url}
                                             attachment={attachment}
                                             isOwn={isOwn}
