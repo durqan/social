@@ -38,11 +38,14 @@ export function useVoicePlayback(src: string, initialDuration?: number): UseVoic
       return;
     }
 
-    // Pause any other voice players on the page (Telegram-like single active playback)
+    // Voice and video notes share one active playback slot.
     document.querySelectorAll('audio[data-voice]').forEach((el) => {
       if (el !== audio) {
         (el as HTMLAudioElement).pause();
       }
+    });
+    document.querySelectorAll('video[data-video-note]').forEach((el) => {
+      (el as HTMLVideoElement).pause();
     });
 
     try {

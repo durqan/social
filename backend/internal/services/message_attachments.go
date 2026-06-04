@@ -25,17 +25,21 @@ import (
 )
 
 const (
-	ChatImageMaxSize        = 10 << 20 // 10 MB
-	ChatImageMaxRequestSize = ChatImageMaxSize + 1<<20
-	chatImageMaxCount       = 5
-	ChatVoiceMaxSize        = 12 << 20 // 12 MB
-	ChatVoiceMaxRequestSize = ChatVoiceMaxSize + 1<<20
-	ChatVoiceMaxDuration    = 5 * 60
-	chatVoiceMaxCount       = 1
-	chatUploadURLPrefix     = "/api/messages/uploads/"
-	chatAttachmentURLPrefix = "/api/messages/attachments/"
-	legacyChatUploadPrefix  = "/uploads/chat/"
-	chatUploadOwnerTTL      = 24 * time.Hour
+	ChatImageMaxSize            = 10 << 20 // 10 MB
+	ChatImageMaxRequestSize     = ChatImageMaxSize + 1<<20
+	chatImageMaxCount           = 5
+	ChatVoiceMaxSize            = 12 << 20 // 12 MB
+	ChatVoiceMaxRequestSize     = ChatVoiceMaxSize + 1<<20
+	ChatVoiceMaxDuration        = 5 * 60
+	chatVoiceMaxCount           = 1
+	ChatVideoNoteMaxSize        = 25 << 20 // 25 MB
+	ChatVideoNoteMaxRequestSize = ChatVideoNoteMaxSize + 1<<20
+	ChatVideoNoteMaxDuration    = 60
+	chatVideoNoteMaxCount       = 1
+	chatUploadURLPrefix         = "/api/messages/uploads/"
+	chatAttachmentURLPrefix     = "/api/messages/attachments/"
+	legacyChatUploadPrefix      = "/uploads/chat/"
+	chatUploadOwnerTTL          = 24 * time.Hour
 )
 
 type MessageAttachmentInput struct {
@@ -66,7 +70,15 @@ var allowedChatVoiceTypes = map[string]struct {
 	"application/ogg": {extension: ".ogg", contentType: "audio/ogg"},
 }
 
-var generatedUploadFilenamePattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(jpg|png|webp|webm|ogg)$`)
+var allowedChatVideoNoteTypes = map[string]struct {
+	extension   string
+	contentType string
+}{
+	"video/webm": {extension: ".webm", contentType: "video/webm"},
+	"video/mp4":  {extension: ".mp4", contentType: "video/mp4"},
+}
+
+var generatedUploadFilenamePattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(jpg|png|webp|webm|ogg|mp4)$`)
 
 func ChatImageExtension(contentType string) (string, bool) {
 	ext, ok := allowedChatImageTypes[contentType]
@@ -103,6 +115,36 @@ func ValidateChatVoiceUpload(data []byte, declaredContentType string) (string, s
 	return canonicalContentType, declaredExtension, nil
 }
 
+func ChatVideoNoteExtension(contentType string) (string, string, bool) {
+	mediaType, _, err := mime.ParseMediaType(strings.TrimSpace(contentType))
+	if err != nil {
+		mediaType = strings.ToLower(strings.TrimSpace(contentType))
+	}
+
+	format, ok := allowedChatVideoNoteTypes[mediaType]
+	if !ok {
+		return "", "", false
+	}
+	return format.extension, format.contentType, true
+}
+
+func ValidateChatVideoNoteUpload(data []byte, declaredContentType string) (string, string, error) {
+	declaredExtension, canonicalContentType, ok := ChatVideoNoteExtension(declaredContentType)
+	if !ok {
+		return "", "", errors.New("video note must be webm or mp4")
+	}
+
+	actualExtension, ok := chatVideoNoteExtensionFromMagic(data)
+	if !ok {
+		return "", "", errors.New("invalid video note")
+	}
+	if actualExtension != declaredExtension {
+		return "", "", errors.New("video note content does not match content type")
+	}
+
+	return canonicalContentType, declaredExtension, nil
+}
+
 func ParseChatVoiceDurationSeconds(value string) (int, bool) {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -127,15 +169,32 @@ func ValidateChatVoiceDurationSeconds(duration int) (int, error) {
 	return duration, nil
 }
 
+func ParseChatVideoNoteDurationSeconds(value string) (int, bool) {
+	return parseChatMediaDurationSeconds(value)
+}
+
+func ValidateChatVideoNoteDurationSeconds(duration int) (int, error) {
+	if duration < 1 {
+		return 0, errors.New("video note duration must be at least 1 second")
+	}
+	if duration > ChatVideoNoteMaxDuration {
+		return 0, errors.New("video note is too long")
+	}
+	return duration, nil
+}
+
 func NormalizeMessageAttachments(input []MessageAttachmentInput, userID uint) ([]models.MessageAttachment, error) {
 	imageCount := 0
 	voiceCount := 0
+	videoNoteCount := 0
 	for _, item := range input {
 		switch item.FileType {
 		case "image":
 			imageCount++
 		case "voice":
 			voiceCount++
+		case "video_note":
+			videoNoteCount++
 		default:
 			return nil, errors.New("unsupported attachment type")
 		}
@@ -146,8 +205,14 @@ func NormalizeMessageAttachments(input []MessageAttachmentInput, userID uint) ([
 	if voiceCount > chatVoiceMaxCount {
 		return nil, errors.New("only one voice attachment is supported")
 	}
+	if videoNoteCount > chatVideoNoteMaxCount {
+		return nil, errors.New("only one video note attachment is supported")
+	}
 	if imageCount > 0 && voiceCount > 0 {
 		return nil, errors.New("cannot mix image and voice attachments")
+	}
+	if videoNoteCount > 0 && (imageCount > 0 || voiceCount > 0) {
+		return nil, errors.New("cannot mix video note with other attachments")
 	}
 
 	attachments := make([]models.MessageAttachment, 0, len(input))
@@ -162,6 +227,12 @@ func NormalizeMessageAttachments(input []MessageAttachmentInput, userID uint) ([
 			attachments = append(attachments, attachment)
 		case "voice":
 			attachment, err := normalizeVoiceAttachment(item, userID)
+			if err != nil {
+				return nil, err
+			}
+			attachments = append(attachments, attachment)
+		case "video_note":
+			attachment, err := normalizeVideoNoteAttachment(item, userID)
 			if err != nil {
 				return nil, err
 			}
@@ -226,6 +297,35 @@ func normalizeVoiceAttachment(item MessageAttachmentInput, userID uint) (models.
 	return models.MessageAttachment{
 		FileURL:         storedKey,
 		FileType:        "voice",
+		DurationSeconds: &durationSeconds,
+		Size:            size,
+	}, nil
+}
+
+func normalizeVideoNoteAttachment(item MessageAttachmentInput, userID uint) (models.MessageAttachment, error) {
+	if !strings.HasPrefix(item.FileURL, chatUploadURLPrefix) {
+		return models.MessageAttachment{}, errors.New("invalid video note url")
+	}
+
+	fileURL := filepath.ToSlash(filepath.Clean(item.FileURL))
+	if !strings.HasPrefix(fileURL, chatUploadURLPrefix) {
+		return models.MessageAttachment{}, errors.New("invalid video note url")
+	}
+
+	filename := filepath.Base(fileURL)
+	if !ChatUploadOwnedBy(filename, userID) {
+		return models.MessageAttachment{}, errors.New("invalid video note owner")
+	}
+
+	key := VideoNoteUploadKey(filename, userID)
+	storedKey, size, durationSeconds, err := videoNoteAttachmentStorageMetadata(key, item)
+	if err != nil {
+		return models.MessageAttachment{}, err
+	}
+
+	return models.MessageAttachment{
+		FileURL:         storedKey,
+		FileType:        "video_note",
 		DurationSeconds: &durationSeconds,
 		Size:            size,
 	}, nil
@@ -315,6 +415,10 @@ func ChatUploadKey(filename string, userID uint) string {
 		return filepath.ToSlash(filepath.Join("voice", fmt.Sprintf("user_%d", userID), filename))
 	}
 	return filepath.ToSlash(filepath.Join("messages", fmt.Sprintf("user_%d", userID), filename))
+}
+
+func VideoNoteUploadKey(filename string, userID uint) string {
+	return filepath.ToSlash(filepath.Join("video-notes", fmt.Sprintf("user_%d", userID), filename))
 }
 
 func ChatUploadKeyFromFilename(filename string, userID uint) (string, bool) {
@@ -413,11 +517,76 @@ func voiceAttachmentStorageMetadata(key string, item MessageAttachmentInput) (st
 	return cleanKey, item.Size, duration, nil
 }
 
+func videoNoteAttachmentStorageMetadata(key string, item MessageAttachmentInput) (string, int64, int, error) {
+	store, err := storage.Default()
+	if err != nil {
+		return "", 0, 0, errors.New("failed to load storage")
+	}
+
+	cleanKey, err := storage.CleanKey(key)
+	if err != nil {
+		return "", 0, 0, errors.New("invalid video note url")
+	}
+
+	if filePath, ok := storage.LocalPath(store, cleanKey); ok {
+		info, err := os.Stat(filePath)
+		if err != nil || info.IsDir() {
+			return "", 0, 0, errors.New("video note not found")
+		}
+		if info.Size() <= 0 || info.Size() > ChatVideoNoteMaxSize {
+			return "", 0, 0, errors.New("video note is too large")
+		}
+
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			return "", 0, 0, errors.New("failed to read video note")
+		}
+		if !chatVideoNoteMagicMatchesExtension(data, chatVideoNoteExtensionFromFilename(cleanKey)) {
+			return "", 0, 0, errors.New("invalid video note")
+		}
+
+		duration, err := ValidateChatVideoNoteDurationSeconds(item.mediaDurationSeconds())
+		if err != nil {
+			return "", 0, 0, err
+		}
+
+		return cleanKey, info.Size(), duration, nil
+	}
+
+	if item.Size <= 0 || item.Size > ChatVideoNoteMaxSize {
+		return "", 0, 0, errors.New("video note is too large")
+	}
+	duration, err := ValidateChatVideoNoteDurationSeconds(item.mediaDurationSeconds())
+	if err != nil {
+		return "", 0, 0, err
+	}
+
+	return cleanKey, item.Size, duration, nil
+}
+
 func (item MessageAttachmentInput) voiceDurationSeconds() int {
+	return item.mediaDurationSeconds()
+}
+
+func (item MessageAttachmentInput) mediaDurationSeconds() int {
 	if item.DurationSeconds > 0 {
 		return item.DurationSeconds
 	}
 	return item.Duration
+}
+
+func parseChatMediaDurationSeconds(value string) (int, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, false
+	}
+
+	seconds, err := strconv.ParseFloat(value, 64)
+	if err != nil || seconds <= 0 {
+		return 0, false
+	}
+
+	return int(math.Ceil(seconds)), true
 }
 
 func chatVoiceExtensionFromFilename(filename string) string {
@@ -426,6 +595,17 @@ func chatVoiceExtensionFromFilename(filename string) string {
 		return ".webm"
 	case ".ogg":
 		return ".ogg"
+	default:
+		return ""
+	}
+}
+
+func chatVideoNoteExtensionFromFilename(filename string) string {
+	switch strings.ToLower(filepath.Ext(filename)) {
+	case ".webm":
+		return ".webm"
+	case ".mp4":
+		return ".mp4"
 	default:
 		return ""
 	}
@@ -444,6 +624,44 @@ func chatVoiceExtensionFromMagic(data []byte) (string, bool) {
 func chatVoiceMagicMatchesExtension(data []byte, extension string) bool {
 	actualExtension, ok := chatVoiceExtensionFromMagic(data)
 	return ok && actualExtension == extension
+}
+
+func chatVideoNoteExtensionFromMagic(data []byte) (string, bool) {
+	if len(data) >= 4 && data[0] == 0x1a && data[1] == 0x45 && data[2] == 0xdf && data[3] == 0xa3 {
+		return ".webm", true
+	}
+	if len(data) >= 8 && string(data[4:8]) == "ftyp" {
+		return ".mp4", true
+	}
+	return "", false
+}
+
+func chatVideoNoteMagicMatchesExtension(data []byte, extension string) bool {
+	actualExtension, ok := chatVideoNoteExtensionFromMagic(data)
+	return ok && actualExtension == extension
+}
+
+func ContentTypeForKey(key string) string {
+	cleanKey := strings.ToLower(filepath.ToSlash(key))
+	switch filepath.Ext(cleanKey) {
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".png":
+		return "image/png"
+	case ".webp":
+		return "image/webp"
+	case ".ogg":
+		return "audio/ogg"
+	case ".mp4":
+		return "video/mp4"
+	case ".webm":
+		if strings.HasPrefix(cleanKey, "voice/") {
+			return "audio/webm"
+		}
+		return "video/webm"
+	default:
+		return ""
+	}
 }
 
 func DeleteObjectKeys(ctx context.Context, values []string) {

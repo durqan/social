@@ -28,6 +28,7 @@ import {
     imageFilesFromClipboard,
     compressChatImage,
     validateVoiceFile,
+    validateVideoNoteFile,
 } from "@/shared/utils/uploadValidation.js";
 
 const optimisticMessageFloor = 10000000;
@@ -47,9 +48,10 @@ function attachmentsMatchOptimistic(pending: Message, received: Message) {
             return false;
         }
 
-        if (attachment.file_type === 'voice') {
+        if (attachment.file_type === 'voice' || attachment.file_type === 'video_note') {
             return (attachment.duration_seconds || attachment.duration || 0) ===
-                (receivedAttachment.duration_seconds || receivedAttachment.duration || 0);
+                (receivedAttachment.duration_seconds || receivedAttachment.duration || 0) &&
+                attachment.size === receivedAttachment.size;
         }
 
         return attachment.width === receivedAttachment.width &&
@@ -292,6 +294,60 @@ function Chat() {
         }
     }, [currentUser, newMessage, replyToMessage, sendMessageToStore, userId, wsService]);
 
+    const sendVideoNoteMessage = useCallback(async (file: File, durationSeconds: number, text?: string) => {
+        if (!(currentUser?.isEmailVerified ?? currentUser?.is_email_verified ?? false)) {
+            setUploadError('Подтвердите email, чтобы продолжить');
+            return false;
+        }
+
+        const validationError = validateVideoNoteFile(file, durationSeconds);
+        if (validationError) {
+            setUploadError(validationError);
+            return false;
+        }
+
+        try {
+            setUploadError('');
+            setSendStatus('Загружаем кружок');
+            const attachment = await messageService.uploadVideoNote(file, durationSeconds);
+            const attachments = [attachment];
+            setSendStatus('Отправляем кружок');
+
+            const content = (text ?? '').trim();
+
+            const tempMessage: Message = {
+                id: Date.now(),
+                from_id: currentUser?.id || 0,
+                to_id: Number(userId),
+                content,
+                created_at: new Date().toISOString(),
+                is_read: false,
+                reply_to_message_id: replyToMessage?.id ?? null,
+                reply_to_message: replyToMessage,
+                forwarded_from_message_id: null,
+                forwarded_from_user_id: null,
+                forwarded_from_message: null,
+                forwarded_from_user: null,
+                from: { id: currentUser?.id || 0, name: currentUser?.name || '', email: currentUser?.email || '' },
+                attachments,
+            };
+
+            sendMessageToStore(content, tempMessage);
+            wsService.send(Number(userId), content, attachments, replyToMessage?.id);
+            if (content) {
+                setNewMessage('');
+            }
+            setReplyToMessage(null);
+            return true;
+        } catch (error) {
+            console.error(error);
+            setUploadError(getUploadErrorMessage(error, 'Не удалось отправить кружок'));
+            return false;
+        } finally {
+            setSendStatus('');
+        }
+    }, [currentUser, replyToMessage, sendMessageToStore, userId, wsService]);
+
     const openForwardDialog = useCallback((message: Message) => {
         setForwardMessage(message);
         setForwardSelectedIds(new Set());
@@ -527,6 +583,7 @@ function Chat() {
                 }}
                 onSend={sendMessage}
                 onSendVoice={sendVoiceMessage}
+                onSendVideoNote={sendVideoNoteMessage}
                 errorMessage={uploadError}
                 onErrorMessageChange={setUploadError}
                 incomingFiles={incomingFiles}

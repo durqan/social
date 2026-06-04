@@ -74,6 +74,10 @@ func GetConversations(db *gorm.DB, userID uint) ([]map[string]interface{}, error
                     CASE
                         WHEN EXISTS (
                             SELECT 1 FROM message_attachments ma
+                            WHERE ma.message_id = m.id AND ma.file_type = 'video_note'
+                        ) THEN 'Видео-сообщение'
+                        WHEN EXISTS (
+                            SELECT 1 FROM message_attachments ma
                             WHERE ma.message_id = m.id AND ma.file_type = 'voice'
                         ) THEN 'Голосовое сообщение'
                         WHEN EXISTS (

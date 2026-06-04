@@ -47,7 +47,9 @@ const uploadErrorText: Record<string, string> = {
     'too many images': 'Можно прикрепить максимум 5 картинок за раз.',
     'unsupported attachment type': 'Этот тип вложения не поддерживается.',
     'cannot mix image and voice attachments': 'Голосовое сообщение нельзя отправить вместе с картинками.',
+    'cannot mix video note with other attachments': 'Кружок нельзя отправить вместе с другими вложениями.',
     'only one voice attachment is supported': 'Можно отправить только одно голосовое сообщение за раз.',
+    'only one video note attachment is supported': 'Можно отправить только один кружок за раз.',
     'message content or attachment is required': 'Введите сообщение или добавьте вложение.',
     'voice is required': 'Запишите голосовое сообщение.',
     'voice is too large': 'Голосовое сообщение слишком большое. Максимум 12 МБ.',
@@ -58,6 +60,15 @@ const uploadErrorText: Record<string, string> = {
     'failed to save voice': 'Не удалось сохранить голосовое сообщение. Попробуйте еще раз.',
     'voice duration is required': 'Не удалось определить длительность голосового сообщения.',
     'voice is too long': 'Голосовое сообщение слишком длинное. Максимум 5 минут.',
+    'video note is required': 'Запишите кружок.',
+    'video note is too large': 'Кружок слишком большой. Максимум 25 МБ.',
+    'video note must be webm or mp4': 'Кружок должен быть в формате WebM или MP4.',
+    'video note content does not match content type': 'Файл поврежден или не является корректным видео.',
+    'invalid video note': 'Файл поврежден или не является корректным видео.',
+    'failed to read video note': 'Не удалось прочитать кружок. Попробуйте записать еще раз.',
+    'failed to save video note': 'Не удалось сохранить кружок. Попробуйте еще раз.',
+    'video note duration is required': 'Не удалось определить длительность кружка.',
+    'video note is too long': 'Кружок слишком длинный. Максимум 60 секунд.',
 };
 
 export const getUploadErrorMessage = (error: unknown, fallback: string) => {
