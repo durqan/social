@@ -76,10 +76,10 @@ func AllowRateLimit(identity string, scope string, limit int, window time.Durati
 }
 
 func cleanupExpiredRateLimits(now time.Time) {
-	if len(rateLimitStore.entries) < 1000 {
-		return
-	}
-
+	// Always reap expired entries on window reset for any rate-limited key.
+	// This prevents unbounded accumulation of stale entries from previous windows
+	// (the previous <1000 guard meant that with low-to-moderate unique identities
+	//  expired entries could live forever until restart or threshold crossed).
 	for key, entry := range rateLimitStore.entries {
 		if !now.Before(entry.ResetAt) {
 			delete(rateLimitStore.entries, key)

@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 const (
@@ -34,27 +35,34 @@ type Config struct {
 	RedisDB       int
 }
 
+var (
+	loadOnce sync.Once
+	cached   Config
+)
+
 func Load() Config {
-	lockedEnv := currentEnvKeys()
-	loadDotEnv(".env", lockedEnv)
+	loadOnce.Do(func() {
+		lockedEnv := currentEnvKeys()
+		loadDotEnv(".env", lockedEnv)
 
-	cfg := Config{
-		DatabaseURL:    getEnv("DATABASE_URL", defaultDatabase),
-		Port:           getEnv("PORT", defaultPort),
-		JWTSecret:      getEnv("JWT_SECRET", defaultJWTSecret),
-		CookieSecure:   os.Getenv("COOKIE_SECURE") == "true",
-		AllowedOrigins: parseAllowedOrigins(os.Getenv("CORS_ALLOWED_ORIGINS")),
-		RabbitURL:      getEnv("RABBIT_URL", defaultRabbitURL),
+		cached = Config{
+			DatabaseURL:    getEnv("DATABASE_URL", defaultDatabase),
+			Port:           getEnv("PORT", defaultPort),
+			JWTSecret:      getEnv("JWT_SECRET", defaultJWTSecret),
+			CookieSecure:   os.Getenv("COOKIE_SECURE") == "true",
+			AllowedOrigins: parseAllowedOrigins(os.Getenv("CORS_ALLOWED_ORIGINS")),
+			RabbitURL:      getEnv("RABBIT_URL", defaultRabbitURL),
 
-		RedisHost:     getEnv("REDIS_HOST", defaultRedisHost),
-		RedisPort:     getEnv("REDIS_PORT", defaultRedisPort),
-		RedisPassword: getEnv("REDIS_PASSWORD", defaultRedisPassword),
-		RedisDB:       getEnvInt("REDIS_DB", defaultRedisDB),
-	}
+			RedisHost:     getEnv("REDIS_HOST", defaultRedisHost),
+			RedisPort:     getEnv("REDIS_PORT", defaultRedisPort),
+			RedisPassword: getEnv("REDIS_PASSWORD", defaultRedisPassword),
+			RedisDB:       getEnvInt("REDIS_DB", defaultRedisDB),
+		}
 
-	validateSecurity(cfg)
+		validateSecurity(cached)
+	})
 
-	return cfg
+	return cached
 }
 
 func currentEnvKeys() map[string]struct{} {

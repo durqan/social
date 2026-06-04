@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"notifications/auth"
+	"notifications/cache"
 	"notifications/db"
 	"notifications/handlers"
 	"notifications/hub"
@@ -41,6 +42,11 @@ func main() {
 	pushService := pushsvc.NewServiceFromEnv()
 	svc := services.NewService(repo, notificationHub, pushService)
 	h := handlers.NewHandler(svc, notificationHub)
+
+	if err := cache.InitRedis(); err != nil {
+		log.Fatal("failed to connect redis:", err)
+	}
+	log.Println("Redis connected successfully")
 
 	conn, ch, err := rabbit.NewRabbit()
 	if err != nil {

@@ -17,11 +17,6 @@ func notifyFriendEvent(
 	eventType string,
 	message string,
 ) {
-	toConn, ok := clients.get(recipientID)
-	if !ok {
-		return
-	}
-
 	var sender models.User
 	db.First(&sender, senderID)
 
@@ -33,5 +28,8 @@ func notifyFriendEvent(
 			"message":   message,
 		},
 	})
-	_ = toConn.write(context.Background(), notificationBytes)
+
+	for _, toConn := range clients.getAll(recipientID) {
+		_ = toConn.write(context.Background(), notificationBytes)
+	}
 }

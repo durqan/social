@@ -179,14 +179,14 @@ func handleWebSocketTyping(ctx context.Context, userID uint, eventType string, r
 		return
 	}
 
-	if toConn, ok := clients.get(payload.ToID); ok {
-		typingBytes, _ := json.Marshal(gin.H{
-			"type": eventType,
-			"payload": gin.H{
-				"from_id": userID,
-			},
-		})
+	typingBytes, _ := json.Marshal(gin.H{
+		"type": eventType,
+		"payload": gin.H{
+			"from_id": userID,
+		},
+	})
 
+	for _, toConn := range clients.getAll(payload.ToID) {
 		if err := toConn.write(ctx, typingBytes); err != nil {
 			log.Println("Failed to send typing event:", err)
 		}

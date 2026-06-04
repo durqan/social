@@ -2,9 +2,12 @@ package auth
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
+
+	"notifications/cache"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -72,6 +75,11 @@ func UserIDFromRequest(r *http.Request) (uint, error) {
 	if !ok || !token.Valid || claims.UserID == 0 || claims.SessionID == "" || claims.TokenType != accessTokenType {
 		return 0, errors.New("invalid token")
 	}
+
+	if !isAccessSessionValid(claims.UserID, claims.SessionID) {
+		return 0, errors.New("session revoked")
+	}
+
 	return claims.UserID, nil
 }
 
@@ -91,4 +99,19 @@ func authTokenFromRequest(r *http.Request) string {
 		return strings.TrimPrefix(authHeader, bearerPrefix)
 	}
 	return ""
+}
+
+// isAccessSessionValid checks Redis for an active access session (revocation support).
+// Mirrors the check performed by the main backend.
+func isAccessSessionValid(userID uint, sessionID string) bool {
+	if cache.Redis == nil {
+		return false
+	}
+	key := accessSessionKey(userID, sessionID)
+	exists, err := cache.Redis.Exists(key)
+	return err == nil && exists
+}
+
+func accessSessionKey(userID uint, sessionID string) string {
+	return fmt.Sprintf("auth:access:%d:%s", userID, sessionID)
 }
