@@ -146,6 +146,9 @@ func registerConversationRoutes(router *gin.Engine, database *gorm.DB) {
 	conversations.GET("", middleware.CacheMiddleware(time.Minute), handlers.GetConversations(database))
 	conversations.POST("/:conversationId/pin", handlers.PinConversation(database))
 	conversations.DELETE("/:conversationId/pin", handlers.UnpinConversation(database))
+	conversations.GET("/:conversationId/pinned-message", handlers.GetPinnedMessage(database))
+	conversations.POST("/:conversationId/messages/:messageId/pin", handlers.PinMessage(database))
+	conversations.DELETE("/:conversationId/pinned-message", handlers.UnpinMessage(database))
 }
 
 func registerWebSocketRoutes(router *gin.Engine, database *gorm.DB, cfg config.Config) {

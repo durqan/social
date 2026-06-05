@@ -117,6 +117,16 @@ export interface Message {
     attachments?: MessageAttachment[];
 }
 
+export interface PinnedMessage {
+    id: number;
+    conversation_id: number;
+    message_id: number;
+    pinned_by_id: number;
+    created_at: string;
+    message: Message;
+    pinned_by?: MessageUser;
+}
+
 export interface Conversation {
     user_id: number;
     name: string;

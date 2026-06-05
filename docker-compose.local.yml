@@ -20,6 +20,35 @@ services:
     networks:
       - social_local
 
+  audit:
+    image: golang:1.26-alpine
+    restart: unless-stopped
+    working_dir: /app
+    env_file:
+      - path: .env.local
+        required: false
+    environment:
+      DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgres://social:social@postgres:5432/social?sslmode=disable}
+      GIN_MODE: ${GIN_MODE:-debug}
+    command: sh -c "go mod download && go run ."
+    ports:
+      - "${AUDIT_HOST_PORT:-8086}:8086"
+    volumes:
+      - ./audit:/app
+      - audit_go_pkg:/go/pkg/mod
+      - audit_go_build:/root/.cache/go-build
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://127.0.0.1:8086/health >/dev/null || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - social_local
+
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -230,6 +259,10 @@ volumes:
     name: social_local_notifications_go_build
   frontend_node_modules:
     name: social_local_frontend_node_modules
+  audit_go_pkg:
+    name: social_local_audit_go_pkg
+  audit_go_build:
+    name: social_local_audit_go_build
 
 networks:
   social_local:

@@ -2,8 +2,25 @@ import { useEffect } from 'react';
 
 import { useWebSocket } from "@/app/providers/WebSocketContext.js";
 
-import type { Message } from "@/shared/types/domain.js";
+import type { Message, PinnedMessage } from "@/shared/types/domain.js";
 import type { WsEvent } from "@/shared/types/ws.js";
+
+const belongsToCurrentChat = (
+    message: Message,
+    userId: string | undefined,
+    currentUserId: number | undefined,
+) => {
+    const otherUserId = Number(userId);
+
+    return Boolean(
+        currentUserId &&
+        otherUserId &&
+        (
+            (message.from_id === otherUserId && message.to_id === currentUserId) ||
+            (message.to_id === otherUserId && message.from_id === currentUserId)
+        )
+    );
+};
 
 interface UseChatWebSocketProps {
     userId: string | undefined;
@@ -18,6 +35,10 @@ interface UseChatWebSocketProps {
     onNewMessage: (msg: Message) => void;
 
     onMessageUpdated: (msg: Message) => void;
+
+    onMessagePinned: (pinnedMessage: PinnedMessage) => void;
+
+    onMessageUnpinned: () => void;
 }
 
 export const useChatWebSocket = ({
@@ -28,6 +49,8 @@ export const useChatWebSocket = ({
     onReadReceipt,
     onNewMessage,
     onMessageUpdated,
+    onMessagePinned,
+    onMessageUnpinned,
 }: UseChatWebSocketProps) => {
     const wsService = useWebSocket();
 
@@ -127,6 +150,34 @@ export const useChatWebSocket = ({
                     break;
                 }
 
+                case 'message_pinned': {
+
+                    const payload = event.payload.pinned_message;
+
+                    if (belongsToCurrentChat(payload.message, userId, currentUserId)) {
+                        onMessagePinned(payload);
+                    }
+
+                    break;
+                }
+
+                case 'message_unpinned': {
+
+                    const payload = event.payload;
+                    const otherUserId = Number(userId);
+
+                    if (
+                        currentUserId &&
+                        otherUserId &&
+                        payload.participant_ids.includes(currentUserId) &&
+                        payload.participant_ids.includes(otherUserId)
+                    ) {
+                        onMessageUnpinned();
+                    }
+
+                    break;
+                }
+
                 case 'call:offer':
                 case 'call:answer':
                 case 'call:ice':
@@ -161,6 +212,8 @@ export const useChatWebSocket = ({
         onReadReceipt,
         onNewMessage,
         onMessageUpdated,
+        onMessagePinned,
+        onMessageUnpinned,
         wsService,
     ]);
 };

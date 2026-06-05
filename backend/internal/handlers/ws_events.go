@@ -299,6 +299,78 @@ func broadcastMessageUpdate(ctx context.Context, message models.Message) {
 	}
 }
 
+func broadcastMessagePinned(ctx context.Context, pin *models.PinnedMessage) {
+	if pin == nil {
+		return
+	}
+
+	pinBytes, err := json.Marshal(gin.H{
+		"type": "message_pinned",
+		"payload": gin.H{
+			"pinned_message": pinnedMessageResponse(pin),
+		},
+	})
+	if err != nil {
+		log.Println("Failed to marshal message pin:", err)
+		return
+	}
+
+	writeToUsers(ctx, pinBytes, pin.Message.FromID, pin.Message.ToID)
+}
+
+func broadcastMessageUnpinned(ctx context.Context, conversationID, messageID uint, userIDs ...uint) {
+	if conversationID == 0 {
+		return
+	}
+
+	participantIDs := make([]uint, 0, len(userIDs))
+	seen := make(map[uint]struct{}, len(userIDs))
+	for _, userID := range userIDs {
+		if userID == 0 {
+			continue
+		}
+		if _, exists := seen[userID]; exists {
+			continue
+		}
+		seen[userID] = struct{}{}
+		participantIDs = append(participantIDs, userID)
+	}
+
+	unpinBytes, err := json.Marshal(gin.H{
+		"type": "message_unpinned",
+		"payload": gin.H{
+			"conversation_id": conversationID,
+			"message_id":      messageID,
+			"participant_ids": participantIDs,
+		},
+	})
+	if err != nil {
+		log.Println("Failed to marshal message unpin:", err)
+		return
+	}
+
+	writeToUsers(ctx, unpinBytes, participantIDs...)
+}
+
+func writeToUsers(ctx context.Context, payload []byte, userIDs ...uint) {
+	sentTo := make(map[uint]struct{}, len(userIDs))
+	for _, userID := range userIDs {
+		if userID == 0 {
+			continue
+		}
+		if _, exists := sentTo[userID]; exists {
+			continue
+		}
+		sentTo[userID] = struct{}{}
+
+		for _, toConn := range clients.getAll(userID) {
+			if err := toConn.write(ctx, payload); err != nil {
+				log.Println("Failed to send websocket event:", err)
+			}
+		}
+	}
+}
+
 func forwardCallEvent(ctx context.Context, eventType string, fromID uint, payload json.RawMessage) {
 	var callPayload map[string]json.RawMessage
 

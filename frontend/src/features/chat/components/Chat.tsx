@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
 import { useNavigate, useOutletContext, useParams } from 'react-router-dom';
-import type { Message, MessageAttachment, User } from "@/shared/types/domain.js";
+import type { Message, MessageAttachment, PinnedMessage, User } from "@/shared/types/domain.js";
 import { messageService } from "@/features/chat/api/messageService.js";
 import { friendService } from "@/features/friends/api/friendService.js";
 import { userService } from "@/shared/api/userService.js";
@@ -20,6 +20,7 @@ import { formatMonthDayDate, formatTime } from "@/shared/utils/date.js";
 import {usePresence} from "@/shared/hooks/usePresence.js";
 import { getUploadErrorMessage } from "@/shared/api/errors.js";
 import { Avatar } from "@/shared/ui/Avatar.js";
+import { Icon } from "@/shared/ui/Icon.js";
 import { messageAuthorName, messagePreviewText } from "@/features/chat/lib/messagePreview.js";
 import {
     dataTransferHasFiles,
@@ -60,6 +61,67 @@ function attachmentsMatchOptimistic(pending: Message, received: Message) {
     });
 }
 
+function pinnedMessageText(message: Message) {
+    const content = message.content?.trim();
+    if (content) {
+        return content;
+    }
+
+    if (message.attachments?.some(attachment => attachment.file_type === 'image')) {
+        return 'Изображение';
+    }
+
+    return messagePreviewText(message);
+}
+
+function PinnedMessageBanner({
+    pinnedMessage,
+    onClick,
+    onUnpin,
+}: {
+    pinnedMessage: PinnedMessage | null;
+    onClick: () => void;
+    onUnpin: () => void | Promise<void>;
+}) {
+    if (!pinnedMessage) {
+        return null;
+    }
+
+    const pinnedByName = pinnedMessage.pinned_by?.name || 'Пользователь';
+
+    return (
+        <div className="flex items-center gap-2 border-b border-[var(--app-border)] bg-[var(--app-card)] px-3 py-2 shadow-sm sm:px-4">
+            <button
+                type="button"
+                onClick={onClick}
+                className="group flex min-w-0 flex-1 items-center gap-3 text-left"
+            >
+                <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-sky-50 text-sky-700">
+                    <Icon name="pin" className="h-4 w-4" />
+                </span>
+                <span className="min-w-0 flex-1">
+                    <span className="block text-xs font-semibold uppercase tracking-wide text-[var(--app-text-secondary)]">
+                        Закрепил(а) {pinnedByName}
+                    </span>
+                    <span className="block truncate text-sm font-medium text-[var(--app-text-primary)]">
+                        {pinnedMessageText(pinnedMessage.message)}
+                    </span>
+                </span>
+            </button>
+            <button
+                type="button"
+                onClick={() => {
+                    void onUnpin();
+                }}
+                className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-[var(--app-text-secondary)] transition hover:bg-gray-100 hover:text-gray-900"
+                aria-label="Открепить сообщение"
+            >
+                <Icon name="close" className="h-4 w-4" />
+            </button>
+        </div>
+    );
+}
+
 function Chat() {
     const { userId } = useParams();
     const navigate = useNavigate();
@@ -79,6 +141,8 @@ function Chat() {
     const [forwardSelectedIds, setForwardSelectedIds] = useState<Set<number>>(new Set());
     const [forwardLoading, setForwardLoading] = useState(false);
     const [forwardError, setForwardError] = useState('');
+    const [pinnedMessage, setPinnedMessage] = useState<PinnedMessage | null>(null);
+    const [scrollToMessageRequest, setScrollToMessageRequest] = useState<{ messageId: number; requestId: number } | null>(null);
     const dragDepthRef = useRef(0);
 
     const {
@@ -93,6 +157,7 @@ function Chat() {
         setEditContent,
         loadInitial,
         loadMore,
+        loadUntilMessage,
         sendMessage: sendMessageToStore,
         updateMessage,
         applyMessageUpdate,
@@ -105,11 +170,29 @@ function Chat() {
     const { messagesEndRef, handleScroll } = useChatScroll([messages]);
     const { online } = usePresence(recipient?.id);
 
+    const handleSocketMessageDeleted = useCallback((messageId: number) => {
+        setMessages(prev => prev.filter(message => message.id !== messageId));
+        setPinnedMessage(prev => prev?.message_id === messageId ? null : prev);
+    }, [setMessages]);
+
+    const handleSocketMessageUpdated = useCallback((message: Message) => {
+        applyMessageUpdate(message);
+        setPinnedMessage(prev => (
+            prev?.message_id === message.id
+                ? { ...prev, message }
+                : prev
+        ));
+    }, [applyMessageUpdate]);
+
+    const handleSocketMessageUnpinned = useCallback(() => {
+        setPinnedMessage(null);
+    }, []);
+
     useChatWebSocket({
         userId,
         currentUserId: currentUser?.id,
         onTyping: setOtherTyping,
-        onMessageDeleted: deleteMessage,
+        onMessageDeleted: handleSocketMessageDeleted,
         onReadReceipt: markAsRead,
         onNewMessage: useCallback((msg) => {
             setMessages(prev => {
@@ -133,7 +216,9 @@ function Chat() {
                 markAsRead(Number(userId));
             }
         }, [markAsRead, setMessages, userId, wsService]),
-        onMessageUpdated: applyMessageUpdate,
+        onMessageUpdated: handleSocketMessageUpdated,
+        onMessagePinned: setPinnedMessage,
+        onMessageUnpinned: handleSocketMessageUnpinned,
     });
 
     useEffect(() => {
@@ -148,6 +233,33 @@ function Chat() {
         wsService.sendReadReceipt(Number(userId));
         markAsRead(Number(userId));
     }, [markAsRead, userId, wsService]);
+
+    useEffect(() => {
+        let cancelled = false;
+        setPinnedMessage(null);
+
+        if (!userId) {
+            return () => {
+                cancelled = true;
+            };
+        }
+
+        messageService.getPinnedMessage(Number(userId))
+            .then(pin => {
+                if (!cancelled) {
+                    setPinnedMessage(pin);
+                }
+            })
+            .catch(error => {
+                if (!cancelled) {
+                    console.error(error);
+                }
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [userId]);
 
     const uploadAttachments = useCallback(async (files: File[]): Promise<MessageAttachment[]> => {
         if (!files.length) return [];
@@ -207,6 +319,7 @@ function Chat() {
         try {
             await messageService.deleteMessagesBatch(realIds);
             setMessages(prev => prev.filter(m => !realIds.includes(m.id)));
+            setPinnedMessage(prev => prev && realIds.includes(prev.message_id) ? null : prev);
             exitSelectionMode();
         } catch (error) {
             console.error(error);
@@ -400,6 +513,70 @@ function Chat() {
         navigate(`/users/${profileUserId}`);
     }, [navigate]);
 
+    const deleteChatMessage = useCallback(async (messageId: number) => {
+        await deleteMessage(messageId);
+        setPinnedMessage(prev => prev?.message_id === messageId ? null : prev);
+    }, [deleteMessage]);
+
+    const pinChatMessage = useCallback(async (message: Message) => {
+        if (!userId) {
+            return;
+        }
+
+        try {
+            const pin = await messageService.pinMessage(Number(userId), message.id);
+            setPinnedMessage(pin);
+        } catch (error) {
+            console.error(error);
+            await dialog.alert({
+                title: 'Не удалось закрепить сообщение',
+                message: 'Проверьте, что сообщение не удалено, и попробуйте снова.',
+                confirmText: 'Понятно',
+                icon: 'warning',
+            });
+        }
+    }, [dialog, userId]);
+
+    const unpinChatMessage = useCallback(async () => {
+        if (!userId) {
+            return;
+        }
+
+        try {
+            await messageService.unpinMessage(Number(userId));
+            setPinnedMessage(null);
+        } catch (error) {
+            console.error(error);
+            await dialog.alert({
+                title: 'Не удалось открепить сообщение',
+                message: 'Попробуйте повторить действие позже.',
+                confirmText: 'Понятно',
+                icon: 'warning',
+            });
+        }
+    }, [dialog, userId]);
+
+    const scrollToPinnedMessage = useCallback(async () => {
+        if (!pinnedMessage) {
+            return;
+        }
+
+        const targetMessageId = pinnedMessage.message_id;
+        const isLoaded = messages.some(message => message.id === targetMessageId);
+
+        if (!isLoaded) {
+            const loaded = await loadUntilMessage(targetMessageId);
+            if (!loaded) {
+                return;
+            }
+        }
+
+        setScrollToMessageRequest({
+            messageId: targetMessageId,
+            requestId: Date.now(),
+        });
+    }, [loadUntilMessage, messages, pinnedMessage]);
+
     const toggleForwardRecipient = (friendId?: number) => {
         if (!friendId) {
             return;
@@ -571,6 +748,11 @@ function Chat() {
                 onOpenRecipient={openUserProfile}
                 recipientLastSeenAt={recipient?.last_seen_at}
             />
+            <PinnedMessageBanner
+                pinnedMessage={pinnedMessage}
+                onClick={scrollToPinnedMessage}
+                onUnpin={unpinChatMessage}
+            />
             <ChatMessageList
                 messages={messages}
                 currentUserId={currentUser?.id}
@@ -585,11 +767,14 @@ function Chat() {
                 onEnterSelectionMode={enterSelectionMode}
                 onReplyMessage={setReplyToMessage}
                 onForwardMessage={openForwardDialog}
+                onPinMessage={pinChatMessage}
+                onUnpinMessage={unpinChatMessage}
+                pinnedMessageId={pinnedMessage?.message_id ?? null}
                 onEditMessage={(id, content) => {
                     setEditingMessageId(id);
                     setEditContent(content);
                 }}
-                onDeleteMessage={deleteMessage}
+                onDeleteMessage={deleteChatMessage}
                 editingMessageId={editingMessageId}
                 editContent={editContent}
                 setEditContent={setEditContent}
@@ -603,6 +788,7 @@ function Chat() {
                 formatDate={formatMonthDayDate}
                 formatTime={formatTime}
                 onOpenUser={openUserProfile}
+                scrollToMessageRequest={scrollToMessageRequest}
             />
             {otherTyping && <div className="px-4 pb-2 text-sm text-gray-500">{recipient?.name} печатает...</div>}
             <ChatInput

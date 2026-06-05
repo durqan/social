@@ -290,8 +290,9 @@ const ChatMessageComponent = ({
                         </div>
                     ) : (
                         <div
+                            data-chat-message-bubble-id={message.id}
                             onClick={handleMessageClick}
-                            className={`rounded-2xl px-3 py-2 transition-shadow sm:px-4 ${selectionMode ? canSelect ? 'cursor-pointer' : 'opacity-60' : ''} ${isContextActive ? 'shadow-2xl ring-2 ring-[var(--app-glass-border)]' : ''} ${isOwn ? 'rounded-br-md border border-[var(--app-message-own-border)] bg-[var(--app-message-own-bg)] text-[var(--app-message-own-text)]' : 'rounded-bl-md border border-[var(--app-message-other-border)] bg-[var(--app-message-other-bg)] text-[var(--app-message-other-text)]'}`}
+                            className={`chat-message-bubble rounded-2xl px-3 py-2 transition-shadow sm:px-4 ${selectionMode ? canSelect ? 'cursor-pointer' : 'opacity-60' : ''} ${isContextActive ? 'shadow-2xl ring-2 ring-[var(--app-glass-border)]' : ''} ${isOwn ? 'rounded-br-md border border-[var(--app-message-own-border)] bg-[var(--app-message-own-bg)] text-[var(--app-message-own-text)]' : 'rounded-bl-md border border-[var(--app-message-other-border)] bg-[var(--app-message-other-bg)] text-[var(--app-message-other-text)]'}`}
                         >
                             {message.forwarded_from_message_id && (
                                 <div className={`mb-1 text-xs font-medium ${isOwn ? 'text-[var(--app-accent)]' : 'text-[var(--app-text-secondary)]'}`}>

@@ -30,6 +30,7 @@ func testRepositoryDB(t *testing.T) *gorm.DB {
 		&models.Message{},
 		&models.MessageAttachment{},
 		&models.ConversationPin{},
+		&models.PinnedMessage{},
 		&models.Friendship{},
 		&models.EmailVerification{},
 	); err != nil {

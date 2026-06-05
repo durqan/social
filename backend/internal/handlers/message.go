@@ -251,6 +251,109 @@ func UnpinConversation(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
+func GetPinnedMessage(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, ok := authenticatedUserID(c)
+		if !ok {
+			return
+		}
+		conversationID, ok := uintParam(c, "conversationId", "invalid conversation id")
+		if !ok {
+			return
+		}
+
+		pin, err := services.GetPinnedMessage(db, userID, conversationID)
+		if errors.Is(err, services.ErrMessageForbidden) {
+			c.JSON(403, gin.H{"error": "you are not a participant in this conversation"})
+			return
+		}
+		if err != nil {
+			c.JSON(500, gin.H{"error": "failed to get pinned message"})
+			return
+		}
+
+		c.JSON(200, gin.H{"pinned_message": pinnedMessageResponse(pin)})
+	}
+}
+
+func PinMessage(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, ok := authenticatedUserID(c)
+		if !ok {
+			return
+		}
+		conversationID, ok := uintParam(c, "conversationId", "invalid conversation id")
+		if !ok {
+			return
+		}
+		messageID, ok := uintParam(c, "messageId", "invalid message id")
+		if !ok {
+			return
+		}
+
+		pin, err := services.PinMessage(db, userID, conversationID, messageID)
+		if errors.Is(err, services.ErrMessageForbidden) {
+			c.JSON(403, gin.H{"error": "you are not a participant in this conversation"})
+			return
+		}
+		if errors.Is(err, services.ErrMessageInvalidPin) {
+			c.JSON(400, gin.H{"error": "message must belong to this conversation and not be deleted"})
+			return
+		}
+		if err != nil {
+			c.JSON(500, gin.H{"error": "failed to pin message"})
+			return
+		}
+
+		broadcastMessagePinned(c.Request.Context(), pin)
+		c.JSON(200, gin.H{"pinned_message": pinnedMessageResponse(pin)})
+	}
+}
+
+func UnpinMessage(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, ok := authenticatedUserID(c)
+		if !ok {
+			return
+		}
+		conversationID, ok := uintParam(c, "conversationId", "invalid conversation id")
+		if !ok {
+			return
+		}
+
+		pin, err := services.UnpinMessage(db, userID, conversationID)
+		if errors.Is(err, services.ErrMessageForbidden) {
+			c.JSON(403, gin.H{"error": "you are not a participant in this conversation"})
+			return
+		}
+		if err != nil {
+			c.JSON(500, gin.H{"error": "failed to unpin message"})
+			return
+		}
+
+		if pin != nil {
+			broadcastMessageUnpinned(c.Request.Context(), pin.ConversationID, pin.MessageID, pin.Message.FromID, pin.Message.ToID)
+		}
+		c.JSON(200, gin.H{"pinned_message": nil})
+	}
+}
+
+func pinnedMessageResponse(pin *models.PinnedMessage) interface{} {
+	if pin == nil {
+		return nil
+	}
+
+	return gin.H{
+		"id":              pin.ID,
+		"conversation_id": pin.ConversationID,
+		"message_id":      pin.MessageID,
+		"pinned_by_id":    pin.PinnedByID,
+		"created_at":      pin.CreatedAt,
+		"message":         services.WithPrivateAttachmentURLs(pin.Message),
+		"pinned_by":       pin.PinnedBy,
+	}
+}
+
 func conversationUserID(value interface{}) uint {
 	switch v := value.(type) {
 	case uint:
@@ -362,7 +465,13 @@ func DeleteMessage(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		err := services.DeleteMessageForUser(db, userID, messageID)
+		pinnedMessages, err := repository.GetPinnedMessagesByMessageIDs(db, []uint{messageID})
+		if err != nil {
+			c.JSON(500, gin.H{"error": "failed to delete message"})
+			return
+		}
+
+		err = services.DeleteMessageForUser(db, userID, messageID)
 		if errors.Is(err, services.ErrMessageForbidden) {
 			c.JSON(403, gin.H{"error": "you are not a participant in this conversation"})
 			return
@@ -377,6 +486,9 @@ func DeleteMessage(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		broadcastMessageDelete(c.Request.Context(), messageID, message.FromID, message.ToID)
+		for _, pin := range pinnedMessages {
+			broadcastMessageUnpinned(c.Request.Context(), pin.ConversationID, pin.MessageID, pin.Message.FromID, pin.Message.ToID)
+		}
 
 		c.JSON(200, gin.H{"message": "deleted for both"})
 	}
@@ -403,6 +515,12 @@ func DeleteMessagesBatch(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
+		pinnedMessages, err := repository.GetPinnedMessagesByMessageIDs(db, req.MessageIDs)
+		if err != nil {
+			c.JSON(500, gin.H{"error": "failed to delete messages"})
+			return
+		}
+
 		messages, err := services.DeleteMessagesBatchForUser(db, req.MessageIDs, userID)
 		if errors.Is(err, services.ErrMessageForbidden) {
 			c.JSON(403, gin.H{"error": "permission denied"})
@@ -415,6 +533,9 @@ func DeleteMessagesBatch(db *gorm.DB) gin.HandlerFunc {
 
 		for _, message := range messages {
 			broadcastMessageDelete(c.Request.Context(), message.ID, message.FromID, message.ToID)
+		}
+		for _, pin := range pinnedMessages {
+			broadcastMessageUnpinned(c.Request.Context(), pin.ConversationID, pin.MessageID, pin.Message.FromID, pin.Message.ToID)
 		}
 
 		c.JSON(200, gin.H{"message": "deleted"})

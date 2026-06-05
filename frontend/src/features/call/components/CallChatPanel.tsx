@@ -93,6 +93,8 @@ export function CallChatPanel({
             }
         }, [markAsRead, onSeen, peerUserId, setMessages, wsService]),
         onMessageUpdated: applyMessageUpdate,
+        onMessagePinned: () => undefined,
+        onMessageUnpinned: () => undefined,
     });
 
     const uploadAttachments = useCallback(async (files: File[]): Promise<MessageAttachment[]> => {

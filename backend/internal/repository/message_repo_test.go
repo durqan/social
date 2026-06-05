@@ -54,6 +54,56 @@ func TestGetConversationsSortsPersonalPinsFirst(t *testing.T) {
 	}
 }
 
+func TestReplacePinnedMessageKeepsOnePinPerConversation(t *testing.T) {
+	db := testRepositoryDB(t)
+	now := time.Now().UTC().Truncate(time.Second)
+
+	users := []models.User{
+		{ID: 1, Name: "Alice", Email: "alice@example.com", Password: "hash", CreatedAt: now},
+		{ID: 2, Name: "Bob", Email: "bob@example.com", Password: "hash", CreatedAt: now},
+	}
+	mustCreate(t, db, &users)
+
+	messages := []models.Message{
+		{FromID: 1, ToID: 2, Content: "first", CreatedAt: now.Add(-2 * time.Minute)},
+		{FromID: 2, ToID: 1, Content: "second", CreatedAt: now.Add(-time.Minute)},
+	}
+	mustCreate(t, db, &messages)
+
+	conversationID, err := CanonicalConversationID(db, 1, 2)
+	if err != nil {
+		t.Fatalf("canonical conversation id: %v", err)
+	}
+
+	if _, err := ReplacePinnedMessage(db, conversationID, messages[0].ID, 1); err != nil {
+		t.Fatalf("pin first message: %v", err)
+	}
+	if _, err := ReplacePinnedMessage(db, conversationID, messages[1].ID, 2); err != nil {
+		t.Fatalf("replace pinned message: %v", err)
+	}
+
+	var count int64
+	if err := db.Model(&models.PinnedMessage{}).
+		Where("conversation_id = ?", conversationID).
+		Count(&count).Error; err != nil {
+		t.Fatalf("count pinned messages: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected one pinned message, got %d", count)
+	}
+
+	pin, err := GetPinnedMessage(db, conversationID)
+	if err != nil {
+		t.Fatalf("get pinned message: %v", err)
+	}
+	if pin.MessageID != messages[1].ID {
+		t.Fatalf("expected message_id %d, got %d", messages[1].ID, pin.MessageID)
+	}
+	if pin.PinnedByID != 2 {
+		t.Fatalf("expected pinned_by_id 2, got %d", pin.PinnedByID)
+	}
+}
+
 func conversationUint(t *testing.T, value any) uint {
 	t.Helper()
 

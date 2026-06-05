@@ -1,4 +1,4 @@
-import { useRef, useEffect, useLayoutEffect, useMemo, useState, type UIEvent } from 'react';
+import { useCallback, useRef, useEffect, useLayoutEffect, useMemo, useState, type UIEvent } from 'react';
 import { ChatMessage } from './ChatMessage.js';
 import type { Message } from "@/shared/types/domain.js";
 import { Spinner } from "@/shared/ui/Spinner.js";
@@ -19,8 +19,13 @@ type MenuAction = {
     key: string;
     label: string;
     tone?: 'danger';
-    icon: 'edit' | 'delete' | 'text' | 'link' | 'select' | 'reply' | 'forward';
+    icon: 'edit' | 'delete' | 'text' | 'link' | 'select' | 'reply' | 'forward' | 'pin';
     onSelect: () => void;
+};
+
+type ScrollToMessageRequest = {
+    messageId: number;
+    requestId: number;
 };
 
 const optimisticMessageFloor = 10000000;
@@ -71,6 +76,9 @@ interface ChatMessageListProps {
     onEnterSelectionMode: (id: number) => void;
     onReplyMessage: (message: Message) => void;
     onForwardMessage: (message: Message) => void;
+    onPinMessage?: (message: Message) => void;
+    onUnpinMessage?: () => void;
+    pinnedMessageId?: number | null;
     onEditMessage: (id: number, content: string) => void;
     onDeleteMessage: (id: number) => void;
     editingMessageId: number | null;
@@ -87,6 +95,7 @@ interface ChatMessageListProps {
     formatTime: (date: string) => string;
     actionsEnabled?: boolean;
     onOpenUser?: (userId: number) => void;
+    scrollToMessageRequest?: ScrollToMessageRequest | null;
 }
 
 export const ChatMessageList = ({
@@ -103,6 +112,9 @@ export const ChatMessageList = ({
                                     onEnterSelectionMode,
                                     onReplyMessage,
                                     onForwardMessage,
+                                    onPinMessage,
+                                    onUnpinMessage,
+                                    pinnedMessageId,
                                     onEditMessage,
                                     onDeleteMessage,
                                     editingMessageId,
@@ -119,6 +131,7 @@ export const ChatMessageList = ({
                                     formatTime,
                                     actionsEnabled = true,
                                     onOpenUser,
+                                    scrollToMessageRequest,
                                 }: ChatMessageListProps) => {
     const dialog = useAppDialog();
     const containerRef = useRef<HTMLDivElement>(null);
@@ -135,6 +148,7 @@ export const ChatMessageList = ({
     const contextMessageHasText = Boolean(contextMessageText);
     const contextMessageIsOwn = Boolean(contextMessage && contextMessage.from_id === currentUserId);
     const contextMessageIsReal = Boolean(contextMessage && contextMessage.id > 0 && contextMessage.id < optimisticMessageFloor);
+    const contextMessageIsPinned = Boolean(contextMessage && pinnedMessageId === contextMessage.id);
     const contextMessageCanSelect = Boolean(
         contextMessage && contextMessageIsOwn && contextMessageIsReal
     );
@@ -204,7 +218,7 @@ export const ChatMessageList = ({
 
         const canSelect = isOwn && actionsEnabled && message.id > 0 && message.id < 10000000;
         const ownActionsCount = isOwn && actionsEnabled ? 2 : 0;
-        const messageActionsCount = actionsEnabled && message.id > 0 && message.id < optimisticMessageFloor ? 2 : 0;
+        const messageActionsCount = actionsEnabled && message.id > 0 && message.id < optimisticMessageFloor ? 3 : 0;
         const copyActionsCount = Number(Boolean(message.content.trim())) + Number(Boolean(firstUrl(message.content || '')));
         const actionCount = ownActionsCount + messageActionsCount + copyActionsCount + Number(canSelect);
 
@@ -260,19 +274,31 @@ export const ChatMessageList = ({
         action();
     };
 
-    const scrollToMessage = (messageId: number) => {
+    const scrollToMessage = useCallback((messageId: number) => {
         const container = containerRef.current;
-        const element = container?.querySelector<HTMLElement>(`[data-chat-message-id="${messageId}"]`);
-        if (!element) {
+        const row = container?.querySelector<HTMLElement>(`[data-chat-message-id="${messageId}"]`);
+        const bubble = container?.querySelector<HTMLElement>(`[data-chat-message-bubble-id="${messageId}"]`);
+        if (!row || !bubble) {
             return;
         }
 
-        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        element.classList.add('ring-2', 'ring-sky-300');
+        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        bubble.classList.remove('chat-message-bubble--navigate');
+        void bubble.offsetWidth;
+        bubble.classList.add('chat-message-bubble--navigate');
         window.setTimeout(() => {
-            element.classList.remove('ring-2', 'ring-sky-300');
-        }, 1200);
-    };
+            bubble.classList.remove('chat-message-bubble--navigate');
+        }, 1900);
+    }, []);
+
+    useEffect(() => {
+        if (!scrollToMessageRequest) {
+            return;
+        }
+
+        const frame = window.requestAnimationFrame(() => scrollToMessage(scrollToMessageRequest.messageId));
+        return () => window.cancelAnimationFrame(frame);
+    }, [scrollToMessage, scrollToMessageRequest]);
 
     const menuActions = useMemo<MenuAction[]>(() => {
         if (!contextMessage) {
@@ -294,6 +320,21 @@ export const ChatMessageList = ({
                 icon: 'forward',
                 onSelect: () => onForwardMessage(contextMessage),
             });
+            if (contextMessageIsPinned) {
+                actions.push({
+                    key: 'unpin-message',
+                    label: 'Открепить сообщение',
+                    icon: 'pin',
+                    onSelect: () => onUnpinMessage?.(),
+                });
+            } else {
+                actions.push({
+                    key: 'pin-message',
+                    label: 'Закрепить сообщение',
+                    icon: 'pin',
+                    onSelect: () => onPinMessage?.(contextMessage),
+                });
+            }
         }
 
         if (contextMessageIsOwn && actionsEnabled) {
@@ -363,6 +404,7 @@ export const ChatMessageList = ({
         contextMessage,
         contextMessageCanSelect,
         contextMessageHasText,
+        contextMessageIsPinned,
         contextMessageIsReal,
         contextMessageIsOwn,
         contextMessageUrl,
@@ -371,7 +413,9 @@ export const ChatMessageList = ({
         onEditMessage,
         onEnterSelectionMode,
         onForwardMessage,
+        onPinMessage,
         onReplyMessage,
+        onUnpinMessage,
     ]);
 
     return (
@@ -500,6 +544,7 @@ function ContextMenuAction({
                 {action.icon === 'select' && <span className="h-3.5 w-3.5 rounded border-2 border-current" />}
                 {action.icon === 'reply' && <span className="text-xs font-semibold">R</span>}
                 {action.icon === 'forward' && <span className="text-xs font-semibold">F</span>}
+                {action.icon === 'pin' && <Icon name="pin" className="h-3.5 w-3.5" />}
             </span>
             <span className={mobile ? 'font-medium' : undefined}>{action.label}</span>
         </button>

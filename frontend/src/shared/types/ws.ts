@@ -1,4 +1,4 @@
-import type { Message } from "@/shared/types/domain.js";
+import type { Message, PinnedMessage } from "@/shared/types/domain.js";
 
 export interface BaseWsEvent<T extends string, P> {
     type: T;
@@ -48,6 +48,22 @@ export type MessageDeletedEvent = BaseWsEvent<
     'message:delete',
     {
         message_id: number;
+    }
+>;
+
+export type MessagePinnedEvent = BaseWsEvent<
+    'message_pinned',
+    {
+        pinned_message: PinnedMessage;
+    }
+>;
+
+export type MessageUnpinnedEvent = BaseWsEvent<
+    'message_unpinned',
+    {
+        conversation_id: number;
+        message_id: number;
+        participant_ids: number[];
     }
 >;
 
@@ -130,6 +146,8 @@ export type WsEvent =
     | TypingStopEvent
     | ReadReceiptEvent
     | MessageDeletedEvent
+    | MessagePinnedEvent
+    | MessageUnpinnedEvent
     | FriendRequestEvent
     | FriendAcceptedEvent
     | PresenceUpdateEvent

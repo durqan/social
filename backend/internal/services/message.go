@@ -21,6 +21,7 @@ var (
 	ErrMessageForbidden       = errors.New("message forbidden")
 	ErrMessageNotFriends      = errors.New("message requires accepted friendship")
 	ErrMessageInvalidReply    = errors.New("reply message is outside this conversation")
+	ErrMessageInvalidPin      = errors.New("pin message is outside this conversation or deleted")
 )
 
 const MaxMessageContentLength = 1000
@@ -172,6 +173,90 @@ func LoadMessage(db *gorm.DB, messageID uint) (models.Message, error) {
 	return *message, nil
 }
 
+func GetPinnedMessage(db *gorm.DB, userID, conversationUserID uint) (*models.PinnedMessage, error) {
+	conversationID, err := canonicalConversationForUser(db, userID, conversationUserID)
+	if err != nil {
+		return nil, err
+	}
+
+	pin, err := repository.GetPinnedMessage(db, conversationID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return pin, nil
+}
+
+func PinMessage(db *gorm.DB, userID, conversationUserID, messageID uint) (*models.PinnedMessage, error) {
+	conversationID, err := canonicalConversationForUser(db, userID, conversationUserID)
+	if err != nil {
+		return nil, err
+	}
+
+	message, err := repository.GetMessageInConversation(db, messageID, userID, conversationUserID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrMessageInvalidPin
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	pin, err := repository.ReplacePinnedMessage(db, conversationID, message.ID, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	InvalidateMessageCaches()
+	return pin, nil
+}
+
+func UnpinMessage(db *gorm.DB, userID, conversationUserID uint) (*models.PinnedMessage, error) {
+	conversationID, err := canonicalConversationForUser(db, userID, conversationUserID)
+	if err != nil {
+		return nil, err
+	}
+
+	pin, err := repository.GetPinnedMessage(db, conversationID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		if err := repository.DeletePinnedMessage(db, conversationID); err != nil {
+			return nil, err
+		}
+		InvalidateMessageCaches()
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	if err := repository.DeletePinnedMessage(db, conversationID); err != nil {
+		return nil, err
+	}
+
+	InvalidateMessageCaches()
+	return pin, nil
+}
+
+func canonicalConversationForUser(db *gorm.DB, userID, conversationUserID uint) (uint, error) {
+	participant, err := repository.ConversationExistsForUser(db, userID, conversationUserID)
+	if err != nil {
+		return 0, err
+	}
+	if !participant {
+		return 0, ErrMessageForbidden
+	}
+
+	conversationID, err := repository.CanonicalConversationID(db, userID, conversationUserID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return 0, ErrMessageForbidden
+	}
+	if err != nil {
+		return 0, err
+	}
+	return conversationID, nil
+}
+
 func UpdateMessage(db *gorm.DB, userID, messageID uint, content string) (models.Message, error) {
 	message, err := repository.GetMessageByID(db, messageID)
 	if err != nil {
@@ -208,6 +293,9 @@ func DeleteMessageForUser(db *gorm.DB, userID, messageID uint) error {
 	keys := attachmentKeys(message.Attachments)
 	err = db.Transaction(func(tx *gorm.DB) error {
 		if err := repository.DeleteMessage(tx, messageID); err != nil {
+			return err
+		}
+		if err := repository.DeletePinnedMessagesByMessageIDs(tx, []uint{messageID}); err != nil {
 			return err
 		}
 		return deleteMessageAttachmentRows(tx, []uint{messageID})
@@ -250,6 +338,9 @@ func DeleteMessagesBatchForUser(db *gorm.DB, ids []uint, userID uint) ([]models.
 
 	err := db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Delete(&models.Message{}, ids).Error; err != nil {
+			return err
+		}
+		if err := repository.DeletePinnedMessagesByMessageIDs(tx, ids); err != nil {
 			return err
 		}
 		return deleteMessageAttachmentRows(tx, ids)

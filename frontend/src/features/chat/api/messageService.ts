@@ -1,9 +1,13 @@
 import { request } from "@/shared/api/axios.js";
-import type { Conversation, Message, MessageAttachment } from "@/shared/types/domain.js";
+import type { Conversation, Message, MessageAttachment, PinnedMessage } from "@/shared/types/domain.js";
 
 export type PaginatedMessages = {
     messages: Message[];
     has_more: boolean;
+};
+
+type PinnedMessageResponse = {
+    pinned_message: PinnedMessage | null;
 };
 
 export const messageService = {
@@ -41,6 +45,23 @@ export const messageService = {
 
     async unpinConversation(conversationId: number): Promise<void> {
         await request.delete(`/conversations/${conversationId}/pin`);
+    },
+
+    async getPinnedMessage(conversationId: number): Promise<PinnedMessage | null> {
+        const response = await request.get<PinnedMessageResponse>(`/conversations/${conversationId}/pinned-message`);
+        return response.pinned_message ?? null;
+    },
+
+    async pinMessage(conversationId: number, messageId: number): Promise<PinnedMessage> {
+        const response = await request.post<PinnedMessageResponse>(`/conversations/${conversationId}/messages/${messageId}/pin`);
+        if (!response.pinned_message) {
+            throw new Error('Pinned message was not returned');
+        }
+        return response.pinned_message;
+    },
+
+    async unpinMessage(conversationId: number): Promise<void> {
+        await request.delete(`/conversations/${conversationId}/pinned-message`);
     },
 
     async getMessagesWith(userId: string | undefined, params?: {

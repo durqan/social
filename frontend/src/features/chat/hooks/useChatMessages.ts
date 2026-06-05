@@ -85,6 +85,58 @@ export const useChatMessages = (userId: string | undefined, currentUserId: numbe
         }
     }, [loadingMore, hasMore, messages, userId]);
 
+    const loadUntilMessage = useCallback(async (messageId: number) => {
+        if (!userId) {
+            return false;
+        }
+
+        let loadedMessages = messages;
+        let canLoadMore = hasMore;
+
+        if (loadedMessages.some(message => message.id === messageId)) {
+            return true;
+        }
+
+        if (!canLoadMore || loadedMessages.length === 0) {
+            return false;
+        }
+
+        setLoadingMore(true);
+        try {
+            for (let page = 0; page < 20; page += 1) {
+                const oldestId = loadedMessages[0]?.id;
+                if (!oldestId || !canLoadMore) {
+                    break;
+                }
+
+                const res = await messageService.getMessagesWith(userId, { before: oldestId, limit: 20 });
+                canLoadMore = res.has_more;
+
+                if (!res.messages.length) {
+                    break;
+                }
+
+                const existingIds = new Set(loadedMessages.map(message => message.id));
+                const olderMessages = res.messages.filter(message => !existingIds.has(message.id));
+                loadedMessages = olderMessages.length ? [...olderMessages, ...loadedMessages] : loadedMessages;
+
+                setMessages(loadedMessages);
+                setHasMore(canLoadMore);
+
+                if (loadedMessages.some(message => message.id === messageId)) {
+                    return true;
+                }
+            }
+
+            return loadedMessages.some(message => message.id === messageId);
+        } catch (error) {
+            console.error(error);
+            return false;
+        } finally {
+            setLoadingMore(false);
+        }
+    }, [hasMore, messages, userId]);
+
     const sendMessage = useCallback((content: string, tempMessage: Message) => {
         setMessages(prev => [...prev, tempMessage]);
         return tempMessage;
@@ -156,6 +208,7 @@ export const useChatMessages = (userId: string | undefined, currentUserId: numbe
         setEditContent,
         loadInitial,
         loadMore,
+        loadUntilMessage,
         sendMessage,
         updateMessage,
         applyMessageUpdate,

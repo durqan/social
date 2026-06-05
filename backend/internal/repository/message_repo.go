@@ -3,6 +3,7 @@ package repository
 import (
 	"errors"
 	"tester/internal/models"
+	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -30,6 +31,19 @@ func preloadMessageRelations(db *gorm.DB) *gorm.DB {
 		Preload("ForwardedFromUser").
 		Preload("ForwardedFromMessage.From").
 		Preload("ForwardedFromMessage.Attachments")
+}
+
+func preloadPinnedMessageRelations(db *gorm.DB) *gorm.DB {
+	return db.
+		Preload("Message.From").
+		Preload("Message.To").
+		Preload("Message.Attachments").
+		Preload("Message.ReplyToMessage.From").
+		Preload("Message.ReplyToMessage.Attachments").
+		Preload("Message.ForwardedFromUser").
+		Preload("Message.ForwardedFromMessage.From").
+		Preload("Message.ForwardedFromMessage.Attachments").
+		Preload("PinnedBy")
 }
 
 func GetMessageAttachmentForUser(db *gorm.DB, attachmentID, userID uint) (*models.MessageAttachment, error) {
@@ -141,6 +155,25 @@ func ConversationExistsForUser(db *gorm.DB, userID, conversationID uint) (bool, 
 	return count > 0, err
 }
 
+func CanonicalConversationID(db *gorm.DB, userID, conversationUserID uint) (uint, error) {
+	var message models.Message
+	err := db.Unscoped().
+		Select("id").
+		Where(
+			"(from_id = ? AND to_id = ?) OR (from_id = ? AND to_id = ?)",
+			userID,
+			conversationUserID,
+			conversationUserID,
+			userID,
+		).
+		Order("created_at ASC, id ASC").
+		First(&message).Error
+	if err != nil {
+		return 0, err
+	}
+	return message.ID, nil
+}
+
 func PinConversation(db *gorm.DB, userID, conversationID uint) error {
 	pin := models.ConversationPin{
 		UserID:         userID,
@@ -157,6 +190,60 @@ func UnpinConversation(db *gorm.DB, userID, conversationID uint) error {
 	return db.
 		Where("user_id = ? AND conversation_id = ?", userID, conversationID).
 		Delete(&models.ConversationPin{}).Error
+}
+
+func GetPinnedMessage(db *gorm.DB, conversationID uint) (*models.PinnedMessage, error) {
+	var pin models.PinnedMessage
+	err := preloadPinnedMessageRelations(db).
+		Joins("JOIN messages ON messages.id = pinned_messages.message_id AND messages.deleted_at IS NULL").
+		Where("pinned_messages.conversation_id = ?", conversationID).
+		First(&pin).Error
+	return &pin, err
+}
+
+func GetPinnedMessagesByMessageIDs(db *gorm.DB, messageIDs []uint) ([]models.PinnedMessage, error) {
+	if len(messageIDs) == 0 {
+		return nil, nil
+	}
+
+	var pins []models.PinnedMessage
+	err := preloadPinnedMessageRelations(db).
+		Where("message_id IN ?", messageIDs).
+		Find(&pins).Error
+	return pins, err
+}
+
+func ReplacePinnedMessage(db *gorm.DB, conversationID, messageID, pinnedByID uint) (*models.PinnedMessage, error) {
+	pin := models.PinnedMessage{
+		ConversationID: conversationID,
+		MessageID:      messageID,
+		PinnedByID:     pinnedByID,
+		CreatedAt:      time.Now(),
+	}
+
+	if err := db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "conversation_id"}},
+		DoUpdates: clause.Assignments(map[string]interface{}{
+			"message_id":   pin.MessageID,
+			"pinned_by_id": pin.PinnedByID,
+			"created_at":   pin.CreatedAt,
+		}),
+	}).Create(&pin).Error; err != nil {
+		return nil, err
+	}
+
+	return GetPinnedMessage(db, conversationID)
+}
+
+func DeletePinnedMessage(db *gorm.DB, conversationID uint) error {
+	return db.Where("conversation_id = ?", conversationID).Delete(&models.PinnedMessage{}).Error
+}
+
+func DeletePinnedMessagesByMessageIDs(db *gorm.DB, messageIDs []uint) error {
+	if len(messageIDs) == 0 {
+		return nil
+	}
+	return db.Where("message_id IN ?", messageIDs).Delete(&models.PinnedMessage{}).Error
 }
 
 func MarkMessagesAsRead(db *gorm.DB, fromID, toID uint) error {

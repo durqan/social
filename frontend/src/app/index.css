@@ -201,6 +201,41 @@ button {
             height: 40px;
         }
     }
+
+    .chat-message-bubble {
+        transform-origin: center;
+    }
+
+    .chat-message-bubble--navigate {
+        animation: chat-message-bubble-navigate 1800ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+        will-change: transform, box-shadow;
+    }
+}
+
+@keyframes chat-message-bubble-navigate {
+    0% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 transparent;
+    }
+
+    16% {
+        transform: scale(1.025);
+        box-shadow:
+            0 0 0 5px var(--app-focus-ring),
+            0 0 28px 8px var(--app-accent-border);
+    }
+
+    52% {
+        transform: scale(1.012);
+        box-shadow:
+            0 0 0 3px var(--app-focus-ring),
+            0 0 20px 4px var(--app-accent-border);
+    }
+
+    100% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 transparent;
+    }
 }
 
 @layer utilities {
