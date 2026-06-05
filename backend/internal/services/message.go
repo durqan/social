@@ -277,6 +277,7 @@ func InvalidateMessageCaches() {
 	}
 
 	_ = cache.Redis.DeletePattern("cache:/messages*")
+	_ = cache.Redis.DeletePattern("cache:/conversations*")
 }
 
 func deleteMessageAttachmentRows(db *gorm.DB, messageIDs []uint) error {

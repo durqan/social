@@ -28,7 +28,6 @@ export function FriendRequestItem({ request, onAccept }: FriendRequestItemProps)
                 <Avatar
                     name={user.name}
                     src={user.avatar}
-                    userId={userId}
                     positionX={user.avatarPositionX ?? user.avatar_position_x}
                     positionY={user.avatarPositionY ?? user.avatar_position_y}
                     scale={user.avatarScale ?? user.avatar_scale}

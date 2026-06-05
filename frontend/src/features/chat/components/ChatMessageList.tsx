@@ -3,6 +3,7 @@ import { ChatMessage } from './ChatMessage.js';
 import type { Message } from "@/shared/types/domain.js";
 import { Spinner } from "@/shared/ui/Spinner.js";
 import { Icon } from "@/shared/ui/Icon.js";
+import { useAppDialog } from "@/app/providers/AppDialogProvider.js";
 
 const urlPattern = /(https?:\/\/[^\s<]+|www\.[^\s<]+)/gi;
 const menuOpenedEventName = 'chat-message-context-menu:open';
@@ -85,6 +86,7 @@ interface ChatMessageListProps {
     formatDate: (date: string) => string;
     formatTime: (date: string) => string;
     actionsEnabled?: boolean;
+    onOpenUser?: (userId: number) => void;
 }
 
 export const ChatMessageList = ({
@@ -116,7 +118,9 @@ export const ChatMessageList = ({
                                     formatDate,
                                     formatTime,
                                     actionsEnabled = true,
+                                    onOpenUser,
                                 }: ChatMessageListProps) => {
+    const dialog = useAppDialog();
     const containerRef = useRef<HTMLDivElement>(null);
     const paginationAnchorRef = useRef<{ messageId: number; top: number } | null>(null);
     const paginationRequestRef = useRef(false);
@@ -315,7 +319,19 @@ export const ChatMessageList = ({
                 label: 'Удалить сообщение',
                 icon: 'delete',
                 tone: 'danger',
-                onSelect: () => onDeleteMessage(contextMessage.id),
+                onSelect: () => {
+                    void dialog.confirm({
+                        title: 'Удалить сообщение?',
+                        message: 'Сообщение будет удалено без возможности восстановления.',
+                        confirmText: 'Удалить',
+                        cancelText: 'Отмена',
+                        variant: 'danger',
+                    }).then(ok => {
+                        if (ok) {
+                            void onDeleteMessage(contextMessage.id);
+                        }
+                    });
+                },
             });
         }
 
@@ -351,6 +367,7 @@ export const ChatMessageList = ({
         contextMessageIsOwn,
         contextMessageUrl,
         onDeleteMessage,
+        dialog,
         onEditMessage,
         onEnterSelectionMode,
         onForwardMessage,
@@ -403,6 +420,7 @@ export const ChatMessageList = ({
                             onCancelEdit={onCancelEdit}
                             formatTime={formatTime}
                             formatDate={formatDate}
+                            onOpenUser={onOpenUser}
                         />
                     );
                 })

@@ -1,0 +1,30 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+cmd = "go build -o ./tmp/api ./cmd/api"
+bin = "./tmp/api"
+full_bin = "./tmp/api"
+include_ext = ["go", "tpl", "tmpl", "html"]
+exclude_dir = ["tmp", "vendor", "uploads", "init"]
+exclude_file = []
+exclude_regex = ["_test.go"]
+exclude_unchanged = true
+follow_symlink = true
+log = "build-errors.log"
+poll = false
+delay = 1000
+stop_on_error = true
+send_interrupt = true
+kill_delay = 500
+
+[log]
+time = true
+main_only = false
+
+[misc]
+clean_on_exit = true
+
+[screen]
+clear_on_rebuild = false
+keep_scroll = true

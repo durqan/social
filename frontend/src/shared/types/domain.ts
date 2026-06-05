@@ -17,6 +17,7 @@ export interface User {
     isEmailVerified?: boolean;
     is_email_verified?: boolean;
     created_at?: string;
+    last_seen_at?: string | null;
 }
 
 export interface MessageUser {
@@ -130,6 +131,7 @@ export interface Conversation {
     last_is_mine: boolean;
     last_read: boolean;
     unread_count: number;
+    is_pinned: boolean;
 }
 
 export interface SocialNotification {

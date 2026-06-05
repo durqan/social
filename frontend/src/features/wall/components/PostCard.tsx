@@ -21,6 +21,7 @@ type PostCardProps = {
     onCommentDraftChange: (postId: number, content: string) => void;
     onCreateComment: (postId: number) => void;
     onCommentLike: (commentId: number, postId: number) => void;
+    onOpenUser: (userId: number) => void;
 };
 
 export function PostCard({
@@ -41,6 +42,7 @@ export function PostCard({
     onCommentDraftChange,
     onCreateComment,
     onCommentLike,
+    onOpenUser,
 }: PostCardProps) {
     return (
         <div className="app-card p-3 sm:p-4">
@@ -49,11 +51,11 @@ export function PostCard({
                     <Avatar
                         name={post.user?.name}
                         src={post.user?.avatar}
-                        userId={post.user?.id}
                         positionX={post.user?.avatar_position_x}
                         positionY={post.user?.avatar_position_y}
                         scale={post.user?.avatar_scale}
-                        className="cursor-pointer"
+                        ariaLabel={`Открыть профиль ${post.user?.name || 'пользователя'}`}
+                        onClick={() => onOpenUser(post.user.id)}
                     />
                     <div className="min-w-0">
                         <p className="truncate font-semibold text-gray-800">{post.user?.name || 'Пользователь'}</p>
@@ -132,12 +134,13 @@ export function PostCard({
                                 <Avatar
                                     name={comment.user?.name}
                                     src={comment.user?.avatar}
-                                    userId={comment.user?.id}
                                     positionX={comment.user?.avatar_position_x}
                                     positionY={comment.user?.avatar_position_y}
                                     scale={comment.user?.avatar_scale}
                                     size="sm"
-                                    className="flex-shrink-0 cursor-pointer"
+                                    className="flex-shrink-0"
+                                    ariaLabel={`Открыть профиль ${comment.user?.name || 'пользователя'}`}
+                                    onClick={() => onOpenUser(comment.user.id)}
                                 />
                                 <div className="min-w-0 flex-1">
                                     <div className="rounded-xl bg-gray-50 p-2">
@@ -163,12 +166,13 @@ export function PostCard({
                         <Avatar
                             name={currentUser?.name}
                             src={currentUser?.avatar}
-                            userId={currentUser?.id}
                             positionX={currentUser?.avatarPositionX}
                             positionY={currentUser?.avatarPositionY}
                             scale={currentUser?.avatarScale}
                             size="sm"
-                            className="flex-shrink-0 cursor-pointer"
+                            className="flex-shrink-0"
+                            ariaLabel={`Открыть профиль ${currentUser?.name || 'пользователя'}`}
+                            onClick={currentUser?.id ? () => onOpenUser(currentUser.id!) : undefined}
                         />
                         <div className="min-w-0 flex-1">
                             <textarea

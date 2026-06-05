@@ -74,6 +74,7 @@ function normalizeConversation(conversation: Conversation): Conversation {
     last_is_mine: Boolean(conversation.last_is_mine),
     last_read: Boolean(conversation.last_read),
     unread_count: Number(conversation.unread_count) || 0,
+    is_pinned: Boolean(conversation.is_pinned),
   };
 }
 

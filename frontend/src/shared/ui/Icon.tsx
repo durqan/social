@@ -1,4 +1,4 @@
-export type IconName = 'arrowLeft' | 'close' | 'delete' | 'edit' | 'send' | 'search' | 'logout' | 'menu' | 'home' | 'wall' | 'friends' | 'messages' | 'heart' | 'bell' | 'phone' | 'phoneOff' | 'mic' | 'micOff' | 'video' | 'videoOff' | 'switchCamera' | 'maximize' | 'minimize' | 'image' | 'play' | 'pause';
+export type IconName = 'arrowLeft' | 'close' | 'delete' | 'edit' | 'send' | 'search' | 'logout' | 'menu' | 'home' | 'wall' | 'friends' | 'messages' | 'heart' | 'bell' | 'phone' | 'phoneOff' | 'mic' | 'micOff' | 'video' | 'videoOff' | 'switchCamera' | 'maximize' | 'minimize' | 'image' | 'play' | 'pause' | 'pin' | 'info' | 'checkCircle' | 'warning';
 
 interface IconProps {
     name: IconName;
@@ -33,6 +33,10 @@ const paths: Record<IconName, string> = {
     image: 'M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z',
     play: 'M8 5v14l11-7z',
     pause: 'M6 4h4v16H6V4zm8 0h4v16h-4V4z',
+    pin: 'M14 4l6 6-3 3 2 2-2 2-2-2-4 4v3H9v-3l4-4-4-4-4 4H3l6-6-2-2 2-2 2 2 3-3z',
+    info: 'M13 16h-1v-4h-1m1-4h.01M12 22a10 10 0 110-20 10 10 0 010 20z',
+    checkCircle: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
+    warning: 'M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z',
 };
 
 export const Icon = ({ name, className = 'w-5 h-5', filled = false }: IconProps) => (

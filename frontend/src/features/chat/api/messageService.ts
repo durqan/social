@@ -31,8 +31,16 @@ export const messageService = {
         });
     },
     async getConversations(): Promise<Conversation[]> {
-        const conversations = await request.get<Conversation[]>('/messages/conversations');
+        const conversations = await request.get<Conversation[]>('/conversations');
         return Array.isArray(conversations) ? conversations : [];
+    },
+
+    async pinConversation(conversationId: number): Promise<void> {
+        await request.post(`/conversations/${conversationId}/pin`);
+    },
+
+    async unpinConversation(conversationId: number): Promise<void> {
+        await request.delete(`/conversations/${conversationId}/pin`);
     },
 
     async getMessagesWith(userId: string | undefined, params?: {

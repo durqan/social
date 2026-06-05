@@ -48,6 +48,7 @@ export interface Conversation {
   last_is_mine: boolean;
   last_read: boolean;
   unread_count: number;
+  is_pinned: boolean;
 }
 
 export interface MessageAttachment {

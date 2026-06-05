@@ -189,6 +189,68 @@ func GetConversations(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
+func PinConversation(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, ok := authenticatedUserID(c)
+		if !ok {
+			return
+		}
+		conversationID, ok := uintParam(c, "conversationId", "invalid conversation id")
+		if !ok {
+			return
+		}
+
+		participant, err := repository.ConversationExistsForUser(db, userID, conversationID)
+		if err != nil {
+			c.JSON(500, gin.H{"error": "failed to pin conversation"})
+			return
+		}
+		if !participant {
+			c.JSON(403, gin.H{"error": "you are not a participant in this conversation"})
+			return
+		}
+
+		if err := repository.PinConversation(db, userID, conversationID); err != nil {
+			c.JSON(500, gin.H{"error": "failed to pin conversation"})
+			return
+		}
+
+		services.InvalidateMessageCaches()
+		c.JSON(200, gin.H{"is_pinned": true})
+	}
+}
+
+func UnpinConversation(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, ok := authenticatedUserID(c)
+		if !ok {
+			return
+		}
+		conversationID, ok := uintParam(c, "conversationId", "invalid conversation id")
+		if !ok {
+			return
+		}
+
+		participant, err := repository.ConversationExistsForUser(db, userID, conversationID)
+		if err != nil {
+			c.JSON(500, gin.H{"error": "failed to unpin conversation"})
+			return
+		}
+		if !participant {
+			c.JSON(403, gin.H{"error": "you are not a participant in this conversation"})
+			return
+		}
+
+		if err := repository.UnpinConversation(db, userID, conversationID); err != nil {
+			c.JSON(500, gin.H{"error": "failed to unpin conversation"})
+			return
+		}
+
+		services.InvalidateMessageCaches()
+		c.JSON(200, gin.H{"is_pinned": false})
+	}
+}
+
 func conversationUserID(value interface{}) uint {
 	switch v := value.(type) {
 	case uint:

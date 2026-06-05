@@ -29,6 +29,7 @@ type NotificationToast = {
     message: string;
     onClick: () => void;
     actorId?: number;
+    onActorClick?: () => void;
     tone?: 'default' | 'blue' | 'green';
 };
 
@@ -37,6 +38,7 @@ function showNotificationToast({
     message,
     onClick,
     actorId,
+    onActorClick,
     tone = 'default',
 }: NotificationToast) {
     const borderClass = {
@@ -54,7 +56,11 @@ function showNotificationToast({
             className={`mx-3 max-w-sm cursor-pointer rounded-2xl border border-gray-200 bg-white p-4 shadow-xl shadow-gray-900/10 transition-colors hover:bg-gray-50 ${borderClass}`}
         >
             <div className="flex items-center gap-3">
-                <Avatar name={title} userId={actorId} />
+                <Avatar
+                    name={title}
+                    ariaLabel={`Открыть профиль ${title || 'пользователя'}`}
+                    onClick={actorId && onActorClick ? onActorClick : undefined}
+                />
                 <div className="min-w-0 flex-1">
                     <p className="truncate font-semibold text-gray-900">{title}</p>
                     <p className="truncate text-sm text-gray-600">{message}</p>
@@ -95,6 +101,7 @@ function NotificationHandler() {
                         tone: 'blue',
                         actorId: event.payload.from_id,
                         onClick: () => navigate(`/users/${event.payload.from_id}`),
+                        onActorClick: () => navigate(`/users/${event.payload.from_id}`),
                     });
                     return;
 
@@ -105,6 +112,7 @@ function NotificationHandler() {
                         tone: 'green',
                         actorId: event.payload.from_id,
                         onClick: () => navigate(`/users/${event.payload.from_id}`),
+                        onActorClick: () => navigate(`/users/${event.payload.from_id}`),
                     });
                     return;
 
@@ -135,6 +143,7 @@ function NotificationHandler() {
                         title: senderName,
                         message: message.content.slice(0, 50),
                         actorId: message.from_id,
+                        onActorClick: () => navigate(`/users/${message.from_id}`),
                         onClick: () => navigate(`/users/${currentUserId}/chat/${message.from_id}`),
                     });
 

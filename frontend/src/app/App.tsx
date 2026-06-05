@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import Login from "@/features/auth/components/Login.js";
 import Register from "@/features/auth/components/Register.js";
 import Profile from "@/features/profile/components/Profile.js";
@@ -18,6 +18,7 @@ import { RequireAuth, RequireGuest } from "@/features/auth/components/RequireAut
 import { PushSubscriptionManager } from "@/features/notifications/components/PushSubscriptionManager.js";
 import { Seo } from "@/shared/ui/Seo.js";
 import { ThemeProvider } from "@/app/themes/ThemeProvider.js";
+import { AppDialogProvider } from "@/app/providers/AppDialogProvider.js";
 
 function AppRoutes() {
     const { currentUser } = useAuth();
@@ -47,30 +48,30 @@ function AppRoutes() {
 function App() {
     return (
         <ThemeProvider>
-            <Toaster
-                position="top-right"
-                toastOptions={{
-                    style: {
-                        background: 'var(--app-card)',
-                        border: '1px solid var(--app-border)',
-                        color: 'var(--app-text-primary)',
-                        boxShadow: 'var(--app-card-shadow)',
-                    },
-                    success: {
-                        iconTheme: {
-                            primary: 'var(--app-success)',
-                            secondary: 'var(--app-text-inverse)',
+            <AppDialogProvider>
+                <Toaster
+                    position="top-right"
+                    toastOptions={{
+                        style: {
+                            background: 'var(--app-card)',
+                            border: '1px solid var(--app-border)',
+                            color: 'var(--app-text-primary)',
+                            boxShadow: 'var(--app-card-shadow)',
                         },
-                    },
-                    error: {
-                        iconTheme: {
-                            primary: 'var(--app-error)',
-                            secondary: 'var(--app-text-inverse)',
+                        success: {
+                            iconTheme: {
+                                primary: 'var(--app-success)',
+                                secondary: 'var(--app-text-inverse)',
+                            },
                         },
-                    },
-                }}
-            />
-            <Router>
+                        error: {
+                            iconTheme: {
+                                primary: 'var(--app-error)',
+                                secondary: 'var(--app-text-inverse)',
+                            },
+                        },
+                    }}
+                />
                 <Seo />
                 <WebSocketProvider>
                     <AuthProvider>
@@ -81,7 +82,7 @@ function App() {
                         </AudioCallProvider>
                     </AuthProvider>
                 </WebSocketProvider>
-            </Router>
+            </AppDialogProvider>
         </ThemeProvider>
     );
 }

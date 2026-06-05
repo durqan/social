@@ -28,6 +28,7 @@ type CallOverlayProps = {
     onAccept: () => void;
     onReject: () => void;
     onEnd: () => void;
+    onOpenPeerProfile?: (userId: number) => void;
 };
 
 const statusText = (status: CallStatus, callType: CallType) => {
@@ -117,6 +118,7 @@ export function CallOverlay({
     onAccept,
     onReject,
     onEnd,
+    onOpenPeerProfile,
 }: CallOverlayProps) {
     if (status === 'idle') {
         return null;
@@ -128,6 +130,9 @@ export function CallOverlay({
     const videoTileClass = isExpanded
         ? 'absolute right-3 top-3 h-28 w-20 overflow-hidden rounded-lg border border-white/30 bg-gray-800 shadow sm:h-36 sm:w-56'
         : 'absolute bottom-2 right-2 h-20 w-24 overflow-hidden rounded-md border border-white/30 bg-gray-800 shadow sm:bottom-3 sm:right-3 sm:h-24 sm:w-32';
+    const openPeerProfile = peerUserId && onOpenPeerProfile
+        ? () => onOpenPeerProfile(peerUserId)
+        : undefined;
 
     const controls = status === 'incoming' ? (
         <>
@@ -191,7 +196,12 @@ export function CallOverlay({
                         : 'relative aspect-video overflow-hidden bg-gray-900'
                 }>
                     <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
-                        <Avatar name={peerName} userId={peerUserId ?? undefined} size="lg" />
+                        <Avatar
+                            name={peerName}
+                            size="lg"
+                            ariaLabel={`Открыть профиль ${peerName || 'пользователя'}`}
+                            onClick={openPeerProfile}
+                        />
                     </div>
 
                     <video
@@ -232,7 +242,13 @@ export function CallOverlay({
 
             <div className={isExpanded ? 'absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent p-4 pt-16 sm:p-6 sm:pt-20' : 'p-3 sm:p-4'}>
                 <div className={isExpanded ? 'mx-auto flex max-w-3xl flex-col items-center gap-4' : 'flex items-center gap-3'}>
-                    {!isExpanded && <Avatar name={peerName} userId={peerUserId ?? undefined} />}
+                    {!isExpanded && (
+                        <Avatar
+                            name={peerName}
+                            ariaLabel={`Открыть профиль ${peerName || 'пользователя'}`}
+                            onClick={openPeerProfile}
+                        />
+                    )}
 
                     <div className={isExpanded ? 'min-w-0 text-center' : 'min-w-0 flex-1'}>
                         <p className={isExpanded ? 'truncate text-lg font-semibold text-white' : 'truncate font-semibold text-gray-900'}>

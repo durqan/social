@@ -1,0 +1,237 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-social}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-social}
+      POSTGRES_DB: ${POSTGRES_DB:-social}
+      TZ: UTC
+    ports:
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\" -h 127.0.0.1 -p 5432" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - social_local
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "${REDIS_HOST_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - social_local
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-guest}
+    ports:
+      - "${RABBITMQ_HOST_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_HOST_PORT:-15672}:15672"
+    volumes:
+      - rabbit_data:/var/lib/rabbitmq
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "-q", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks:
+      - social_local
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "${MINIO_HOST_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_HOST_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - social_local
+
+  minio-create-bucket:
+    image: minio/mc:latest
+    restart: "no"
+    depends_on:
+      - minio
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - >
+        until mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"; do sleep 2; done &&
+        mc mb --ignore-existing local/$${S3_BUCKET:-social-local}
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      S3_BUCKET: ${S3_BUCKET:-social-local}
+    networks:
+      - social_local
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    restart: unless-stopped
+    working_dir: /app
+    env_file:
+      - path: .env.local
+        required: false
+    environment:
+      DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgres://social:social@postgres:5432/social?sslmode=disable}
+      PORT: ${PORT:-8080}
+      GIN_MODE: ${GIN_MODE:-debug}
+      JWT_SECRET: ${JWT_SECRET:-local-development-secret-change-before-release}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+      REDIS_HOST: ${COMPOSE_REDIS_HOST:-redis}
+      REDIS_PORT: ${COMPOSE_REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${COMPOSE_REDIS_PASSWORD:-}
+      REDIS_DB: ${COMPOSE_REDIS_DB:-0}
+      RABBIT_URL: ${COMPOSE_RABBIT_URL:-amqp://guest:guest@rabbitmq:5672/}
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
+      STORAGE_LOCAL_ROOT: ${STORAGE_LOCAL_ROOT:-uploads}
+      STORAGE_PUBLIC_BASE_URL: ${STORAGE_PUBLIC_BASE_URL:-}
+    command: sh -c "until nc -z rabbitmq 5672; do sleep 2; done; air"
+    ports:
+      - "${BACKEND_HOST_PORT:-8080}:8080"
+    volumes:
+      - ./backend:/app
+      - backend_go_pkg:/go/pkg/mod
+      - backend_go_build:/root/.cache/go-build
+      - uploads_data:/app/uploads
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health >/dev/null || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - social_local
+
+  notifications:
+    image: golang:1.26-alpine
+    restart: unless-stopped
+    working_dir: /app
+    env_file:
+      - path: .env.local
+        required: false
+    environment:
+      DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgres://social:social@postgres:5432/social?sslmode=disable}
+      RABBIT_URL: ${COMPOSE_RABBIT_URL:-amqp://guest:guest@rabbitmq:5672/}
+      REDIS_HOST: ${COMPOSE_REDIS_HOST:-redis}
+      REDIS_PORT: ${COMPOSE_REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${COMPOSE_REDIS_PASSWORD:-}
+      REDIS_DB: ${COMPOSE_REDIS_DB:-0}
+      JWT_SECRET: ${JWT_SECRET:-local-development-secret-change-before-release}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+      NOTIFICATIONS_INTERNAL_TOKEN: ${NOTIFICATIONS_INTERNAL_TOKEN:-local_notifications_internal_token}
+    command: sh -c "until nc -z rabbitmq 5672; do sleep 2; done; go mod download && go run ."
+    ports:
+      - "${NOTIFICATIONS_HOST_PORT:-8085}:8085"
+    volumes:
+      - ./notifications:/app
+      - notifications_go_pkg:/go/pkg/mod
+      - notifications_go_build:/root/.cache/go-build
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://127.0.0.1:8085/health >/dev/null || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - social_local
+
+  frontend:
+    image: node:22-alpine
+    restart: unless-stopped
+    working_dir: /app/frontend
+    env_file:
+      - path: .env.local
+        required: false
+    environment:
+      VITE_API_BASE_URL: ${COMPOSE_VITE_API_BASE_URL:-/api}
+      VITE_NOTIFICATIONS_URL: ${COMPOSE_VITE_NOTIFICATIONS_URL:-/notifications-api}
+      VITE_API_PROXY_TARGET: ${COMPOSE_VITE_API_PROXY_TARGET:-http://backend:8080}
+      VITE_WS_PROXY_TARGET: ${COMPOSE_VITE_WS_PROXY_TARGET:-ws://backend:8080}
+      VITE_NOTIFICATIONS_PROXY_TARGET: ${COMPOSE_VITE_NOTIFICATIONS_PROXY_TARGET:-http://notifications:8085}
+      CHOKIDAR_USEPOLLING: ${COMPOSE_CHOKIDAR_USEPOLLING:-true}
+      WATCHPACK_POLLING: ${COMPOSE_WATCHPACK_POLLING:-true}
+    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0"
+    ports:
+      - "${FRONTEND_HOST_PORT:-5173}:5173"
+    volumes:
+      - .:/app
+      - frontend_node_modules:/app/frontend/node_modules
+    depends_on:
+      backend:
+        condition: service_healthy
+      notifications:
+        condition: service_healthy
+    networks:
+      - social_local
+
+volumes:
+  postgres_data:
+    name: social_local_postgres_data
+  redis_data:
+    name: social_local_redis_data
+  rabbit_data:
+    name: social_local_rabbit_data
+  minio_data:
+    name: social_local_minio_data
+  uploads_data:
+    name: social_local_uploads_data
+  backend_go_pkg:
+    name: social_local_backend_go_pkg
+  backend_go_build:
+    name: social_local_backend_go_build
+  notifications_go_pkg:
+    name: social_local_notifications_go_pkg
+  notifications_go_build:
+    name: social_local_notifications_go_build
+  frontend_node_modules:
+    name: social_local_frontend_node_modules
+
+networks:
+  social_local:
+    name: social_local_network
+    driver: bridge

@@ -41,6 +41,7 @@ func testDB(t *testing.T) *gorm.DB {
 		&models.User{},
 		&models.Message{},
 		&models.MessageAttachment{},
+		&models.ConversationPin{},
 		&models.Friendship{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)

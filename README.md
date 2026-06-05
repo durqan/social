@@ -37,11 +37,64 @@ certbot/        данные Let's Encrypt для production
 ### Требования
 
 - Docker и Docker Compose.
-- Go 1.26+.
-- Node.js 20+.
-- npm.
+- Go 1.26+, Node.js 20+ и npm нужны только если запускаете backend/frontend вручную вне Docker.
 
-### Переменные окружения
+### Локальный запуск через Docker Compose с hot reload
+
+Первый запуск:
+
+```bash
+cp .env.local.example .env.local
+docker compose --env-file .env.local -f docker-compose.local.yml up -d --build
+```
+
+Обычный запуск:
+
+```bash
+docker compose --env-file .env.local -f docker-compose.local.yml up -d
+```
+
+Остановка без удаления данных:
+
+```bash
+docker compose --env-file .env.local -f docker-compose.local.yml down
+```
+
+Полный сброс с удалением volumes:
+
+```bash
+docker compose --env-file .env.local -f docker-compose.local.yml down -v --remove-orphans
+```
+
+Просмотр логов всех сервисов:
+
+```bash
+docker compose --env-file .env.local -f docker-compose.local.yml logs -f
+```
+
+Логи конкретных сервисов:
+
+```bash
+docker compose --env-file .env.local -f docker-compose.local.yml logs -f backend frontend notifications
+```
+
+Локальный compose поднимает PostgreSQL, Redis, RabbitMQ, MinIO, backend, notifications и frontend/Vite. Backend запускается через `air`, видит изменения из `./backend` через bind volume и автоматически пересобирает/перезапускает Go-сервер. Frontend запускается через Vite dev server командой `npm run dev -- --host 0.0.0.0`, видит изменения исходников через bind volume, а `node_modules` хранится в отдельном Docker volume `social_local_frontend_node_modules`.
+
+Отдельного `watcher`-сервиса в репозитории нет: RabbitMQ consumer запускается внутри `notifications`. Данные PostgreSQL хранятся в volume `social_local_postgres_data` и сохраняются между перезапусками. Backend подключается к PostgreSQL и Redis по Docker DNS-именам `postgres` и `redis`.
+
+Доступные URL:
+
+```bash
+frontend:      http://localhost:5173
+backend API:   http://localhost:8080/health
+notifications: http://localhost:8085/health
+RabbitMQ UI:   http://localhost:15672
+MinIO console: http://localhost:9001
+```
+
+Frontend в Docker работает через Vite proxy: браузер обращается к `http://localhost:5173/api`, а Vite внутри compose проксирует запросы на `http://backend:8080`. WebSocket `/ws` и notifications `/notifications-api` проксируются аналогично.
+
+### Ручной запуск вне Docker
 
 Создайте локальный `.env` на основе примера:
 
@@ -49,37 +102,15 @@ certbot/        данные Let's Encrypt для production
 cp .env.example .env
 ```
 
-Для локального запуска backend напрямую с хоста проверьте `DATABASE_URL`: Postgres из `docker-compose.yml` опубликован на `localhost:5433`, поэтому строка подключения должна указывать на этот порт.
-
-### Инфраструктура
+Если backend/frontend запускаются с хоста, инфраструктуру удобнее держать в `docker-compose.local.yml`, а сами приложения запускать вручную. В `.env` для host-run оставьте `DATABASE_URL=postgres://social:social@localhost:5433/social?sslmode=disable`, `REDIS_HOST=localhost` и `RABBIT_URL=amqp://guest:guest@localhost:5672/`.
 
 ```bash
-make dev-infra
+docker compose --env-file .env.local.example -f docker-compose.local.yml up -d postgres redis rabbitmq minio minio-create-bucket
+cd backend && go run ./cmd/api
+cd frontend && npm install && npm run dev
 ```
 
-Эта команда поднимает PostgreSQL, Redis и RabbitMQ. RabbitMQ Management UI доступен на `http://localhost:15672` с логином `guest` и паролем `guest`.
-
-### Backend
-
-```bash
-make dev-backend
-```
-
-API запускается на `http://localhost:8080`. Основные группы маршрутов: `/auth`, `/users`, `/posts`, `/messages`, `/ws`.
-
-### Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Vite dev server открывается на `http://localhost:5173`. В разработке фронтенд проксирует backend, notifications и WebSocket-маршруты, поэтому nginx не нужен.
-
-### Notifications
-
-Если нужно тестировать отдельный сервис уведомлений локально:
+Если нужно тестировать отдельный сервис уведомлений вне Docker:
 
 ```bash
 cd notifications
@@ -137,7 +168,7 @@ S3_FORCE_PATH_STYLE=true
 Для проверки S3 локально:
 
 ```bash
-docker compose up -d minio minio-create-bucket
+docker compose --env-file .env.local.example -f docker-compose.local.yml up -d minio minio-create-bucket
 cd backend && STORAGE_DRIVER=s3 S3_ENDPOINT=http://localhost:9000 S3_REGION=us-east-1 S3_BUCKET=social-local S3_ACCESS_KEY=minioadmin S3_SECRET_KEY=minioadmin S3_PUBLIC_BASE_URL= S3_FORCE_PATH_STYLE=true go run ./cmd/api
 ```
 
@@ -148,14 +179,4 @@ cd backend && go test ./...
 cd notifications && go test ./...
 cd frontend && npm run lint && npm run build
 cd mobile && npm ci && npx tsc --noEmit && npm run lint && npm test -- --runInBand
-```
-
-## Полезные команды
-
-```bash
-make dev-infra       # поднять локальную инфраструктуру
-make stop-infra      # остановить локальную инфраструктуру
-make dev-backend     # запустить основной Go API
-make dev-frontend    # запустить Vite dev server
-make dev-mobile      # запустить mobile dev flow
 ```

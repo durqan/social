@@ -905,7 +905,7 @@ export const ChatInput = ({
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     disabled={isRecording || isVideoNoteRecording || sending || !!pendingVoice || !!pendingVideoNote}
-                    className="composer-button"
+                    className="composer-button cursor-pointer"
                     title="Прикрепить картинку"
                 >
                     <Icon name="image" className="w-4 h-4" />
@@ -937,7 +937,7 @@ export const ChatInput = ({
                     type="button"
                     onClick={() => setShowEmojiPicker(prev => !prev)}
                     disabled={isRecording || isVideoNoteRecording}
-                    className="composer-button text-base leading-none"
+                    className="composer-button text-base leading-none cursor-pointer"
                     title="Эмодзи">
                     😊
                 </button>
@@ -971,7 +971,7 @@ export const ChatInput = ({
                     onPointerCancel={e => handleMicPointerEnd(e, true)}
                     onPointerLeave={handleMicPointerLeave}
                     disabled={selectedFiles.length > 0 || sending || recordingStopping || !!pendingVoice || isVideoNoteRecording || videoNoteStopping || !!pendingVideoNote}
-                    className={`composer-button ${isRecording ? 'recording' : pendingVoice ? 'text-gray-400' : ''}`}
+                    className={`cursor-pointer composer-button ${isRecording ? 'recording' : pendingVoice ? 'text-gray-400' : ''}`}
                     title={
                         isRecording
                             ? 'Удерживайте для записи, отпустите чтобы завершить, сдвиньте влево для отмены'
@@ -995,7 +995,7 @@ export const ChatInput = ({
                     type="button"
                     onClick={() => void startVideoNoteRecording()}
                     disabled={selectedFiles.length > 0 || sending || isRecording || recordingStopping || isVideoNoteRecording || videoNoteStopping || !!pendingVoice || !!pendingVideoNote}
-                    className={`composer-button ${isVideoNoteRecording ? 'recording' : pendingVideoNote ? 'text-gray-400' : ''}`}
+                    className={`cursor-pointer composer-button ${isVideoNoteRecording ? 'recording' : pendingVideoNote ? 'text-gray-400' : ''}`}
                     title={pendingVideoNote ? 'Сначала отправьте или удалите кружок' : 'Кружок'}
                     aria-label="Кружок"
                 >

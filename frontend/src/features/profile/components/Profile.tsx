@@ -9,11 +9,13 @@ import { Spinner } from "@/shared/ui/Spinner.js";
 import { usePresence } from "@/shared/hooks/usePresence.js";
 import { UserSearch } from "@/features/profile/components/UserSearch.js";
 import { NotificationBell } from "@/features/notifications/components/NotificationBell.js";
+import { useAppDialog } from "@/app/providers/AppDialogProvider.js";
 
 function Profile() {
     const { id } = useParams();
     const navigate = useNavigate();
     const location = useLocation();
+    const dialog = useAppDialog();
     const { currentUser, logout } = useAuth();
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
@@ -34,6 +36,17 @@ function Profile() {
     }, [id, navigate]);
 
     const handleLogout = async () => {
+        const ok = await dialog.confirm({
+            title: 'Выйти из аккаунта?',
+            message: 'Текущая сессия будет завершена.',
+            confirmText: 'Выйти',
+            cancelText: 'Отмена',
+            variant: 'danger',
+        });
+        if (!ok) {
+            return;
+        }
+
         try {
             await logout();
             navigate('/login');
@@ -97,7 +110,7 @@ function Profile() {
                                 {currentUser?.id === user?.id && (
                                     <button
                                         onClick={() => navigate(`/users/${id}/edit`)}
-                                        className="icon-button h-9 w-9 sm:h-10 sm:w-10"
+                                        className="icon-button h-9 w-9 sm:h-10 sm:w-10 cursor-pointer"
                                         title="Редактировать профиль"
                                     >
                                         <Icon name="edit" />
@@ -105,7 +118,7 @@ function Profile() {
                                 )}
                                 <button
                                     onClick={handleLogout}
-                                    className="icon-button h-9 w-9 hover:text-red-600 sm:h-10 sm:w-10"
+                                    className="icon-button h-9 w-9 hover:text-red-600 sm:h-10 sm:w-10 cursor-pointer"
                                     title="Выйти"
                                 >
                                     <Icon name="logout" />

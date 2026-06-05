@@ -7,6 +7,7 @@ import { useAuth } from "@/app/providers/AuthContext.js";
 import { formatMonthDayDate } from "@/shared/utils/date.js";
 import { Icon } from "@/shared/ui/Icon.js";
 import { useWebSocket } from "@/app/providers/WebSocketContext.js";
+import { useAppDialog } from "@/app/providers/AppDialogProvider.js";
 import type { WsEvent } from "@/shared/types/ws.js";
 
 type ConversationMenuState = {
@@ -16,19 +17,33 @@ type ConversationMenuState = {
     y: number;
 };
 
+const conversationTimestamp = (conversation: Conversation) => {
+    const timestamp = Date.parse(conversation.last_message_at || '');
+    return Number.isNaN(timestamp) ? 0 : timestamp;
+};
+
+const sortConversations = (items: Conversation[]) => [...items].sort((first, second) => {
+    if (first.is_pinned !== second.is_pinned) {
+        return first.is_pinned ? -1 : 1;
+    }
+
+    return conversationTimestamp(second) - conversationTimestamp(first);
+});
+
 function Conversations() {
     const [conversations, setConversations] = useState<Conversation[]>([]);
     const [loading, setLoading] = useState(true);
     const [menu, setMenu] = useState<ConversationMenuState | null>(null);
-    const [confirmUserId, setConfirmUserId] = useState<number | null>(null);
     const [deletingUserId, setDeletingUserId] = useState<number | null>(null);
+    const [pinningUserId, setPinningUserId] = useState<number | null>(null);
     const navigate = useNavigate();
+    const dialog = useAppDialog();
     const { currentUser } = useAuth();
     const wsService = useWebSocket();
 
     const fetchConversations = useCallback(async () => {
         try {
-            setConversations(await messageService.getConversations());
+            setConversations(sortConversations(await messageService.getConversations()));
         } catch (err) {
             console.error(err);
             setConversations([]);
@@ -77,13 +92,10 @@ function Conversations() {
     const selectedConversation = menu
         ? conversations.find(conversation => conversation.user_id === menu.userId) ?? null
         : null;
-    const confirmConversation = confirmUserId
-        ? conversations.find(conversation => conversation.user_id === confirmUserId) ?? null
-        : null;
 
     const openMenu = (conversation: Conversation, position: { x: number; y: number }, mode: 'desktop' | 'mobile') => {
         const menuWidth = mode === 'mobile' ? 240 : 208;
-        const menuHeight = 58;
+        const menuHeight = 116;
 
         setMenu({
             userId: conversation.user_id,
@@ -118,24 +130,61 @@ function Conversations() {
         };
     }, [menu]);
 
-    const requestDeleteConversation = (userId: number) => {
+    const togglePinConversation = async (conversation: Conversation) => {
+        const nextPinned = !conversation.is_pinned;
+        const previousConversations = conversations;
+
         setMenu(null);
-        setConfirmUserId(userId);
-    };
+        setPinningUserId(conversation.user_id);
+        setConversations(previous => sortConversations(previous.map(item => (
+            item.user_id === conversation.user_id ? { ...item, is_pinned: nextPinned } : item
+        ))));
 
-    const confirmDeleteConversation = async () => {
-        if (!confirmUserId) {
-            return;
-        }
-
-        setDeletingUserId(confirmUserId);
         try {
-            await messageService.deleteConversationWith(confirmUserId);
-            setConversations(previous => previous.filter(conversation => conversation.user_id !== confirmUserId));
-            setConfirmUserId(null);
+            if (nextPinned) {
+                await messageService.pinConversation(conversation.user_id);
+            } else {
+                await messageService.unpinConversation(conversation.user_id);
+            }
+            void fetchConversations();
         } catch (error) {
             console.error(error);
-            alert('Не удалось удалить чат');
+            setConversations(previousConversations);
+            await dialog.alert({
+                title: nextPinned ? 'Не удалось закрепить чат' : 'Не удалось открепить чат',
+                message: 'Попробуйте повторить действие позже.',
+                confirmText: 'Понятно',
+                icon: 'danger',
+            });
+        } finally {
+            setPinningUserId(null);
+        }
+    };
+
+    const requestDeleteConversation = async (conversation: Conversation) => {
+        setMenu(null);
+
+        const ok = await dialog.confirm({
+            title: 'Удалить чат?',
+            message: `Будет удалена переписка с ${conversation.name}. Действие нельзя отменить.`,
+            confirmText: 'Удалить',
+            cancelText: 'Отмена',
+            variant: 'danger',
+        });
+        if (!ok) return;
+
+        setDeletingUserId(conversation.user_id);
+        try {
+            await messageService.deleteConversationWith(conversation.user_id);
+            setConversations(previous => previous.filter(item => item.user_id !== conversation.user_id));
+        } catch (error) {
+            console.error(error);
+            await dialog.alert({
+                title: 'Не удалось удалить чат',
+                message: 'Попробуйте повторить действие позже.',
+                confirmText: 'Понятно',
+                icon: 'danger',
+            });
         } finally {
             setDeletingUserId(null);
         }
@@ -184,42 +233,26 @@ function Conversations() {
                 >
                     <button
                         type="button"
+                        disabled={pinningUserId === selectedConversation.user_id}
+                        className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm text-gray-700 transition hover:bg-gray-50 disabled:opacity-60"
+                        onClick={() => togglePinConversation(selectedConversation)}
+                    >
+                        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-sky-50 text-sky-600">
+                            <Icon name="pin" className="h-3.5 w-3.5" />
+                        </span>
+                        {selectedConversation.is_pinned ? 'Открепить' : 'Закрепить'}
+                    </button>
+                    <button
+                        type="button"
+                        disabled={deletingUserId === selectedConversation.user_id}
                         className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm text-red-600 transition hover:bg-red-50"
-                        onClick={() => requestDeleteConversation(selectedConversation.user_id)}
+                        onClick={() => void requestDeleteConversation(selectedConversation)}
                     >
                         <span className="flex h-7 w-7 items-center justify-center rounded-full bg-red-50">
                             <Icon name="delete" className="h-3.5 w-3.5" />
                         </span>
                         Удалить чат
                     </button>
-                </div>
-            )}
-            {confirmConversation && (
-                <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 px-4">
-                    <div className="app-card w-full max-w-sm p-5 shadow-xl sm:p-6">
-                        <h2 className="mb-2 text-lg font-semibold text-gray-950">Удалить чат?</h2>
-                        <p className="mb-4 text-sm leading-5 text-gray-600">
-                            Будет удалена переписка с {confirmConversation.name}. Действие нельзя отменить.
-                        </p>
-                        <div className="flex gap-3">
-                            <button
-                                type="button"
-                                onClick={confirmDeleteConversation}
-                                disabled={deletingUserId === confirmConversation.user_id}
-                                className="flex-1 rounded-xl bg-red-500 px-4 py-2 text-white transition hover:bg-red-600 disabled:opacity-60"
-                            >
-                                {deletingUserId === confirmConversation.user_id ? 'Удаляем...' : 'Удалить'}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setConfirmUserId(null)}
-                                disabled={Boolean(deletingUserId)}
-                                className="flex-1 rounded-xl bg-gray-100 px-4 py-2 text-gray-800 transition hover:bg-gray-200 disabled:opacity-60"
-                            >
-                                Отмена
-                            </button>
-                        </div>
-                    </div>
                 </div>
             )}
         </div>
@@ -321,7 +354,6 @@ function ConversationItem({
             <Avatar
                 name={conversation.name}
                 src={conversation.avatar}
-                userId={conversation.user_id}
                 positionX={conversation.avatar_position_x}
                 positionY={conversation.avatar_position_y}
                 scale={conversation.avatar_scale}
@@ -329,7 +361,14 @@ function ConversationItem({
             />
             <div className="min-w-0 flex-1">
                 <div className="flex items-start justify-between gap-3">
-                    <p className="truncate font-semibold text-gray-950">{conversation.name}</p>
+                    <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                        {conversation.is_pinned && (
+                            <span className="flex-shrink-0 text-sky-600" aria-label="Закреплен">
+                                <Icon name="pin" className="h-3.5 w-3.5" />
+                            </span>
+                        )}
+                        <p className="truncate font-semibold text-gray-950">{conversation.name}</p>
+                    </div>
                     <p className="flex-shrink-0 text-xs text-gray-500">
                         {formatMonthDayDate(conversation.last_message_at)}
                     </p>

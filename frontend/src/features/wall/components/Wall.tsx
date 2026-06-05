@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useNavigate, useOutletContext } from 'react-router-dom';
 
 import { postService } from "@/features/wall/api/postService.js";
+import { useAppDialog } from "@/app/providers/AppDialogProvider.js";
 import {
     notificationService,
     type MarkNotificationsReadPayload,
@@ -12,6 +13,8 @@ import { PostCard } from "@/features/wall/components/PostCard.js";
 import { PostComposer } from "@/features/wall/components/PostComposer.js";
 
 function Wall() {
+    const navigate = useNavigate();
+    const dialog = useAppDialog();
     const { user, isOwner, currentUser } = useOutletContext<ProfileContextType>();
     const [posts, setPosts] = useState<Post[]>([]);
     const [newPostContent, setNewPostContent] = useState('');
@@ -87,7 +90,12 @@ function Wall() {
         event.preventDefault();
         if (!newPostContent.trim()) return;
         if (!(currentUser?.isEmailVerified ?? currentUser?.is_email_verified ?? false)) {
-            alert('Подтвердите email, чтобы продолжить');
+            await dialog.alert({
+                title: 'Подтвердите email',
+                message: 'Подтвердите email, чтобы продолжить.',
+                confirmText: 'Понятно',
+                icon: 'warning',
+            });
             return;
         }
 
@@ -117,7 +125,14 @@ function Wall() {
     };
 
     const handleDeletePost = async (postId: number) => {
-        if (!confirm('Удалить пост?')) return;
+        const ok = await dialog.confirm({
+            title: 'Удалить пост?',
+            message: 'Пост и связанные с ним данные будут удалены. Это действие нельзя отменить.',
+            confirmText: 'Удалить',
+            cancelText: 'Отмена',
+            variant: 'danger',
+        });
+        if (!ok) return;
 
         try {
             await postService.deletePost(postId);
@@ -160,7 +175,12 @@ function Wall() {
         const text = newComment[postId];
         if (!text?.trim()) return;
         if (!(currentUser?.isEmailVerified ?? currentUser?.is_email_verified ?? false)) {
-            alert('Подтвердите email, чтобы продолжить');
+            await dialog.alert({
+                title: 'Подтвердите email',
+                message: 'Подтвердите email, чтобы продолжить.',
+                confirmText: 'Понятно',
+                icon: 'warning',
+            });
             return;
         }
 
@@ -181,6 +201,10 @@ function Wall() {
     const startEditing = (post: Post) => {
         setEditingPost(post);
         setEditContent(post.content);
+    };
+
+    const openUserProfile = (userId: number) => {
+        navigate(`/users/${userId}`);
     };
 
     if (loading) {
@@ -224,6 +248,7 @@ function Wall() {
                             onCommentDraftChange={(postId, content) => setNewComment(prev => ({ ...prev, [postId]: content }))}
                             onCreateComment={handleComment}
                             onCommentLike={handleCommentLike}
+                            onOpenUser={openUserProfile}
                         />
                     ))
                 )}

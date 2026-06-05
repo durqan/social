@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 import { useAuth } from "@/app/providers/AuthContext.js";
 import { useWebSocket } from "@/app/providers/WebSocketContext.js";
@@ -47,6 +48,7 @@ function isCallId(value: unknown): value is string {
 }
 
 export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
+    const navigate = useNavigate();
     const wsService = useWebSocket();
     const { currentUser } = useAuth();
 
@@ -290,6 +292,10 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
     const startVideoCall = useCallback((toId: number, name?: string) => (
         startCallWithType(toId, name, 'video')
     ), [startCallWithType]);
+
+    const openPeerProfile = useCallback((userId: number) => {
+        navigate(`/users/${userId}`);
+    }, [navigate]);
 
     const toggleMicrophone = useCallback(() => {
         const nextEnabled = !isMicrophoneOnRef.current;
@@ -679,6 +685,7 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
                 onAccept={acceptCall}
                 onReject={rejectCall}
                 onEnd={endCall}
+                onOpenPeerProfile={openPeerProfile}
             />
 
             {isCallChatOpen && peerUserId && currentUser && (

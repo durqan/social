@@ -17,7 +17,8 @@ export function EmailVerificationNotice({
                     type="button"
                     onClick={sendVerification}
                     disabled={verificationLoading}
-                    className="rounded-xl bg-amber-600 px-1 py-2 text-sm text-white transition hover:bg-amber-700 disabled:opacity-50 cursor-pointer"
+                    className="rounded-xl bg-amber-600 px-1 py-2 text-sm
+                    text-white transition hover:bg-amber-700 disabled:opacity-50 cursor-pointer"
                 >
                     {verificationLoading ? 'Отправка...' : 'Отправить письмо'}
                 </button>

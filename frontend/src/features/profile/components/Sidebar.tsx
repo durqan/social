@@ -186,7 +186,6 @@ function Sidebar({
                         <Avatar
                             name={userName}
                             src={userAvatar}
-                            userId={userId}
                             positionX={userAvatarPositionX}
                             positionY={userAvatarPositionY}
                             scale={userAvatarScale}

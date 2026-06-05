@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"log"
 	"sync"
+	"tester/internal/models"
+	"time"
 
 	"tester/internal/auth"
 	"tester/internal/middleware"
@@ -71,6 +73,15 @@ func WebSocketHandler(c *gin.Context) {
 		onlineUsers.mu.Lock()
 		delete(onlineUsers.users, userID)
 		onlineUsers.mu.Unlock()
+
+		if dbInstance != nil {
+			if err := dbInstance.Model(&models.User{}).
+				Where("id = ?", userID).
+				Update("last_seen_at", time.Now()).
+				Error; err != nil {
+				log.Println("failed to update last_seen_at:", err)
+			}
+		}
 
 		broadcastPresence(userID, false)
 	}()

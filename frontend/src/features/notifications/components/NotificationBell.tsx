@@ -578,7 +578,7 @@ export function NotificationBell({ userId, compact = false }: NotificationBellPr
         <div ref={rootRef} className="relative">
             <button
                 type="button"
-                className={`icon-button relative ${compact ? 'h-9 w-9 sm:h-10 sm:w-10' : 'h-10 w-10'}`}
+                className={`icon-button cursor-pointer relative ${compact ? 'h-9 w-9 sm:h-10 sm:w-10' : 'h-10 w-10'}`}
                 title="Уведомления"
                 aria-label="Уведомления"
                 aria-expanded={open}
@@ -654,7 +654,6 @@ export function NotificationBell({ userId, compact = false }: NotificationBellPr
                                         }`} />
                                         <Avatar
                                             name={actorNames[notification.actor_id] || fallbackActorName}
-                                            userId={notification.actor_id}
                                             size="sm"
                                         />
                                         <span className="min-w-0 flex-1">

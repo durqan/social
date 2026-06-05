@@ -1,15 +1,17 @@
-import { useNavigate } from 'react-router-dom';
 import type { KeyboardEvent, MouseEvent, ReactNode } from 'react';
+
+type AvatarInteractionEvent = MouseEvent<HTMLSpanElement> | KeyboardEvent<HTMLSpanElement>;
 
 interface AvatarProps {
     name?: string;
     src?: string | null;
-    userId?: number;
     size?: 'sm' | 'md' | 'list' | 'lg' | 'xl';
     className?: string;
     positionX?: number;
     positionY?: number;
     scale?: number;
+    ariaLabel?: string;
+    onClick?: (event: AvatarInteractionEvent) => void;
 }
 
 const sizes = {
@@ -23,15 +25,15 @@ const sizes = {
 export const Avatar = ({
     name,
     src,
-    userId,
     size = 'md',
     className = '',
     positionX = 50,
     positionY = 50,
     scale = 1,
+    ariaLabel,
+    onClick,
 }: AvatarProps) => {
-    const navigate = useNavigate();
-    const isClickable = typeof userId === 'number' && userId > 0;
+    const isClickable = typeof onClick === 'function';
     const baseClassName = `${sizes[size]} inline-flex shrink-0 aspect-square rounded-full overflow-hidden ${isClickable ? 'cursor-pointer outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-sky-500' : ''} ${className}`;
     const content: ReactNode = src ? (
         <img
@@ -48,40 +50,34 @@ export const Avatar = ({
         name?.charAt(0).toUpperCase() || '?'
     );
 
-    const openProfile = () => {
-        if (isClickable) {
-            navigate(`/users/${userId}`);
-        }
-    };
-
     const handleClick = (event: MouseEvent<HTMLSpanElement>) => {
-        if (!isClickable) {
+        if (!onClick) {
             return;
         }
 
         event.preventDefault();
         event.stopPropagation();
-        openProfile();
+        onClick(event);
     };
 
     const handleKeyDown = (event: KeyboardEvent<HTMLSpanElement>) => {
-        if (!isClickable || (event.key !== 'Enter' && event.key !== ' ')) {
+        if (!onClick || (event.key !== 'Enter' && event.key !== ' ')) {
             return;
         }
 
         event.preventDefault();
         event.stopPropagation();
-        openProfile();
+        onClick(event);
     };
 
     return (
         <span
             className={src ? baseClassName : `${baseClassName} bg-sky-500 flex items-center justify-center text-white font-bold`}
-            role={isClickable ? 'link' : undefined}
+            role={isClickable ? 'button' : undefined}
             tabIndex={isClickable ? 0 : undefined}
-            aria-label={isClickable ? `Открыть профиль ${name || 'пользователя'}` : undefined}
-            onClick={handleClick}
-            onKeyDown={handleKeyDown}
+            aria-label={isClickable ? ariaLabel || `Открыть ${name || 'аватар'}` : undefined}
+            onClick={isClickable ? handleClick : undefined}
+            onKeyDown={isClickable ? handleKeyDown : undefined}
         >
             {content}
         </span>

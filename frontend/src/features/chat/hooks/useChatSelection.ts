@@ -3,7 +3,6 @@ import { useState } from 'react';
 export const useChatSelection = () => {
     const [selectionMode, setSelectionMode] = useState(false);
     const [selectedMessages, setSelectedMessages] = useState<Set<number>>(new Set());
-    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
     const toggleSelect = (msgId: number) => {
         setSelectedMessages(prev => {
@@ -26,20 +25,13 @@ export const useChatSelection = () => {
     const exitSelectionMode = () => {
         setSelectionMode(false);
         setSelectedMessages(new Set());
-        setDeleteConfirmOpen(false);
     };
-
-    const openDeleteConfirm = () => setDeleteConfirmOpen(true);
-    const closeDeleteConfirm = () => setDeleteConfirmOpen(false);
 
     return {
         selectionMode,
         selectedMessages,
-        deleteConfirmOpen,
         toggleSelect,
         enterSelectionMode,
         exitSelectionMode,
-        openDeleteConfirm,
-        closeDeleteConfirm,
     };
 };

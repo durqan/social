@@ -12,8 +12,8 @@ import { useChatTyping } from "@/features/chat/hooks/useChatTyping.js";
 import { ChatHeader } from "@/features/chat/components/ChatHeader.js";
 import { ChatInput } from "@/features/chat/components/ChatInput.js";
 import { ChatMessageList } from "@/features/chat/components/ChatMessageList.js";
-import { DeleteConfirmModal } from "@/features/chat/components/DeleteConfirmModal.js";
 import { useWebSocket } from "@/app/providers/WebSocketContext.js";
+import { useAppDialog } from "@/app/providers/AppDialogProvider.js";
 import { useAudioCall } from "@/features/call/AudioCallContext.js";
 import { Spinner } from "@/shared/ui/Spinner.js";
 import { formatMonthDayDate, formatTime } from "@/shared/utils/date.js";
@@ -63,6 +63,7 @@ function attachmentsMatchOptimistic(pending: Message, received: Message) {
 function Chat() {
     const { userId } = useParams();
     const navigate = useNavigate();
+    const dialog = useAppDialog();
     const { currentUser } = useOutletContext<{ currentUser: User }>();
     const wsService = useWebSocket();
     const { status: callStatus, startCall, startVideoCall } = useAudioCall();
@@ -100,7 +101,7 @@ function Chat() {
     } = useChatMessages(userId, currentUser?.id);
 
     const { otherTyping, setOtherTyping, handleTyping } = useChatTyping(Number(userId));
-    const { selectionMode, selectedMessages, deleteConfirmOpen, toggleSelect, enterSelectionMode, exitSelectionMode, openDeleteConfirm, closeDeleteConfirm } = useChatSelection();
+    const { selectionMode, selectedMessages, toggleSelect, enterSelectionMode, exitSelectionMode } = useChatSelection();
     const { messagesEndRef, handleScroll } = useChatScroll([messages]);
     const { online } = usePresence(recipient?.id);
 
@@ -184,14 +185,37 @@ function Chat() {
             .filter(message => message.from_id === currentUser?.id)
             .filter(message => message.id > 0 && message.id < 10000000)
             .map(message => message.id);
-        if (!realIds.length) return alert('Нельзя удалить ещё не отправленные сообщения');
+        if (!realIds.length) {
+            await dialog.alert({
+                title: 'Нельзя удалить сообщения',
+                message: 'Ещё не отправленные сообщения нельзя удалить пакетно.',
+                confirmText: 'Понятно',
+                icon: 'warning',
+            });
+            return;
+        }
+
+        const ok = await dialog.confirm({
+            title: 'Удалить сообщения?',
+            message: 'Выбранные сообщения будут удалены. Это действие нельзя отменить.',
+            confirmText: 'Удалить',
+            cancelText: 'Отмена',
+            variant: 'danger',
+        });
+        if (!ok) return;
+
         try {
             await messageService.deleteMessagesBatch(realIds);
             setMessages(prev => prev.filter(m => !realIds.includes(m.id)));
             exitSelectionMode();
         } catch (error) {
             console.error(error);
-            alert('Не удалось удалить сообщения');
+            await dialog.alert({
+                title: 'Не удалось удалить сообщения',
+                message: 'Попробуйте повторить действие позже.',
+                confirmText: 'Понятно',
+                icon: 'danger',
+            });
         }
     };
 
@@ -372,6 +396,10 @@ function Chat() {
         setForwardError('');
     };
 
+    const openUserProfile = useCallback((profileUserId: number) => {
+        navigate(`/users/${profileUserId}`);
+    }, [navigate]);
+
     const toggleForwardRecipient = (friendId?: number) => {
         if (!friendId) {
             return;
@@ -529,7 +557,7 @@ function Chat() {
                 selectedCount={selectedMessages.size}
                 onBack={() => navigate(`/users/${currentUser?.id}/conversations`)}
                 onExitSelection={exitSelectionMode}
-                onDeleteClick={openDeleteConfirm}
+                onDeleteClick={handleBatchDelete}
                 onStartAudioCall={
                     userId && callStatus === 'idle'
                         ? () => startCall(Number(userId), recipient?.name)
@@ -540,6 +568,8 @@ function Chat() {
                         ? () => startVideoCall(Number(userId), recipient?.name)
                         : undefined
                 }
+                onOpenRecipient={openUserProfile}
+                recipientLastSeenAt={recipient?.last_seen_at}
             />
             <ChatMessageList
                 messages={messages}
@@ -572,6 +602,7 @@ function Chat() {
                 messagesEndRef={messagesEndRef}
                 formatDate={formatMonthDayDate}
                 formatTime={formatTime}
+                onOpenUser={openUserProfile}
             />
             {otherTyping && <div className="px-4 pb-2 text-sm text-gray-500">{recipient?.name} печатает...</div>}
             <ChatInput
@@ -628,7 +659,6 @@ function Chat() {
                                         <Avatar
                                             name={friend.name}
                                             src={friend.avatar}
-                                            userId={friend.id}
                                             positionX={friend.avatarPositionX}
                                             positionY={friend.avatarPositionY}
                                             scale={friend.avatarScale}
@@ -668,7 +698,6 @@ function Chat() {
                     </div>
                 </div>
             )}
-            <DeleteConfirmModal isOpen={deleteConfirmOpen} onConfirm={handleBatchDelete} onCancel={closeDeleteConfirm} />
         </div>
     );
 }

@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 
+import { useAppDialog } from "@/app/providers/AppDialogProvider.js";
 import { friendService } from "@/features/friends/api/friendService.js";
 
 type FriendStatus = 'none' | 'pending' | 'accepted' | 'rejected' | 'blocked';
 
 export function useFriendStatus(userId: number | undefined, isOwner?: boolean) {
+    const dialog = useAppDialog();
     const [status, setStatus] = useState<FriendStatus>('none');
     const [loading, setLoading] = useState(true);
 
@@ -32,14 +34,30 @@ export function useFriendStatus(userId: number | undefined, isOwner?: boolean) {
             return;
         }
 
-        if (status === 'accepted' && confirm('Удалить из друзей?')) {
+        if (status === 'accepted') {
+            const ok = await dialog.confirm({
+                title: 'Удалить из друзей?',
+                message: 'Пользователь будет удалён из списка друзей.',
+                confirmText: 'Удалить',
+                cancelText: 'Отмена',
+                variant: 'danger',
+            });
+            if (!ok) {
+                return;
+            }
+
             await friendService.removeFriend(userId);
             setStatus('none');
             return;
         }
 
         if (status === 'pending') {
-            alert('Заявка уже отправлена');
+            await dialog.alert({
+                title: 'Заявка уже отправлена',
+                message: 'Дождитесь ответа пользователя или обновите статус позже.',
+                confirmText: 'Понятно',
+                icon: 'info',
+            });
         }
     };
 

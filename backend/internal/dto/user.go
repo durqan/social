@@ -9,17 +9,18 @@ import (
 )
 
 type UserResponse struct {
-	ID              uint      `json:"id"`
-	Name            string    `json:"name"`
-	Email           string    `json:"email"`
-	Age             int       `json:"age"`
-	Bio             string    `json:"bio"`
-	Avatar          string    `json:"avatar"`
-	AvatarPositionX float64   `json:"avatar_position_x"`
-	AvatarPositionY float64   `json:"avatar_position_y"`
-	AvatarScale     float64   `json:"avatar_scale"`
-	IsEmailVerified bool      `json:"is_email_verified"`
-	CreatedAt       time.Time `json:"created_at"`
+	ID              uint       `json:"id"`
+	Name            string     `json:"name"`
+	Email           string     `json:"email"`
+	Age             int        `json:"age"`
+	Bio             string     `json:"bio"`
+	Avatar          string     `json:"avatar"`
+	AvatarPositionX float64    `json:"avatar_position_x"`
+	AvatarPositionY float64    `json:"avatar_position_y"`
+	AvatarScale     float64    `json:"avatar_scale"`
+	IsEmailVerified bool       `json:"is_email_verified"`
+	CreatedAt       time.Time  `json:"created_at"`
+	LastSeenAt      *time.Time `json:"last_seen_at"`
 }
 
 type UpdateUserRequest struct {
@@ -51,6 +52,7 @@ func ToUserResponse(user models.User) UserResponse {
 		AvatarScale:     user.AvatarScale,
 		IsEmailVerified: user.IsEmailVerified,
 		CreatedAt:       user.CreatedAt,
+		LastSeenAt:      user.LastSeenAt,
 	}
 }
 

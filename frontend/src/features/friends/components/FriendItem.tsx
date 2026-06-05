@@ -1,9 +1,10 @@
-import { useRef, type MouseEvent, type TouchEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import {useRef, type MouseEvent, type TouchEvent} from 'react';
+import {useNavigate} from 'react-router-dom';
 
-import { usePresence } from "@/shared/hooks/usePresence.js";
-import type { User } from "@/shared/types/domain.js";
-import { Avatar } from "@/shared/ui/Avatar.js";
+import {usePresence} from "@/shared/hooks/usePresence.js";
+import type {User} from "@/shared/types/domain.js";
+import {Avatar} from "@/shared/ui/Avatar.js";
+import {formatLastSeen} from "@/shared/utils/date.js";
 
 type FriendItemProps = {
     friend: User;
@@ -11,10 +12,13 @@ type FriendItemProps = {
     onOpenMenu: (friend: User, position: { x: number; y: number }, mode: 'desktop' | 'mobile') => void;
 };
 
-export function FriendItem({ friend, active, onOpenMenu }: FriendItemProps) {
+export function FriendItem({friend, active, onOpenMenu}: FriendItemProps) {
     const navigate = useNavigate();
     const friendID = friend.id;
-    const { online } = usePresence(friendID);
+    const {online} = usePresence(friendID);
+    const statusText = online
+        ? 'в сети'
+        : formatLastSeen(friend.last_seen_at);
     const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const touchStartRef = useRef<{ x: number; y: number } | null>(null);
     const suppressClickRef = useRef(false);
@@ -37,7 +41,7 @@ export function FriendItem({ friend, active, onOpenMenu }: FriendItemProps) {
     const handleContextMenu = (event: MouseEvent<HTMLButtonElement>) => {
         event.preventDefault();
         event.stopPropagation();
-        onOpenMenu(friend, { x: event.clientX, y: event.clientY }, 'desktop');
+        onOpenMenu(friend, {x: event.clientX, y: event.clientY}, 'desktop');
     };
 
     const handleTouchStart = (event: TouchEvent<HTMLButtonElement>) => {
@@ -50,13 +54,13 @@ export function FriendItem({ friend, active, onOpenMenu }: FriendItemProps) {
             return;
         }
 
-        touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+        touchStartRef.current = {x: touch.clientX, y: touch.clientY};
         clearLongPress();
         longPressTimer.current = setTimeout(() => {
             suppressClickRef.current = true;
             navigator.vibrate?.(8);
             document.getSelection()?.removeAllRanges();
-            onOpenMenu(friend, { x: touch.clientX, y: touch.clientY }, 'mobile');
+            onOpenMenu(friend, {x: touch.clientX, y: touch.clientY}, 'mobile');
             window.setTimeout(() => {
                 suppressClickRef.current = false;
             }, 700);
@@ -99,13 +103,14 @@ export function FriendItem({ friend, active, onOpenMenu }: FriendItemProps) {
             onTouchEnd={handleTouchEnd}
             onTouchCancel={handleTouchEnd}
             onTouchMove={handleTouchMove}
-            className={`flex w-full select-none items-center gap-3 rounded-xl p-3 text-left transition [-webkit-touch-callout:none] [-webkit-user-select:none] hover:bg-gray-50 ${active ? 'relative z-[60] bg-white shadow-2xl ring-2 ring-white/80' : ''}`}
-            style={{ touchAction: 'manipulation' }}
+            className={`flex w-full select-none items-center gap-3 rounded-xl p-3 
+            text-left transition cursor-pointer [-webkit-touch-callout:none] [-webkit-user-select:none] 
+            hover:bg-gray-50 ${active ? 'relative z-[60] bg-white shadow-2xl ring-2 ring-white/80' : ''}`}
+            style={{touchAction: 'manipulation'}}
         >
             <Avatar
                 name={friend.name}
                 src={friend.avatar}
-                userId={friendID}
                 positionX={friend.avatarPositionX}
                 positionY={friend.avatarPositionY}
                 scale={friend.avatarScale}
@@ -118,9 +123,11 @@ export function FriendItem({ friend, active, onOpenMenu }: FriendItemProps) {
                 <span className="block truncate text-sm text-gray-500">
                     {friend.email}
                 </span>
-                <span className={online ? 'block text-sm text-green-500' : 'block text-sm text-gray-400'}>
-                    {online ? 'Online' : 'Offline'}
-                </span>
+                {statusText && (
+                    <span className={online ? 'block text-sm text-green-500' : 'block text-sm text-gray-400'}>
+                        {statusText}
+                    </span>
+                )}
             </span>
         </button>
     );

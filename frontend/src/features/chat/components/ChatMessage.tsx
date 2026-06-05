@@ -94,6 +94,7 @@ interface ChatMessageProps {
     onCancelEdit: () => void;
     formatTime: (date: string) => string;
     formatDate: (date: string) => string;
+    onOpenUser?: (userId: number) => void;
 }
 
 const ChatMessageComponent = ({
@@ -121,6 +122,7 @@ const ChatMessageComponent = ({
                                 onCancelEdit,
                                 formatTime,
                                 formatDate,
+                                onOpenUser,
                             }: ChatMessageProps) => {
     const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const suppressNextClickRef = useRef(false);
@@ -258,12 +260,13 @@ const ChatMessageComponent = ({
                     <Avatar
                         name={recipientName}
                         src={recipientAvatar}
-                        userId={message.from_id}
                         positionX={recipientAvatarPositionX}
                         positionY={recipientAvatarPositionY}
                         scale={recipientAvatarScale}
                         size="sm"
                         className="flex-shrink-0 mr-2"
+                        ariaLabel={`Открыть профиль ${recipientName || 'собеседника'}`}
+                        onClick={onOpenUser ? () => onOpenUser(message.from_id) : undefined}
                     />
                 )}
                 <div className="relative max-w-[82%] sm:max-w-[70%]">

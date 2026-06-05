@@ -5,6 +5,7 @@ import (
 	"tester/internal/models"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func CreateMessage(db *gorm.DB, message *models.Message) error {
@@ -57,7 +58,8 @@ func GetConversations(db *gorm.DB, userID uint) ([]map[string]interface{}, error
             last_sender_name,
             last_is_mine,
             last_read,
-            unread_count
+            unread_count,
+            is_pinned
         FROM (
             SELECT 
                 CASE 
@@ -98,6 +100,7 @@ func GetConversations(db *gorm.DB, userID uint) ([]map[string]interface{}, error
                     AND is_read = false
                     AND deleted_at IS NULL
                 ) as unread_count,
+                (cp.id IS NOT NULL) as is_pinned,
                 ROW_NUMBER() OVER (
                     PARTITION BY CASE WHEN m.from_id = ? THEN m.to_id ELSE m.from_id END 
                     ORDER BY m.created_at DESC
@@ -105,15 +108,55 @@ func GetConversations(db *gorm.DB, userID uint) ([]map[string]interface{}, error
             FROM messages m
             JOIN users u ON u.id = CASE WHEN m.from_id = ? THEN m.to_id ELSE m.from_id END
             JOIN users sender ON sender.id = m.from_id
+            LEFT JOIN conversation_pins cp
+                ON cp.user_id = ?
+                AND cp.conversation_id = CASE WHEN m.from_id = ? THEN m.to_id ELSE m.from_id END
             WHERE (m.from_id = ? OR m.to_id = ?)
             AND m.deleted_at IS NULL
         ) subq
         WHERE rn = 1
-        ORDER BY last_message_at DESC
-    `, userID, userID, userID, userID, userID, userID, userID, userID).
+        ORDER BY is_pinned DESC, last_message_at DESC
+    `, userID, userID, userID, userID, userID, userID, userID, userID, userID, userID).
 		Scan(&conversations).Error
 
 	return conversations, err
+}
+
+func ConversationExistsForUser(db *gorm.DB, userID, conversationID uint) (bool, error) {
+	if userID == 0 || conversationID == 0 || userID == conversationID {
+		return false, nil
+	}
+
+	var count int64
+	err := db.Model(&models.Message{}).
+		Where(
+			"((from_id = ? AND to_id = ?) OR (from_id = ? AND to_id = ?)) AND deleted_at IS NULL",
+			userID,
+			conversationID,
+			conversationID,
+			userID,
+		).
+		Count(&count).Error
+
+	return count > 0, err
+}
+
+func PinConversation(db *gorm.DB, userID, conversationID uint) error {
+	pin := models.ConversationPin{
+		UserID:         userID,
+		ConversationID: conversationID,
+	}
+
+	return db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "user_id"}, {Name: "conversation_id"}},
+		DoNothing: true,
+	}).Create(&pin).Error
+}
+
+func UnpinConversation(db *gorm.DB, userID, conversationID uint) error {
+	return db.
+		Where("user_id = ? AND conversation_id = ?", userID, conversationID).
+		Delete(&models.ConversationPin{}).Error
 }
 
 func MarkMessagesAsRead(db *gorm.DB, fromID, toID uint) error {

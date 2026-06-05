@@ -34,6 +34,7 @@ func NewRouter(database *gorm.DB, cfg config.Config) *gin.Engine {
 	registerUserRoutes(router, database)
 	registerPostRoutes(router, database)
 	registerMessageRoutes(router, database)
+	registerConversationRoutes(router, database)
 	registerWebSocketRoutes(router, database, cfg)
 
 	return router
@@ -132,6 +133,19 @@ func registerMessageRoutes(router *gin.Engine, database *gorm.DB) {
 	messages.DELETE("/:messageId", handlers.DeleteMessage(database))
 	messages.DELETE("/batch", handlers.DeleteMessagesBatch(database))
 	messages.PATCH("/read/:userId", handlers.MarkMessagesAsRead(database))
+}
+
+func registerConversationRoutes(router *gin.Engine, database *gorm.DB) {
+	conversations := router.Group(
+		"/conversations",
+		middleware.AuthMiddleware(),
+		middleware.CSRFMiddleware(),
+		middleware.InvalidateCache("cache:/conversations*", "cache:/messages/conversations*"),
+	)
+
+	conversations.GET("", middleware.CacheMiddleware(time.Minute), handlers.GetConversations(database))
+	conversations.POST("/:conversationId/pin", handlers.PinConversation(database))
+	conversations.DELETE("/:conversationId/pin", handlers.UnpinConversation(database))
 }
 
 func registerWebSocketRoutes(router *gin.Engine, database *gorm.DB, cfg config.Config) {

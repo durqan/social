@@ -29,6 +29,7 @@ func testRepositoryDB(t *testing.T) *gorm.DB {
 		&models.Comment{},
 		&models.Message{},
 		&models.MessageAttachment{},
+		&models.ConversationPin{},
 		&models.Friendship{},
 		&models.EmailVerification{},
 	); err != nil {
