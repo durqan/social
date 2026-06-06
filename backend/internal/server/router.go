@@ -35,6 +35,7 @@ func NewRouter(database *gorm.DB, cfg config.Config) *gin.Engine {
 	registerPostRoutes(router, database)
 	registerMessageRoutes(router, database)
 	registerConversationRoutes(router, database)
+	registerE2EERoutes(router, database)
 	registerWebSocketRoutes(router, database, cfg)
 
 	return router
@@ -108,6 +109,20 @@ func registerPostRoutes(router *gin.Engine, database *gorm.DB) {
 	posts.POST("/:id/like", middleware.RateLimitMiddleware(120, time.Minute), handlers.TogglePostLike(database))
 	posts.POST("/:id/comments", middleware.RequireVerifiedEmail(database), middleware.RateLimitMiddleware(30, 10*time.Minute), handlers.CreateComment(database))
 	posts.POST("/:id/comments/:commentID/like", handlers.ToggleCommentLike(database))
+}
+
+func registerE2EERoutes(router *gin.Engine, database *gorm.DB) {
+	e2ee := router.Group(
+		"/e2ee",
+		middleware.AuthMiddleware(),
+		middleware.CSRFMiddleware(),
+	)
+
+	e2ee.GET("/status", handlers.GetE2EEStatus(database))
+	e2ee.POST("/enable", handlers.EnableE2EE(database))
+	e2ee.POST("/backup", handlers.SaveE2EEBackup(database))
+	e2ee.GET("/backup", handlers.GetE2EEBackup(database))
+	e2ee.POST("/disable", handlers.DisableE2EE(database))
 }
 
 func registerMessageRoutes(router *gin.Engine, database *gorm.DB) {

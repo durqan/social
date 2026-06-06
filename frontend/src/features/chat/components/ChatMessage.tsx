@@ -3,6 +3,7 @@ import type { Message } from "@/shared/types/domain.js";
 import { Avatar } from "@/shared/ui/Avatar.js";
 import { ImageViewer } from "@/shared/ui/ImageViewer.js";
 import { messageAuthorName, messagePreviewText } from "@/features/chat/lib/messagePreview.js";
+import { decryptAttachmentFailureText } from "@/features/chat/lib/e2eeMessageTransform.js";
 import { VoiceMessage } from "@/features/chat/components/VoiceMessage.js";
 import { VideoNoteMessage } from "@/features/chat/components/VideoNoteMessage.js";
 
@@ -128,9 +129,10 @@ const ChatMessageComponent = ({
     const suppressNextClickRef = useRef(false);
     const touchStartRef = useRef<{ x: number; y: number } | null>(null);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-    const imageAttachments = message.attachments?.filter(attachment => attachment.file_type === 'image') || [];
-    const voiceAttachments = message.attachments?.filter(attachment => attachment.file_type === 'voice') || [];
-    const videoNoteAttachments = message.attachments?.filter(attachment => attachment.file_type === 'video_note') || [];
+    const failedAttachments = message.attachments?.filter(attachment => attachment.decryption_error) || [];
+    const imageAttachments = message.attachments?.filter(attachment => attachment.file_type === 'image' && !attachment.decryption_error) || [];
+    const voiceAttachments = message.attachments?.filter(attachment => attachment.file_type === 'voice' && !attachment.decryption_error) || [];
+    const videoNoteAttachments = message.attachments?.filter(attachment => attachment.file_type === 'video_note' && !attachment.decryption_error) || [];
 
     const clearLongPressTimer = () => {
         if (longPressTimer.current) {
@@ -328,6 +330,19 @@ const ChatMessageComponent = ({
                                 </button>
                             )}
 
+                            {failedAttachments.length ? (
+                                <div className={message.content || imageAttachments.length || voiceAttachments.length || videoNoteAttachments.length ? 'mb-2 space-y-2' : 'space-y-2'}>
+                                    {failedAttachments.map(attachment => (
+                                        <div
+                                            key={attachment.id ?? attachment.file_url}
+                                            className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-sm italic text-red-700"
+                                        >
+                                            {decryptAttachmentFailureText}
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : null}
+
                             {videoNoteAttachments.length ? (
                                 <div className={message.content || imageAttachments.length || voiceAttachments.length ? 'mb-2 space-y-2' : 'space-y-2'}>
                                     {videoNoteAttachments.map(attachment => (
@@ -374,13 +389,13 @@ const ChatMessageComponent = ({
                                                     return;
                                                 }
 
-                                                setPreviewUrl(attachment.file_url);
+                                                setPreviewUrl(attachment.decrypted_file_url || attachment.file_url);
                                             }}
                                             className="block overflow-hidden rounded-xl bg-black/5 text-left"
                                             aria-label="Открыть изображение"
                                         >
                                             <img
-                                                src={attachment.file_url}
+                                                src={attachment.decrypted_file_url || attachment.file_url}
                                                 alt="Вложение"
                                                 className="max-h-72 w-full object-cover"
                                                 loading="lazy"
@@ -391,7 +406,7 @@ const ChatMessageComponent = ({
                             ) : null}
 
                             {message.content && (
-                                <p className="text-sm break-words">
+                                <p className={`text-sm break-words ${message.decryption_error ? 'italic text-red-600' : ''}`}>
                                     {linkifyText(message.content, isOwn)}
                                 </p>
                             )}

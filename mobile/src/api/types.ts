@@ -56,12 +56,17 @@ export interface MessageAttachment {
   attachment_id?: string;
   message_id?: number;
   file_url: string;
-  file_type: 'image' | 'voice';
+  file_type: 'image' | 'voice' | 'video_note';
   width?: number;
   height?: number;
   duration?: number;
   duration_seconds?: number;
   size: number;
+  encryption_version?: number;
+  encrypted_file_key?: string;
+  file_nonce?: string;
+  encrypted_metadata?: string;
+  decryption_error?: boolean;
   created_at?: string;
 }
 
@@ -84,6 +89,9 @@ export interface Message {
   from_id: number;
   to_id: number;
   content: string;
+  encryption_version?: number;
+  ciphertext?: string;
+  nonce?: string;
   created_at: string;
   updated_at?: string;
   is_read: boolean;

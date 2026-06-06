@@ -11,6 +11,9 @@ type Message struct {
 	FromID                 uint                `json:"from_id" gorm:"not null;index"`
 	ToID                   uint                `json:"to_id" gorm:"not null;index"`
 	Content                string              `json:"content" gorm:"type:text;not null"`
+	EncryptionVersion      int                 `json:"encryption_version" gorm:"not null;default:0;index"`
+	Ciphertext             string              `json:"ciphertext,omitempty" gorm:"type:text"`
+	Nonce                  string              `json:"nonce,omitempty" gorm:"type:text"`
 	IsRead                 bool                `json:"is_read" gorm:"default:false"`
 	ReplyToMessageID       *uint               `json:"reply_to_message_id" gorm:"index"`
 	ForwardedFromMessageID *uint               `json:"forwarded_from_message_id" gorm:"index"`

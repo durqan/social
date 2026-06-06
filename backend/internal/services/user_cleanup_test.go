@@ -67,6 +67,7 @@ func cleanupTestDB(t *testing.T) *gorm.DB {
 		&models.CommentLike{},
 		&models.Message{},
 		&models.MessageAttachment{},
+		&models.EncryptedKeyBackup{},
 		&models.Friendship{},
 		&models.EmailVerification{},
 	); err != nil {

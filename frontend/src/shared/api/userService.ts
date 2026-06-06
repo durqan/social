@@ -14,6 +14,7 @@ export type UpdateUserData = {
 export type ChangePasswordData = {
     current_password: string;
     new_password: string;
+    encrypted_master_key?: string;
 };
 
 export const normalizeUser = (user: User): User => ({

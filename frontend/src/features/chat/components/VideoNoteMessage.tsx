@@ -19,7 +19,7 @@ export const VideoNoteMessage = ({
   onSelectMessage,
 }: VideoNoteMessageProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const src = attachment.file_url;
+  const src = attachment.decrypted_file_url || attachment.file_url;
   const initialDuration = attachment.duration_seconds ?? attachment.duration ?? 0;
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);

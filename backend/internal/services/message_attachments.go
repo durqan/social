@@ -36,6 +36,8 @@ const (
 	ChatVideoNoteMaxRequestSize = ChatVideoNoteMaxSize + 1<<20
 	ChatVideoNoteMaxDuration    = 60
 	chatVideoNoteMaxCount       = 1
+	encryptedAttachmentOverhead = 64 << 10
+	MaxEncryptedAttachmentField = 64 << 10
 	chatUploadURLPrefix         = "/api/messages/uploads/"
 	chatAttachmentURLPrefix     = "/api/messages/attachments/"
 	legacyChatUploadPrefix      = "/uploads/chat/"
@@ -43,16 +45,20 @@ const (
 )
 
 type MessageAttachmentInput struct {
-	ID              uint   `json:"id,omitempty"`
-	AttachmentID    string `json:"attachment_id,omitempty"`
-	MessageID       uint   `json:"message_id,omitempty"`
-	FileURL         string `json:"file_url"`
-	FileType        string `json:"file_type"`
-	Width           int    `json:"width,omitempty"`
-	Height          int    `json:"height,omitempty"`
-	Duration        int    `json:"duration,omitempty"`
-	DurationSeconds int    `json:"duration_seconds,omitempty"`
-	Size            int64  `json:"size"`
+	ID                uint   `json:"id,omitempty"`
+	AttachmentID      string `json:"attachment_id,omitempty"`
+	MessageID         uint   `json:"message_id,omitempty"`
+	FileURL           string `json:"file_url"`
+	FileType          string `json:"file_type"`
+	Width             int    `json:"width,omitempty"`
+	Height            int    `json:"height,omitempty"`
+	Duration          int    `json:"duration,omitempty"`
+	DurationSeconds   int    `json:"duration_seconds,omitempty"`
+	Size              int64  `json:"size"`
+	EncryptionVersion int    `json:"encryption_version,omitempty"`
+	EncryptedFileKey  string `json:"encrypted_file_key,omitempty"`
+	FileNonce         string `json:"file_nonce,omitempty"`
+	EncryptedMetadata string `json:"encrypted_metadata,omitempty"`
 }
 
 var allowedChatImageTypes = map[string]string{
@@ -78,7 +84,7 @@ var allowedChatVideoNoteTypes = map[string]struct {
 	"video/mp4":  {extension: ".mp4", contentType: "video/mp4"},
 }
 
-var generatedUploadFilenamePattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(jpg|png|webp|webm|ogg|mp4)$`)
+var generatedUploadFilenamePattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(jpg|png|webp|webm|ogg|mp4|bin)$`)
 
 func ChatImageExtension(contentType string) (string, bool) {
 	ext, ok := allowedChatImageTypes[contentType]
@@ -259,6 +265,25 @@ func normalizeImageAttachment(item MessageAttachmentInput, userID uint) (models.
 	}
 
 	key := ChatUploadKey(filename, userID)
+	if item.encryptionEnabled() {
+		storedKey, width, height, size, err := encryptedImageAttachmentStorageMetadata(key, item)
+		if err != nil {
+			return models.MessageAttachment{}, err
+		}
+
+		return models.MessageAttachment{
+			FileURL:           storedKey,
+			FileType:          "image",
+			Width:             &width,
+			Height:            &height,
+			Size:              size,
+			EncryptionVersion: item.EncryptionVersion,
+			EncryptedFileKey:  strings.TrimSpace(item.EncryptedFileKey),
+			FileNonce:         strings.TrimSpace(item.FileNonce),
+			EncryptedMetadata: strings.TrimSpace(item.EncryptedMetadata),
+		}, nil
+	}
+
 	storedKey, width, height, size, err := attachmentStorageMetadata(key, item)
 	if err != nil {
 		return models.MessageAttachment{}, err
@@ -289,6 +314,24 @@ func normalizeVoiceAttachment(item MessageAttachmentInput, userID uint) (models.
 	}
 
 	key := ChatUploadKey(filename, userID)
+	if item.encryptionEnabled() {
+		storedKey, size, durationSeconds, err := encryptedMediaAttachmentStorageMetadata(key, item, ChatVoiceMaxSize+encryptedAttachmentOverhead, "voice")
+		if err != nil {
+			return models.MessageAttachment{}, err
+		}
+
+		return models.MessageAttachment{
+			FileURL:           storedKey,
+			FileType:          "voice",
+			DurationSeconds:   &durationSeconds,
+			Size:              size,
+			EncryptionVersion: item.EncryptionVersion,
+			EncryptedFileKey:  strings.TrimSpace(item.EncryptedFileKey),
+			FileNonce:         strings.TrimSpace(item.FileNonce),
+			EncryptedMetadata: strings.TrimSpace(item.EncryptedMetadata),
+		}, nil
+	}
+
 	storedKey, size, durationSeconds, err := voiceAttachmentStorageMetadata(key, item)
 	if err != nil {
 		return models.MessageAttachment{}, err
@@ -318,6 +361,24 @@ func normalizeVideoNoteAttachment(item MessageAttachmentInput, userID uint) (mod
 	}
 
 	key := VideoNoteUploadKey(filename, userID)
+	if item.encryptionEnabled() {
+		storedKey, size, durationSeconds, err := encryptedMediaAttachmentStorageMetadata(key, item, ChatVideoNoteMaxSize+encryptedAttachmentOverhead, "video note")
+		if err != nil {
+			return models.MessageAttachment{}, err
+		}
+
+		return models.MessageAttachment{
+			FileURL:           storedKey,
+			FileType:          "video_note",
+			DurationSeconds:   &durationSeconds,
+			Size:              size,
+			EncryptionVersion: item.EncryptionVersion,
+			EncryptedFileKey:  strings.TrimSpace(item.EncryptedFileKey),
+			FileNonce:         strings.TrimSpace(item.FileNonce),
+			EncryptedMetadata: strings.TrimSpace(item.EncryptedMetadata),
+		}, nil
+	}
+
 	storedKey, size, durationSeconds, err := videoNoteAttachmentStorageMetadata(key, item)
 	if err != nil {
 		return models.MessageAttachment{}, err
@@ -408,6 +469,9 @@ func ChatUploadPath(filename string) (string, bool) {
 }
 
 func ChatUploadKey(filename string, userID uint) string {
+	if chatEncryptedExtensionFromFilename(filename) != "" {
+		return EncryptedChatUploadKey(filename, userID)
+	}
 	if strings.HasPrefix(filename, fmt.Sprintf("%d_", userID)) {
 		return filepath.ToSlash(filepath.Join("chat", filename))
 	}
@@ -418,7 +482,14 @@ func ChatUploadKey(filename string, userID uint) string {
 }
 
 func VideoNoteUploadKey(filename string, userID uint) string {
+	if chatEncryptedExtensionFromFilename(filename) != "" {
+		return EncryptedChatUploadKey(filename, userID)
+	}
 	return filepath.ToSlash(filepath.Join("video-notes", fmt.Sprintf("user_%d", userID), filename))
+}
+
+func EncryptedChatUploadKey(filename string, userID uint) string {
+	return filepath.ToSlash(filepath.Join("encrypted", fmt.Sprintf("user_%d", userID), filename))
 }
 
 func ChatUploadKeyFromFilename(filename string, userID uint) (string, bool) {
@@ -430,6 +501,92 @@ func ChatUploadKeyFromFilename(filename string, userID uint) (string, bool) {
 
 func AttachmentObjectKey(storedValue string) (string, bool) {
 	return storage.KeyFromStoredValue(storedValue)
+}
+
+func (item MessageAttachmentInput) encryptionEnabled() bool {
+	return item.EncryptionVersion > 0 ||
+		strings.TrimSpace(item.EncryptedFileKey) != "" ||
+		strings.TrimSpace(item.FileNonce) != "" ||
+		strings.TrimSpace(item.EncryptedMetadata) != ""
+}
+
+func validateEncryptedAttachmentFields(item MessageAttachmentInput) error {
+	if item.EncryptionVersion != 1 {
+		return errors.New("invalid encrypted attachment metadata")
+	}
+	if strings.TrimSpace(item.EncryptedFileKey) == "" ||
+		strings.TrimSpace(item.FileNonce) == "" ||
+		strings.TrimSpace(item.EncryptedMetadata) == "" {
+		return errors.New("invalid encrypted attachment metadata")
+	}
+	if len(item.EncryptedFileKey) > MaxEncryptedAttachmentField ||
+		len(item.FileNonce) > 256 ||
+		len(item.EncryptedMetadata) > MaxEncryptedAttachmentField {
+		return errors.New("encrypted attachment metadata is too large")
+	}
+	return nil
+}
+
+func encryptedImageAttachmentStorageMetadata(key string, item MessageAttachmentInput) (string, int, int, int64, error) {
+	if err := validateEncryptedAttachmentFields(item); err != nil {
+		return "", 0, 0, 0, err
+	}
+	if item.Width <= 0 || item.Height <= 0 {
+		return "", 0, 0, 0, errors.New("invalid encrypted attachment metadata")
+	}
+
+	storedKey, size, err := encryptedAttachmentStorageMetadata(key, item, ChatImageMaxSize+encryptedAttachmentOverhead, "image")
+	if err != nil {
+		return "", 0, 0, 0, err
+	}
+	return storedKey, item.Width, item.Height, size, nil
+}
+
+func encryptedMediaAttachmentStorageMetadata(key string, item MessageAttachmentInput, maxSize int64, label string) (string, int64, int, error) {
+	if err := validateEncryptedAttachmentFields(item); err != nil {
+		return "", 0, 0, err
+	}
+	duration, err := ValidateChatVoiceDurationSeconds(item.mediaDurationSeconds())
+	if label == "video note" {
+		duration, err = ValidateChatVideoNoteDurationSeconds(item.mediaDurationSeconds())
+	}
+	if err != nil {
+		return "", 0, 0, err
+	}
+
+	storedKey, size, err := encryptedAttachmentStorageMetadata(key, item, maxSize, label)
+	if err != nil {
+		return "", 0, 0, err
+	}
+	return storedKey, size, duration, nil
+}
+
+func encryptedAttachmentStorageMetadata(key string, item MessageAttachmentInput, maxSize int64, label string) (string, int64, error) {
+	store, err := storage.Default()
+	if err != nil {
+		return "", 0, errors.New("failed to load storage")
+	}
+
+	cleanKey, err := storage.CleanKey(key)
+	if err != nil {
+		return "", 0, fmt.Errorf("invalid %s url", label)
+	}
+
+	if filePath, ok := storage.LocalPath(store, cleanKey); ok {
+		info, err := os.Stat(filePath)
+		if err != nil || info.IsDir() {
+			return "", 0, fmt.Errorf("%s not found", label)
+		}
+		if info.Size() <= 0 || info.Size() > maxSize {
+			return "", 0, fmt.Errorf("%s is too large", label)
+		}
+		return cleanKey, info.Size(), nil
+	}
+
+	if item.Size <= 0 || item.Size > maxSize {
+		return "", 0, fmt.Errorf("%s is too large", label)
+	}
+	return cleanKey, item.Size, nil
 }
 
 func attachmentStorageMetadata(key string, item MessageAttachmentInput) (string, int, int, int64, error) {
@@ -611,6 +768,13 @@ func chatVideoNoteExtensionFromFilename(filename string) string {
 	}
 }
 
+func chatEncryptedExtensionFromFilename(filename string) string {
+	if strings.EqualFold(filepath.Ext(filename), ".bin") {
+		return ".bin"
+	}
+	return ""
+}
+
 func chatVoiceExtensionFromMagic(data []byte) (string, bool) {
 	if len(data) >= 4 && data[0] == 0x1a && data[1] == 0x45 && data[2] == 0xdf && data[3] == 0xa3 {
 		return ".webm", true
@@ -659,6 +823,8 @@ func ContentTypeForKey(key string) string {
 			return "audio/webm"
 		}
 		return "video/webm"
+	case ".bin":
+		return "application/octet-stream"
 	default:
 		return ""
 	}

@@ -72,7 +72,7 @@ func AuthenticateUser(db *gorm.DB, email, password string) (models.User, error) 
 	return user, nil
 }
 
-func ChangeUserPassword(db *gorm.DB, userID uint, currentPassword, newPassword string) error {
+func ChangeUserPassword(db *gorm.DB, userID uint, currentPassword, newPassword string, encryptedMasterKey *string) error {
 	user, err := repository.GetUserById(db, userID)
 	if err != nil {
 		return err
@@ -87,5 +87,13 @@ func ChangeUserPassword(db *gorm.DB, userID uint, currentPassword, newPassword s
 		return err
 	}
 
-	return repository.ChangePassword(db, userID, string(hashedPassword))
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := repository.ChangePassword(tx, userID, string(hashedPassword)); err != nil {
+			return err
+		}
+		if encryptedMasterKey != nil {
+			return SaveEncryptedKeyBackup(tx, userID, *encryptedMasterKey)
+		}
+		return nil
+	})
 }

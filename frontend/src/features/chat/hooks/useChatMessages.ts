@@ -36,7 +36,9 @@ const shouldApplyMessageUpdate = (current: Message, updated: Message) => {
     return updatedTime >= currentTime;
 };
 
-export const useChatMessages = (userId: string | undefined, currentUserId: number | undefined) => {
+type MessageTransformer = (messages: Message[]) => Promise<Message[]>;
+
+export const useChatMessages = (userId: string | undefined, currentUserId: number | undefined, transformMessages?: MessageTransformer) => {
     const [messages, setMessages] = useState<Message[]>([]);
     const [hasMore, setHasMore] = useState(true);
     const [loadingMore, setLoadingMore] = useState(false);
@@ -49,8 +51,9 @@ export const useChatMessages = (userId: string | undefined, currentUserId: numbe
         setInitialLoading(true);
         try {
             const res = await messageService.getMessagesWith(userId, {limit: 20});
+            const loadedMessages = transformMessages ? await transformMessages(res.messages) : res.messages;
             const otherUserID = Number(userId);
-            setMessages(res.messages.map(message =>
+            setMessages(loadedMessages.map(message =>
                 message.from_id === otherUserID ? { ...message, is_read: true } : message
             ));
             setHasMore(res.has_more);
@@ -60,7 +63,7 @@ export const useChatMessages = (userId: string | undefined, currentUserId: numbe
         } finally {
             setInitialLoading(false);
         }
-    }, [userId]);
+    }, [transformMessages, userId]);
 
     const loadMore = useCallback(async () => {
         if (!userId || loadingMore || !hasMore || messages.length === 0) return;
@@ -68,7 +71,7 @@ export const useChatMessages = (userId: string | undefined, currentUserId: numbe
         const oldestId = messages[0]?.id;
         try {
             const res = await messageService.getMessagesWith(userId, { before: oldestId, limit: 20 });
-            const newMessages = res.messages;
+            const newMessages = transformMessages ? await transformMessages(res.messages) : res.messages;
             setHasMore(res.has_more);
             if (newMessages.length) {
                 setMessages(prev => {
@@ -83,7 +86,7 @@ export const useChatMessages = (userId: string | undefined, currentUserId: numbe
         } finally {
             setLoadingMore(false);
         }
-    }, [loadingMore, hasMore, messages, userId]);
+    }, [loadingMore, hasMore, messages, transformMessages, userId]);
 
     const loadUntilMessage = useCallback(async (messageId: number) => {
         if (!userId) {
@@ -116,8 +119,9 @@ export const useChatMessages = (userId: string | undefined, currentUserId: numbe
                     break;
                 }
 
+                const pageMessages = transformMessages ? await transformMessages(res.messages) : res.messages;
                 const existingIds = new Set(loadedMessages.map(message => message.id));
-                const olderMessages = res.messages.filter(message => !existingIds.has(message.id));
+                const olderMessages = pageMessages.filter(message => !existingIds.has(message.id));
                 loadedMessages = olderMessages.length ? [...olderMessages, ...loadedMessages] : loadedMessages;
 
                 setMessages(loadedMessages);
@@ -135,7 +139,7 @@ export const useChatMessages = (userId: string | undefined, currentUserId: numbe
         } finally {
             setLoadingMore(false);
         }
-    }, [hasMore, messages, userId]);
+    }, [hasMore, messages, transformMessages, userId]);
 
     const sendMessage = useCallback((content: string, tempMessage: Message) => {
         setMessages(prev => [...prev, tempMessage]);

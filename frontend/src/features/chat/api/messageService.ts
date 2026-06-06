@@ -1,5 +1,7 @@
 import { request } from "@/shared/api/axios.js";
 import type { Conversation, Message, MessageAttachment, PinnedMessage } from "@/shared/types/domain.js";
+import type { EncryptedMessagePayload } from "@/crypto/encryptMessage.js";
+import type { EncryptedAttachmentFields } from "@/crypto/attachment.js";
 
 export type PaginatedMessages = {
     messages: Message[];
@@ -10,26 +12,75 @@ type PinnedMessageResponse = {
     pinned_message: PinnedMessage | null;
 };
 
+type EncryptedForwardPayload = Partial<EncryptedMessagePayload> & {
+    toUserId: number;
+    attachments?: MessageAttachment[];
+};
+
+type AttachmentUploadEncryption = EncryptedAttachmentFields & {
+    width?: number;
+    height?: number;
+};
+
+function appendAttachmentEncryption(formData: FormData, encryption?: AttachmentUploadEncryption) {
+    if (!encryption) {
+        return;
+    }
+    formData.append('encryption_version', String(encryption.encryption_version));
+    formData.append('encrypted_file_key', encryption.encrypted_file_key);
+    formData.append('file_nonce', encryption.file_nonce);
+    formData.append('encrypted_metadata', encryption.encrypted_metadata);
+    if (encryption.width) {
+        formData.append('width', String(encryption.width));
+    }
+    if (encryption.height) {
+        formData.append('height', String(encryption.height));
+    }
+}
+
+function attachmentForApi(attachment: MessageAttachment): MessageAttachment {
+    return {
+        id: attachment.id,
+        attachment_id: attachment.attachment_id,
+        message_id: attachment.message_id,
+        file_url: attachment.file_url,
+        file_type: attachment.file_type,
+        width: attachment.width,
+        height: attachment.height,
+        duration: attachment.duration,
+        duration_seconds: attachment.duration_seconds,
+        size: attachment.size,
+        encryption_version: attachment.encryption_version,
+        encrypted_file_key: attachment.encrypted_file_key,
+        file_nonce: attachment.file_nonce,
+        encrypted_metadata: attachment.encrypted_metadata,
+        created_at: attachment.created_at,
+    };
+}
+
 export const messageService = {
-    async uploadImage(file: File): Promise<MessageAttachment> {
+    async uploadImage(file: File, encryption?: AttachmentUploadEncryption): Promise<MessageAttachment> {
         const formData = new FormData();
         formData.append('image', file);
+        appendAttachmentEncryption(formData, encryption);
         return request.post<MessageAttachment>('/messages/upload', formData, {
             timeout: 300000,
         });
     },
-    async uploadVoice(file: File, durationSeconds: number): Promise<MessageAttachment> {
+    async uploadVoice(file: File, durationSeconds: number, encryption?: EncryptedAttachmentFields): Promise<MessageAttachment> {
         const formData = new FormData();
         formData.append('voice', file);
         formData.append('duration', String(durationSeconds));
+        appendAttachmentEncryption(formData, encryption);
         return request.post<MessageAttachment>('/messages/upload-voice', formData, {
             timeout: 300000,
         });
     },
-    async uploadVideoNote(file: File, durationSeconds: number): Promise<MessageAttachment> {
+    async uploadVideoNote(file: File, durationSeconds: number, encryption?: EncryptedAttachmentFields): Promise<MessageAttachment> {
         const formData = new FormData();
         formData.append('video_note', file);
         formData.append('duration', String(durationSeconds));
+        appendAttachmentEncryption(formData, encryption);
         return request.post<MessageAttachment>('/messages/upload-video-note', formData, {
             timeout: 300000,
         });
@@ -83,13 +134,36 @@ export const messageService = {
         return (await request.get<{ unread_count: number }>('/messages/unread/count')).unread_count;
     },
 
-    async updateMessage(messageId: number, content: string): Promise<Message> {
-        return request.patch<Message>(`/messages/${messageId}`, { content });
+    async sendMessage(toId: number, content: string, attachments: MessageAttachment[] = [], replyToMessageId?: number, encryption?: EncryptedMessagePayload): Promise<Message> {
+        return request.post<Message>(`/messages/send/${toId}`, {
+            content,
+            attachments: attachments.map(attachmentForApi),
+            replyToMessageId,
+            ...(encryption || {}),
+        });
+    },
+
+    async updateMessage(messageId: number, content: string, encryption?: EncryptedMessagePayload): Promise<Message> {
+        return request.patch<Message>(`/messages/${messageId}`, {
+            content,
+            ...(encryption || {}),
+        });
     },
 
     async forwardMessage(messageId: number, toUserIds: number[]): Promise<Message[]> {
         const response = await request.post<{ messages: Message[] }>(`/messages/${messageId}/forward`, {
             toUserIds,
+        });
+        return response.messages || [];
+    },
+
+    async forwardEncryptedMessage(messageId: number, encryptedMessages: EncryptedForwardPayload[]): Promise<Message[]> {
+        const response = await request.post<{ messages: Message[] }>(`/messages/${messageId}/forward`, {
+            toUserIds: encryptedMessages.map(message => message.toUserId),
+            encryptedMessages: encryptedMessages.map(message => ({
+                ...message,
+                attachments: message.attachments?.map(attachmentForApi) || [],
+            })),
         });
         return response.messages || [];
     },

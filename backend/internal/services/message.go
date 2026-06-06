@@ -16,23 +16,39 @@ import (
 )
 
 var (
-	ErrMessageContentRequired = errors.New("message content or attachment is required")
-	ErrMessageContentTooLong  = errors.New("message content is too long")
-	ErrMessageForbidden       = errors.New("message forbidden")
-	ErrMessageNotFriends      = errors.New("message requires accepted friendship")
-	ErrMessageInvalidReply    = errors.New("reply message is outside this conversation")
-	ErrMessageInvalidPin      = errors.New("pin message is outside this conversation or deleted")
+	ErrMessageContentRequired             = errors.New("message content or attachment is required")
+	ErrMessageContentTooLong              = errors.New("message content is too long")
+	ErrMessageForbidden                   = errors.New("message forbidden")
+	ErrMessageNotFriends                  = errors.New("message requires accepted friendship")
+	ErrMessageInvalidReply                = errors.New("reply message is outside this conversation")
+	ErrMessageInvalidPin                  = errors.New("pin message is outside this conversation or deleted")
+	ErrMessageInvalidEncryption           = errors.New("message encryption payload is invalid")
+	ErrMessageEncryptedForwardUnsupported = errors.New("encrypted messages must be forwarded by the client")
 )
 
 const MaxMessageContentLength = 1000
+const MaxEncryptedMessagePayloadLength = 128 * 1024
 
-func SendMessage(db *gorm.DB, fromID, toID uint, content string, attachments []models.MessageAttachment, replyToMessageID *uint) (models.Message, error) {
-	content = strings.TrimSpace(content)
-	if content == "" && len(attachments) == 0 {
-		return models.Message{}, ErrMessageContentRequired
-	}
-	if len([]rune(content)) > MaxMessageContentLength {
-		return models.Message{}, ErrMessageContentTooLong
+type MessageEncryptionInput struct {
+	Version    int
+	Ciphertext string
+	Nonce      string
+}
+
+type EncryptedForwardInput struct {
+	ToUserID    uint
+	Encryption  MessageEncryptionInput
+	Attachments []models.MessageAttachment
+}
+
+func (input MessageEncryptionInput) Enabled() bool {
+	return input.Version > 0 || strings.TrimSpace(input.Ciphertext) != "" || strings.TrimSpace(input.Nonce) != ""
+}
+
+func SendMessage(db *gorm.DB, fromID, toID uint, content string, attachments []models.MessageAttachment, replyToMessageID *uint, encryption MessageEncryptionInput) (models.Message, error) {
+	normalizedContent, normalizedEncryption, err := normalizeMessageContent(content, len(attachments), encryption)
+	if err != nil {
+		return models.Message{}, err
 	}
 
 	status, err := repository.GetFriendshipStatus(db, fromID, toID)
@@ -41,6 +57,16 @@ func SendMessage(db *gorm.DB, fromID, toID uint, content string, attachments []m
 	}
 	if status != "accepted" {
 		return models.Message{}, ErrMessageNotFriends
+	}
+	e2eeStatus, err := E2EEPublicStatusForUser(db, fromID)
+	if err != nil {
+		return models.Message{}, err
+	}
+	if e2eeStatus.Enabled && !normalizedEncryption.Enabled() && normalizedContent != "" {
+		return models.Message{}, ErrMessageInvalidEncryption
+	}
+	if e2eeStatus.Enabled && attachmentsHavePlaintext(attachments) {
+		return models.Message{}, ErrMessageInvalidEncryption
 	}
 
 	if replyToMessageID != nil {
@@ -53,10 +79,13 @@ func SendMessage(db *gorm.DB, fromID, toID uint, content string, attachments []m
 	}
 
 	message := models.Message{
-		FromID:           fromID,
-		ToID:             toID,
-		Content:          content,
-		ReplyToMessageID: replyToMessageID,
+		FromID:            fromID,
+		ToID:              toID,
+		Content:           normalizedContent,
+		EncryptionVersion: normalizedEncryption.Version,
+		Ciphertext:        normalizedEncryption.Ciphertext,
+		Nonce:             normalizedEncryption.Nonce,
+		ReplyToMessageID:  replyToMessageID,
 	}
 
 	if err := repository.CreateMessage(db, &message); err != nil {
@@ -90,6 +119,9 @@ func ForwardMessage(db *gorm.DB, userID uint, sourceMessageID uint, toIDs []uint
 			return nil, ErrMessageForbidden
 		}
 		return nil, err
+	}
+	if source.EncryptionVersion > 0 || messageHasEncryptedAttachments(source) {
+		return nil, ErrMessageEncryptedForwardUnsupported
 	}
 
 	messages := make([]models.Message, 0, len(toIDs))
@@ -135,13 +167,116 @@ func ForwardMessage(db *gorm.DB, userID uint, sourceMessageID uint, toIDs []uint
 			attachments := make([]models.MessageAttachment, 0, len(source.Attachments))
 			for _, attachment := range source.Attachments {
 				attachments = append(attachments, models.MessageAttachment{
-					MessageID:       message.ID,
-					FileURL:         attachment.FileURL,
-					FileType:        attachment.FileType,
-					Width:           attachment.Width,
-					Height:          attachment.Height,
-					DurationSeconds: attachment.DurationSeconds,
-					Size:            attachment.Size,
+					MessageID:         message.ID,
+					FileURL:           attachment.FileURL,
+					FileType:          attachment.FileType,
+					Width:             attachment.Width,
+					Height:            attachment.Height,
+					DurationSeconds:   attachment.DurationSeconds,
+					Size:              attachment.Size,
+					EncryptionVersion: attachment.EncryptionVersion,
+					EncryptedFileKey:  attachment.EncryptedFileKey,
+					FileNonce:         attachment.FileNonce,
+					EncryptedMetadata: attachment.EncryptedMetadata,
+				})
+			}
+			if err := repository.CreateMessageAttachments(tx, attachments); err != nil {
+				return err
+			}
+
+			fullMessage, err := LoadMessage(tx, message.ID)
+			if err != nil {
+				return err
+			}
+			messages = append(messages, fullMessage)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	InvalidateMessageCaches()
+	return messages, nil
+}
+
+func ForwardEncryptedMessage(db *gorm.DB, userID uint, sourceMessageID uint, inputs []EncryptedForwardInput) ([]models.Message, error) {
+	if len(inputs) == 0 {
+		return nil, ErrMessageContentRequired
+	}
+
+	source, err := repository.GetMessageByIDForUser(db, sourceMessageID, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrMessageForbidden
+		}
+		return nil, err
+	}
+	sourceHasEncryptedContent := source.EncryptionVersion > 0
+	sourceHasEncryptedAttachments := messageHasEncryptedAttachments(source)
+	if !sourceHasEncryptedContent && !sourceHasEncryptedAttachments {
+		return nil, ErrMessageInvalidEncryption
+	}
+
+	messages := make([]models.Message, 0, len(inputs))
+	err = db.Transaction(func(tx *gorm.DB) error {
+		for _, input := range inputs {
+			toID := input.ToUserID
+			if toID == 0 || toID == userID {
+				return ErrMessageForbidden
+			}
+			if sourceHasEncryptedContent && !input.Encryption.Enabled() {
+				return ErrMessageInvalidEncryption
+			}
+			if sourceHasEncryptedAttachments && len(input.Attachments) != len(source.Attachments) {
+				return ErrMessageInvalidEncryption
+			}
+
+			_, normalizedEncryption, err := normalizeMessageContent("", len(input.Attachments), input.Encryption)
+			if err != nil {
+				return err
+			}
+
+			status, err := repository.GetFriendshipStatus(tx, userID, toID)
+			if err != nil {
+				return err
+			}
+			if status != "accepted" {
+				return ErrMessageNotFriends
+			}
+
+			sourceID := source.ID
+			sourceUserID := source.FromID
+			message := models.Message{
+				FromID:                 userID,
+				ToID:                   toID,
+				Content:                "",
+				EncryptionVersion:      normalizedEncryption.Version,
+				Ciphertext:             normalizedEncryption.Ciphertext,
+				Nonce:                  normalizedEncryption.Nonce,
+				ForwardedFromMessageID: &sourceID,
+				ForwardedFromUserID:    &sourceUserID,
+			}
+
+			if err := repository.CreateMessage(tx, &message); err != nil {
+				return err
+			}
+
+			attachments := make([]models.MessageAttachment, 0, len(input.Attachments))
+			for _, attachment := range input.Attachments {
+				attachments = append(attachments, models.MessageAttachment{
+					MessageID:         message.ID,
+					FileURL:           attachment.FileURL,
+					FileType:          attachment.FileType,
+					Width:             attachment.Width,
+					Height:            attachment.Height,
+					DurationSeconds:   attachment.DurationSeconds,
+					Size:              attachment.Size,
+					EncryptionVersion: attachment.EncryptionVersion,
+					EncryptedFileKey:  attachment.EncryptedFileKey,
+					FileNonce:         attachment.FileNonce,
+					EncryptedMetadata: attachment.EncryptedMetadata,
 				})
 			}
 			if err := repository.CreateMessageAttachments(tx, attachments); err != nil {
@@ -257,7 +392,7 @@ func canonicalConversationForUser(db *gorm.DB, userID, conversationUserID uint) 
 	return conversationID, nil
 }
 
-func UpdateMessage(db *gorm.DB, userID, messageID uint, content string) (models.Message, error) {
+func UpdateMessage(db *gorm.DB, userID, messageID uint, content string, encryption MessageEncryptionInput) (models.Message, error) {
 	message, err := repository.GetMessageByID(db, messageID)
 	if err != nil {
 		return models.Message{}, err
@@ -267,7 +402,27 @@ func UpdateMessage(db *gorm.DB, userID, messageID uint, content string) (models.
 		return models.Message{}, ErrMessageForbidden
 	}
 
-	message.Content = content
+	normalizedContent, normalizedEncryption, err := normalizeMessageContent(content, 0, encryption)
+	if err != nil {
+		return models.Message{}, err
+	}
+	if message.EncryptionVersion > 0 && !normalizedEncryption.Enabled() {
+		return models.Message{}, ErrMessageInvalidEncryption
+	}
+	if !normalizedEncryption.Enabled() && normalizedContent != "" {
+		e2eeStatus, err := E2EEPublicStatusForUser(db, userID)
+		if err != nil {
+			return models.Message{}, err
+		}
+		if e2eeStatus.Enabled {
+			return models.Message{}, ErrMessageInvalidEncryption
+		}
+	}
+
+	message.Content = normalizedContent
+	message.EncryptionVersion = normalizedEncryption.Version
+	message.Ciphertext = normalizedEncryption.Ciphertext
+	message.Nonce = normalizedEncryption.Nonce
 	if err := repository.UpdateMessage(db, message); err != nil {
 		return models.Message{}, err
 	}
@@ -278,6 +433,29 @@ func UpdateMessage(db *gorm.DB, userID, messageID uint, content string) (models.
 	}
 	InvalidateMessageCaches()
 	return updated, nil
+}
+
+func normalizeMessageContent(content string, attachmentCount int, encryption MessageEncryptionInput) (string, MessageEncryptionInput, error) {
+	if encryption.Enabled() {
+		encryption.Ciphertext = strings.TrimSpace(encryption.Ciphertext)
+		encryption.Nonce = strings.TrimSpace(encryption.Nonce)
+		if encryption.Version != 1 || encryption.Ciphertext == "" || encryption.Nonce == "" {
+			return "", MessageEncryptionInput{}, ErrMessageInvalidEncryption
+		}
+		if len(encryption.Ciphertext) > MaxEncryptedMessagePayloadLength || len(encryption.Nonce) > 256 {
+			return "", MessageEncryptionInput{}, ErrMessageInvalidEncryption
+		}
+		return "", encryption, nil
+	}
+
+	content = strings.TrimSpace(content)
+	if content == "" && attachmentCount == 0 {
+		return "", MessageEncryptionInput{}, ErrMessageContentRequired
+	}
+	if len([]rune(content)) > MaxMessageContentLength {
+		return "", MessageEncryptionInput{}, ErrMessageContentTooLong
+	}
+	return content, MessageEncryptionInput{}, nil
 }
 
 func DeleteMessageForUser(db *gorm.DB, userID, messageID uint) error {
@@ -387,6 +565,27 @@ func attachmentKeys(attachments []models.MessageAttachment) []string {
 		}
 	}
 	return keys
+}
+
+func messageHasEncryptedAttachments(message *models.Message) bool {
+	if message == nil {
+		return false
+	}
+	for _, attachment := range message.Attachments {
+		if attachment.EncryptionVersion > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func attachmentsHavePlaintext(attachments []models.MessageAttachment) bool {
+	for _, attachment := range attachments {
+		if attachment.EncryptionVersion == 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func deleteUnreferencedStorageObjects(ctx context.Context, db *gorm.DB, keys []string) {

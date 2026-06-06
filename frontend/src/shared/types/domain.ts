@@ -95,6 +95,15 @@ export interface MessageAttachment {
     duration?: number;
     duration_seconds?: number;
     size: number;
+    encryption_version?: number;
+    encrypted_file_key?: string;
+    file_nonce?: string;
+    encrypted_metadata?: string;
+    decrypted_file_url?: string;
+    decryption_error?: boolean;
+    original_mime_type?: string;
+    original_filename?: string;
+    original_size?: number;
     created_at?: string;
 }
 
@@ -103,6 +112,10 @@ export interface Message {
     from_id: number;
     to_id: number;
     content: string;
+    encryption_version?: number;
+    ciphertext?: string;
+    nonce?: string;
+    decryption_error?: boolean;
     created_at: string;
     updated_at?: string;
     is_read: boolean;

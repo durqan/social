@@ -3,6 +3,9 @@ import { authService, type LoginData, type RegisterData } from "@/features/auth/
 import { userService } from "@/shared/api/userService.js";
 import type { User } from "@/shared/types/domain.js";
 import { useWebSocket } from "@/app/providers/WebSocketContext.js";
+import { e2eeService } from "@/shared/api/e2eeService.js";
+import { restoreE2EEFromBackup } from "@/crypto/keyBackup.js";
+import { getLocalE2EEKeyBundle } from "@/crypto/masterKey.js";
 
 type AuthContextValue = {
     currentUser: User | null;
@@ -40,6 +43,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const login = useCallback(async (data: LoginData) => {
         const response = await authService.login(data);
         setCurrentUser(response.user);
+        if (response.user.id) {
+            void restoreLocalE2EEKey(response.user.id, data.password);
+        }
         wsService.connect();
         return response.user;
     }, [wsService]);
@@ -71,6 +77,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
+
+async function restoreLocalE2EEKey(userId: number, password: string) {
+    try {
+        if (await getLocalE2EEKeyBundle(userId)) {
+            return;
+        }
+
+        const backup = await e2eeService.getBackup();
+        if (backup.enabled && backup.encrypted_master_key) {
+            await restoreE2EEFromBackup(userId, password, backup.encrypted_master_key);
+        }
+    } catch {
+        console.warn('E2EE key restore failed');
+    }
+}
 
 export const useAuth = () => {
     const context = useContext(AuthContext);

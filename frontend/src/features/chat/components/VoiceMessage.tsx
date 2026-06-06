@@ -21,7 +21,7 @@ export const VoiceMessage = ({
 }: VoiceMessageProps) => {
   const progressRef = useRef<HTMLDivElement>(null);
 
-  const src = attachment.file_url;
+  const src = attachment.decrypted_file_url || attachment.file_url;
   const initialDuration = attachment.duration_seconds ?? attachment.duration ?? 0;
 
   const player = useVoicePlayback(src, initialDuration);

@@ -144,7 +144,7 @@ export const ChatMessageList = ({
     const contextMessageUrl = useMemo(() => (
         contextMessage ? firstUrl(contextMessage.content || '') : ''
     ), [contextMessage]);
-    const contextMessageText = contextMessage?.content.trim() ?? '';
+    const contextMessageText = contextMessage?.decryption_error ? '' : contextMessage?.content.trim() ?? '';
     const contextMessageHasText = Boolean(contextMessageText);
     const contextMessageIsOwn = Boolean(contextMessage && contextMessage.from_id === currentUserId);
     const contextMessageIsReal = Boolean(contextMessage && contextMessage.id > 0 && contextMessage.id < optimisticMessageFloor);
@@ -219,7 +219,9 @@ export const ChatMessageList = ({
         const canSelect = isOwn && actionsEnabled && message.id > 0 && message.id < 10000000;
         const ownActionsCount = isOwn && actionsEnabled ? 2 : 0;
         const messageActionsCount = actionsEnabled && message.id > 0 && message.id < optimisticMessageFloor ? 3 : 0;
-        const copyActionsCount = Number(Boolean(message.content.trim())) + Number(Boolean(firstUrl(message.content || '')));
+        const copyActionsCount = message.decryption_error
+            ? 0
+            : Number(Boolean(message.content.trim())) + Number(Boolean(firstUrl(message.content || '')));
         const actionCount = ownActionsCount + messageActionsCount + copyActionsCount + Number(canSelect);
 
         if (actionCount === 0) {

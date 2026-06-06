@@ -49,6 +49,10 @@ func handleWebSocketSendMessage(ctx context.Context, userID uint, rawPayload jso
 		Attachments            []services.MessageAttachmentInput `json:"attachments"`
 		ReplyToMessageID       *uint                             `json:"replyToMessageId"`
 		ReplyToMessageIDLegacy *uint                             `json:"reply_to_message_id"`
+		EncryptionVersion      int                               `json:"encryption_version"`
+		EncryptionVersionCamel int                               `json:"encryptionVersion"`
+		Ciphertext             string                            `json:"ciphertext"`
+		Nonce                  string                            `json:"nonce"`
 	}
 
 	if err := json.Unmarshal(rawPayload, &payload); err != nil {
@@ -72,7 +76,7 @@ func handleWebSocketSendMessage(ctx context.Context, userID uint, rawPayload jso
 		replyToMessageID = payload.ReplyToMessageIDLegacy
 	}
 
-	fullMessage, err := services.SendMessage(dbInstance, userID, payload.ToID, payload.Content, attachments, replyToMessageID)
+	fullMessage, err := services.SendMessage(dbInstance, userID, payload.ToID, payload.Content, attachments, replyToMessageID, requestEncryption(payload.EncryptionVersion, payload.EncryptionVersionCamel, payload.Ciphertext, payload.Nonce))
 	if errors.Is(err, services.ErrMessageContentRequired) {
 		log.Println("Invalid message data")
 		return
@@ -87,6 +91,10 @@ func handleWebSocketSendMessage(ctx context.Context, userID uint, rawPayload jso
 	}
 	if errors.Is(err, services.ErrMessageInvalidReply) {
 		sendWebSocketError(ctx, userID, "reply message must belong to this conversation")
+		return
+	}
+	if errors.Is(err, services.ErrMessageInvalidEncryption) {
+		sendWebSocketError(ctx, userID, "invalid encrypted message payload")
 		return
 	}
 	if err != nil {

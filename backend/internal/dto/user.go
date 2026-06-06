@@ -34,8 +34,9 @@ type UpdateUserRequest struct {
 }
 
 type ChangePasswordRequest struct {
-	CurrentPassword string `json:"current_password" binding:"required"`
-	NewPassword     string `json:"new_password" binding:"required,min=6"`
+	CurrentPassword    string  `json:"current_password" binding:"required"`
+	NewPassword        string  `json:"new_password" binding:"required,min=6"`
+	EncryptedMasterKey *string `json:"encrypted_master_key"`
 }
 
 func ToUserResponse(user models.User) UserResponse {

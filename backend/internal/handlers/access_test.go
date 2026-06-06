@@ -41,6 +41,7 @@ func testDB(t *testing.T) *gorm.DB {
 		&models.User{},
 		&models.Message{},
 		&models.MessageAttachment{},
+		&models.EncryptedKeyBackup{},
 		&models.ConversationPin{},
 		&models.PinnedMessage{},
 		&models.Friendship{},

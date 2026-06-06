@@ -24,9 +24,13 @@ func ChangePassword(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		err := services.ChangeUserPassword(db, id, req.CurrentPassword, req.NewPassword)
+		err := services.ChangeUserPassword(db, id, req.CurrentPassword, req.NewPassword, req.EncryptedMasterKey)
 		if errors.Is(err, services.ErrCurrentPassword) {
 			c.JSON(401, gin.H{"error": "incorrect current password"})
+			return
+		}
+		if errors.Is(err, services.ErrEncryptedKeyBackupInvalid) {
+			c.JSON(400, gin.H{"error": "invalid encrypted master key backup"})
 			return
 		}
 		if errors.Is(err, gorm.ErrRecordNotFound) {

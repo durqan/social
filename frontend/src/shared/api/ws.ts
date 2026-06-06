@@ -2,6 +2,7 @@ import { request } from "@/shared/api/axios.js";
 import type { MessageAttachment } from "@/shared/types/domain.js";
 import type { CallType } from "@/features/call/types.js";
 import type { WsEvent } from "@/shared/types/ws.js";
+import type { EncryptedMessagePayload } from "@/crypto/encryptMessage.js";
 
 type WsHandler = (event: WsEvent) => void;
 type OutgoingEvent = {
@@ -21,6 +22,26 @@ const callEventTypes = new Set([
     'call:end',
     'call:reject',
 ]);
+
+function attachmentForTransport(attachment: MessageAttachment): MessageAttachment {
+    return {
+        id: attachment.id,
+        attachment_id: attachment.attachment_id,
+        message_id: attachment.message_id,
+        file_url: attachment.file_url,
+        file_type: attachment.file_type,
+        width: attachment.width,
+        height: attachment.height,
+        duration: attachment.duration,
+        duration_seconds: attachment.duration_seconds,
+        size: attachment.size,
+        encryption_version: attachment.encryption_version,
+        encrypted_file_key: attachment.encrypted_file_key,
+        file_nonce: attachment.file_nonce,
+        encrypted_metadata: attachment.encrypted_metadata,
+        created_at: attachment.created_at,
+    };
+}
 
 function websocketURL() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -97,14 +118,15 @@ export class WebSocketService {
         this.handlers.delete(handler);
     }
 
-    send(toId: number, content: string, attachments: MessageAttachment[] = [], replyToMessageId?: number) {
+    send(toId: number, content: string, attachments: MessageAttachment[] = [], replyToMessageId?: number, encryption?: EncryptedMessagePayload) {
         this.sendEvent({
             type: 'message:send',
             payload: {
                 to_id: toId,
                 content,
-                attachments,
+                attachments: attachments.map(attachmentForTransport),
                 replyToMessageId,
+                ...(encryption || {}),
             },
         });
     }

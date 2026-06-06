@@ -937,7 +937,7 @@ export default function ChatScreen({ route }: Props) {
     bar.measure((x, y, width, height, pageX) => {
       const relX = (e.nativeEvent as any).pageX - pageX;
       const pct = width > 0 ? Math.max(0, Math.min(1, relX / width)) : 0;
-      void seekPreview(pct);
+      seekPreview(pct).catch(() => undefined);
     });
   }
 
@@ -1477,6 +1477,12 @@ function MessageBubble({
   playingVoiceUrl: string | null;
   onLongPress: () => void;
 }) {
+  const displayContent =
+    message.content ||
+    (message.encryption_version && message.encryption_version > 0
+      ? 'Не удалось расшифровать сообщение'
+      : '');
+
   return (
     <Pressable
       style={[styles.bubbleRow, outgoing && styles.bubbleRowOutgoing]}
@@ -1486,12 +1492,12 @@ function MessageBubble({
       <View
         style={[styles.bubble, outgoing ? styles.outgoing : styles.incoming]}
       >
-        {message.content ? (
+        {displayContent ? (
           <Text
             selectable
             style={[styles.messageText, outgoing && styles.outgoingText]}
           >
-            {linkParts(message.content).map((part, index) => {
+            {linkParts(displayContent).map((part, index) => {
               if (part.type === 'link' && part.href) {
                 return (
                   <Text
@@ -1515,6 +1521,27 @@ function MessageBubble({
         ) : null}
 
         {message.attachments?.map(attachment => {
+          if ((attachment.encryption_version ?? 0) > 0 || attachment.decryption_error) {
+            return (
+              <View
+                key={attachment.id ?? attachment.file_url}
+                style={[
+                  styles.attachmentDecryptError,
+                  outgoing && styles.attachmentDecryptErrorOutgoing,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.attachmentDecryptErrorText,
+                    outgoing && styles.attachmentDecryptErrorTextOutgoing,
+                  ]}
+                >
+                  Не удалось расшифровать вложение
+                </Text>
+              </View>
+            );
+          }
+
           const attachmentUrl = assetURL(attachment.file_url);
 
           if (attachment.file_type === 'voice') {
@@ -1763,6 +1790,23 @@ const styles = StyleSheet.create({
     height: 150,
     borderRadius: 10,
     backgroundColor: colors.surfaceMuted,
+  },
+  attachmentDecryptError: {
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    backgroundColor: '#fef2f2',
+  },
+  attachmentDecryptErrorOutgoing: {
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+  },
+  attachmentDecryptErrorText: {
+    color: colors.danger,
+    fontSize: 14,
+    fontStyle: 'italic',
+  },
+  attachmentDecryptErrorTextOutgoing: {
+    color: '#ffffff',
   },
   voiceAttachment: {
     minWidth: 220,

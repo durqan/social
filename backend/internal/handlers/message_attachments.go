@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"image"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -40,8 +42,42 @@ func UploadMessageImage(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		if file.Size > services.ChatImageMaxSize {
+		encryptedInput, encrypted, err := encryptedAttachmentInputFromForm(c)
+		if err != nil {
+			c.JSON(400, gin.H{"error": err.Error()})
+			return
+		}
+
+		maxSize := int64(services.ChatImageMaxSize)
+		if encrypted {
+			maxSize += services.MaxEncryptedAttachmentField
+		}
+		if file.Size > maxSize {
 			c.JSON(413, gin.H{"error": "image is too large"})
+			return
+		}
+		if encrypted {
+			if file.Size <= 0 {
+				c.JSON(400, gin.H{"error": "image is required"})
+				return
+			}
+			width, height, err := imageDimensionsFromForm(c)
+			if err != nil {
+				c.JSON(400, gin.H{"error": err.Error()})
+				return
+			}
+			attachment, ok := saveEncryptedMessageUpload(c, userID, file, "image", "image")
+			if !ok {
+				return
+			}
+			attachment.Width = width
+			attachment.Height = height
+			attachment.Size = file.Size
+			attachment.EncryptionVersion = encryptedInput.EncryptionVersion
+			attachment.EncryptedFileKey = encryptedInput.EncryptedFileKey
+			attachment.FileNonce = encryptedInput.FileNonce
+			attachment.EncryptedMetadata = encryptedInput.EncryptedMetadata
+			c.JSON(201, attachment)
 			return
 		}
 
@@ -136,8 +172,46 @@ func UploadMessageVoice(db *gorm.DB) gin.HandlerFunc {
 			c.JSON(400, gin.H{"error": "voice is required"})
 			return
 		}
-		if file.Size > services.ChatVoiceMaxSize {
+
+		encryptedInput, encrypted, err := encryptedAttachmentInputFromForm(c)
+		if err != nil {
+			c.JSON(400, gin.H{"error": err.Error()})
+			return
+		}
+
+		maxSize := int64(services.ChatVoiceMaxSize)
+		if encrypted {
+			maxSize += services.MaxEncryptedAttachmentField
+		}
+		if file.Size > maxSize {
 			c.JSON(413, gin.H{"error": "voice is too large"})
+			return
+		}
+		if encrypted {
+			durationSeconds, hasDuration := voiceDurationSecondsFromForm(c)
+			if !hasDuration {
+				c.JSON(400, gin.H{"error": "voice duration is required"})
+				return
+			}
+			durationSeconds, err = services.ValidateChatVoiceDurationSeconds(durationSeconds)
+			if err != nil {
+				c.JSON(400, gin.H{"error": err.Error()})
+				return
+			}
+
+			attachment, ok := saveEncryptedMessageUpload(c, userID, file, "voice", "voice")
+			if !ok {
+				return
+			}
+			attachment.AttachmentID = strings.TrimSuffix(filepath.Base(attachment.FileURL), filepath.Ext(filepath.Base(attachment.FileURL)))
+			attachment.Duration = durationSeconds
+			attachment.DurationSeconds = durationSeconds
+			attachment.Size = file.Size
+			attachment.EncryptionVersion = encryptedInput.EncryptionVersion
+			attachment.EncryptedFileKey = encryptedInput.EncryptedFileKey
+			attachment.FileNonce = encryptedInput.FileNonce
+			attachment.EncryptedMetadata = encryptedInput.EncryptedMetadata
+			c.JSON(201, attachment)
 			return
 		}
 
@@ -230,8 +304,46 @@ func UploadMessageVideoNote(db *gorm.DB) gin.HandlerFunc {
 			c.JSON(400, gin.H{"error": "video note is required"})
 			return
 		}
-		if file.Size > services.ChatVideoNoteMaxSize {
+
+		encryptedInput, encrypted, err := encryptedAttachmentInputFromForm(c)
+		if err != nil {
+			c.JSON(400, gin.H{"error": err.Error()})
+			return
+		}
+
+		maxSize := int64(services.ChatVideoNoteMaxSize)
+		if encrypted {
+			maxSize += services.MaxEncryptedAttachmentField
+		}
+		if file.Size > maxSize {
 			c.JSON(413, gin.H{"error": "video note is too large"})
+			return
+		}
+		if encrypted {
+			durationSeconds, hasDuration := videoNoteDurationSecondsFromForm(c)
+			if !hasDuration {
+				c.JSON(400, gin.H{"error": "video note duration is required"})
+				return
+			}
+			durationSeconds, err = services.ValidateChatVideoNoteDurationSeconds(durationSeconds)
+			if err != nil {
+				c.JSON(400, gin.H{"error": err.Error()})
+				return
+			}
+
+			attachment, ok := saveEncryptedMessageUpload(c, userID, file, "video note", "video_note")
+			if !ok {
+				return
+			}
+			attachment.AttachmentID = strings.TrimSuffix(filepath.Base(attachment.FileURL), filepath.Ext(filepath.Base(attachment.FileURL)))
+			attachment.Duration = durationSeconds
+			attachment.DurationSeconds = durationSeconds
+			attachment.Size = file.Size
+			attachment.EncryptionVersion = encryptedInput.EncryptionVersion
+			attachment.EncryptedFileKey = encryptedInput.EncryptedFileKey
+			attachment.FileNonce = encryptedInput.FileNonce
+			attachment.EncryptedMetadata = encryptedInput.EncryptedMetadata
+			c.JSON(201, attachment)
 			return
 		}
 
@@ -315,6 +427,89 @@ func videoNoteDurationSecondsFromForm(c *gin.Context) (int, bool) {
 		}
 	}
 	return 0, false
+}
+
+func encryptedAttachmentInputFromForm(c *gin.Context) (services.MessageAttachmentInput, bool, error) {
+	versionValue := strings.TrimSpace(c.PostForm("encryption_version"))
+	encryptedFileKey := strings.TrimSpace(c.PostForm("encrypted_file_key"))
+	fileNonce := strings.TrimSpace(c.PostForm("file_nonce"))
+	encryptedMetadata := strings.TrimSpace(c.PostForm("encrypted_metadata"))
+
+	enabled := versionValue != "" || encryptedFileKey != "" || fileNonce != "" || encryptedMetadata != ""
+	if !enabled {
+		return services.MessageAttachmentInput{}, false, nil
+	}
+
+	version, err := strconv.Atoi(versionValue)
+	if err != nil || version != 1 || encryptedFileKey == "" || fileNonce == "" || encryptedMetadata == "" {
+		return services.MessageAttachmentInput{}, false, errors.New("invalid encrypted attachment metadata")
+	}
+	if len(encryptedFileKey) > services.MaxEncryptedAttachmentField ||
+		len(fileNonce) > 256 ||
+		len(encryptedMetadata) > services.MaxEncryptedAttachmentField {
+		return services.MessageAttachmentInput{}, false, errors.New("encrypted attachment metadata is too large")
+	}
+
+	return services.MessageAttachmentInput{
+		EncryptionVersion: version,
+		EncryptedFileKey:  encryptedFileKey,
+		FileNonce:         fileNonce,
+		EncryptedMetadata: encryptedMetadata,
+	}, true, nil
+}
+
+func imageDimensionsFromForm(c *gin.Context) (int, int, error) {
+	width, err := positiveIntFromForm(c, "width")
+	if err != nil {
+		return 0, 0, errors.New("invalid encrypted attachment metadata")
+	}
+	height, err := positiveIntFromForm(c, "height")
+	if err != nil {
+		return 0, 0, errors.New("invalid encrypted attachment metadata")
+	}
+	return width, height, nil
+}
+
+func positiveIntFromForm(c *gin.Context, key string) (int, error) {
+	value, err := strconv.Atoi(strings.TrimSpace(c.PostForm(key)))
+	if err != nil || value <= 0 {
+		return 0, errors.New("invalid form value")
+	}
+	return value, nil
+}
+
+func saveEncryptedMessageUpload(c *gin.Context, userID uint, file *multipart.FileHeader, errorLabel string, fileType string) (services.MessageAttachmentInput, bool) {
+	src, err := file.Open()
+	if err != nil {
+		c.JSON(400, gin.H{"error": fmt.Sprintf("failed to read %s", errorLabel)})
+		return services.MessageAttachmentInput{}, false
+	}
+	defer src.Close()
+
+	key, err := storage.NewObjectKey(fmt.Sprintf("encrypted/user_%d", userID), ".bin")
+	if err != nil {
+		c.JSON(500, gin.H{"error": fmt.Sprintf("failed to create %s filename", errorLabel)})
+		return services.MessageAttachmentInput{}, false
+	}
+	filename := filepath.Base(key)
+
+	store, err := storage.Default()
+	if err != nil {
+		c.JSON(500, gin.H{"error": "failed to prepare upload storage"})
+		return services.MessageAttachmentInput{}, false
+	}
+
+	if err := store.Upload(c.Request.Context(), key, src, "application/octet-stream"); err != nil {
+		c.JSON(500, gin.H{"error": fmt.Sprintf("failed to save %s", errorLabel)})
+		return services.MessageAttachmentInput{}, false
+	}
+	services.RememberChatUploadOwner(filename, userID)
+
+	return services.MessageAttachmentInput{
+		FileURL:  services.PrivateUploadURL(filename),
+		FileType: fileType,
+		Size:     file.Size,
+	}, true
 }
 
 func GetUploadedMessageImage() gin.HandlerFunc {

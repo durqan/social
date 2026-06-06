@@ -5,12 +5,23 @@ export function messagePreviewText(message?: Message | null) {
         return 'Сообщение недоступно';
     }
 
+    if (message.decryption_error) {
+        return 'Не удалось расшифровать сообщение';
+    }
+
     const content = message.content?.trim();
     if (content) {
         return content.length > 80 ? `${content.slice(0, 77)}...` : content;
     }
 
+    if ((message.encryption_version ?? 0) > 0) {
+        return 'Зашифрованное сообщение';
+    }
+
     if (message.attachments?.length) {
+        if (message.attachments.some(attachment => attachment.decryption_error)) {
+            return 'Не удалось расшифровать вложение';
+        }
         if (message.attachments.some(attachment => attachment.file_type === 'video_note')) {
             return 'Видео-сообщение';
         }

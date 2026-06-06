@@ -22,6 +22,18 @@ import { getUploadErrorMessage } from "@/shared/api/errors.js";
 import { Avatar } from "@/shared/ui/Avatar.js";
 import { Icon } from "@/shared/ui/Icon.js";
 import { messageAuthorName, messagePreviewText } from "@/features/chat/lib/messagePreview.js";
+import { e2eeService } from "@/shared/api/e2eeService.js";
+import { encryptMessage, type EncryptedMessagePayload } from "@/crypto/encryptMessage.js";
+import {
+    encryptAttachmentForUpload,
+    fileFromDecryptedAttachment,
+    isEncryptedAttachment,
+    type AttachmentFileType,
+    type AttachmentPlainMetadata,
+    type EncryptedAttachmentFields,
+} from "@/crypto/attachment.js";
+import { getLocalE2EEKeyBundle, type LocalE2EEKeyBundle } from "@/crypto/masterKey.js";
+import { decryptMessageForDisplay, decryptMessagesForDisplay } from "@/features/chat/lib/e2eeMessageTransform.js";
 import {
     dataTransferHasFiles,
     dataTransferHasImages,
@@ -61,6 +73,15 @@ function attachmentsMatchOptimistic(pending: Message, received: Message) {
     });
 }
 
+function messagesMatchOptimistic(pending: Message, received: Message) {
+    const sameText = pending.content === received.content ||
+        Boolean(pending.ciphertext && pending.ciphertext === received.ciphertext);
+
+    return sameText &&
+        (pending.reply_to_message_id ?? null) === (received.reply_to_message_id ?? null) &&
+        attachmentsMatchOptimistic(pending, received);
+}
+
 function pinnedMessageText(message: Message) {
     const content = message.content?.trim();
     if (content) {
@@ -72,6 +93,102 @@ function pinnedMessageText(message: Message) {
     }
 
     return messagePreviewText(message);
+}
+
+async function imageDimensions(file: File): Promise<{ width: number; height: number }> {
+    const bitmap = await createImageBitmap(file);
+    try {
+        return {
+            width: bitmap.width,
+            height: bitmap.height,
+        };
+    } finally {
+        bitmap.close();
+    }
+}
+
+function withDecryptedAttachmentPreview(
+    attachment: MessageAttachment,
+    file: File,
+    metadata: AttachmentPlainMetadata,
+    fields: EncryptedAttachmentFields,
+): MessageAttachment {
+    return {
+        ...attachment,
+        ...fields,
+        decrypted_file_url: URL.createObjectURL(file),
+        original_mime_type: metadata.mimeType,
+        original_filename: metadata.filename,
+        original_size: metadata.size,
+        width: attachment.width ?? metadata.width,
+        height: attachment.height ?? metadata.height,
+        duration_seconds: attachment.duration_seconds ?? metadata.durationSeconds,
+        duration: attachment.duration ?? metadata.durationSeconds,
+        decryption_error: false,
+    };
+}
+
+function attachmentForTransport(attachment: MessageAttachment): MessageAttachment {
+    return {
+        id: attachment.id,
+        attachment_id: attachment.attachment_id,
+        message_id: attachment.message_id,
+        file_url: attachment.file_url,
+        file_type: attachment.file_type,
+        width: attachment.width,
+        height: attachment.height,
+        duration: attachment.duration,
+        duration_seconds: attachment.duration_seconds,
+        size: attachment.size,
+        encryption_version: attachment.encryption_version,
+        encrypted_file_key: attachment.encrypted_file_key,
+        file_nonce: attachment.file_nonce,
+        encrypted_metadata: attachment.encrypted_metadata,
+        created_at: attachment.created_at,
+    };
+}
+
+async function fileForForwardAttachment(attachment: MessageAttachment): Promise<File> {
+    if (attachment.decrypted_file_url && !attachment.decryption_error) {
+        return fileFromDecryptedAttachment(attachment);
+    }
+
+    if (attachment.decryption_error) {
+        throw new Error('Attachment is not decrypted');
+    }
+
+    const response = await fetch(attachment.file_url, {
+        credentials: 'include',
+    });
+    if (!response.ok) {
+        throw new Error('Failed to load attachment');
+    }
+    const blob = await response.blob();
+    const type = attachment.original_mime_type || blob.type || fallbackMimeType(attachment.file_type);
+    return new File([blob], attachment.original_filename || fallbackAttachmentFilename(attachment.file_type), {
+        type,
+        lastModified: Date.now(),
+    });
+}
+
+function fallbackMimeType(fileType: AttachmentFileType) {
+    if (fileType === 'voice') {
+        return 'audio/webm';
+    }
+    if (fileType === 'video_note') {
+        return 'video/webm';
+    }
+    return 'image/jpeg';
+}
+
+function fallbackAttachmentFilename(fileType: AttachmentFileType) {
+    if (fileType === 'voice') {
+        return 'voice-message.webm';
+    }
+    if (fileType === 'video_note') {
+        return 'video-note.webm';
+    }
+    return 'image.jpg';
 }
 
 function PinnedMessageBanner({
@@ -130,6 +247,19 @@ function Chat() {
     const wsService = useWebSocket();
     const { status: callStatus, startCall, startVideoCall } = useAudioCall();
     const [recipient, setRecipient] = useState<User | null>(null);
+    const [e2eeState, setE2eeState] = useState<{
+        loading: boolean;
+        selfEnabled: boolean;
+        recipientEnabled: boolean;
+        recipientPublicKey: string;
+        localKey: LocalE2EEKeyBundle | null;
+    }>({
+        loading: true,
+        selfEnabled: false,
+        recipientEnabled: false,
+        recipientPublicKey: '',
+        localKey: null,
+    });
     const [newMessage, setNewMessage] = useState('');
     const [uploadError, setUploadError] = useState('');
     const [sendStatus, setSendStatus] = useState('');
@@ -144,6 +274,10 @@ function Chat() {
     const [pinnedMessage, setPinnedMessage] = useState<PinnedMessage | null>(null);
     const [scrollToMessageRequest, setScrollToMessageRequest] = useState<{ messageId: number; requestId: number } | null>(null);
     const dragDepthRef = useRef(0);
+
+    const transformChatMessages = useCallback((items: Message[]) => (
+        decryptMessagesForDisplay(items, currentUser?.id, e2eeState.localKey)
+    ), [currentUser?.id, e2eeState.localKey]);
 
     const {
         messages,
@@ -163,12 +297,153 @@ function Chat() {
         applyMessageUpdate,
         deleteMessage,
         markAsRead,
-    } = useChatMessages(userId, currentUser?.id);
+    } = useChatMessages(userId, currentUser?.id, transformChatMessages);
 
     const { otherTyping, setOtherTyping, handleTyping } = useChatTyping(Number(userId));
     const { selectionMode, selectedMessages, toggleSelect, enterSelectionMode, exitSelectionMode } = useChatSelection();
     const { messagesEndRef, handleScroll } = useChatScroll([messages]);
     const { online } = usePresence(recipient?.id);
+    const e2eeReady = Boolean(
+        currentUser?.id &&
+        e2eeState.selfEnabled &&
+        e2eeState.recipientEnabled &&
+        e2eeState.recipientPublicKey &&
+        e2eeState.localKey
+    );
+
+    const decryptIncomingMessage = useCallback(async (message: Message) => {
+        if (!currentUser?.id || !e2eeState.localKey) {
+            const [fallback] = await decryptMessagesForDisplay([message], currentUser?.id, e2eeState.localKey);
+            return fallback || message;
+        }
+        return decryptMessageForDisplay(message, currentUser.id, e2eeState.localKey);
+    }, [currentUser?.id, e2eeState.localKey]);
+
+    const encryptContentForRecipient = useCallback(async (
+        content: string,
+        recipientId: number,
+        recipientPublicKey?: string,
+    ): Promise<EncryptedMessagePayload | undefined> => {
+        if (!content) {
+            return undefined;
+        }
+        if (!currentUser?.id || !e2eeState.localKey || !e2eeState.selfEnabled) {
+            return undefined;
+        }
+
+        let publicKey = recipientPublicKey;
+        if (!publicKey) {
+            const status = await e2eeService.getStatus(recipientId);
+            if (!status.enabled || !status.public_key) {
+                throw new Error('Recipient E2EE is not enabled');
+            }
+            publicKey = status.public_key;
+        }
+
+        return encryptMessage({
+            plaintext: content,
+            senderUserId: currentUser.id,
+            recipientUserId: recipientId,
+            senderBundle: e2eeState.localKey,
+            recipientPublicKeyBase64: publicKey,
+        });
+    }, [currentUser?.id, e2eeState.localKey, e2eeState.selfEnabled]);
+
+    const encryptCurrentChatContent = useCallback(async (content: string) => {
+        if (!content) {
+            return undefined;
+        }
+        if (e2eeState.loading) {
+            throw new Error('E2EE is not ready for this conversation');
+        }
+        if (e2eeState.selfEnabled && !e2eeReady) {
+            throw new Error('E2EE is not ready for this conversation');
+        }
+        if (!e2eeReady) {
+            return undefined;
+        }
+        return encryptContentForRecipient(content, Number(userId), e2eeState.recipientPublicKey);
+    }, [e2eeReady, e2eeState.loading, e2eeState.recipientPublicKey, e2eeState.selfEnabled, encryptContentForRecipient, userId]);
+
+    const recipientPublicKeyForUser = useCallback(async (recipientId: number) => {
+        if (recipientId === Number(userId) && e2eeState.recipientPublicKey) {
+            return e2eeState.recipientPublicKey;
+        }
+
+        const status = await e2eeService.getStatus(recipientId);
+        if (!status.enabled || !status.public_key) {
+            throw new Error('Recipient E2EE is not enabled');
+        }
+        return status.public_key;
+    }, [e2eeState.recipientPublicKey, userId]);
+
+    const encryptAndUploadAttachment = useCallback(async (
+        file: File,
+        fileType: AttachmentFileType,
+        recipientId: number,
+        options: {
+            width?: number;
+            height?: number;
+            durationSeconds?: number;
+        } = {},
+    ): Promise<MessageAttachment> => {
+        if (!currentUser?.id || !e2eeState.localKey) {
+            throw new Error('E2EE is not ready for this conversation');
+        }
+
+        let width = options.width;
+        let height = options.height;
+        if (fileType === 'image' && (!width || !height)) {
+            const dimensions = await imageDimensions(file);
+            width = dimensions.width;
+            height = dimensions.height;
+        }
+
+        const recipientPublicKey = await recipientPublicKeyForUser(recipientId);
+        const encrypted = await encryptAttachmentForUpload({
+            file,
+            fileType,
+            senderUserId: currentUser.id,
+            recipientUserId: recipientId,
+            senderBundle: e2eeState.localKey,
+            recipientPublicKeyBase64: recipientPublicKey,
+            width,
+            height,
+            durationSeconds: options.durationSeconds,
+        });
+
+        if (fileType === 'voice') {
+            const attachment = await messageService.uploadVoice(encrypted.encryptedFile, options.durationSeconds || 0, encrypted.fields);
+            return withDecryptedAttachmentPreview(attachment, file, encrypted.metadata, encrypted.fields);
+        }
+        if (fileType === 'video_note') {
+            const attachment = await messageService.uploadVideoNote(encrypted.encryptedFile, options.durationSeconds || 0, encrypted.fields);
+            return withDecryptedAttachmentPreview(attachment, file, encrypted.metadata, encrypted.fields);
+        }
+
+        const attachment = await messageService.uploadImage(encrypted.encryptedFile, {
+            ...encrypted.fields,
+            width,
+            height,
+        });
+        return withDecryptedAttachmentPreview(attachment, file, encrypted.metadata, encrypted.fields);
+    }, [currentUser?.id, e2eeState.localKey, recipientPublicKeyForUser]);
+
+    const uploadForwardedAttachments = useCallback(async (
+        attachments: MessageAttachment[],
+        recipientId: number,
+    ): Promise<MessageAttachment[]> => {
+        const uploaded: MessageAttachment[] = [];
+        for (const attachment of attachments) {
+            const file = await fileForForwardAttachment(attachment);
+            uploaded.push(await encryptAndUploadAttachment(file, attachment.file_type, recipientId, {
+                width: attachment.width,
+                height: attachment.height,
+                durationSeconds: attachment.duration_seconds ?? attachment.duration,
+            }));
+        }
+        return uploaded;
+    }, [encryptAndUploadAttachment]);
 
     const handleSocketMessageDeleted = useCallback((messageId: number) => {
         setMessages(prev => prev.filter(message => message.id !== messageId));
@@ -176,17 +451,25 @@ function Chat() {
     }, [setMessages]);
 
     const handleSocketMessageUpdated = useCallback((message: Message) => {
-        applyMessageUpdate(message);
-        setPinnedMessage(prev => (
-            prev?.message_id === message.id
-                ? { ...prev, message }
-                : prev
-        ));
-    }, [applyMessageUpdate]);
+        void decryptIncomingMessage(message).then(displayMessage => {
+            applyMessageUpdate(displayMessage);
+            setPinnedMessage(prev => (
+                prev?.message_id === displayMessage.id
+                    ? { ...prev, message: displayMessage }
+                    : prev
+            ));
+        });
+    }, [applyMessageUpdate, decryptIncomingMessage]);
 
     const handleSocketMessageUnpinned = useCallback(() => {
         setPinnedMessage(null);
     }, []);
+
+    const handleSocketMessagePinned = useCallback((pin: PinnedMessage) => {
+        void decryptIncomingMessage(pin.message).then(message => {
+            setPinnedMessage({ ...pin, message });
+        });
+    }, [decryptIncomingMessage]);
 
     useChatWebSocket({
         userId,
@@ -195,31 +478,95 @@ function Chat() {
         onMessageDeleted: handleSocketMessageDeleted,
         onReadReceipt: markAsRead,
         onNewMessage: useCallback((msg) => {
-            setMessages(prev => {
-                const exists = prev.some(m => m.id === msg.id);
-                if (exists) return prev;
-                const optimisticIndex = prev.findIndex(m =>
-                    m.id >= optimisticMessageFloor &&
-                    m.from_id === msg.from_id &&
-                    m.to_id === msg.to_id &&
-                    m.content === msg.content &&
-                    (m.reply_to_message_id ?? null) === (msg.reply_to_message_id ?? null) &&
-                    attachmentsMatchOptimistic(m, msg)
-                );
-                if (optimisticIndex !== -1) {
-                    return prev.map((m, index) => index === optimisticIndex ? msg : m);
+            void decryptIncomingMessage(msg).then(displayMessage => {
+                setMessages(prev => {
+                    const exists = prev.some(m => m.id === msg.id);
+                    if (exists) return prev;
+                    const optimisticIndex = prev.findIndex(m =>
+                        m.id >= optimisticMessageFloor &&
+                        m.from_id === displayMessage.from_id &&
+                        m.to_id === displayMessage.to_id &&
+                        messagesMatchOptimistic(m, displayMessage)
+                    );
+                    if (optimisticIndex !== -1) {
+                        return prev.map((m, index) => index === optimisticIndex ? displayMessage : m);
+                    }
+                    return [...prev, displayMessage];
+                });
+                if (displayMessage.from_id === Number(userId)) {
+                    wsService.sendReadReceipt(Number(userId));
+                    markAsRead(Number(userId));
                 }
-                return [...prev, msg];
             });
-            if (msg.from_id === Number(userId)) {
-                wsService.sendReadReceipt(Number(userId));
-                markAsRead(Number(userId));
-            }
-        }, [markAsRead, setMessages, userId, wsService]),
+        }, [decryptIncomingMessage, markAsRead, setMessages, userId, wsService]),
         onMessageUpdated: handleSocketMessageUpdated,
-        onMessagePinned: setPinnedMessage,
+        onMessagePinned: handleSocketMessagePinned,
         onMessageUnpinned: handleSocketMessageUnpinned,
     });
+
+    useEffect(() => {
+        let cancelled = false;
+        setE2eeState(prev => ({ ...prev, loading: true }));
+
+        if (!currentUser?.id || !userId) {
+            setE2eeState({
+                loading: false,
+                selfEnabled: false,
+                recipientEnabled: false,
+                recipientPublicKey: '',
+                localKey: null,
+            });
+            return () => {
+                cancelled = true;
+            };
+        }
+
+        Promise.all([
+            e2eeService.getStatus(),
+            e2eeService.getStatus(Number(userId)),
+            getLocalE2EEKeyBundle(currentUser.id),
+        ]).then(([selfStatus, recipientStatus, localKey]) => {
+            if (cancelled) {
+                return;
+            }
+            setE2eeState({
+                loading: false,
+                selfEnabled: selfStatus.enabled,
+                recipientEnabled: recipientStatus.enabled,
+                recipientPublicKey: recipientStatus.public_key || '',
+                localKey,
+            });
+        }).catch(() => {
+            if (cancelled) {
+                return;
+            }
+            setE2eeState(prev => ({
+                ...prev,
+                loading: false,
+                recipientEnabled: false,
+                recipientPublicKey: '',
+            }));
+        });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [currentUser?.id, userId]);
+
+    useEffect(() => {
+        const refreshLocalKey = () => {
+            if (!currentUser?.id) {
+                return;
+            }
+
+            void getLocalE2EEKeyBundle(currentUser.id).then(localKey => {
+                setE2eeState(prev => ({ ...prev, localKey }));
+            });
+        };
+
+        window.addEventListener('e2ee:local-key-changed', refreshLocalKey);
+        return () => window.removeEventListener('e2ee:local-key-changed', refreshLocalKey);
+    }, [currentUser?.id]);
 
     useEffect(() => {
         loadInitial();
@@ -245,9 +592,13 @@ function Chat() {
         }
 
         messageService.getPinnedMessage(Number(userId))
-            .then(pin => {
+            .then(async pin => {
+                const nextPin = pin?.message ? {
+                    ...pin,
+                    message: await decryptIncomingMessage(pin.message),
+                } : pin;
                 if (!cancelled) {
-                    setPinnedMessage(pin);
+                    setPinnedMessage(nextPin);
                 }
             })
             .catch(error => {
@@ -259,7 +610,7 @@ function Chat() {
         return () => {
             cancelled = true;
         };
-    }, [userId]);
+    }, [decryptIncomingMessage, userId]);
 
     const uploadAttachments = useCallback(async (files: File[]): Promise<MessageAttachment[]> => {
         if (!files.length) return [];
@@ -267,18 +618,26 @@ function Chat() {
         if (files.length > 5) {
             throw new Error('Можно отправить максимум 5 картинок за раз');
         }
+        if (e2eeState.selfEnabled && !e2eeReady) {
+            throw new Error('E2EE is not ready for this conversation');
+        }
 
         const attachments: MessageAttachment[] = [];
 
         for (const [index, file] of files.entries()) {
             setSendStatus(`Подготавливаем изображение ${index + 1} из ${files.length}`);
             const compressedFile = await compressChatImage(file);
+            const dimensions = await imageDimensions(compressedFile);
             setSendStatus(`Загружаем изображение ${index + 1} из ${files.length}`);
-            attachments.push(await messageService.uploadImage(compressedFile));
+            if (e2eeReady) {
+                attachments.push(await encryptAndUploadAttachment(compressedFile, 'image', Number(userId), dimensions));
+            } else {
+                attachments.push(await messageService.uploadImage(compressedFile));
+            }
         }
 
         return attachments;
-    }, []);
+    }, [e2eeReady, e2eeState.selfEnabled, encryptAndUploadAttachment, userId]);
 
     const replyPreview = useMemo(() => {
         if (!replyToMessage) {
@@ -343,14 +702,18 @@ function Chat() {
         try {
             setUploadError('');
             setSendStatus(files.length ? 'Подготавливаем изображения' : 'Отправляем сообщение');
+            const encryption = await encryptCurrentChatContent(content);
             const attachments = await uploadAttachments(files);
             setSendStatus('Отправляем сообщение');
 
-            const tempMessage = {
+            const tempMessage: Message = {
                 id: Date.now(),
                 from_id: currentUser?.id || 0,
                 to_id: Number(userId),
                 content,
+                encryption_version: encryption?.encryption_version ?? 0,
+                ciphertext: encryption?.ciphertext,
+                nonce: encryption?.nonce,
                 created_at: new Date().toISOString(),
                 is_read: false,
                 reply_to_message_id: replyToMessage?.id ?? null,
@@ -364,18 +727,20 @@ function Chat() {
             };
 
             sendMessageToStore(content, tempMessage);
-            wsService.send(Number(userId), content, attachments, replyToMessage?.id);
+            wsService.send(Number(userId), encryption ? '' : content, attachments.map(attachmentForTransport), replyToMessage?.id, encryption);
             setNewMessage('');
             setReplyToMessage(null);
             return true;
         } catch (error) {
             console.error(error);
-            setUploadError(getUploadErrorMessage(error, 'Не удалось загрузить картинку'));
+            setUploadError(error instanceof Error && error.message === 'E2EE is not ready for this conversation'
+                ? 'Сквозное шифрование недоступно: восстановите ключ или попросите собеседника включить E2EE'
+                : getUploadErrorMessage(error, 'Не удалось отправить сообщение'));
             return false;
         } finally {
             setSendStatus('');
         }
-    }, [currentUser, newMessage, replyToMessage, sendMessageToStore, uploadAttachments, userId, wsService]);
+    }, [currentUser, encryptCurrentChatContent, newMessage, replyToMessage, sendMessageToStore, uploadAttachments, userId, wsService]);
 
     const sendVoiceMessage = useCallback(async (file: File, durationSeconds: number, text?: string) => {
         if (!(currentUser?.isEmailVerified ?? currentUser?.is_email_verified ?? false)) {
@@ -392,17 +757,25 @@ function Chat() {
         try {
             setUploadError('');
             setSendStatus('Загружаем голосовое сообщение');
-            const attachment = await messageService.uploadVoice(file, durationSeconds);
+            const content = (text ?? '').trim();
+            const encryption = await encryptCurrentChatContent(content);
+            if (e2eeState.selfEnabled && !e2eeReady) {
+                throw new Error('E2EE is not ready for this conversation');
+            }
+            const attachment = e2eeReady
+                ? await encryptAndUploadAttachment(file, 'voice', Number(userId), { durationSeconds })
+                : await messageService.uploadVoice(file, durationSeconds);
             const attachments = [attachment];
             setSendStatus('Отправляем голосовое сообщение');
-
-            const content = (text ?? '').trim();
 
             const tempMessage: Message = {
                 id: Date.now(),
                 from_id: currentUser?.id || 0,
                 to_id: Number(userId),
                 content,
+                encryption_version: encryption?.encryption_version ?? 0,
+                ciphertext: encryption?.ciphertext,
+                nonce: encryption?.nonce,
                 created_at: new Date().toISOString(),
                 is_read: false,
                 reply_to_message_id: replyToMessage?.id ?? null,
@@ -416,7 +789,7 @@ function Chat() {
             };
 
             sendMessageToStore(content, tempMessage);
-            wsService.send(Number(userId), content, attachments, replyToMessage?.id);
+            wsService.send(Number(userId), encryption ? '' : content, attachments.map(attachmentForTransport), replyToMessage?.id, encryption);
             if (content) {
                 setNewMessage('');
             }
@@ -424,12 +797,14 @@ function Chat() {
             return true;
         } catch (error) {
             console.error(error);
-            setUploadError(getUploadErrorMessage(error, 'Не удалось отправить голосовое сообщение'));
+            setUploadError(error instanceof Error && error.message === 'E2EE is not ready for this conversation'
+                ? 'Сквозное шифрование недоступно: восстановите ключ или попросите собеседника включить E2EE'
+                : getUploadErrorMessage(error, 'Не удалось отправить голосовое сообщение'));
             return false;
         } finally {
             setSendStatus('');
         }
-    }, [currentUser, newMessage, replyToMessage, sendMessageToStore, userId, wsService]);
+    }, [currentUser, e2eeReady, e2eeState.selfEnabled, encryptAndUploadAttachment, encryptCurrentChatContent, replyToMessage, sendMessageToStore, userId, wsService]);
 
     const sendVideoNoteMessage = useCallback(async (file: File, durationSeconds: number, text?: string) => {
         if (!(currentUser?.isEmailVerified ?? currentUser?.is_email_verified ?? false)) {
@@ -446,17 +821,25 @@ function Chat() {
         try {
             setUploadError('');
             setSendStatus('Загружаем кружок');
-            const attachment = await messageService.uploadVideoNote(file, durationSeconds);
+            const content = (text ?? '').trim();
+            const encryption = await encryptCurrentChatContent(content);
+            if (e2eeState.selfEnabled && !e2eeReady) {
+                throw new Error('E2EE is not ready for this conversation');
+            }
+            const attachment = e2eeReady
+                ? await encryptAndUploadAttachment(file, 'video_note', Number(userId), { durationSeconds })
+                : await messageService.uploadVideoNote(file, durationSeconds);
             const attachments = [attachment];
             setSendStatus('Отправляем кружок');
-
-            const content = (text ?? '').trim();
 
             const tempMessage: Message = {
                 id: Date.now(),
                 from_id: currentUser?.id || 0,
                 to_id: Number(userId),
                 content,
+                encryption_version: encryption?.encryption_version ?? 0,
+                ciphertext: encryption?.ciphertext,
+                nonce: encryption?.nonce,
                 created_at: new Date().toISOString(),
                 is_read: false,
                 reply_to_message_id: replyToMessage?.id ?? null,
@@ -470,7 +853,7 @@ function Chat() {
             };
 
             sendMessageToStore(content, tempMessage);
-            wsService.send(Number(userId), content, attachments, replyToMessage?.id);
+            wsService.send(Number(userId), encryption ? '' : content, attachments.map(attachmentForTransport), replyToMessage?.id, encryption);
             if (content) {
                 setNewMessage('');
             }
@@ -478,12 +861,14 @@ function Chat() {
             return true;
         } catch (error) {
             console.error(error);
-            setUploadError(getUploadErrorMessage(error, 'Не удалось отправить кружок'));
+            setUploadError(error instanceof Error && error.message === 'E2EE is not ready for this conversation'
+                ? 'Сквозное шифрование недоступно: восстановите ключ или попросите собеседника включить E2EE'
+                : getUploadErrorMessage(error, 'Не удалось отправить кружок'));
             return false;
         } finally {
             setSendStatus('');
         }
-    }, [currentUser, replyToMessage, sendMessageToStore, userId, wsService]);
+    }, [currentUser, e2eeReady, e2eeState.selfEnabled, encryptAndUploadAttachment, encryptCurrentChatContent, replyToMessage, sendMessageToStore, userId, wsService]);
 
     const openForwardDialog = useCallback((message: Message) => {
         setForwardMessage(message);
@@ -513,6 +898,59 @@ function Chat() {
         navigate(`/users/${profileUserId}`);
     }, [navigate]);
 
+    const saveEditedMessage = useCallback(async (messageId: number, content: string) => {
+        const existingMessage = messages.find(message => message.id === messageId);
+        const shouldEncryptEdit = Boolean(
+            existingMessage &&
+            ((existingMessage.encryption_version ?? 0) > 0 || e2eeState.selfEnabled)
+        );
+
+        if (shouldEncryptEdit && existingMessage) {
+            if (existingMessage.decryption_error) {
+                setUploadError('Нельзя редактировать сообщение, которое не удалось расшифровать');
+                return;
+            }
+            if (e2eeState.selfEnabled && !e2eeReady) {
+                setUploadError('Сквозное шифрование недоступно для редактирования сообщения');
+                return;
+            }
+
+            const recipientId = existingMessage.to_id === currentUser?.id
+                ? existingMessage.from_id
+                : existingMessage.to_id;
+            const recipientPublicKey = recipientId === Number(userId) ? e2eeState.recipientPublicKey : undefined;
+            const encryption = await encryptContentForRecipient(content.trim(), recipientId, recipientPublicKey);
+            if (!encryption) {
+                setUploadError('Сквозное шифрование недоступно для редактирования сообщения');
+                return;
+            }
+
+            const updated = await messageService.updateMessage(messageId, '', encryption);
+            const displayMessage = await decryptIncomingMessage(updated);
+            applyMessageUpdate(displayMessage);
+            setEditingMessageId(null);
+            setEditContent('');
+            return;
+        }
+
+        await updateMessage(messageId, content);
+        setEditingMessageId(null);
+        setEditContent('');
+    }, [
+        applyMessageUpdate,
+        currentUser?.id,
+        decryptIncomingMessage,
+        e2eeReady,
+        e2eeState.recipientPublicKey,
+        e2eeState.selfEnabled,
+        encryptContentForRecipient,
+        messages,
+        setEditContent,
+        setEditingMessageId,
+        updateMessage,
+        userId,
+    ]);
+
     const deleteChatMessage = useCallback(async (messageId: number) => {
         await deleteMessage(messageId);
         setPinnedMessage(prev => prev?.message_id === messageId ? null : prev);
@@ -525,7 +963,10 @@ function Chat() {
 
         try {
             const pin = await messageService.pinMessage(Number(userId), message.id);
-            setPinnedMessage(pin);
+            setPinnedMessage({
+                ...pin,
+                message: await decryptIncomingMessage(pin.message),
+            });
         } catch (error) {
             console.error(error);
             await dialog.alert({
@@ -535,7 +976,7 @@ function Chat() {
                 icon: 'warning',
             });
         }
-    }, [dialog, userId]);
+    }, [decryptIncomingMessage, dialog, userId]);
 
     const unpinChatMessage = useCallback(async () => {
         if (!userId) {
@@ -602,6 +1043,56 @@ function Chat() {
         setForwardError('');
 
         try {
+            const forwardAttachments = forwardMessage.attachments || [];
+            const hasEncryptedAttachments = forwardAttachments.some(attachment => isEncryptedAttachment(attachment));
+            const requiresClientEncryption = (forwardMessage.encryption_version ?? 0) > 0 || hasEncryptedAttachments;
+
+            if (requiresClientEncryption) {
+                const content = forwardMessage.content.trim();
+                const encryptedContentRequired = (forwardMessage.encryption_version ?? 0) > 0;
+                if (forwardMessage.decryption_error || (encryptedContentRequired && !content)) {
+                    setForwardError('Нельзя переслать сообщение, которое не удалось расшифровать');
+                    return;
+                }
+                if (forwardAttachments.some(attachment => attachment.decryption_error)) {
+                    setForwardError('Нельзя переслать вложение, которое не удалось расшифровать');
+                    return;
+                }
+
+                const encryptedMessages = [];
+                for (const recipientId of Array.from(forwardSelectedIds)) {
+                    const encryption = content
+                        ? await encryptContentForRecipient(content, recipientId)
+                        : undefined;
+                    if (encryptedContentRequired && !encryption) {
+                        throw new Error('E2EE is not ready for forward recipient');
+                    }
+                    const attachments = forwardAttachments.length
+                        ? await uploadForwardedAttachments(forwardAttachments, recipientId)
+                        : [];
+                    encryptedMessages.push({
+                        toUserId: recipientId,
+                        ...(encryption || {}),
+                        attachments: attachments.map(attachmentForTransport),
+                    });
+                }
+                const forwardedRaw = await messageService.forwardEncryptedMessage(forwardMessage.id, encryptedMessages);
+                const forwarded = await Promise.all(forwardedRaw.map(message => decryptIncomingMessage(message)));
+
+                setMessages(prev => {
+                    const existingIds = new Set(prev.map(message => message.id));
+                    const currentChatMessages = forwarded.filter(message =>
+                        !existingIds.has(message.id) &&
+                        (message.from_id === Number(userId) || message.to_id === Number(userId))
+                    );
+
+                    return currentChatMessages.length ? [...prev, ...currentChatMessages] : prev;
+                });
+                setForwardMessage(null);
+                setForwardSelectedIds(new Set());
+                return;
+            }
+
             const forwarded = await messageService.forwardMessage(forwardMessage.id, Array.from(forwardSelectedIds));
             setMessages(prev => {
                 const existingIds = new Set(prev.map(message => message.id));
@@ -616,7 +1107,7 @@ function Chat() {
             setForwardSelectedIds(new Set());
         } catch (error) {
             console.error(error);
-            setForwardError('Не удалось переслать сообщение');
+            setForwardError('Не удалось переслать сообщение. Проверьте, что у получателя включено E2EE.');
         } finally {
             setForwardLoading(false);
         }
@@ -748,6 +1239,16 @@ function Chat() {
                 onOpenRecipient={openUserProfile}
                 recipientLastSeenAt={recipient?.last_seen_at}
             />
+            {e2eeReady && (
+                <div className="border-b border-emerald-100 bg-emerald-50 px-3 py-2 text-center text-xs font-medium text-emerald-700 sm:px-4">
+                    Сообщения защищены сквозным шифрованием
+                </div>
+            )}
+            {!e2eeReady && e2eeState.selfEnabled && !e2eeState.loading && (
+                <div className="border-b border-amber-100 bg-amber-50 px-3 py-2 text-center text-xs font-medium text-amber-700 sm:px-4">
+                    Сквозное шифрование включено, но для этого диалога недоступно. Текстовые сообщения не будут отправлены без E2EE.
+                </div>
+            )}
             <PinnedMessageBanner
                 pinnedMessage={pinnedMessage}
                 onClick={scrollToPinnedMessage}
@@ -778,7 +1279,7 @@ function Chat() {
                 editingMessageId={editingMessageId}
                 editContent={editContent}
                 setEditContent={setEditContent}
-                onSaveEdit={updateMessage}
+                onSaveEdit={saveEditedMessage}
                 onCancelEdit={() => setEditingMessageId(null)}
                 hasMore={hasMore}
                 loadingMore={loadingMore}
