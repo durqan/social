@@ -12,6 +12,7 @@ import type {
   Message,
   MessageAttachment,
   PaginatedMessages,
+  PinnedMessage,
 } from './types';
 
 export type LocalChatImage = {
@@ -152,14 +153,52 @@ export const messageApi = {
     toId: number,
     content: string,
     attachments: MessageAttachment[] = [],
+    replyToMessageId?: number | null,
   ) {
     return apiRequest<Message>(`/messages/send/${toId}`, {
       method: 'POST',
       body: {
         content,
         attachments,
+        reply_to_message_id: replyToMessageId ?? null,
       },
     });
+  },
+
+  async forwardMessage(messageId: number, toUserIds: number[]) {
+    const response = await apiRequest<{ messages: Message[] }>(
+      `/messages/${messageId}/forward`,
+      {
+        method: 'POST',
+        body: { to_user_ids: toUserIds },
+      },
+    );
+    return response.messages || [];
+  },
+
+  async getPinnedMessage(conversationId: number) {
+    const response = await apiRequest<{ pinned_message: PinnedMessage | null }>(
+      `/conversations/${conversationId}/pinned-message`,
+    );
+    return response.pinned_message ?? null;
+  },
+
+  async pinMessage(conversationId: number, messageId: number) {
+    const response = await apiRequest<{ pinned_message: PinnedMessage | null }>(
+      `/conversations/${conversationId}/messages/${messageId}/pin`,
+      { method: 'POST' },
+    );
+    if (!response.pinned_message) {
+      throw new Error('Pinned message was not returned');
+    }
+    return response.pinned_message;
+  },
+
+  async unpinMessage(conversationId: number) {
+    await apiRequest<{ message: string }>(
+      `/conversations/${conversationId}/pinned-message`,
+      { method: 'DELETE' },
+    );
   },
 
   async updateMessage(messageId: number, content: string) {

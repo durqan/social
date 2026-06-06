@@ -193,13 +193,14 @@ class ChatSocket {
     this.ws = null;
   }
 
-  sendMessage(toId: number, content: string, attachments: MessageAttachment[]) {
+  sendMessage(toId: number, content: string, attachments: MessageAttachment[], replyToMessageId?: number | null) {
     this.sendEvent({
       type: 'message:send',
       payload: {
         to_id: toId,
         content,
         attachments,
+        reply_to_message_id: replyToMessageId ?? null,
       },
     });
   }

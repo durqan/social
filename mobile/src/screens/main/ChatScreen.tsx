@@ -33,6 +33,7 @@ import {
   CHAT_VOICE_MAX_DURATION_SECONDS,
   CHAT_VOICE_MIME_TYPE,
 } from '../../config/env';
+import { friendsApi } from '../../api/friends';
 import { getApiErrorMessage, getCookieHeader } from '../../api/http';
 import {
   messageApi,
@@ -41,7 +42,7 @@ import {
   type LocalChatImage,
   type LocalVoiceMessage,
 } from '../../api/messages';
-import type { Message, MessageAttachment } from '../../api/types';
+import type { Message, MessageAttachment, PinnedMessage, User } from '../../api/types';
 import { chatSocket, type WsEvent } from '../../api/ws';
 import { AppButton } from '../../components/AppButton';
 import {
@@ -123,6 +124,34 @@ function shouldApplyMessageUpdate(current: Message, updated: Message) {
   return updatedTime >= currentTime;
 }
 
+function messageAuthorName(message?: Message | null) {
+  if (!message) {
+    return 'Сообщение';
+  }
+  return message.from?.name || message.from?.email || 'Пользователь';
+}
+
+function messagePreviewText(message?: Message | null) {
+  if (!message) {
+    return 'Сообщение недоступно';
+  }
+  const content = message.content?.trim();
+  if (content) {
+    return content;
+  }
+  const attachment = message.attachments?.[0];
+  if (!attachment) {
+    return 'Сообщение';
+  }
+  if (attachment.file_type === 'voice') {
+    return 'Голосовое сообщение';
+  }
+  if (attachment.file_type === 'video_note') {
+    return 'Кружочек';
+  }
+  return 'Изображение';
+}
+
 function linkParts(value: string) {
   const parts: Array<{ type: 'text' | 'link'; value: string; href?: string }> =
     [];
@@ -192,6 +221,13 @@ export default function ChatScreen({ route }: Props) {
   const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
+  const [replyToMessage, setReplyToMessage] = useState<Message | null>(null);
+  const [pinnedMessage, setPinnedMessage] = useState<PinnedMessage | null>(null);
+  const [forwardMessage, setForwardMessage] = useState<Message | null>(null);
+  const [forwardFriends, setForwardFriends] = useState<User[]>([]);
+  const [forwardSelectedIds, setForwardSelectedIds] = useState<Set<number>>(new Set());
+  const [forwardLoading, setForwardLoading] = useState(false);
+  const [forwardError, setForwardError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -219,6 +255,7 @@ export default function ChatScreen({ route }: Props) {
   const pendingImagesRef = useRef<LocalChatImage[]>([]);
   const sendingRef = useRef<'uploading' | 'uploadingVoice' | 'sending' | null>(null);
   const editingMessageRef = useRef<Message | null>(null);
+  const replyToMessageRef = useRef<Message | null>(null);
   const recordingBusyRef = useRef<boolean>(false);
   const startVoiceRecordingRef = useRef<() => Promise<void> | void>(null as any);
   const stopVoiceRecordingRef = useRef<(send: boolean) => Promise<void> | void>(null as any);
@@ -261,6 +298,10 @@ export default function ChatScreen({ route }: Props) {
   useEffect(() => {
     editingMessageRef.current = editingMessage;
   }, [editingMessage]);
+
+  useEffect(() => {
+    replyToMessageRef.current = replyToMessage;
+  }, [replyToMessage]);
   useEffect(() => {
     recordingBusyRef.current = recordingBusy;
   }, [recordingBusy]);
@@ -446,10 +487,20 @@ export default function ChatScreen({ route }: Props) {
     }
   }, [scrollToLatestMessage]);
 
+  const loadPinnedMessage = useCallback(async () => {
+    try {
+      const pin = await messageApi.getPinnedMessage(otherUserId);
+      setPinnedMessage(pin);
+    } catch {
+      setPinnedMessage(null);
+    }
+  }, [otherUserId]);
+
   useFocusEffect(
     useCallback(() => {
       loadMessages().catch(() => undefined);
-    }, [loadMessages]),
+      loadPinnedMessage().catch(() => undefined);
+    }, [loadMessages, loadPinnedMessage]),
   );
 
   useEffect(() => {
@@ -544,6 +595,22 @@ export default function ChatScreen({ route }: Props) {
           ),
         );
         signalChatDataChanged();
+        return;
+      }
+
+      if (event.type === 'message_pinned') {
+        const payload = event.payload as { conversation_user_id?: number; pinned_message?: PinnedMessage | null };
+        if (!payload.conversation_user_id || payload.conversation_user_id === otherUserId) {
+          setPinnedMessage(payload.pinned_message ?? null);
+        }
+        return;
+      }
+
+      if (event.type === 'message_unpinned') {
+        const payload = event.payload as { conversation_user_id?: number };
+        if (!payload.conversation_user_id || payload.conversation_user_id === otherUserId) {
+          setPinnedMessage(null);
+        }
         return;
       }
 
@@ -803,9 +870,9 @@ export default function ChatScreen({ route }: Props) {
 
       setSending('sending');
       if (chatSocket.isConnected()) {
-        chatSocket.sendMessage(otherUserId, comment, attachments);
+        chatSocket.sendMessage(otherUserId, comment, attachments, replyToMessageRef.current?.id ?? null);
       } else {
-        const sent = await messageApi.sendMessage(otherUserId, comment, attachments);
+        const sent = await messageApi.sendMessage(otherUserId, comment, attachments, replyToMessageRef.current?.id ?? null);
         shouldScrollToEndRef.current = true;
         setMessages(previous => [...previous, sent]);
         signalChatDataChanged();
@@ -814,6 +881,7 @@ export default function ChatScreen({ route }: Props) {
         setInput('');
         setInputHeight(composerInputMinHeight);
       }
+      setReplyToMessage(null);
       return true;
     } catch (apiError) {
       setError(getApiErrorMessage(apiError));
@@ -1017,12 +1085,13 @@ export default function ChatScreen({ route }: Props) {
       };
 
       if (chatSocket.isConnected()) {
-        chatSocket.sendMessage(otherUserId, trimmed, attachments);
+        chatSocket.sendMessage(otherUserId, trimmed, attachments, replyToMessage?.id ?? null);
       } else {
         const sent = await messageApi.sendMessage(
           otherUserId,
           trimmed,
           attachments,
+          replyToMessage?.id ?? null,
         );
         draftRef.current = null;
         shouldScrollToEndRef.current = true;
@@ -1033,6 +1102,7 @@ export default function ChatScreen({ route }: Props) {
       setInput('');
       setInputHeight(composerInputMinHeight);
       setPendingImages([]);
+      setReplyToMessage(null);
     } catch (apiError) {
       const message = getApiErrorMessage(apiError);
       setError(
@@ -1129,6 +1199,7 @@ export default function ChatScreen({ route }: Props) {
   function startEditingMessage(message: Message) {
     setSelectedMessage(null);
     setPendingImages([]);
+    setReplyToMessage(null);
     setEditingMessage(message);
     setInput(message.content);
     setInputHeight(estimateComposerInputHeight(message.content));
@@ -1142,14 +1213,91 @@ export default function ChatScreen({ route }: Props) {
     setError(null);
   }
 
-  function openMessageActions(message: Message) {
-    const isOwnMessage = Boolean(user?.id && message.from_id === user.id);
-    const hasCopyAction = Boolean(message.content.trim() || firstUrl(message.content));
+  function startReply(message: Message) {
+    setSelectedMessage(null);
+    setEditingMessage(null);
+    setReplyToMessage(message);
+    setError(null);
+  }
 
-    if (!isOwnMessage && !hasCopyAction) {
+  async function pinSelectedMessage(message: Message) {
+    setSelectedMessage(null);
+    try {
+      const pin = await messageApi.pinMessage(otherUserId, message.id);
+      setPinnedMessage(pin);
+      setCopyNotice('Сообщение закреплено');
+    } catch (apiError) {
+      setError(getApiErrorMessage(apiError));
+    }
+  }
+
+  async function unpinCurrentMessage() {
+    try {
+      await messageApi.unpinMessage(otherUserId);
+      setPinnedMessage(null);
+      setCopyNotice('Закреп снят');
+    } catch (apiError) {
+      setError(getApiErrorMessage(apiError));
+    }
+  }
+
+  async function openForwardDialog(message: Message) {
+    setSelectedMessage(null);
+    setForwardMessage(message);
+    setForwardSelectedIds(new Set());
+    setForwardError(null);
+    setForwardLoading(true);
+    try {
+      const friends = await friendsApi.getFriendsList();
+      setForwardFriends(friends.filter(friend => Boolean(friend.id)));
+    } catch (apiError) {
+      setForwardError(getApiErrorMessage(apiError));
+    } finally {
+      setForwardLoading(false);
+    }
+  }
+
+  function toggleForwardRecipient(userId: number) {
+    setForwardSelectedIds(previous => {
+      const next = new Set(previous);
+      if (next.has(userId)) {
+        next.delete(userId);
+      } else {
+        next.add(userId);
+      }
+      return next;
+    });
+  }
+
+  async function submitForward() {
+    if (!forwardMessage || forwardSelectedIds.size === 0) {
+      setForwardError('Выберите хотя бы одного получателя');
       return;
     }
 
+    setForwardLoading(true);
+    setForwardError(null);
+    try {
+      const forwarded = await messageApi.forwardMessage(forwardMessage.id, Array.from(forwardSelectedIds));
+      const currentChatMessages = forwarded.filter(message =>
+        (message.from_id === user?.id && message.to_id === otherUserId) ||
+        (message.to_id === user?.id && message.from_id === otherUserId),
+      );
+      if (currentChatMessages.length) {
+        shouldScrollToEndRef.current = true;
+        setMessages(previous => [...previous, ...currentChatMessages]);
+      }
+      setForwardMessage(null);
+      setCopyNotice('Сообщение переслано');
+      signalChatDataChanged();
+    } catch (apiError) {
+      setForwardError(getApiErrorMessage(apiError));
+    } finally {
+      setForwardLoading(false);
+    }
+  }
+
+  function openMessageActions(message: Message) {
     setSelectedMessage(message);
   }
 
@@ -1172,6 +1320,30 @@ export default function ChatScreen({ route }: Props) {
           onPress={() => startVideoCall(otherUserId, route.params.name)}
         />
       </View>
+
+      {pinnedMessage?.message ? (
+        <Pressable
+          accessibilityRole="button"
+          style={styles.pinnedBar}
+          onPress={() => {
+            const targetId = pinnedMessage.message_id;
+            const index = messages.findIndex(message => message.id === targetId);
+            if (index >= 0) {
+              listRef.current?.scrollToIndex({ index, animated: true });
+            }
+          }}
+          onLongPress={unpinCurrentMessage}
+        >
+          <View style={styles.pinnedStripe} />
+          <View style={styles.pinnedInfo}>
+            <Text style={styles.pinnedTitle}>Закрепленное сообщение</Text>
+            <Text style={styles.pinnedText} numberOfLines={1}>
+              {messagePreviewText(pinnedMessage.message)}
+            </Text>
+          </View>
+          <Text style={styles.pinnedHint}>удерж. снять</Text>
+        </Pressable>
+      ) : null}
 
       {loading && !hasLoaded ? (
         <View style={styles.loading}>
@@ -1263,6 +1435,24 @@ export default function ChatScreen({ route }: Props) {
             accessibilityRole="button"
             style={styles.editingCancel}
             onPress={cancelEditingMessage}
+          >
+            <Text style={styles.editingCancelText}>×</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      {replyToMessage && !editingMessage ? (
+        <View style={styles.replyBar}>
+          <View style={styles.replyInfo}>
+            <Text style={styles.replyTitle}>Ответ {messageAuthorName(replyToMessage)}</Text>
+            <Text style={styles.replyText} numberOfLines={1}>
+              {messagePreviewText(replyToMessage)}
+            </Text>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            style={styles.editingCancel}
+            onPress={() => setReplyToMessage(null)}
           >
             <Text style={styles.editingCancelText}>×</Text>
           </Pressable>
@@ -1440,9 +1630,27 @@ export default function ChatScreen({ route }: Props) {
           deleteSelectedMessage(message).catch(() => undefined);
         }}
         onEdit={startEditingMessage}
+        onReply={startReply}
+        onForward={openForwardDialog}
+        onPin={message => {
+          pinSelectedMessage(message).catch(() => undefined);
+        }}
         isOwn={Boolean(
           selectedMessage && user?.id && selectedMessage.from_id === user.id,
         )}
+      />
+
+      <ForwardMessageModal
+        message={forwardMessage}
+        friends={forwardFriends}
+        selectedIds={forwardSelectedIds}
+        loading={forwardLoading}
+        error={forwardError}
+        onClose={() => setForwardMessage(null)}
+        onToggleRecipient={toggleForwardRecipient}
+        onSubmit={() => {
+          submitForward().catch(() => undefined);
+        }}
       />
     </Screen>
   );
@@ -1492,6 +1700,25 @@ function MessageBubble({
       <View
         style={[styles.bubble, outgoing ? styles.outgoing : styles.incoming]}
       >
+        {message.forwarded_from_message_id ? (
+          <Text style={[styles.forwardedLabel, outgoing && styles.forwardedLabelOutgoing]}>
+            {message.forwarded_from_user?.name
+              ? `↪ Переслано от ${message.forwarded_from_user.name}`
+              : '↪ Пересланное сообщение'}
+          </Text>
+        ) : null}
+
+        {message.reply_to_message_id ? (
+          <View style={[styles.replyPreview, outgoing && styles.replyPreviewOutgoing]}>
+            <Text style={[styles.replyPreviewAuthor, outgoing && styles.replyPreviewAuthorOutgoing]}>
+              {message.reply_to_message ? messageAuthorName(message.reply_to_message) : 'Ответ'}
+            </Text>
+            <Text style={[styles.replyPreviewText, outgoing && styles.replyPreviewTextOutgoing]} numberOfLines={1}>
+              {messagePreviewText(message.reply_to_message)}
+            </Text>
+          </View>
+        ) : null}
+
         {displayContent ? (
           <Text
             selectable
@@ -1591,6 +1818,23 @@ function MessageBubble({
             );
           }
 
+          if (attachment.file_type === 'video_note') {
+            return (
+              <Pressable
+                key={attachment.id ?? attachment.file_url}
+                accessibilityRole="button"
+                style={[styles.videoNoteAttachment, outgoing && styles.videoNoteAttachmentOutgoing]}
+                onPress={() => Linking.openURL(attachmentUrl).catch(() => undefined)}
+                onLongPress={onLongPress}
+              >
+                <Text style={styles.videoNoteIcon}>▶</Text>
+                <Text style={[styles.videoNoteText, outgoing && styles.videoNoteTextOutgoing]}>
+                  Кружочек · {formatDuration(attachment.duration_seconds ?? attachment.duration)}
+                </Text>
+              </Pressable>
+            );
+          }
+
           return (
             <Pressable
               key={attachment.id ?? attachment.file_url}
@@ -1628,6 +1872,9 @@ function MessageActionSheet({
   onCopyLink,
   onEdit,
   onDelete,
+  onReply,
+  onForward,
+  onPin,
 }: {
   message: Message | null;
   isOwn: boolean;
@@ -1636,6 +1883,9 @@ function MessageActionSheet({
   onCopyLink: (url: string) => void;
   onEdit: (message: Message) => void;
   onDelete: (message: Message) => void;
+  onReply: (message: Message) => void;
+  onForward: (message: Message) => void;
+  onPin: (message: Message) => void;
 }) {
   const trimmedText = message?.content.trim() ?? '';
   const messageUrl = message ? firstUrl(message.content) : '';
@@ -1651,6 +1901,39 @@ function MessageActionSheet({
         <Pressable style={styles.sheet} onPress={event => event.stopPropagation()}>
           <View style={styles.sheetHandle} />
           <Text style={styles.sheetTitle}>Сообщение</Text>
+
+          {message ? (
+            <Pressable
+              accessibilityRole="button"
+              style={styles.sheetAction}
+              onPress={() => onReply(message)}
+            >
+              <Text style={styles.sheetActionIcon}>R</Text>
+              <Text style={styles.sheetActionText}>Ответить</Text>
+            </Pressable>
+          ) : null}
+
+          {message ? (
+            <Pressable
+              accessibilityRole="button"
+              style={styles.sheetAction}
+              onPress={() => onForward(message)}
+            >
+              <Text style={styles.sheetActionIcon}>F</Text>
+              <Text style={styles.sheetActionText}>Переслать</Text>
+            </Pressable>
+          ) : null}
+
+          {message ? (
+            <Pressable
+              accessibilityRole="button"
+              style={styles.sheetAction}
+              onPress={() => onPin(message)}
+            >
+              <Text style={styles.sheetActionIcon}>P</Text>
+              <Text style={styles.sheetActionText}>Закрепить</Text>
+            </Pressable>
+          ) : null}
 
           {message && isOwn && trimmedText ? (
             <Pressable
@@ -1699,6 +1982,107 @@ function MessageActionSheet({
               <Text style={styles.sheetActionText}>Скопировать ссылку</Text>
             </Pressable>
           ) : null}
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+
+function ForwardMessageModal({
+  message,
+  friends,
+  selectedIds,
+  loading,
+  error,
+  onClose,
+  onToggleRecipient,
+  onSubmit,
+}: {
+  message: Message | null;
+  friends: User[];
+  selectedIds: Set<number>;
+  loading: boolean;
+  error: string | null;
+  onClose: () => void;
+  onToggleRecipient: (userId: number) => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <Modal
+      visible={Boolean(message)}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <Pressable style={styles.sheetBackdrop} onPress={onClose}>
+        <Pressable style={styles.sheet} onPress={event => event.stopPropagation()}>
+          <View style={styles.sheetHandle} />
+          <Text style={styles.sheetTitle}>Переслать сообщение</Text>
+          {message ? (
+            <View style={styles.forwardPreview}>
+              <Text style={styles.forwardPreviewText} numberOfLines={2}>
+                {messagePreviewText(message)}
+              </Text>
+            </View>
+          ) : null}
+
+          {error ? <Text style={styles.forwardError}>{error}</Text> : null}
+          {loading && friends.length === 0 ? (
+            <View style={styles.forwardLoading}>
+              <ActivityIndicator color={colors.accent} />
+              <Text style={styles.sendStatusText}>Загружаем друзей</Text>
+            </View>
+          ) : friends.length === 0 ? (
+            <Text style={styles.forwardEmpty}>Нет друзей для пересылки</Text>
+          ) : (
+            <View style={styles.forwardList}>
+              {friends.map(friend => {
+                const friendId = friend.id;
+                if (!friendId) {
+                  return null;
+                }
+                const selected = selectedIds.has(friendId);
+                return (
+                  <Pressable
+                    key={friendId}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: selected }}
+                    style={[styles.forwardRecipient, selected && styles.forwardRecipientSelected]}
+                    onPress={() => onToggleRecipient(friendId)}
+                  >
+                    <Text style={styles.forwardRecipientName} numberOfLines={1}>
+                      {friend.name || friend.email}
+                    </Text>
+                    <Text style={[styles.forwardCheck, selected && styles.forwardCheckSelected]}>
+                      {selected ? '✓' : '+'}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
+
+          <View style={styles.forwardActions}>
+            <Pressable
+              accessibilityRole="button"
+              style={[styles.forwardButton, styles.forwardCancelButton]}
+              onPress={onClose}
+              disabled={loading}
+            >
+              <Text style={styles.forwardCancelText}>Отмена</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              style={[styles.forwardButton, styles.forwardSubmitButton]}
+              onPress={onSubmit}
+              disabled={loading || selectedIds.size === 0}
+            >
+              <Text style={styles.forwardSubmitText}>
+                {loading ? 'Отправляем…' : 'Переслать'}
+              </Text>
+            </Pressable>
+          </View>
         </Pressable>
       </Pressable>
     </Modal>
@@ -1761,15 +2145,53 @@ const styles = StyleSheet.create({
     lineHeight: 21,
   },
   outgoingText: {
-    color: '#ffffff',
+    color: colors.white,
   },
   messageLink: {
     color: colors.accent,
     textDecorationLine: 'underline',
   },
   outgoingLink: {
-    color: '#ffffff',
+    color: colors.white,
     textDecorationLine: 'underline',
+  },
+  forwardedLabel: {
+    color: colors.accent,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '800',
+  },
+  forwardedLabelOutgoing: {
+    color: colors.white,
+  },
+  replyPreview: {
+    borderLeftWidth: 3,
+    borderLeftColor: colors.accent,
+    borderRadius: 10,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+    backgroundColor: colors.surfaceMuted,
+  },
+  replyPreviewOutgoing: {
+    borderLeftColor: colors.white,
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
+  },
+  replyPreviewAuthor: {
+    color: colors.accent,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '800',
+  },
+  replyPreviewAuthorOutgoing: {
+    color: colors.white,
+  },
+  replyPreviewText: {
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  replyPreviewTextOutgoing: {
+    color: 'rgba(248, 250, 252, 0.82)',
   },
   messageDate: {
     color: colors.soft,
@@ -1777,10 +2199,10 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
   },
   outgoingDate: {
-    color: 'rgba(255, 255, 255, 0.78)',
+    color: 'rgba(248, 250, 252, 0.78)',
   },
   outgoingStatus: {
-    color: 'rgba(255, 255, 255, 0.78)',
+    color: 'rgba(248, 250, 252, 0.78)',
     fontSize: 11,
     lineHeight: 14,
     alignSelf: 'flex-end',
@@ -1795,7 +2217,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 9,
-    backgroundColor: '#fef2f2',
+    backgroundColor: colors.dangerSoft,
   },
   attachmentDecryptErrorOutgoing: {
     backgroundColor: 'rgba(255, 255, 255, 0.18)',
@@ -1806,7 +2228,7 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   attachmentDecryptErrorTextOutgoing: {
-    color: '#ffffff',
+    color: colors.white,
   },
   voiceAttachment: {
     minWidth: 220,
@@ -1833,7 +2255,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accentStrong,
   },
   voicePlayText: {
-    color: '#ffffff',
+    color: colors.white,
     fontSize: 15,
     lineHeight: 18,
     fontWeight: '800',
@@ -1849,7 +2271,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   voiceTitleOutgoing: {
-    color: '#ffffff',
+    color: colors.white,
   },
   voiceDuration: {
     color: colors.muted,
@@ -1857,7 +2279,41 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   voiceDurationOutgoing: {
-    color: 'rgba(255, 255, 255, 0.78)',
+    color: 'rgba(248, 250, 252, 0.78)',
+  },
+  videoNoteAttachment: {
+    minWidth: 190,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: colors.surfaceMuted,
+  },
+  videoNoteAttachmentOutgoing: {
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+  },
+  videoNoteIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    overflow: 'hidden',
+    color: colors.white,
+    backgroundColor: colors.accent,
+    fontSize: 14,
+    lineHeight: 34,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  videoNoteText: {
+    color: colors.text,
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '700',
+  },
+  videoNoteTextOutgoing: {
+    color: colors.white,
   },
   previewStrip: {
     flexDirection: 'row',
@@ -1890,10 +2346,49 @@ const styles = StyleSheet.create({
     backgroundColor: colors.danger,
   },
   previewRemoveText: {
-    color: '#ffffff',
+    color: colors.white,
     fontSize: 18,
     lineHeight: 20,
     fontWeight: '800',
+  },
+  pinnedBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginHorizontal: 12,
+    marginTop: 10,
+    marginBottom: 2,
+    borderRadius: 16,
+    padding: 10,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  pinnedStripe: {
+    width: 4,
+    alignSelf: 'stretch',
+    borderRadius: 999,
+    backgroundColor: colors.accent,
+  },
+  pinnedInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+  pinnedTitle: {
+    color: colors.accent,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '800',
+  },
+  pinnedText: {
+    color: colors.text,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  pinnedHint: {
+    color: colors.soft,
+    fontSize: 11,
+    lineHeight: 14,
   },
   sendStatus: {
     flexDirection: 'row',
@@ -1906,6 +2401,33 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   sendStatusText: {
+    color: colors.muted,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  replyBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  replyInfo: {
+    flex: 1,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.accent,
+    paddingLeft: 10,
+  },
+  replyTitle: {
+    color: colors.accent,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '800',
+  },
+  replyText: {
     color: colors.muted,
     fontSize: 13,
     lineHeight: 18,
@@ -1959,7 +2481,7 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
-    backgroundColor: '#eff8ff',
+    backgroundColor: colors.surfaceMuted,
   },
   recordingDot: {
     width: 9,
@@ -1990,7 +2512,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   voiceButtonRecording: {
-    backgroundColor: '#dc2626',
+    backgroundColor: colors.danger,
     opacity: 1,
   },
   recordingCancel: {
@@ -2011,7 +2533,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
   },
   recordingSendText: {
-    color: '#ffffff',
+    color: colors.white,
     fontSize: 13,
     fontWeight: '800',
   },
@@ -2043,7 +2565,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accentStrong,
   },
   previewPlayText: {
-    color: '#ffffff',
+    color: colors.white,
     fontSize: 14,
     fontWeight: '700',
   },
@@ -2085,7 +2607,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   previewDeleteText: {
-    color: colors.danger || '#dc2626',
+    color: colors.danger || colors.danger,
     fontSize: 13,
     fontWeight: '600',
   },
@@ -2096,7 +2618,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
   },
   previewSendText: {
-    color: '#ffffff',
+    color: colors.white,
     fontSize: 13,
     fontWeight: '700',
   },
@@ -2143,7 +2665,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.16)',
   },
   lightboxCloseText: {
-    color: '#ffffff',
+    color: colors.white,
     fontSize: 30,
     lineHeight: 32,
     fontWeight: '600',
@@ -2151,7 +2673,7 @@ const styles = StyleSheet.create({
   sheetBackdrop: {
     flex: 1,
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(15, 23, 42, 0.35)',
+    backgroundColor: 'rgba(2, 6, 23, 0.58)',
   },
   sheet: {
     borderTopLeftRadius: 22,
@@ -2203,6 +2725,105 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 22,
     fontWeight: '600',
+  },
+  forwardPreview: {
+    borderRadius: 14,
+    padding: 10,
+    backgroundColor: colors.surfaceMuted,
+    marginBottom: 6,
+  },
+  forwardPreviewText: {
+    color: colors.text,
+    fontSize: 14,
+    lineHeight: 19,
+  },
+  forwardError: {
+    color: colors.danger,
+    fontSize: 13,
+    lineHeight: 18,
+    paddingHorizontal: 6,
+  },
+  forwardLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 12,
+  },
+  forwardEmpty: {
+    color: colors.muted,
+    fontSize: 14,
+    lineHeight: 20,
+    padding: 12,
+  },
+  forwardList: {
+    maxHeight: 320,
+    gap: 6,
+  },
+  forwardRecipient: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 12,
+    backgroundColor: colors.surfaceMuted,
+  },
+  forwardRecipientSelected: {
+    borderColor: colors.accent,
+  },
+  forwardRecipientName: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '700',
+  },
+  forwardCheck: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    overflow: 'hidden',
+    color: colors.muted,
+    backgroundColor: colors.surface,
+    fontSize: 17,
+    lineHeight: 28,
+    textAlign: 'center',
+    fontWeight: '900',
+  },
+  forwardCheckSelected: {
+    color: colors.white,
+    backgroundColor: colors.accent,
+  },
+  forwardActions: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingTop: 10,
+  },
+  forwardButton: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  forwardCancelButton: {
+    backgroundColor: colors.surfaceMuted,
+  },
+  forwardSubmitButton: {
+    backgroundColor: colors.accent,
+  },
+  forwardCancelText: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  forwardSubmitText: {
+    color: colors.white,
+    fontSize: 15,
+    fontWeight: '900',
   },
   sheetDangerAction: {
     marginTop: 2,
