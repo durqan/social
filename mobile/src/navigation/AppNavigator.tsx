@@ -7,12 +7,14 @@ import { enableScreens } from 'react-native-screens';
 
 import { useAppLifecycle } from '../context/AppLifecycleContext';
 import { useAuth } from '../context/AuthContext';
+import { useNotifications } from '../context/NotificationsContext';
 import { useUnread } from '../context/UnreadContext';
 import {
   flushPendingNotificationNavigation,
   navigationRef,
 } from '../notifications/navigation';
-import { colors } from '../theme/colors';
+import { useThemeColors } from '../theme/ThemeContext';
+import type { ThemeColors } from '../theme/themes';
 import LoginScreen from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
 import HomeScreen from '../screens/main/HomeScreen';
@@ -20,6 +22,7 @@ import ProfileScreen from '../screens/main/ProfileScreen';
 import FriendsScreen from '../screens/main/FriendsScreen';
 import ChatListScreen from '../screens/main/ChatListScreen';
 import ChatScreen from '../screens/main/ChatScreen';
+import NotificationsScreen from '../screens/main/NotificationsScreen';
 import SettingsScreen from '../screens/main/SettingsScreen';
 import UserProfileScreen from '../screens/main/UserProfileScreen';
 import UserSearchScreen from '../screens/main/UserSearchScreen';
@@ -38,6 +41,9 @@ const MainStack = createNativeStackNavigator<MainStackParamList>();
 const MainTabs = createBottomTabNavigator<MainTabParamList>();
 
 function AuthNavigator() {
+  const colors = useThemeColors();
+  const styles = createStyles(colors);
+
   return (
     <AuthStack.Navigator
       screenOptions={{
@@ -62,6 +68,9 @@ function AuthNavigator() {
 }
 
 function ChatNavigator() {
+  const colors = useThemeColors();
+  const styles = createStyles(colors);
+
   return (
     <ChatStack.Navigator
       screenOptions={{
@@ -86,6 +95,9 @@ function ChatNavigator() {
 }
 
 function MainNavigator() {
+  const colors = useThemeColors();
+  const styles = createStyles(colors);
+
   return (
     <MainStack.Navigator
       screenOptions={{
@@ -118,6 +130,9 @@ function MainNavigator() {
 
 function MainTabsNavigator() {
   const { unreadCount } = useUnread();
+  const { unreadNotificationCount } = useNotifications();
+  const colors = useThemeColors();
+  const styles = createStyles(colors);
 
   return (
     <MainTabs.Navigator
@@ -156,6 +171,16 @@ function MainTabsNavigator() {
         }}
       />
       <MainTabs.Screen
+        name="Notifications"
+        component={NotificationsScreen}
+        options={{
+          title: 'Уведомления',
+          tabBarLabel: 'Уведомления',
+          tabBarBadge:
+            unreadNotificationCount > 0 ? unreadNotificationCount : undefined,
+        }}
+      />
+      <MainTabs.Screen
         name="Settings"
         component={SettingsScreen}
         options={{ title: 'Настройки', tabBarLabel: 'Еще' }}
@@ -166,6 +191,8 @@ function MainTabsNavigator() {
 
 function ConnectionBanner() {
   const { networkConnected, networkReady } = useAppLifecycle();
+  const colors = useThemeColors();
+  const styles = createStyles(colors);
 
   if (!networkReady || networkConnected) {
     return null;
@@ -181,6 +208,9 @@ function ConnectionBanner() {
 }
 
 function LoadingScreen() {
+  const colors = useThemeColors();
+  const styles = createStyles(colors);
+
   return (
     <View style={styles.loading}>
       <ActivityIndicator color={colors.accent} size="large" />
@@ -191,6 +221,8 @@ function LoadingScreen() {
 
 export function AppNavigator() {
   const { user, initializing } = useAuth();
+  const colors = useThemeColors();
+  const styles = createStyles(colors);
 
   if (initializing) {
     return <LoadingScreen />;
@@ -209,7 +241,8 @@ export function AppNavigator() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: colors.background,
@@ -218,14 +251,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   connectionBanner: {
-    backgroundColor: '#fff7ed',
+    backgroundColor: colors.warningSoft,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#fed7aa',
+    borderBottomColor: colors.warning,
     paddingHorizontal: 16,
     paddingVertical: 8,
   },
   connectionText: {
-    color: '#9a3412',
+    color: colors.text,
     fontSize: 13,
     lineHeight: 18,
     textAlign: 'center',

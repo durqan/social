@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Icon } from '@/shared/ui/Icon.js';
 import { formatDuration, formatFileSize } from '@/shared/utils/uploadValidation.js';
+import { VideoNoteOrbit } from '@/features/chat/components/VideoNoteOrbit.js';
 
 interface PreviewVideoNoteMessageProps {
   src: string;
@@ -21,6 +22,8 @@ export const PreviewVideoNoteMessage = ({
 }: PreviewVideoNoteMessageProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(durationSeconds);
 
   const togglePlay = useCallback(async () => {
     const video = videoRef.current;
@@ -55,18 +58,36 @@ export const PreviewVideoNoteMessage = ({
       return;
     }
 
+    const onLoadedMetadata = () => {
+      if (video.duration && Number.isFinite(video.duration) && video.duration > 0) {
+        setDuration(video.duration);
+      }
+      if (video.readyState >= 1 && video.currentTime < 0.1) {
+        video.currentTime = 0.001;
+      }
+    };
+    const onTimeUpdate = () => setCurrentTime(video.currentTime);
     const onPlay = () => setIsPlaying(true);
     const onPause = () => setIsPlaying(false);
     const onEnded = () => {
       setIsPlaying(false);
+      setCurrentTime(0);
       video.currentTime = 0;
     };
 
+    video.addEventListener('loadedmetadata', onLoadedMetadata);
+    video.addEventListener('timeupdate', onTimeUpdate);
     video.addEventListener('play', onPlay);
     video.addEventListener('pause', onPause);
     video.addEventListener('ended', onEnded);
 
+    if (video.duration && Number.isFinite(video.duration) && video.duration > 0) {
+      setDuration(video.duration);
+    }
+
     return () => {
+      video.removeEventListener('loadedmetadata', onLoadedMetadata);
+      video.removeEventListener('timeupdate', onTimeUpdate);
       video.removeEventListener('play', onPlay);
       video.removeEventListener('pause', onPause);
       video.removeEventListener('ended', onEnded);
@@ -74,39 +95,44 @@ export const PreviewVideoNoteMessage = ({
     };
   }, [src]);
 
+  useEffect(() => {
+    setIsPlaying(false);
+    setCurrentTime(0);
+    setDuration(durationSeconds);
+  }, [durationSeconds, src]);
+
+  const progressPercent = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
+  const timeLabel = isPlaying && duration > 0
+    ? `${formatDuration(currentTime)} / ${formatDuration(duration)}`
+    : formatDuration(duration);
+  const sizeLabel = formatFileSize(sizeBytes);
+
   return (
-    <div className="mb-3 rounded-xl border border-gray-200 bg-gray-50 p-3 shadow-sm">
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={togglePlay}
+    <div className="video-note-preview mb-3">
+      <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
+        <VideoNoteOrbit
+          isPlaying={isPlaying}
+          progressPercent={progressPercent}
+          timeLabel={duration > 0 ? timeLabel : undefined}
+          controlIcon={isPlaying ? 'pause' : 'play'}
           disabled={sending}
-          className="group relative h-[150px] w-[150px] flex-shrink-0 overflow-hidden rounded-full bg-black shadow-sm outline-none ring-1 ring-black/5 disabled:opacity-60 sm:h-[180px] sm:w-[180px]"
-          aria-label={isPlaying ? 'Пауза' : 'Воспроизвести записанный кружок'}
+          onClick={() => void togglePlay()}
+          ariaLabel={isPlaying ? 'Пауза' : 'Воспроизвести записанный кружок'}
           title={isPlaying ? 'Пауза' : 'Воспроизвести записанный кружок'}
         >
           <video
             ref={videoRef}
             src={src}
-            className="h-full w-full object-cover"
             preload="metadata"
             playsInline
             data-video-note="true"
           />
-          <div className="pointer-events-none absolute inset-0 rounded-full ring-1 ring-inset ring-white/20" />
-          {!isPlaying && (
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/15">
-              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-sky-700 shadow-sm">
-                <Icon name="play" className="ml-0.5 h-4 w-4" filled />
-              </span>
-            </div>
-          )}
-        </button>
+        </VideoNoteOrbit>
 
-        <div className="min-w-0 flex-1">
-          <div className="text-sm font-medium text-gray-800">Видео-сообщение</div>
-          <div className="mt-1 text-xs text-gray-500">
-            {formatDuration(durationSeconds)} • {formatFileSize(sizeBytes)}
+        <div className="video-note-preview__panel min-w-0 flex-1">
+          <div className="text-sm font-semibold text-[var(--app-text-primary)]">Видео-сообщение</div>
+          <div className="mt-1 text-xs text-[var(--app-text-secondary)]">
+            {formatDuration(duration)} • {sizeLabel}
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             <button

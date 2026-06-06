@@ -133,6 +133,14 @@ const ChatMessageComponent = ({
     const imageAttachments = message.attachments?.filter(attachment => attachment.file_type === 'image' && !attachment.decryption_error) || [];
     const voiceAttachments = message.attachments?.filter(attachment => attachment.file_type === 'voice' && !attachment.decryption_error) || [];
     const videoNoteAttachments = message.attachments?.filter(attachment => attachment.file_type === 'video_note' && !attachment.decryption_error) || [];
+    const isPureVideoNoteMessage = videoNoteAttachments.length > 0
+        && !message.content
+        && !imageAttachments.length
+        && !voiceAttachments.length
+        && !failedAttachments.length
+        && !message.forwarded_from_message_id
+        && !message.reply_to_message_id;
+    const messageStatusLabel = isOwn ? (message.is_read ? '✓✓' : '✓') : undefined;
 
     const clearLongPressTimer = () => {
         if (longPressTimer.current) {
@@ -294,7 +302,9 @@ const ChatMessageComponent = ({
                         <div
                             data-chat-message-bubble-id={message.id}
                             onClick={handleMessageClick}
-                            className={`chat-message-bubble rounded-2xl px-3 py-2 transition-shadow sm:px-4 ${selectionMode ? canSelect ? 'cursor-pointer' : 'opacity-60' : ''} ${isContextActive ? 'shadow-2xl ring-2 ring-[var(--app-glass-border)]' : ''} ${isOwn ? 'rounded-br-md border border-[var(--app-message-own-border)] bg-[var(--app-message-own-bg)] text-[var(--app-message-own-text)]' : 'rounded-bl-md border border-[var(--app-message-other-border)] bg-[var(--app-message-other-bg)] text-[var(--app-message-other-text)]'}`}
+                            className={isPureVideoNoteMessage
+                                ? `chat-message-bubble video-note-message-bubble transition-shadow ${selectionMode ? canSelect ? 'cursor-pointer' : 'opacity-60' : ''} ${isContextActive ? 'rounded-full ring-2 ring-[var(--app-glass-border)]' : ''}`
+                                : `chat-message-bubble rounded-2xl px-3 py-2 transition-shadow sm:px-4 ${selectionMode ? canSelect ? 'cursor-pointer' : 'opacity-60' : ''} ${isContextActive ? 'shadow-2xl ring-2 ring-[var(--app-glass-border)]' : ''} ${isOwn ? 'rounded-br-md border border-[var(--app-message-own-border)] bg-[var(--app-message-own-bg)] text-[var(--app-message-own-text)]' : 'rounded-bl-md border border-[var(--app-message-other-border)] bg-[var(--app-message-other-bg)] text-[var(--app-message-other-text)]'}`}
                         >
                             {message.forwarded_from_message_id && (
                                 <div className={`mb-1 text-xs font-medium ${isOwn ? 'text-[var(--app-accent)]' : 'text-[var(--app-text-secondary)]'}`}>
@@ -345,11 +355,13 @@ const ChatMessageComponent = ({
 
                             {videoNoteAttachments.length ? (
                                 <div className={message.content || imageAttachments.length || voiceAttachments.length ? 'mb-2 space-y-2' : 'space-y-2'}>
-                                    {videoNoteAttachments.map(attachment => (
+                                    {videoNoteAttachments.map((attachment, index) => (
                                         <VideoNoteMessage
                                             key={attachment.id ?? attachment.file_url}
                                             attachment={attachment}
                                             isOwn={isOwn}
+                                            timestamp={isPureVideoNoteMessage && index === videoNoteAttachments.length - 1 ? formatTime(message.created_at) : undefined}
+                                            statusLabel={isPureVideoNoteMessage && index === videoNoteAttachments.length - 1 ? messageStatusLabel : undefined}
                                             selectionMode={selectionMode}
                                             canSelect={canSelect}
                                             onSelectMessage={onSelectMessage}
@@ -411,10 +423,12 @@ const ChatMessageComponent = ({
                                 </p>
                             )}
 
-                            <div className={`mt-1 text-xs ${isOwn ? 'text-right text-[var(--app-text-secondary)]' : 'text-left text-[var(--app-text-soft)]'}`}>
-                                {formatTime(message.created_at)}
-                                {isOwn && <span className="ml-1">{message.is_read ? '✓✓' : '✓'}</span>}
-                            </div>
+                            {!isPureVideoNoteMessage && (
+                                <div className={`mt-1 text-xs ${isOwn ? 'text-right text-[var(--app-text-secondary)]' : 'text-left text-[var(--app-text-soft)]'}`}>
+                                    {formatTime(message.created_at)}
+                                    {messageStatusLabel && <span className="ml-1">{messageStatusLabel}</span>}
+                                </div>
+                            )}
                         </div>
                     )}
 

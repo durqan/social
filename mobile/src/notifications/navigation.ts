@@ -47,14 +47,25 @@ function navigateNow(notification: MobileNotificationData) {
       });
       return;
     case 'friend_request':
+      navigationRef.navigate('MainTabs', {
+        screen: 'Friends',
+      });
+      return;
     case 'friend_accepted':
+      if (actorId) {
+        navigationRef.navigate('UserProfile', {
+          userId: actorId,
+          name: 'Профиль',
+        });
+        return;
+      }
       navigationRef.navigate('MainTabs', {
         screen: 'Friends',
       });
       return;
     default:
       navigationRef.navigate('MainTabs', {
-        screen: 'Home',
+        screen: 'Notifications',
       });
   }
 }

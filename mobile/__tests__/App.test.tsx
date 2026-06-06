@@ -27,6 +27,15 @@ jest.mock('@react-native-community/netinfo', () => ({
   },
 }));
 
+jest.mock('@react-native-async-storage/async-storage', () => ({
+  __esModule: true,
+  default: {
+    getItem: jest.fn(() => Promise.resolve(null)),
+    setItem: jest.fn(() => Promise.resolve()),
+    removeItem: jest.fn(() => Promise.resolve()),
+  },
+}));
+
 jest.mock('@react-native-firebase/messaging', () => {
   const mockMessaging = {
     AuthorizationStatus: {
@@ -53,6 +62,7 @@ jest.mock('@react-native-firebase/messaging', () => {
 
 jest.mock('react-native-image-picker', () => ({
   launchImageLibrary: jest.fn(),
+  launchCamera: jest.fn(),
 }));
 
 jest.mock('react-native-nitro-sound', () => ({

@@ -1,9 +1,37 @@
-import React, { useCallback, useEffect, type ReactNode } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
 
 import { useAuth } from './AuthContext';
 import { useUnread } from './UnreadContext';
+import {
+  notificationsApi,
+  type MarkNotificationsReadPayload,
+} from '../api/notifications';
+import { getApiErrorMessage } from '../api/http';
+import type { SocialNotification } from '../api/types';
 import { initializePushNotifications } from '../notifications/pushNotifications';
 import type { MobileNotificationData } from '../notifications/types';
+
+type NotificationsContextValue = {
+  notifications: SocialNotification[];
+  unreadNotificationCount: number;
+  loading: boolean;
+  error: string | null;
+  refreshNotifications: () => Promise<void>;
+  markAsRead: (notificationId: number) => Promise<void>;
+  markMatchingAsRead: (payload: MarkNotificationsReadPayload) => Promise<void>;
+};
+
+const NotificationsContext = createContext<NotificationsContextValue | undefined>(
+  undefined,
+);
 
 function isChatNotification(notification: MobileNotificationData) {
   return notification.type === 'message_received';
@@ -12,18 +40,83 @@ function isChatNotification(notification: MobileNotificationData) {
 export function NotificationsProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const { refreshUnreadCount, signalChatDataChanged } = useUnread();
+  const [notifications, setNotifications] = useState<SocialNotification[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const unreadNotificationCount = useMemo(
+    () => notifications.filter(notification => !notification.is_read).length,
+    [notifications],
+  );
+
+  const refreshNotifications = useCallback(async () => {
+    if (!user?.id) {
+      setNotifications([]);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      const nextNotifications = await notificationsApi.getNotifications();
+      setNotifications(Array.isArray(nextNotifications) ? nextNotifications : []);
+    } catch (apiError) {
+      setError(getApiErrorMessage(apiError));
+    } finally {
+      setLoading(false);
+    }
+  }, [user?.id]);
+
+  const markAsRead = useCallback(async (notificationId: number) => {
+    await notificationsApi.markAsRead(notificationId);
+    setNotifications(previous =>
+      previous.map(notification =>
+        notification.id === notificationId
+          ? { ...notification, is_read: true }
+          : notification,
+      ),
+    );
+  }, []);
+
+  const markMatchingAsRead = useCallback(
+    async (payload: MarkNotificationsReadPayload) => {
+      await notificationsApi.markMatchingAsRead(payload);
+      setNotifications(previous =>
+        previous.map(notification => {
+          const typeMatches =
+            payload.types.length === 0 ||
+            payload.types.includes(notification.type);
+          const actorMatches =
+            payload.actor_id === undefined ||
+            payload.actor_id === notification.actor_id;
+          const entityMatches =
+            payload.entity_id === undefined ||
+            payload.entity_id === notification.entity_id;
+
+          return typeMatches && actorMatches && entityMatches
+            ? { ...notification, is_read: true }
+            : notification;
+        }),
+      );
+    },
+    [],
+  );
 
   const handleNotification = useCallback(
     (notification: MobileNotificationData) => {
       if (isChatNotification(notification)) {
         signalChatDataChanged();
-        return;
       }
 
       refreshUnreadCount().catch(() => undefined);
+      refreshNotifications().catch(() => undefined);
     },
-    [refreshUnreadCount, signalChatDataChanged],
+    [refreshNotifications, refreshUnreadCount, signalChatDataChanged],
   );
+
+  useEffect(() => {
+    refreshNotifications().catch(() => undefined);
+  }, [refreshNotifications]);
 
   useEffect(() => {
     if (!user?.id) {
@@ -50,5 +143,38 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     };
   }, [handleNotification, user?.id]);
 
-  return <>{children}</>;
+  const value = useMemo(
+    () => ({
+      notifications,
+      unreadNotificationCount,
+      loading,
+      error,
+      refreshNotifications,
+      markAsRead,
+      markMatchingAsRead,
+    }),
+    [
+      error,
+      loading,
+      markAsRead,
+      markMatchingAsRead,
+      notifications,
+      refreshNotifications,
+      unreadNotificationCount,
+    ],
+  );
+
+  return (
+    <NotificationsContext.Provider value={value}>
+      {children}
+    </NotificationsContext.Provider>
+  );
+}
+
+export function useNotifications() {
+  const value = useContext(NotificationsContext);
+  if (!value) {
+    throw new Error('useNotifications must be used inside NotificationsProvider');
+  }
+  return value;
 }

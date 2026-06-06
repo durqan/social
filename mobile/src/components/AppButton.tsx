@@ -9,7 +9,8 @@ import {
   type ViewStyle,
 } from 'react-native';
 
-import { colors } from '../theme/colors';
+import { useThemeColors } from '../theme/ThemeContext';
+import type { ThemeColors } from '../theme/themes';
 
 type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost';
 
@@ -29,6 +30,8 @@ export function AppButton({
   ...props
 }: AppButtonProps) {
   const isDisabled = disabled || loading;
+  const colors = useThemeColors();
+  const styles = createStyles(colors);
 
   return (
     <Pressable
@@ -43,7 +46,9 @@ export function AppButton({
       ]}
       {...props}>
       {loading ? (
-        <ActivityIndicator color={variant === 'primary' ? '#ffffff' : colors.accent} />
+        <ActivityIndicator
+          color={variant === 'primary' ? colors.white : colors.accent}
+        />
       ) : (
         <Text style={[styles.text, styles[`${variant}Text`]]}>{title}</Text>
       )}
@@ -51,7 +56,8 @@ export function AppButton({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   base: {
     minHeight: 48,
     borderRadius: 12,
@@ -84,13 +90,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   primaryText: {
-    color: '#ffffff',
+    color: colors.white,
   },
   secondaryText: {
     color: colors.text,
   },
   dangerText: {
-    color: '#ffffff',
+    color: colors.white,
   },
   ghostText: {
     color: colors.accentStrong,

@@ -26,7 +26,9 @@ import {
   LoadingState,
 } from '../../components/Feedback';
 import { Screen } from '../../components/Screen';
-import { colors } from '../../theme/colors';
+import { useNotifications } from '../../context/NotificationsContext';
+import { useThemeColors } from '../../theme/ThemeContext';
+import type { ThemeColors } from '../../theme/themes';
 import type {
   MainStackParamList,
   MainTabParamList,
@@ -39,6 +41,9 @@ type FriendsNavigation = CompositeNavigationProp<
 
 export default function FriendsScreen() {
   const navigation = useNavigation<FriendsNavigation>();
+  const { markMatchingAsRead } = useNotifications();
+  const colors = useThemeColors();
+  const styles = createStyles(colors);
   const [friends, setFriends] = useState<User[]>([]);
   const [requests, setRequests] = useState<Friendship[]>([]);
   const [loading, setLoading] = useState(false);
@@ -67,14 +72,21 @@ export default function FriendsScreen() {
   useFocusEffect(
     useCallback(() => {
       load().catch(() => undefined);
-    }, [load]),
+      markMatchingAsRead({
+        types: ['friend_accepted'],
+      }).catch(() => undefined);
+    }, [load, markMatchingAsRead]),
   );
 
-  async function acceptRequest(friendshipId: number) {
-    setBusyId(friendshipId);
+  async function acceptRequest(request: Friendship) {
+    setBusyId(request.id);
     setError(null);
     try {
-      await friendsApi.acceptFriendRequest(friendshipId);
+      await friendsApi.acceptFriendRequest(request.id);
+      await markMatchingAsRead({
+        types: ['friend_request'],
+        actor_id: request.user_id,
+      }).catch(() => undefined);
       await load();
     } catch (apiError) {
       setError(getApiErrorMessage(apiError));
@@ -101,6 +113,10 @@ export default function FriendsScreen() {
     setError(null);
     try {
       await friendsApi.rejectFriendRequest(request.user_id);
+      await markMatchingAsRead({
+        types: ['friend_request'],
+        actor_id: request.user_id,
+      }).catch(() => undefined);
       await load();
     } catch (apiError) {
       setError(getApiErrorMessage(apiError));
@@ -174,7 +190,7 @@ export default function FriendsScreen() {
                       style={styles.requestUser}
                       onPress={() => request.user && openProfile(request.user)}
                     >
-                      <UserAvatar user={request.user} />
+                      <UserAvatar user={request.user} colors={colors} />
                       <View style={styles.userMeta}>
                         <Text style={styles.userName}>
                           {request.user?.name ||
@@ -201,7 +217,7 @@ export default function FriendsScreen() {
                         title="Принять"
                         style={styles.actionButton}
                         loading={busyId === request.id}
-                        onPress={() => acceptRequest(request.id)}
+                        onPress={() => acceptRequest(request)}
                       />
                       <AppButton
                         title="Отклонить"
@@ -234,7 +250,7 @@ export default function FriendsScreen() {
                   style={styles.friendRow}
                   onPress={() => openChat(item)}
                 >
-                  <UserAvatar user={item} />
+                  <UserAvatar user={item} colors={colors} />
                   <View style={styles.userMeta}>
                     <Text style={styles.userName}>
                       {item.name || item.email}
@@ -268,7 +284,9 @@ export default function FriendsScreen() {
   );
 }
 
-function UserAvatar({ user }: { user?: User }) {
+function UserAvatar({ user, colors }: { user?: User; colors: ThemeColors }) {
+  const styles = createStyles(colors);
+
   return (
     <View style={styles.avatar}>
       {user?.avatar ? (
@@ -286,7 +304,8 @@ function UserAvatar({ user }: { user?: User }) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',

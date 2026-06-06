@@ -7,7 +7,8 @@ import {
   type TextInputProps,
 } from 'react-native';
 
-import { colors } from '../theme/colors';
+import { useThemeColors } from '../theme/ThemeContext';
+import type { ThemeColors } from '../theme/themes';
 
 type TextFieldProps = TextInputProps & {
   label: string;
@@ -15,6 +16,9 @@ type TextFieldProps = TextInputProps & {
 };
 
 export function TextField({ label, error, style, ...props }: TextFieldProps) {
+  const colors = useThemeColors();
+  const styles = createStyles(colors);
+
   return (
     <View style={styles.wrapper}>
       <Text style={styles.label}>{label}</Text>
@@ -29,7 +33,8 @@ export function TextField({ label, error, style, ...props }: TextFieldProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   wrapper: {
     gap: 8,
   },

@@ -1,9 +1,15 @@
 import React, { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import {
+  useFocusEffect,
+  useNavigation,
+  type CompositeNavigationProp,
+} from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { isEmailVerified } from '../../api/auth';
+import type { PostUser } from '../../api/types';
 import { AppButton } from '../../components/AppButton';
 import { EmailVerificationNotice } from '../../components/EmailVerificationNotice';
 import { ErrorBanner } from '../../components/Feedback';
@@ -11,15 +17,25 @@ import { Screen } from '../../components/Screen';
 import { getApiErrorMessage } from '../../api/http';
 import { useAuth } from '../../context/AuthContext';
 import { useUnread } from '../../context/UnreadContext';
-import { colors } from '../../theme/colors';
-import type { MainTabParamList } from '../../navigation/types';
+import { useThemeColors } from '../../theme/ThemeContext';
+import type { ThemeColors } from '../../theme/themes';
+import type {
+  MainStackParamList,
+  MainTabParamList,
+} from '../../navigation/types';
+import { WallFeed } from './WallFeed';
 
-type HomeNavigation = BottomTabNavigationProp<MainTabParamList, 'Home'>;
+type HomeNavigation = CompositeNavigationProp<
+  BottomTabNavigationProp<MainTabParamList, 'Home'>,
+  NativeStackNavigationProp<MainStackParamList>
+>;
 
 export default function HomeScreen() {
   const navigation = useNavigation<HomeNavigation>();
   const { user, refreshUser } = useAuth();
   const { unreadCount, refreshUnreadCount } = useUnread();
+  const colors = useThemeColors();
+  const styles = createStyles(colors);
   const emailVerified = isEmailVerified(user);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,6 +62,18 @@ export default function HomeScreen() {
       load().catch(() => undefined);
     }, [load]),
   );
+
+  function openWallUser(target: PostUser) {
+    if (!target.id || target.id === user?.id) {
+      navigation.navigate('Profile');
+      return;
+    }
+
+    navigation.navigate('UserProfile', {
+      userId: target.id,
+      name: target.name || target.email,
+    });
+  }
 
   return (
     <Screen contentContainerStyle={styles.content} scroll style={styles.screen}>
@@ -80,26 +108,42 @@ export default function HomeScreen() {
         <QuickAction
           title="Профиль"
           text="Данные аккаунта"
+          colors={colors}
           onPress={() => navigation.navigate('Profile')}
         />
         <QuickAction
           title="Друзья"
           text="Список и заявки"
+          colors={colors}
           onPress={() => navigation.navigate('Friends')}
         />
         <QuickAction
           title="Чаты"
           text="Сообщения"
+          colors={colors}
           onPress={() => navigation.navigate('Chats', { screen: 'ChatList' })}
         />
         <QuickAction
           title="Настройки"
           text="Аккаунт и выход"
+          colors={colors}
           onPress={() => navigation.navigate('Settings')}
         />
       </View>
 
-      <RefreshControlView loading={loading} onRefresh={load} />
+      <RefreshControlView
+        loading={loading}
+        onRefresh={load}
+        colors={colors}
+      />
+
+      <WallFeed
+        currentUser={user}
+        userId={user?.id}
+        isOwner
+        emailVerified={emailVerified}
+        onOpenUser={openWallUser}
+      />
     </Screen>
   );
 }
@@ -108,11 +152,15 @@ function QuickAction({
   title,
   text,
   onPress,
+  colors,
 }: {
   title: string;
   text: string;
   onPress: () => void;
+  colors: ThemeColors;
 }) {
+  const styles = createStyles(colors);
+
   return (
     <Pressable
       accessibilityRole="button"
@@ -131,10 +179,14 @@ function QuickAction({
 function RefreshControlView({
   loading,
   onRefresh,
+  colors,
 }: {
   loading: boolean;
   onRefresh: () => Promise<void>;
+  colors: ThemeColors;
 }) {
+  const styles = createStyles(colors);
+
   return (
     <View style={styles.refreshBox}>
       <AppButton
@@ -147,7 +199,8 @@ function RefreshControlView({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   screen: {
     backgroundColor: colors.background,
   },

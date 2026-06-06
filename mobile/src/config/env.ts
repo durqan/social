@@ -79,6 +79,9 @@ export const CHAT_IMAGE_MIME_TYPES = [
 export const CHAT_VOICE_MAX_BYTES = 12 * 1024 * 1024;
 export const CHAT_VOICE_MAX_DURATION_SECONDS = 5 * 60;
 export const CHAT_VOICE_MIME_TYPE = 'audio/webm';
+export const CHAT_VIDEO_NOTE_MAX_BYTES = 25 * 1024 * 1024;
+export const CHAT_VIDEO_NOTE_MAX_DURATION_SECONDS = 60;
+export const CHAT_VIDEO_NOTE_MIME_TYPES = ['video/webm', 'video/mp4'] as const;
 
 export function apiURL(path: string) {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;

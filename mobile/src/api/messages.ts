@@ -4,6 +4,9 @@ import {
   CHAT_VOICE_MAX_BYTES,
   CHAT_VOICE_MAX_DURATION_SECONDS,
   CHAT_VOICE_MIME_TYPE,
+  CHAT_VIDEO_NOTE_MAX_BYTES,
+  CHAT_VIDEO_NOTE_MAX_DURATION_SECONDS,
+  CHAT_VIDEO_NOTE_MIME_TYPES,
 } from '../config/env';
 import { formatDuration } from '../utils/format';
 import { apiRequest, toQueryString } from './http';
@@ -24,6 +27,14 @@ export type LocalChatImage = {
 };
 
 export type LocalVoiceMessage = {
+  uri: string;
+  type: string;
+  fileName: string;
+  durationSeconds: number;
+  fileSize?: number;
+};
+
+export type LocalVideoNoteMessage = {
   uri: string;
   type: string;
   fileName: string;
@@ -63,11 +74,35 @@ export function validateLocalVoiceMessage(voice: LocalVoiceMessage) {
   return null;
 }
 
+export function validateLocalVideoNoteMessage(videoNote: LocalVideoNoteMessage) {
+  if (!(CHAT_VIDEO_NOTE_MIME_TYPES as readonly string[]).includes(videoNote.type)) {
+    return 'Видео-сообщение должно быть в формате WebM или MP4';
+  }
+
+  if (videoNote.fileSize && videoNote.fileSize > CHAT_VIDEO_NOTE_MAX_BYTES) {
+    return 'Видео-сообщение должно быть не больше 25 МБ';
+  }
+
+  if (videoNote.durationSeconds < 1) {
+    return 'Видео-сообщение слишком короткое (минимум 1 секунда)';
+  }
+
+  if (videoNote.durationSeconds > CHAT_VIDEO_NOTE_MAX_DURATION_SECONDS) {
+    return `Видео-сообщение должно быть не длиннее ${formatDuration(CHAT_VIDEO_NOTE_MAX_DURATION_SECONDS)}`;
+  }
+
+  return null;
+}
+
 function normalizeConversation(conversation: Conversation): Conversation {
   return {
     ...conversation,
     user_id: Number(conversation.user_id),
     name: conversation.name || 'Пользователь',
+    avatar: conversation.avatar ?? null,
+    avatar_position_x: Number(conversation.avatar_position_x) || 50,
+    avatar_position_y: Number(conversation.avatar_position_y) || 50,
+    avatar_scale: Number(conversation.avatar_scale) || 1,
     last_message: conversation.last_message || '',
     last_message_at: conversation.last_message_at || '',
     last_sender_id: Number(conversation.last_sender_id) || 0,
@@ -81,12 +116,22 @@ function normalizeConversation(conversation: Conversation): Conversation {
 
 export const messageApi = {
   async getConversations() {
-    const conversations = await apiRequest<Conversation[]>(
-      '/messages/conversations',
-    );
+    const conversations = await apiRequest<Conversation[]>('/conversations');
     return Array.isArray(conversations)
       ? conversations.map(normalizeConversation)
       : [];
+  },
+
+  async pinConversation(conversationId: number) {
+    await apiRequest<{ message: string }>(`/conversations/${conversationId}/pin`, {
+      method: 'POST',
+    });
+  },
+
+  async unpinConversation(conversationId: number) {
+    await apiRequest<{ message: string }>(`/conversations/${conversationId}/pin`, {
+      method: 'DELETE',
+    });
   },
 
   async getMessagesWith(
@@ -149,6 +194,21 @@ export const messageApi = {
     });
   },
 
+  async uploadVideoNote(videoNote: LocalVideoNoteMessage) {
+    const formData = new FormData();
+    formData.append('video_note', {
+      uri: videoNote.uri,
+      type: videoNote.type,
+      name: videoNote.fileName,
+    } as unknown as Blob);
+    formData.append('duration', String(videoNote.durationSeconds));
+
+    return apiRequest<MessageAttachment>('/messages/upload-video-note', {
+      method: 'POST',
+      body: formData,
+    });
+  },
+
   async sendMessage(
     toId: number,
     content: string,
@@ -160,7 +220,7 @@ export const messageApi = {
       body: {
         content,
         attachments,
-        reply_to_message_id: replyToMessageId ?? null,
+        replyToMessageId: replyToMessageId ?? null,
       },
     });
   },
@@ -170,7 +230,7 @@ export const messageApi = {
       `/messages/${messageId}/forward`,
       {
         method: 'POST',
-        body: { to_user_ids: toUserIds },
+        body: { toUserIds },
       },
     );
     return response.messages || [];
@@ -214,5 +274,39 @@ export const messageApi = {
     await apiRequest<{ message: string }>(`/messages/${messageId}`, {
       method: 'DELETE',
     });
+  },
+
+  async deleteMessagesBatch(messageIds: number[]) {
+    await apiRequest<{ message: string }>('/messages/batch', {
+      method: 'DELETE',
+      body: { message_ids: messageIds },
+    });
+  },
+
+  async deleteConversationWith(userId: number) {
+    let before: number | undefined;
+    const messageIds: number[] = [];
+
+    for (let page = 0; page < 100; page += 1) {
+      const response = await this.getMessagesWith(userId, {
+        before,
+        limit: 100,
+      });
+
+      if (response.messages.length === 0) {
+        break;
+      }
+
+      messageIds.push(...response.messages.map(message => message.id));
+      before = response.messages[0]?.id;
+
+      if (!response.has_more) {
+        break;
+      }
+    }
+
+    if (messageIds.length > 0) {
+      await this.deleteMessagesBatch(messageIds);
+    }
   },
 };

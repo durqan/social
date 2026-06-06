@@ -160,6 +160,18 @@ button {
         background: var(--app-error-hover);
     }
 
+    .composer-button.video-recording {
+        border-color: var(--app-accent-border);
+        background: var(--app-accent-soft);
+        color: var(--app-accent);
+        box-shadow: 0 0 18px var(--app-accent-border);
+    }
+
+    .composer-button.video-recording:hover:not(:disabled) {
+        background: var(--app-active);
+        color: var(--app-accent-hover);
+    }
+
     @media (min-width: 640px) {
         .composer-button {
             width: 40px;
@@ -206,9 +218,390 @@ button {
         transform-origin: center;
     }
 
+    .video-note-message-bubble {
+        border: 0;
+        background: transparent;
+        box-shadow: none;
+        color: var(--app-text-primary);
+    }
+
+    .video-note-message {
+        display: inline-flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 2px;
+    }
+
+    .video-note-message--own {
+        align-items: flex-end;
+    }
+
+    .video-note-message__timestamp {
+        padding: 0 10px;
+        color: var(--app-text-secondary);
+        font-size: 11px;
+        line-height: 1.35;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .video-note-orbit {
+        --video-note-size: clamp(88px, 24vw, 96px);
+        --video-note-outer-size: calc(var(--video-note-size) + 18px);
+        --video-note-progress: 0deg;
+
+        position: relative;
+        isolation: isolate;
+        display: inline-grid;
+        width: var(--video-note-outer-size);
+        height: var(--video-note-outer-size);
+        place-items: center;
+        flex: 0 0 auto;
+        padding: 0;
+        border: 0;
+        border-radius: 999px;
+        background: transparent;
+        color: #ffffff;
+        cursor: pointer;
+        outline: none;
+        transform: translateZ(0);
+        transition:
+            width 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
+            height 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
+            transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+            filter 220ms ease;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .video-note-orbit--playing {
+        --video-note-size: clamp(96px, 27vw, 112px);
+    }
+
+    .video-note-orbit--recording {
+        --video-note-size: clamp(112px, 34vw, 128px);
+        cursor: default;
+    }
+
+    .video-note-orbit--disabled {
+        cursor: not-allowed;
+        opacity: 0.62;
+    }
+
+    .video-note-orbit:focus-visible {
+        box-shadow: 0 0 0 3px var(--app-focus-ring);
+    }
+
+    .video-note-orbit__glow,
+    .video-note-orbit__track,
+    .video-note-orbit__progress {
+        position: absolute;
+        pointer-events: none;
+        border-radius: inherit;
+    }
+
+    .video-note-orbit__glow {
+        inset: 0;
+        z-index: 0;
+        background:
+            conic-gradient(
+                from 35deg,
+                transparent 0deg 62deg,
+                var(--app-accent-border) 86deg,
+                transparent 122deg 218deg,
+                var(--app-accent) 252deg,
+                transparent 294deg 360deg
+            );
+        opacity: 0.58;
+        filter: blur(0.2px) drop-shadow(0 0 10px var(--app-accent-border));
+        -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 8px), #000 calc(100% - 6px), #000 calc(100% - 1px), transparent 100%);
+        mask: radial-gradient(farthest-side, transparent calc(100% - 8px), #000 calc(100% - 6px), #000 calc(100% - 1px), transparent 100%);
+        transition: opacity 220ms ease, filter 220ms ease;
+    }
+
+    .video-note-orbit__track {
+        inset: 4px;
+        z-index: 1;
+        border: 1px solid var(--app-accent-border);
+        box-shadow:
+            0 0 0 1px var(--app-glass-border),
+            0 0 18px var(--app-accent-border),
+            inset 0 0 18px rgba(255, 255, 255, 0.08);
+        opacity: 0.82;
+    }
+
+    .video-note-orbit__progress {
+        inset: 2px;
+        z-index: 2;
+        background:
+            conic-gradient(
+                from -90deg,
+                var(--app-accent) 0deg var(--video-note-progress),
+                var(--app-accent-border) var(--video-note-progress) 360deg
+            );
+        filter: drop-shadow(0 0 8px var(--app-accent-border));
+        opacity: 0.96;
+        -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px));
+        mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px));
+        transition: background 90ms linear, opacity 180ms ease, filter 180ms ease;
+    }
+
+    .video-note-orbit__media {
+        position: relative;
+        z-index: 3;
+        display: block;
+        width: var(--video-note-size);
+        height: var(--video-note-size);
+        overflow: hidden;
+        border-radius: 999px;
+        background: #020617;
+        box-shadow:
+            0 10px 28px var(--app-shadow-color),
+            inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+        transition:
+            width 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
+            height 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
+            box-shadow 220ms ease;
+    }
+
+    .video-note-orbit__media > video {
+        position: absolute;
+        inset: 0;
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .video-note-orbit__vignette {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        border-radius: inherit;
+        background:
+            radial-gradient(circle at 50% 34%, rgba(255, 255, 255, 0.12), transparent 34%),
+            linear-gradient(180deg, transparent 44%, rgba(2, 6, 23, 0.3) 100%);
+        mix-blend-mode: screen;
+        opacity: 0.72;
+    }
+
+    .video-note-orbit__control {
+        position: absolute;
+        z-index: 5;
+        display: inline-flex;
+        width: 34px;
+        height: 34px;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid rgba(255, 255, 255, 0.28);
+        border-radius: 999px;
+        background: rgba(15, 23, 42, 0.34);
+        box-shadow:
+            0 10px 24px rgba(2, 6, 23, 0.22),
+            inset 0 1px 0 rgba(255, 255, 255, 0.32);
+        color: #ffffff;
+        opacity: 0.92;
+        text-shadow: 0 1px 8px rgba(0, 0, 0, 0.35);
+        backdrop-filter: blur(16px) saturate(1.35);
+        transition: transform 180ms ease, opacity 180ms ease, background 180ms ease;
+    }
+
+    .video-note-orbit--playing .video-note-orbit__control {
+        transform: scale(0.94);
+        opacity: 0.78;
+    }
+
+    .video-note-orbit__duration {
+        position: absolute;
+        bottom: 9px;
+        left: 50%;
+        z-index: 6;
+        max-width: 82%;
+        min-width: 38px;
+        transform: translateX(-50%);
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 999px;
+        background: rgba(2, 6, 23, 0.48);
+        box-shadow: 0 8px 18px rgba(2, 6, 23, 0.18);
+        color: #ffffff;
+        font-size: 10px;
+        font-weight: 650;
+        font-variant-numeric: tabular-nums;
+        line-height: 1.25;
+        padding: 2px 7px;
+        text-align: center;
+        text-overflow: ellipsis;
+        text-shadow: 0 1px 5px rgba(0, 0, 0, 0.38);
+        white-space: nowrap;
+        backdrop-filter: blur(14px) saturate(1.2);
+    }
+
+    .video-note-orbit--playing .video-note-orbit__glow {
+        animation: video-note-orbit-spin 9s linear infinite;
+        filter:
+            blur(0.2px)
+            drop-shadow(0 0 13px var(--app-accent-border))
+            drop-shadow(0 0 20px var(--app-accent-border));
+        opacity: 0.98;
+    }
+
+    .video-note-orbit--playing .video-note-orbit__track {
+        box-shadow:
+            0 0 0 1px var(--app-glass-border),
+            0 0 24px var(--app-accent-border),
+            inset 0 0 20px rgba(255, 255, 255, 0.1);
+        opacity: 0.96;
+    }
+
+    .video-note-orbit--playing .video-note-orbit__progress {
+        filter:
+            drop-shadow(0 0 8px var(--app-accent-border))
+            drop-shadow(0 0 13px var(--app-accent-border));
+        opacity: 1;
+    }
+
+    .video-note-orbit--recording .video-note-orbit__glow {
+        animation: video-note-orbit-spin 12s linear infinite;
+        opacity: 1;
+    }
+
+    .video-note-orbit--recording .video-note-orbit__track {
+        animation: video-note-orbit-pulse 1900ms ease-in-out infinite;
+    }
+
+    .video-note-orbit--recording .video-note-orbit__media {
+        box-shadow:
+            0 14px 34px var(--app-shadow-color),
+            inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+    }
+
+    .video-note-preview,
+    .video-note-recording {
+        color: var(--app-text-primary);
+    }
+
+    .video-note-preview__panel,
+    .video-note-recording__panel {
+        border: 1px solid var(--app-glass-border);
+        border-radius: 14px;
+        background: var(--app-glass-bg);
+        box-shadow: 0 14px 38px var(--app-shadow-color);
+        padding: 12px;
+        backdrop-filter: var(--app-card-backdrop);
+    }
+
+    .video-note-recording__dot {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: var(--app-accent);
+        box-shadow: 0 0 14px var(--app-accent-border);
+        animation: video-note-recording-dot 1500ms ease-in-out infinite;
+    }
+
+    @media (hover: hover) {
+        .video-note-orbit:hover:not(.video-note-orbit--disabled) {
+            transform: scale(1.035) translateZ(0);
+            filter: drop-shadow(0 14px 28px var(--app-shadow-color));
+        }
+
+        .video-note-orbit:hover:not(.video-note-orbit--disabled) .video-note-orbit__glow {
+            filter:
+                blur(0.2px)
+                drop-shadow(0 0 15px var(--app-accent-border))
+                drop-shadow(0 0 24px var(--app-accent-border));
+            opacity: 1;
+        }
+
+        .video-note-orbit:hover:not(.video-note-orbit--disabled) .video-note-orbit__control {
+            transform: scale(1);
+            background: rgba(15, 23, 42, 0.42);
+            opacity: 1;
+        }
+    }
+
+    .video-note-orbit:active:not(.video-note-orbit--disabled):not(.video-note-orbit--recording) {
+        transform: scale(0.985) translateZ(0);
+    }
+
+    @media (max-width: 420px) {
+        .video-note-orbit {
+            --video-note-size: clamp(88px, 27vw, 96px);
+        }
+
+        .video-note-orbit--playing {
+            --video-note-size: clamp(96px, 31vw, 112px);
+        }
+
+        .video-note-orbit--recording {
+            --video-note-size: clamp(112px, 38vw, 128px);
+        }
+
+        .video-note-orbit__control {
+            width: 32px;
+            height: 32px;
+        }
+    }
+
     .chat-message-bubble--navigate {
         animation: chat-message-bubble-navigate 1800ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
         will-change: transform, box-shadow;
+    }
+}
+
+@keyframes video-note-orbit-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes video-note-orbit-pulse {
+    0%,
+    100% {
+        opacity: 0.76;
+        transform: scale(1);
+        box-shadow:
+            0 0 0 1px var(--app-glass-border),
+            0 0 18px var(--app-accent-border),
+            inset 0 0 18px rgba(255, 255, 255, 0.08);
+    }
+
+    50% {
+        opacity: 1;
+        transform: scale(1.045);
+        box-shadow:
+            0 0 0 1px var(--app-glass-border),
+            0 0 30px var(--app-accent-border),
+            inset 0 0 24px rgba(255, 255, 255, 0.12);
+    }
+}
+
+@keyframes video-note-recording-dot {
+    0%,
+    100% {
+        opacity: 0.62;
+        transform: scale(0.92);
+    }
+
+    50% {
+        opacity: 1;
+        transform: scale(1.08);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .video-note-orbit,
+    .video-note-orbit__media,
+    .video-note-orbit__control,
+    .video-note-orbit__progress {
+        transition-duration: 1ms;
+    }
+
+    .video-note-orbit--playing .video-note-orbit__glow,
+    .video-note-orbit--recording .video-note-orbit__glow,
+    .video-note-orbit--recording .video-note-orbit__track,
+    .video-note-recording__dot {
+        animation: none;
     }
 }
 

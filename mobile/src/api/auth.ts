@@ -46,6 +46,13 @@ export const authApi = {
     );
     return response.message;
   },
+
+  async verifyEmail(token: string) {
+    const response = await apiRequest<{ message: string }>(
+      `/auth/verify-email/${token}`,
+    );
+    return response.message;
+  },
 };
 
 export function isEmailVerified(user: User | null) {

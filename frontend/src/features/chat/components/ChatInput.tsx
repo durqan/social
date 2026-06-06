@@ -12,6 +12,7 @@ import {
 } from "@/shared/utils/uploadValidation.js";
 import { PreviewVoiceMessage } from "@/features/chat/components/PreviewVoiceMessage.js";
 import { PreviewVideoNoteMessage } from "@/features/chat/components/PreviewVideoNoteMessage.js";
+import { VideoNoteOrbit } from "@/features/chat/components/VideoNoteOrbit.js";
 
 const EmojiPicker = EmojiPickerModule as unknown as (props: EmojiPickerProps) => ReactElement | null;
 const textareaMaxHeight = 168;
@@ -824,24 +825,28 @@ export const ChatInput = ({
             )}
 
             {isVideoNoteRecording && (
-                <div className="mb-3 rounded-xl border border-sky-100 bg-sky-50 p-3 text-sky-800">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                        <div className="relative h-[180px] w-[180px] flex-shrink-0 overflow-hidden rounded-full bg-black shadow-sm ring-1 ring-black/10 sm:h-[220px] sm:w-[220px]">
+                <div className="video-note-recording mb-3">
+                    <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
+                        <VideoNoteOrbit
+                            isRecording
+                            progressPercent={(videoNoteElapsed / chatVideoNoteMaxDurationSeconds) * 100}
+                            timeLabel={`${formatDuration(videoNoteElapsed)} / ${formatDuration(chatVideoNoteMaxDurationSeconds)}`}
+                            showControl={false}
+                            title="Запись кружка"
+                        >
                             <video
                                 ref={videoNotePreviewRef}
-                                className="h-full w-full object-cover"
                                 autoPlay
                                 muted
                                 playsInline
                             />
-                            <div className="pointer-events-none absolute inset-0 rounded-full ring-1 ring-inset ring-white/25" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2 text-sm font-semibold">
-                                <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />
+                        </VideoNoteOrbit>
+                        <div className="video-note-recording__panel min-w-0 flex-1">
+                            <div className="flex items-center gap-2 text-sm font-semibold text-[var(--app-text-primary)]">
+                                <span className="video-note-recording__dot" />
                                 <span>Запись кружка</span>
                             </div>
-                            <div className="mt-1 text-sm tabular-nums text-sky-700">
+                            <div className="mt-1 text-sm tabular-nums text-[var(--app-text-secondary)]">
                                 {formatDuration(videoNoteElapsed)} / {formatDuration(chatVideoNoteMaxDurationSeconds)}
                             </div>
                             <button
@@ -995,7 +1000,7 @@ export const ChatInput = ({
                     type="button"
                     onClick={() => void startVideoNoteRecording()}
                     disabled={selectedFiles.length > 0 || sending || isRecording || recordingStopping || isVideoNoteRecording || videoNoteStopping || !!pendingVoice || !!pendingVideoNote}
-                    className={`cursor-pointer composer-button ${isVideoNoteRecording ? 'recording' : pendingVideoNote ? 'text-gray-400' : ''}`}
+                    className={`cursor-pointer composer-button ${isVideoNoteRecording ? 'video-recording' : pendingVideoNote ? 'text-gray-400' : ''}`}
                     title={pendingVideoNote ? 'Сначала отправьте или удалите кружок' : 'Кружок'}
                     aria-label="Кружок"
                 >

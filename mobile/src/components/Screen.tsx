@@ -10,7 +10,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { colors } from '../theme/colors';
+import { useThemeColors } from '../theme/ThemeContext';
+import type { ThemeColors } from '../theme/themes';
 
 type ScreenProps = {
   children: ReactNode;
@@ -25,6 +26,9 @@ export function Screen({
   style,
   contentContainerStyle,
 }: ScreenProps) {
+  const colors = useThemeColors();
+  const styles = createStyles(colors);
+
   const content = scroll ? (
     <ScrollView
       keyboardShouldPersistTaps="handled"
@@ -48,7 +52,8 @@ export function Screen({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.background,

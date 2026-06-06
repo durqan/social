@@ -8,12 +8,17 @@ import { CallProvider } from './src/context/CallContext';
 import { NotificationsProvider } from './src/context/NotificationsContext';
 import { UnreadProvider } from './src/context/UnreadContext';
 import { AppNavigator } from './src/navigation/AppNavigator';
-import { colors } from './src/theme/colors';
+import { ThemeProvider, useThemeColors } from './src/theme/ThemeContext';
 
-function App() {
+function AppContent() {
+  const colors = useThemeColors();
+
   return (
-    <SafeAreaProvider>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
+    <>
+      <StatusBar
+        barStyle={colors.statusBarStyle}
+        backgroundColor={colors.background}
+      />
       <AuthProvider>
         <AppLifecycleProvider>
           <UnreadProvider>
@@ -25,6 +30,16 @@ function App() {
           </UnreadProvider>
         </AppLifecycleProvider>
       </AuthProvider>
+    </>
+  );
+}
+
+function App() {
+  return (
+    <SafeAreaProvider>
+      <ThemeProvider>
+        <AppContent />
+      </ThemeProvider>
     </SafeAreaProvider>
   );
 }

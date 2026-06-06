@@ -256,6 +256,30 @@ export function getApiErrorMessage(error: unknown) {
     'too many requests': 'Слишком много попыток. Попробуйте позже.',
     'failed to get conversations':
       'Не удалось загрузить список чатов. Попробуйте обновить экран.',
+    'failed to fetch posts':
+      'Не удалось загрузить посты. Попробуйте обновить экран.',
+    'failed to create post': 'Не удалось опубликовать пост. Попробуйте позже.',
+    'failed to update post': 'Не удалось сохранить пост. Попробуйте позже.',
+    'failed to delete post': 'Не удалось удалить пост. Попробуйте позже.',
+    'failed to fetch comments':
+      'Не удалось загрузить комментарии. Попробуйте позже.',
+    'failed to create comment':
+      'Не удалось отправить комментарий. Попробуйте позже.',
+    'failed to toggle like': 'Не удалось обновить лайк. Попробуйте позже.',
+    'post content must be between 1 and 500 characters':
+      'Пост должен быть от 1 до 500 символов.',
+    'comment content must be between 1 and 500 characters':
+      'Комментарий должен быть от 1 до 500 символов.',
+    'you can only edit your own posts':
+      'Можно редактировать только свои посты.',
+    'you can only delete your own posts':
+      'Можно удалять только свои посты.',
+    'failed to pin conversation':
+      'Не удалось закрепить диалог. Попробуйте позже.',
+    'failed to unpin conversation':
+      'Не удалось снять закреп диалога. Попробуйте позже.',
+    'you are not a participant in this conversation':
+      'У вас нет доступа к этому диалогу.',
     'failed to get messages':
       'Не удалось загрузить сообщения. Попробуйте обновить экран.',
     'failed to send message':
@@ -323,6 +347,8 @@ export function getApiErrorMessage(error: unknown) {
     'no valid fields to update': 'Измените хотя бы одно поле',
     'failed to fetch updated user':
       'Профиль сохранен, но не удалось обновить данные на экране.',
+    'не удалось обновить настройки уведомлений':
+      'Не удалось обновить уведомления. Попробуйте позже.',
   };
 
   const translated = translations[message] ?? translations[normalized];

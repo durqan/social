@@ -1,9 +1,13 @@
 import React from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
-import { colors } from '../theme/colors';
+import { useThemeColors } from '../theme/ThemeContext';
+import type { ThemeColors } from '../theme/themes';
 
 export function ErrorBanner({ message }: { message?: string | null }) {
+  const colors = useThemeColors();
+  const styles = createStyles(colors);
+
   if (!message) {
     return null;
   }
@@ -16,6 +20,9 @@ export function ErrorBanner({ message }: { message?: string | null }) {
 }
 
 export function SuccessBanner({ message }: { message?: string | null }) {
+  const colors = useThemeColors();
+  const styles = createStyles(colors);
+
   if (!message) {
     return null;
   }
@@ -28,6 +35,9 @@ export function SuccessBanner({ message }: { message?: string | null }) {
 }
 
 export function Notice({ title, text }: { title: string; text?: string }) {
+  const colors = useThemeColors();
+  const styles = createStyles(colors);
+
   return (
     <View style={styles.noticeBox}>
       <Text style={styles.noticeTitle}>{title}</Text>
@@ -37,6 +47,9 @@ export function Notice({ title, text }: { title: string; text?: string }) {
 }
 
 export function EmptyState({ title, text }: { title: string; text?: string }) {
+  const colors = useThemeColors();
+  const styles = createStyles(colors);
+
   return (
     <View style={styles.emptyBox}>
       <Text style={styles.emptyTitle}>{title}</Text>
@@ -46,6 +59,9 @@ export function EmptyState({ title, text }: { title: string; text?: string }) {
 }
 
 export function LoadingState({ text }: { text: string }) {
+  const colors = useThemeColors();
+  const styles = createStyles(colors);
+
   return (
     <View style={styles.loadingBox}>
       <ActivityIndicator color={colors.accent} />
@@ -54,22 +70,23 @@ export function LoadingState({ text }: { text: string }) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   errorBox: {
     borderWidth: 1,
-    borderColor: '#fecaca',
+    borderColor: colors.danger,
     borderRadius: 12,
     backgroundColor: colors.dangerSoft,
     padding: 12,
   },
   errorText: {
-    color: '#b91c1c',
+    color: colors.danger,
     fontSize: 14,
     lineHeight: 20,
   },
   successBox: {
     borderWidth: 1,
-    borderColor: '#bbf7d0',
+    borderColor: colors.success,
     borderRadius: 12,
     backgroundColor: colors.successSoft,
     padding: 12,

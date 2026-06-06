@@ -17,7 +17,8 @@ import {
 import { Screen } from '../../components/Screen';
 import { TextField } from '../../components/TextField';
 import { useAuth } from '../../context/AuthContext';
-import { colors } from '../../theme/colors';
+import { useThemeColors } from '../../theme/ThemeContext';
+import type { ThemeColors } from '../../theme/themes';
 import { formatDateTime } from '../../utils/format';
 
 type ProfileForm = {
@@ -29,6 +30,8 @@ type ProfileForm = {
 
 export default function ProfileScreen() {
   const { user, refreshUser } = useAuth();
+  const colors = useThemeColors();
+  const styles = createStyles(colors);
   const [form, setForm] = useState<ProfileForm>({
     name: '',
     email: '',
@@ -281,6 +284,9 @@ function assetToAvatarImage(asset?: Asset) {
 }
 
 function InfoRow({ label, value }: { label: string; value?: string }) {
+  const colors = useThemeColors();
+  const styles = createStyles(colors);
+
   return (
     <View style={styles.infoRow}>
       <Text style={styles.infoLabel}>{label}</Text>
@@ -289,11 +295,12 @@ function InfoRow({ label, value }: { label: string; value?: string }) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   card: {
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(17, 24, 39, 0.06)',
+    borderColor: colors.border,
     borderRadius: 14,
     backgroundColor: colors.surface,
     padding: 20,
@@ -313,7 +320,7 @@ const styles = StyleSheet.create({
     height: 82,
   },
   avatarText: {
-    color: '#ffffff',
+    color: colors.white,
     fontSize: 30,
     fontWeight: '800',
   },
@@ -371,11 +378,11 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   warningText: {
-    color: '#9a3412',
+    color: colors.text,
     borderWidth: 1,
-    borderColor: '#fed7aa',
+    borderColor: colors.warning,
     borderRadius: 10,
-    backgroundColor: '#fff7ed',
+    backgroundColor: colors.warningSoft,
     padding: 10,
     fontSize: 13,
     lineHeight: 18,

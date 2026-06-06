@@ -193,25 +193,33 @@ class ChatSocket {
     this.ws = null;
   }
 
-  sendMessage(toId: number, content: string, attachments: MessageAttachment[], replyToMessageId?: number | null) {
+  sendMessage(
+    toId: number,
+    content: string,
+    attachments: MessageAttachment[],
+    replyToMessageId?: number | null,
+  ) {
     this.sendEvent({
       type: 'message:send',
       payload: {
         to_id: toId,
         content,
         attachments,
-        reply_to_message_id: replyToMessageId ?? null,
+        replyToMessageId: replyToMessageId ?? null,
       },
     });
   }
 
+  sendTypingStart(toId: number) {
+    this.sendEventToUser('typing:start', toId, {}, false);
+  }
+
+  sendTypingStop(toId: number) {
+    this.sendEventToUser('typing:stop', toId, {}, false);
+  }
+
   sendReadReceipt(toId: number) {
-    this.sendEvent({
-      type: 'message:read',
-      payload: {
-        to_id: toId,
-      },
-    });
+    this.sendEventToUser('message:read', toId);
   }
 
   sendCallOffer(
@@ -273,6 +281,24 @@ class ChatSocket {
     });
   }
 
+  private sendEventToUser(
+    type: string,
+    toId: number,
+    payload: Record<string, unknown> = {},
+    queueIfClosed = true,
+  ) {
+    this.sendEvent(
+      {
+        type,
+        payload: {
+          to_id: toId,
+          ...payload,
+        },
+      },
+      queueIfClosed,
+    );
+  }
+
   discardPendingCallEvents(callId?: string) {
     this.pendingEvents = this.pendingEvents.filter(event => {
       if (!this.isCallEvent(event)) {
@@ -323,8 +349,12 @@ class ChatSocket {
     }
   }
 
-  private sendEvent(event: OutgoingEvent) {
+  private sendEvent(event: OutgoingEvent, queueIfClosed = true) {
     if (!this.isConnected()) {
+      if (!queueIfClosed) {
+        return;
+      }
+
       this.pendingEvents.push({
         ...event,
         queuedAt: Date.now(),

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Clipboard,
@@ -16,13 +16,14 @@ import {
   View,
 } from 'react-native';
 import type { GestureResponderEvent, NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
-import { launchImageLibrary } from 'react-native-image-picker';
+import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import type { Asset } from 'react-native-image-picker';
 import Sound, {
   AudioEncoderAndroidType,
   AudioSourceAndroidType,
   OutputFormatAndroidType,
 } from 'react-native-nitro-sound';
+import Video from 'react-native-video';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 
@@ -30,6 +31,7 @@ import {
   assetURL,
   CHAT_IMAGE_MAX_COUNT,
   CHAT_IMAGE_MIME_TYPES,
+  CHAT_VIDEO_NOTE_MAX_DURATION_SECONDS,
   CHAT_VOICE_MAX_DURATION_SECONDS,
   CHAT_VOICE_MIME_TYPE,
 } from '../../config/env';
@@ -38,8 +40,10 @@ import { getApiErrorMessage, getCookieHeader } from '../../api/http';
 import {
   messageApi,
   validateLocalChatImage,
+  validateLocalVideoNoteMessage,
   validateLocalVoiceMessage,
   type LocalChatImage,
+  type LocalVideoNoteMessage,
   type LocalVoiceMessage,
 } from '../../api/messages';
 import type { Message, MessageAttachment, PinnedMessage, User } from '../../api/types';
@@ -56,7 +60,9 @@ import { useAppLifecycle } from '../../context/AppLifecycleContext';
 import { useAuth } from '../../context/AuthContext';
 import { useCall } from '../../context/CallContext';
 import { useUnread } from '../../context/UnreadContext';
+import { useThemeColors } from '../../theme/ThemeContext';
 import { colors } from '../../theme/colors';
+import type { ThemeColors } from '../../theme/themes';
 import { formatDateTime, formatDuration } from '../../utils/format';
 import type { ChatStackParamList } from '../../navigation/types';
 
@@ -135,21 +141,30 @@ function messagePreviewText(message?: Message | null) {
   if (!message) {
     return 'Сообщение недоступно';
   }
+  if (message.decryption_error) {
+    return 'Не удалось расшифровать сообщение';
+  }
   const content = message.content?.trim();
   if (content) {
-    return content;
+    return content.length > 80 ? `${content.slice(0, 77)}...` : content;
+  }
+  if ((message.encryption_version ?? 0) > 0) {
+    return 'Зашифрованное сообщение';
+  }
+  if (message.attachments?.some(attachment => attachment.decryption_error)) {
+    return 'Не удалось расшифровать вложение';
   }
   const attachment = message.attachments?.[0];
   if (!attachment) {
-    return 'Сообщение';
+    return 'Сообщение недоступно';
   }
   if (attachment.file_type === 'voice') {
     return 'Голосовое сообщение';
   }
   if (attachment.file_type === 'video_note') {
-    return 'Кружочек';
+    return 'Видео-сообщение';
   }
-  return 'Изображение';
+  return 'Вложение';
 }
 
 function linkParts(value: string) {
@@ -188,6 +203,11 @@ function linkParts(value: string) {
 
 export default function ChatScreen({ route }: Props) {
   const { user } = useAuth();
+  const themeColors = useThemeColors();
+  const themed = useMemo(
+    () => createChatThemeStyles(themeColors),
+    [themeColors],
+  );
   const { startAudioCall, startVideoCall, status: callStatus } = useCall();
   const isFocused = useIsFocused();
   const { networkConnected, resumeCount } = useAppLifecycle();
@@ -214,6 +234,9 @@ export default function ChatScreen({ route }: Props) {
   const previewPlayingRef = useRef<boolean>(false);
   const pendingVoiceRef = useRef<LocalVoiceMessage | null>(null);
   const previewProgressBarRef = useRef<View>(null);
+  const typingStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const typingActiveRef = useRef(false);
+  const otherTypingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [inputHeight, setInputHeight] = useState(composerInputMinHeight);
@@ -234,7 +257,7 @@ export default function ChatScreen({ route }: Props) {
   const [hasMore, setHasMore] = useState(true);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [sending, setSending] = useState<
-    'uploading' | 'uploadingVoice' | 'sending' | null
+    'uploading' | 'uploadingVoice' | 'uploadingVideoNote' | 'sending' | null
   >(null);
   const [uploadProgress, setUploadProgress] = useState<{
     current: number;
@@ -247,13 +270,18 @@ export default function ChatScreen({ route }: Props) {
   const [playingVoiceUrl, setPlayingVoiceUrl] = useState<string | null>(null);
 
   const [pendingVoice, setPendingVoice] = useState<LocalVoiceMessage | null>(null);
+  const [pendingVideoNote, setPendingVideoNote] =
+    useState<LocalVideoNoteMessage | null>(null);
   const [previewPlaying, setPreviewPlaying] = useState(false);
   const [previewPosition, setPreviewPosition] = useState(0);
+  const [otherTyping, setOtherTyping] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copyNotice, setCopyNotice] = useState<string | null>(null);
 
   const pendingImagesRef = useRef<LocalChatImage[]>([]);
-  const sendingRef = useRef<'uploading' | 'uploadingVoice' | 'sending' | null>(null);
+  const sendingRef = useRef<
+    'uploading' | 'uploadingVoice' | 'uploadingVideoNote' | 'sending' | null
+  >(null);
   const editingMessageRef = useRef<Message | null>(null);
   const replyToMessageRef = useRef<Message | null>(null);
   const recordingBusyRef = useRef<boolean>(false);
@@ -316,8 +344,18 @@ export default function ChatScreen({ route }: Props) {
       Sound.removePlayBackListener();
       Sound.stopPlayer().catch(() => undefined);
       Sound.stopRecorder().catch(() => undefined);
+      if (typingStopTimerRef.current) {
+        clearTimeout(typingStopTimerRef.current);
+      }
+      if (otherTypingTimerRef.current) {
+        clearTimeout(otherTypingTimerRef.current);
+      }
+      if (typingActiveRef.current) {
+        chatSocket.sendTypingStop(otherUserId);
+        typingActiveRef.current = false;
+      }
     };
-  }, []);
+  }, [otherUserId]);
 
   const voicePanResponder = useRef(
     PanResponder.create({
@@ -614,6 +652,32 @@ export default function ChatScreen({ route }: Props) {
         return;
       }
 
+      if (event.type === 'typing:start' || event.type === 'typing:stop') {
+        const payload = event.payload as { from_id?: number };
+        if (payload.from_id !== otherUserId) {
+          return;
+        }
+
+        if (event.type === 'typing:start') {
+          setOtherTyping(true);
+          if (otherTypingTimerRef.current) {
+            clearTimeout(otherTypingTimerRef.current);
+          }
+          otherTypingTimerRef.current = setTimeout(() => {
+            setOtherTyping(false);
+            otherTypingTimerRef.current = null;
+          }, 2200);
+          return;
+        }
+
+        if (otherTypingTimerRef.current) {
+          clearTimeout(otherTypingTimerRef.current);
+          otherTypingTimerRef.current = null;
+        }
+        setOtherTyping(false);
+        return;
+      }
+
       if (event.type !== 'message:new') {
         return;
       }
@@ -722,6 +786,24 @@ export default function ChatScreen({ route }: Props) {
     );
 
     return granted === PermissionsAndroid.RESULTS.GRANTED;
+  }
+
+  async function ensureVideoNotePermissions() {
+    if (Platform.OS !== 'android') {
+      return true;
+    }
+
+    const results = await PermissionsAndroid.requestMultiple([
+      PermissionsAndroid.PERMISSIONS.CAMERA,
+      PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+    ]);
+
+    return (
+      results[PermissionsAndroid.PERMISSIONS.CAMERA] ===
+        PermissionsAndroid.RESULTS.GRANTED &&
+      results[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] ===
+        PermissionsAndroid.RESULTS.GRANTED
+    );
   }
 
   function clearRecordingLimitTimer() {
@@ -880,6 +962,7 @@ export default function ChatScreen({ route }: Props) {
       if (comment) {
         setInput('');
         setInputHeight(composerInputMinHeight);
+        stopLocalTyping();
       }
       setReplyToMessage(null);
       return true;
@@ -977,6 +1060,127 @@ export default function ChatScreen({ route }: Props) {
     }
   }
 
+  async function recordVideoNote() {
+    if (
+      sendingRef.current ||
+      editingMessageRef.current ||
+      recordingActiveRef.current ||
+      pendingImagesRef.current.length > 0 ||
+      pendingVoice ||
+      pendingVideoNote
+    ) {
+      setError('Сначала отправьте или удалите текущие вложения');
+      return;
+    }
+
+    setError(null);
+    const permitted = await ensureVideoNotePermissions();
+    if (!permitted) {
+      setError('Разрешите доступ к камере и микрофону, чтобы записать видео-сообщение');
+      return;
+    }
+
+    const result = await launchCamera({
+      mediaType: 'video',
+      durationLimit: CHAT_VIDEO_NOTE_MAX_DURATION_SECONDS,
+      videoQuality: 'low',
+      saveToPhotos: false,
+    });
+
+    if (result.didCancel) {
+      return;
+    }
+
+    if (result.errorMessage) {
+      setError('Не удалось записать видео-сообщение. Попробуйте еще раз.');
+      return;
+    }
+
+    const videoNote = assetToLocalVideoNote(result.assets?.[0]);
+    if (!videoNote) {
+      setError('Не удалось подготовить видео-сообщение.');
+      return;
+    }
+
+    const validationError = validateLocalVideoNoteMessage(videoNote);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    setPendingVideoNote(videoNote);
+  }
+
+  async function sendVideoNoteMessage(videoNote: LocalVideoNoteMessage) {
+    const normalizedUri =
+      videoNote.uri.startsWith('file://') ||
+      videoNote.uri.startsWith('content://')
+        ? videoNote.uri
+        : `file://${videoNote.uri}`;
+    const videoNoteToSend = { ...videoNote, uri: normalizedUri };
+    const validationError = validateLocalVideoNoteMessage(videoNoteToSend);
+    if (validationError) {
+      setError(validationError);
+      return false;
+    }
+
+    const comment = input.trim();
+    setSending('uploadingVideoNote');
+    setUploadProgress(null);
+    setError(null);
+
+    try {
+      const attachment = await messageApi.uploadVideoNote(videoNoteToSend);
+      const attachments = [attachment];
+
+      setSending('sending');
+      if (chatSocket.isConnected()) {
+        chatSocket.sendMessage(
+          otherUserId,
+          comment,
+          attachments,
+          replyToMessageRef.current?.id ?? null,
+        );
+      } else {
+        const sent = await messageApi.sendMessage(
+          otherUserId,
+          comment,
+          attachments,
+          replyToMessageRef.current?.id ?? null,
+        );
+        shouldScrollToEndRef.current = true;
+        setMessages(previous => [...previous, sent]);
+        signalChatDataChanged();
+      }
+
+      if (comment) {
+        setInput('');
+        setInputHeight(composerInputMinHeight);
+        stopLocalTyping();
+      }
+      setReplyToMessage(null);
+      return true;
+    } catch (apiError) {
+      setError(getApiErrorMessage(apiError));
+      return false;
+    } finally {
+      setSending(null);
+      setUploadProgress(null);
+    }
+  }
+
+  async function sendPendingVideoNote() {
+    if (!pendingVideoNote) {
+      return;
+    }
+    const videoNote = pendingVideoNote;
+    setPendingVideoNote(null);
+    const ok = await sendVideoNoteMessage(videoNote);
+    if (!ok) {
+      setPendingVideoNote(videoNote);
+    }
+  }
+
   async function seekPreview(percent: number) {
     if (!pendingVoice) return;
     const dur = pendingVoice.durationSeconds || 0;
@@ -1036,6 +1240,7 @@ export default function ChatScreen({ route }: Props) {
         setInput('');
         setInputHeight(composerInputMinHeight);
         setEditingMessage(null);
+        stopLocalTyping();
         signalChatDataChanged();
       } catch (apiError) {
         setError(getApiErrorMessage(apiError));
@@ -1103,6 +1308,7 @@ export default function ChatScreen({ route }: Props) {
       setInputHeight(composerInputMinHeight);
       setPendingImages([]);
       setReplyToMessage(null);
+      stopLocalTyping();
     } catch (apiError) {
       const message = getApiErrorMessage(apiError);
       setError(
@@ -1120,12 +1326,48 @@ export default function ChatScreen({ route }: Props) {
     setPendingImages(previous => previous.filter(image => image.id !== id));
   }
 
+  function stopLocalTyping() {
+    if (typingStopTimerRef.current) {
+      clearTimeout(typingStopTimerRef.current);
+      typingStopTimerRef.current = null;
+    }
+
+    if (typingActiveRef.current) {
+      chatSocket.sendTypingStop(otherUserId);
+      typingActiveRef.current = false;
+    }
+  }
+
   function handleComposerTextChange(nextValue: string) {
     setInput(nextValue);
 
     if (!nextValue) {
       setInputHeight(composerInputMinHeight);
     }
+
+    if (editingMessageRef.current || !isFocused) {
+      return;
+    }
+
+    if (!nextValue.trim()) {
+      stopLocalTyping();
+      return;
+    }
+
+    if (!typingActiveRef.current) {
+      chatSocket.sendTypingStart(otherUserId);
+      typingActiveRef.current = true;
+    }
+
+    if (typingStopTimerRef.current) {
+      clearTimeout(typingStopTimerRef.current);
+    }
+
+    typingStopTimerRef.current = setTimeout(() => {
+      chatSocket.sendTypingStop(otherUserId);
+      typingActiveRef.current = false;
+      typingStopTimerRef.current = null;
+    }, 1400);
   }
 
   function handleComposerContentSizeChange(contentHeight: number) {
@@ -1200,6 +1442,7 @@ export default function ChatScreen({ route }: Props) {
     setSelectedMessage(null);
     setPendingImages([]);
     setReplyToMessage(null);
+    stopLocalTyping();
     setEditingMessage(message);
     setInput(message.content);
     setInputHeight(estimateComposerInputHeight(message.content));
@@ -1211,6 +1454,7 @@ export default function ChatScreen({ route }: Props) {
     setInput('');
     setInputHeight(composerInputMinHeight);
     setError(null);
+    stopLocalTyping();
   }
 
   function startReply(message: Message) {
@@ -1324,7 +1568,7 @@ export default function ChatScreen({ route }: Props) {
       {pinnedMessage?.message ? (
         <Pressable
           accessibilityRole="button"
-          style={styles.pinnedBar}
+          style={[styles.pinnedBar, themed.card]}
           onPress={() => {
             const targetId = pinnedMessage.message_id;
             const index = messages.findIndex(message => message.id === targetId);
@@ -1334,14 +1578,14 @@ export default function ChatScreen({ route }: Props) {
           }}
           onLongPress={unpinCurrentMessage}
         >
-          <View style={styles.pinnedStripe} />
+          <View style={[styles.pinnedStripe, themed.accentBg]} />
           <View style={styles.pinnedInfo}>
-            <Text style={styles.pinnedTitle}>Закрепленное сообщение</Text>
-            <Text style={styles.pinnedText} numberOfLines={1}>
+            <Text style={[styles.pinnedTitle, themed.accentText]}>Закрепленное сообщение</Text>
+            <Text style={[styles.pinnedText, themed.text]} numberOfLines={1}>
               {messagePreviewText(pinnedMessage.message)}
             </Text>
           </View>
-          <Text style={styles.pinnedHint}>удерж. снять</Text>
+          <Text style={[styles.pinnedHint, themed.softText]}>удерж. снять</Text>
         </Pressable>
       ) : null}
 
@@ -1368,6 +1612,7 @@ export default function ChatScreen({ route }: Props) {
               onVoicePress={url => toggleVoicePlayback(url)}
               playingVoiceUrl={playingVoiceUrl}
               onLongPress={() => openMessageActions(item)}
+              themeColors={themeColors}
             />
           )}
           contentContainerStyle={[
@@ -1378,7 +1623,7 @@ export default function ChatScreen({ route }: Props) {
           ListHeaderComponent={
             loadingOlder ? (
               <View style={styles.loadingOlder}>
-                <ActivityIndicator color={colors.accent} />
+                <ActivityIndicator color={themeColors.accent} />
               </View>
             ) : null
           }
@@ -1392,7 +1637,7 @@ export default function ChatScreen({ route }: Props) {
       )}
 
       {pendingImages.length > 0 ? (
-        <View style={styles.previewStrip}>
+        <View style={[styles.previewStrip, themed.surfaceBar]}>
           {pendingImages.map(image => (
             <View key={image.id} style={styles.previewItem}>
               <Image source={{ uri: image.uri }} style={styles.previewImage} />
@@ -1409,11 +1654,13 @@ export default function ChatScreen({ route }: Props) {
       ) : null}
 
       {sending ? (
-        <View style={styles.sendStatus}>
-          <ActivityIndicator color={colors.accent} />
-          <Text style={styles.sendStatusText}>
+        <View style={[styles.sendStatus, themed.surfaceBar]}>
+          <ActivityIndicator color={themeColors.accent} />
+          <Text style={[styles.sendStatusText, themed.mutedText]}>
             {sending === 'uploadingVoice'
               ? 'Загружаем голосовое сообщение'
+              : sending === 'uploadingVideoNote'
+              ? 'Загружаем видео-сообщение'
               : sending === 'uploading'
               ? uploadProgress
                 ? `Загружаем изображения: ${uploadProgress.current} из ${uploadProgress.total}`
@@ -1424,45 +1671,45 @@ export default function ChatScreen({ route }: Props) {
       ) : null}
 
       {editingMessage ? (
-        <View style={styles.editingBar}>
-          <View style={styles.editingInfo}>
-            <Text style={styles.editingTitle}>Редактирование</Text>
-            <Text style={styles.editingText} numberOfLines={1}>
+        <View style={[styles.editingBar, themed.surfaceBar]}>
+          <View style={[styles.editingInfo, themed.accentLeftBorder]}>
+            <Text style={[styles.editingTitle, themed.accentText]}>Редактирование</Text>
+            <Text style={[styles.editingText, themed.mutedText]} numberOfLines={1}>
               {editingMessage.content}
             </Text>
           </View>
           <Pressable
             accessibilityRole="button"
-            style={styles.editingCancel}
+            style={[styles.editingCancel, themed.surfaceMuted]}
             onPress={cancelEditingMessage}
           >
-            <Text style={styles.editingCancelText}>×</Text>
+            <Text style={[styles.editingCancelText, themed.mutedText]}>×</Text>
           </Pressable>
         </View>
       ) : null}
 
       {replyToMessage && !editingMessage ? (
-        <View style={styles.replyBar}>
-          <View style={styles.replyInfo}>
-            <Text style={styles.replyTitle}>Ответ {messageAuthorName(replyToMessage)}</Text>
-            <Text style={styles.replyText} numberOfLines={1}>
+        <View style={[styles.replyBar, themed.surfaceBar]}>
+          <View style={[styles.replyInfo, themed.accentLeftBorder]}>
+            <Text style={[styles.replyTitle, themed.accentText]}>Ответ {messageAuthorName(replyToMessage)}</Text>
+            <Text style={[styles.replyText, themed.mutedText]} numberOfLines={1}>
               {messagePreviewText(replyToMessage)}
             </Text>
           </View>
           <Pressable
             accessibilityRole="button"
-            style={styles.editingCancel}
+            style={[styles.editingCancel, themed.surfaceMuted]}
             onPress={() => setReplyToMessage(null)}
           >
-            <Text style={styles.editingCancelText}>×</Text>
+            <Text style={[styles.editingCancelText, themed.mutedText]}>×</Text>
           </Pressable>
         </View>
       ) : null}
 
       {recording ? (
-        <View style={styles.recordingBar}>
-          <View style={styles.recordingDot} />
-          <Text style={styles.recordingTime}>{formatDuration(recordingSeconds)}</Text>
+        <View style={[styles.recordingBar, themed.surfaceMutedBar]}>
+          <View style={[styles.recordingDot, themed.accentBg]} />
+          <Text style={[styles.recordingTime, themed.accentText]}>{formatDuration(recordingSeconds)}</Text>
           <Text
             style={[
               styles.recordingText,
@@ -1480,8 +1727,45 @@ export default function ChatScreen({ route }: Props) {
         </View>
       ) : null}
 
+      {pendingVideoNote ? (
+        <View style={[styles.previewVideoNoteCard, themed.cardMuted]}>
+          <VideoNoteAttachment
+            url={pendingVideoNote.uri}
+            duration={pendingVideoNote.durationSeconds}
+            outgoing={false}
+            themeColors={themeColors}
+          />
+          <View style={styles.previewVideoNoteMeta}>
+            <Text style={[styles.previewMetaText, themed.mutedText]}>
+              Видео-сообщение · {formatDuration(pendingVideoNote.durationSeconds)}
+            </Text>
+            <Text style={[styles.previewHint, themed.softText]}>
+              Проверьте запись перед отправкой.
+            </Text>
+          </View>
+          <View style={[styles.previewActions, styles.previewVideoNoteActions]}>
+            <Pressable
+              onPress={() => setPendingVideoNote(null)}
+              style={styles.previewDeleteBtn}
+              disabled={Boolean(sending)}
+            >
+              <Text style={styles.previewDeleteText}>Удалить</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                sendPendingVideoNote().catch(() => undefined);
+              }}
+              style={styles.previewSendBtn}
+              disabled={Boolean(sending)}
+            >
+              <Text style={styles.previewSendText}>Отправить</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
+
       {pendingVoice ? (
-        <View style={styles.previewVoiceCard}>
+        <View style={[styles.previewVoiceCard, themed.cardMuted]}>
           <View style={styles.previewVoiceRow}>
             <Pressable
               onPress={() => {
@@ -1515,13 +1799,13 @@ export default function ChatScreen({ route }: Props) {
               />
             </View>
 
-            <Text style={styles.previewDuration}>
+            <Text style={[styles.previewDuration, themed.mutedText]}>
               {formatDuration(previewPosition || 0)} / {formatDuration(pendingVoice.durationSeconds)}
             </Text>
           </View>
 
           <View style={styles.previewMeta}>
-            <Text style={styles.previewMetaText}>
+            <Text style={[styles.previewMetaText, themed.mutedText]}>
               {formatDuration(pendingVoice.durationSeconds)}
             </Text>
           </View>
@@ -1549,7 +1833,13 @@ export default function ChatScreen({ route }: Props) {
         </View>
       ) : null}
 
-      <View style={styles.composer}>
+      {otherTyping ? (
+        <View style={[styles.typingBar, themed.surfaceBar]}>
+          <Text style={[styles.typingText, themed.mutedText]}>{route.params.name} печатает...</Text>
+        </View>
+      ) : null}
+
+      <View style={[styles.composer, themed.surfaceBar]}>
         <AppButton
           title="Фото"
           variant="secondary"
@@ -1559,10 +1849,32 @@ export default function ChatScreen({ route }: Props) {
         <AppButton
           title="Голос"
           variant="secondary"
-          disabled={Boolean(sending) || Boolean(editingMessage) || pendingImages.length > 0 || recordingBusy || Boolean(pendingVoice)}
+          disabled={
+            Boolean(sending) ||
+            Boolean(editingMessage) ||
+            pendingImages.length > 0 ||
+            recordingBusy ||
+            Boolean(pendingVoice) ||
+            Boolean(pendingVideoNote)
+          }
           onPress={() => {}}
           style={recording ? styles.voiceButtonRecording : undefined}
           {...voicePanResponder.panHandlers}
+        />
+        <AppButton
+          title="Видео"
+          variant="secondary"
+          disabled={
+            Boolean(sending) ||
+            Boolean(editingMessage) ||
+            pendingImages.length > 0 ||
+            recording ||
+            Boolean(pendingVoice) ||
+            Boolean(pendingVideoNote)
+          }
+          onPress={() => {
+            recordVideoNote().catch(() => undefined);
+          }}
         />
         <TextInput
           value={input}
@@ -1571,21 +1883,26 @@ export default function ChatScreen({ route }: Props) {
             handleComposerContentSizeChange(event.nativeEvent.contentSize.height)
           }
           placeholder="Сообщение"
-          placeholderTextColor={colors.soft}
+          placeholderTextColor={themeColors.soft}
           multiline
           scrollEnabled={inputHeight >= composerInputMaxHeight}
           maxLength={1000}
           editable={!sending && !recording}
           textAlignVertical="top"
-          style={[styles.input, { height: inputHeight }]}
+          style={[styles.input, themed.input, { height: inputHeight }]}
         />
         <AppButton
           title={editingMessage ? 'Сохранить' : 'Отправить'}
           disabled={
             Boolean(sending) ||
             recording ||
-            (!input.trim() && !editingMessage && pendingImages.length === 0 && !pendingVoice) ||
-            Boolean(pendingVoice)
+            (!input.trim() &&
+              !editingMessage &&
+              pendingImages.length === 0 &&
+              !pendingVoice &&
+              !pendingVideoNote) ||
+            Boolean(pendingVoice) ||
+            Boolean(pendingVideoNote)
           }
           loading={Boolean(sending)}
           onPress={sendMessage}
@@ -1638,6 +1955,7 @@ export default function ChatScreen({ route }: Props) {
         isOwn={Boolean(
           selectedMessage && user?.id && selectedMessage.from_id === user.id,
         )}
+        themeColors={themeColors}
       />
 
       <ForwardMessageModal
@@ -1651,6 +1969,7 @@ export default function ChatScreen({ route }: Props) {
         onSubmit={() => {
           submitForward().catch(() => undefined);
         }}
+        themeColors={themeColors}
       />
     </Screen>
   );
@@ -1670,6 +1989,25 @@ function assetToLocalImage(asset: Asset): LocalChatImage | null {
   };
 }
 
+function assetToLocalVideoNote(asset?: Asset): LocalVideoNoteMessage | null {
+  if (!asset?.uri) {
+    return null;
+  }
+
+  const durationSeconds = Math.max(
+    1,
+    Math.round(asset.duration ?? CHAT_VIDEO_NOTE_MAX_DURATION_SECONDS),
+  );
+
+  return {
+    uri: asset.uri,
+    type: asset.type || 'video/mp4',
+    fileName: asset.fileName || `video-note-${Date.now()}.mp4`,
+    durationSeconds,
+    fileSize: asset.fileSize,
+  };
+}
+
 function MessageBubble({
   message,
   outgoing,
@@ -1677,6 +2015,7 @@ function MessageBubble({
   onVoicePress,
   playingVoiceUrl,
   onLongPress,
+  themeColors,
 }: {
   message: Message;
   outgoing: boolean;
@@ -1684,7 +2023,12 @@ function MessageBubble({
   onVoicePress: (url: string) => void;
   playingVoiceUrl: string | null;
   onLongPress: () => void;
+  themeColors: ThemeColors;
 }) {
+  const themed = useMemo(
+    () => createChatThemeStyles(themeColors),
+    [themeColors],
+  );
   const displayContent =
     message.content ||
     (message.encryption_version && message.encryption_version > 0
@@ -1698,10 +2042,14 @@ function MessageBubble({
       onLongPress={onLongPress}
     >
       <View
-        style={[styles.bubble, outgoing ? styles.outgoing : styles.incoming]}
+        style={[
+          styles.bubble,
+          outgoing ? styles.outgoing : styles.incoming,
+          outgoing ? themed.outgoingBubble : themed.incomingBubble,
+        ]}
       >
         {message.forwarded_from_message_id ? (
-          <Text style={[styles.forwardedLabel, outgoing && styles.forwardedLabelOutgoing]}>
+          <Text style={[styles.forwardedLabel, themed.accentText, outgoing && styles.forwardedLabelOutgoing]}>
             {message.forwarded_from_user?.name
               ? `↪ Переслано от ${message.forwarded_from_user.name}`
               : '↪ Пересланное сообщение'}
@@ -1709,11 +2057,11 @@ function MessageBubble({
         ) : null}
 
         {message.reply_to_message_id ? (
-          <View style={[styles.replyPreview, outgoing && styles.replyPreviewOutgoing]}>
-            <Text style={[styles.replyPreviewAuthor, outgoing && styles.replyPreviewAuthorOutgoing]}>
+          <View style={[styles.replyPreview, themed.replyPreview, outgoing && styles.replyPreviewOutgoing]}>
+            <Text style={[styles.replyPreviewAuthor, themed.accentText, outgoing && styles.replyPreviewAuthorOutgoing]}>
               {message.reply_to_message ? messageAuthorName(message.reply_to_message) : 'Ответ'}
             </Text>
-            <Text style={[styles.replyPreviewText, outgoing && styles.replyPreviewTextOutgoing]} numberOfLines={1}>
+            <Text style={[styles.replyPreviewText, themed.mutedText, outgoing && styles.replyPreviewTextOutgoing]} numberOfLines={1}>
               {messagePreviewText(message.reply_to_message)}
             </Text>
           </View>
@@ -1722,7 +2070,10 @@ function MessageBubble({
         {displayContent ? (
           <Text
             selectable
-            style={[styles.messageText, outgoing && styles.outgoingText]}
+            style={[
+              styles.messageText,
+              outgoing ? styles.outgoingText : themed.messageText,
+            ]}
           >
             {linkParts(displayContent).map((part, index) => {
               if (part.type === 'link' && part.href) {
@@ -1731,6 +2082,7 @@ function MessageBubble({
                     key={`${part.href}-${index}`}
                     style={[
                       styles.messageLink,
+                      !outgoing && themed.accentText,
                       outgoing && styles.outgoingLink,
                     ]}
                     onPress={() =>
@@ -1754,12 +2106,14 @@ function MessageBubble({
                 key={attachment.id ?? attachment.file_url}
                 style={[
                   styles.attachmentDecryptError,
+                  themed.dangerSoft,
                   outgoing && styles.attachmentDecryptErrorOutgoing,
                 ]}
               >
                 <Text
                   style={[
                     styles.attachmentDecryptErrorText,
+                    !outgoing && themed.dangerText,
                     outgoing && styles.attachmentDecryptErrorTextOutgoing,
                   ]}
                 >
@@ -1779,6 +2133,7 @@ function MessageBubble({
                 accessibilityRole="button"
                 style={[
                   styles.voiceAttachment,
+                  themed.voiceAttachment,
                   outgoing && styles.voiceAttachmentOutgoing,
                 ]}
                 onPress={() => onVoicePress(attachmentUrl)}
@@ -1787,6 +2142,7 @@ function MessageBubble({
                 <View
                   style={[
                     styles.voicePlayButton,
+                    themed.accentBg,
                     isPlaying && styles.voicePlayButtonActive,
                   ]}
                 >
@@ -1798,6 +2154,7 @@ function MessageBubble({
                   <Text
                     style={[
                       styles.voiceTitle,
+                      !outgoing && themed.text,
                       outgoing && styles.voiceTitleOutgoing,
                     ]}
                   >
@@ -1806,6 +2163,7 @@ function MessageBubble({
                   <Text
                     style={[
                       styles.voiceDuration,
+                      !outgoing && themed.mutedText,
                       outgoing && styles.voiceDurationOutgoing,
                     ]}
                   >
@@ -1820,18 +2178,14 @@ function MessageBubble({
 
           if (attachment.file_type === 'video_note') {
             return (
-              <Pressable
+              <VideoNoteAttachment
                 key={attachment.id ?? attachment.file_url}
-                accessibilityRole="button"
-                style={[styles.videoNoteAttachment, outgoing && styles.videoNoteAttachmentOutgoing]}
-                onPress={() => Linking.openURL(attachmentUrl).catch(() => undefined)}
+                url={attachmentUrl}
+                duration={attachment.duration_seconds ?? attachment.duration}
+                outgoing={outgoing}
                 onLongPress={onLongPress}
-              >
-                <Text style={styles.videoNoteIcon}>▶</Text>
-                <Text style={[styles.videoNoteText, outgoing && styles.videoNoteTextOutgoing]}>
-                  Кружочек · {formatDuration(attachment.duration_seconds ?? attachment.duration)}
-                </Text>
-              </Pressable>
+                themeColors={themeColors}
+              />
             );
           }
 
@@ -1851,7 +2205,7 @@ function MessageBubble({
           );
         })}
 
-        <Text style={[styles.messageDate, outgoing && styles.outgoingDate]}>
+        <Text style={[styles.messageDate, !outgoing && themed.softText, outgoing && styles.outgoingDate]}>
           {formatDateTime(message.created_at)}
         </Text>
         {outgoing ? (
@@ -1859,6 +2213,96 @@ function MessageBubble({
             {message.is_read ? 'Прочитано' : 'Отправлено'}
           </Text>
         ) : null}
+      </View>
+    </Pressable>
+  );
+}
+
+function VideoNoteAttachment({
+  url,
+  duration,
+  outgoing,
+  onLongPress,
+  themeColors,
+}: {
+  url: string;
+  duration?: number;
+  outgoing: boolean;
+  onLongPress?: () => void;
+  themeColors: ThemeColors;
+}) {
+  const themed = useMemo(
+    () => createChatThemeStyles(themeColors),
+    [themeColors],
+  );
+  const [playing, setPlaying] = useState(false);
+  const [position, setPosition] = useState(0);
+  const [loadedDuration, setLoadedDuration] = useState(duration ?? 0);
+  const effectiveDuration = loadedDuration || duration || 0;
+  const progress =
+    effectiveDuration > 0
+      ? Math.min(1, Math.max(0, position / effectiveDuration))
+      : 0;
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      style={[
+        styles.videoNoteAttachment,
+        outgoing && styles.videoNoteAttachmentOutgoing,
+      ]}
+      onPress={() => setPlaying(value => !value)}
+      onLongPress={onLongPress}
+    >
+      <View
+        style={[
+          styles.videoNoteOrbit,
+          themed.videoNoteOrbit,
+          playing && styles.videoNoteOrbitActive,
+          playing && themed.videoNoteOrbitActive,
+        ]}
+      >
+        <Video
+          source={{ uri: url }}
+          style={[styles.videoNoteVideo, themed.surfaceMuted]}
+          paused={!playing}
+          repeat={false}
+          resizeMode="cover"
+          muted={false}
+          onLoad={data => {
+            setLoadedDuration(data.duration || duration || 0);
+          }}
+          onProgress={data => {
+            setPosition(data.currentTime || 0);
+          }}
+          onEnd={() => {
+            setPlaying(false);
+            setPosition(0);
+          }}
+          onError={() => {
+            setPlaying(false);
+          }}
+        />
+        <View style={[styles.videoNoteGlassButton, themed.videoNoteGlassButton]}>
+          <Text style={styles.videoNoteIcon}>{playing ? 'Ⅱ' : '▶'}</Text>
+        </View>
+      </View>
+      <View style={[styles.videoNotePill, themed.videoNotePill]}>
+        <View
+          style={[
+            styles.videoNotePillProgress,
+            themed.videoNotePillProgress,
+            { width: `${progress * 100}%` },
+          ]}
+        />
+        <Text
+          style={[
+            styles.videoNoteText,
+            outgoing && styles.videoNoteTextOutgoing,
+          ]}
+        >
+          {formatDuration(effectiveDuration)}
+        </Text>
       </View>
     </Pressable>
   );
@@ -1875,6 +2319,7 @@ function MessageActionSheet({
   onReply,
   onForward,
   onPin,
+  themeColors,
 }: {
   message: Message | null;
   isOwn: boolean;
@@ -1886,7 +2331,12 @@ function MessageActionSheet({
   onReply: (message: Message) => void;
   onForward: (message: Message) => void;
   onPin: (message: Message) => void;
+  themeColors: ThemeColors;
 }) {
+  const themed = useMemo(
+    () => createChatThemeStyles(themeColors),
+    [themeColors],
+  );
   const trimmedText = message?.content.trim() ?? '';
   const messageUrl = message ? firstUrl(message.content) : '';
 
@@ -1897,10 +2347,10 @@ function MessageActionSheet({
       animationType="fade"
       onRequestClose={onClose}
     >
-      <Pressable style={styles.sheetBackdrop} onPress={onClose}>
-        <Pressable style={styles.sheet} onPress={event => event.stopPropagation()}>
-          <View style={styles.sheetHandle} />
-          <Text style={styles.sheetTitle}>Сообщение</Text>
+      <Pressable style={[styles.sheetBackdrop, themed.sheetBackdrop]} onPress={onClose}>
+        <Pressable style={[styles.sheet, themed.sheet]} onPress={event => event.stopPropagation()}>
+          <View style={[styles.sheetHandle, themed.sheetHandle]} />
+          <Text style={[styles.sheetTitle, themed.mutedText]}>Сообщение</Text>
 
           {message ? (
             <Pressable
@@ -1908,8 +2358,8 @@ function MessageActionSheet({
               style={styles.sheetAction}
               onPress={() => onReply(message)}
             >
-              <Text style={styles.sheetActionIcon}>R</Text>
-              <Text style={styles.sheetActionText}>Ответить</Text>
+              <Text style={[styles.sheetActionIcon, themed.sheetActionIcon]}>R</Text>
+              <Text style={[styles.sheetActionText, themed.text]}>Ответить</Text>
             </Pressable>
           ) : null}
 
@@ -1919,8 +2369,8 @@ function MessageActionSheet({
               style={styles.sheetAction}
               onPress={() => onForward(message)}
             >
-              <Text style={styles.sheetActionIcon}>F</Text>
-              <Text style={styles.sheetActionText}>Переслать</Text>
+              <Text style={[styles.sheetActionIcon, themed.sheetActionIcon]}>F</Text>
+              <Text style={[styles.sheetActionText, themed.text]}>Переслать</Text>
             </Pressable>
           ) : null}
 
@@ -1930,8 +2380,8 @@ function MessageActionSheet({
               style={styles.sheetAction}
               onPress={() => onPin(message)}
             >
-              <Text style={styles.sheetActionIcon}>P</Text>
-              <Text style={styles.sheetActionText}>Закрепить</Text>
+              <Text style={[styles.sheetActionIcon, themed.sheetActionIcon]}>P</Text>
+              <Text style={[styles.sheetActionText, themed.text]}>Закрепить</Text>
             </Pressable>
           ) : null}
 
@@ -1941,8 +2391,8 @@ function MessageActionSheet({
               style={styles.sheetAction}
               onPress={() => onEdit(message)}
             >
-              <Text style={styles.sheetActionIcon}>E</Text>
-              <Text style={styles.sheetActionText}>Редактировать</Text>
+              <Text style={[styles.sheetActionIcon, themed.sheetActionIcon]}>E</Text>
+              <Text style={[styles.sheetActionText, themed.text]}>Редактировать</Text>
             </Pressable>
           ) : null}
 
@@ -1952,10 +2402,10 @@ function MessageActionSheet({
               style={[styles.sheetAction, styles.sheetDangerAction]}
               onPress={() => onDelete(message)}
             >
-              <Text style={[styles.sheetActionIcon, styles.sheetDangerIcon]}>
+              <Text style={[styles.sheetActionIcon, themed.sheetActionIcon, styles.sheetDangerIcon, themed.dangerSoft, themed.dangerText]}>
                 D
               </Text>
-              <Text style={[styles.sheetActionText, styles.sheetDangerText]}>
+              <Text style={[styles.sheetActionText, styles.sheetDangerText, themed.dangerText]}>
                 Удалить сообщение
               </Text>
             </Pressable>
@@ -1967,8 +2417,8 @@ function MessageActionSheet({
               style={styles.sheetAction}
               onPress={() => message && onCopyText(message)}
             >
-              <Text style={styles.sheetActionIcon}>T</Text>
-              <Text style={styles.sheetActionText}>Скопировать текст</Text>
+              <Text style={[styles.sheetActionIcon, themed.sheetActionIcon]}>T</Text>
+              <Text style={[styles.sheetActionText, themed.text]}>Скопировать текст</Text>
             </Pressable>
           ) : null}
 
@@ -1978,8 +2428,8 @@ function MessageActionSheet({
               style={styles.sheetAction}
               onPress={() => onCopyLink(messageUrl)}
             >
-              <Text style={styles.sheetActionIcon}>L</Text>
-              <Text style={styles.sheetActionText}>Скопировать ссылку</Text>
+              <Text style={[styles.sheetActionIcon, themed.sheetActionIcon]}>L</Text>
+              <Text style={[styles.sheetActionText, themed.text]}>Скопировать ссылку</Text>
             </Pressable>
           ) : null}
         </Pressable>
@@ -1998,6 +2448,7 @@ function ForwardMessageModal({
   onClose,
   onToggleRecipient,
   onSubmit,
+  themeColors,
 }: {
   message: Message | null;
   friends: User[];
@@ -2007,7 +2458,12 @@ function ForwardMessageModal({
   onClose: () => void;
   onToggleRecipient: (userId: number) => void;
   onSubmit: () => void;
+  themeColors: ThemeColors;
 }) {
+  const themed = useMemo(
+    () => createChatThemeStyles(themeColors),
+    [themeColors],
+  );
   return (
     <Modal
       visible={Boolean(message)}
@@ -2015,26 +2471,26 @@ function ForwardMessageModal({
       animationType="fade"
       onRequestClose={onClose}
     >
-      <Pressable style={styles.sheetBackdrop} onPress={onClose}>
-        <Pressable style={styles.sheet} onPress={event => event.stopPropagation()}>
-          <View style={styles.sheetHandle} />
-          <Text style={styles.sheetTitle}>Переслать сообщение</Text>
+      <Pressable style={[styles.sheetBackdrop, themed.sheetBackdrop]} onPress={onClose}>
+        <Pressable style={[styles.sheet, themed.sheet]} onPress={event => event.stopPropagation()}>
+          <View style={[styles.sheetHandle, themed.sheetHandle]} />
+          <Text style={[styles.sheetTitle, themed.mutedText]}>Переслать сообщение</Text>
           {message ? (
-            <View style={styles.forwardPreview}>
-              <Text style={styles.forwardPreviewText} numberOfLines={2}>
+            <View style={[styles.forwardPreview, themed.surfaceMuted]}>
+              <Text style={[styles.forwardPreviewText, themed.text]} numberOfLines={2}>
                 {messagePreviewText(message)}
               </Text>
             </View>
           ) : null}
 
-          {error ? <Text style={styles.forwardError}>{error}</Text> : null}
+          {error ? <Text style={[styles.forwardError, themed.dangerText]}>{error}</Text> : null}
           {loading && friends.length === 0 ? (
             <View style={styles.forwardLoading}>
-              <ActivityIndicator color={colors.accent} />
-              <Text style={styles.sendStatusText}>Загружаем друзей</Text>
+              <ActivityIndicator color={themeColors.accent} />
+              <Text style={[styles.sendStatusText, themed.mutedText]}>Загружаем друзей</Text>
             </View>
           ) : friends.length === 0 ? (
-            <Text style={styles.forwardEmpty}>Нет друзей для пересылки</Text>
+            <Text style={[styles.forwardEmpty, themed.mutedText]}>Нет друзей для пересылки</Text>
           ) : (
             <View style={styles.forwardList}>
               {friends.map(friend => {
@@ -2048,13 +2504,23 @@ function ForwardMessageModal({
                     key={friendId}
                     accessibilityRole="checkbox"
                     accessibilityState={{ checked: selected }}
-                    style={[styles.forwardRecipient, selected && styles.forwardRecipientSelected]}
+                    style={[
+                      styles.forwardRecipient,
+                      themed.forwardRecipient,
+                      selected && styles.forwardRecipientSelected,
+                      selected && themed.forwardRecipientSelected,
+                    ]}
                     onPress={() => onToggleRecipient(friendId)}
                   >
-                    <Text style={styles.forwardRecipientName} numberOfLines={1}>
+                    <Text style={[styles.forwardRecipientName, themed.text]} numberOfLines={1}>
                       {friend.name || friend.email}
                     </Text>
-                    <Text style={[styles.forwardCheck, selected && styles.forwardCheckSelected]}>
+                    <Text style={[
+                      styles.forwardCheck,
+                      themed.forwardCheck,
+                      selected && styles.forwardCheckSelected,
+                      selected && themed.forwardCheckSelected,
+                    ]}>
                       {selected ? '✓' : '+'}
                     </Text>
                   </Pressable>
@@ -2066,15 +2532,15 @@ function ForwardMessageModal({
           <View style={styles.forwardActions}>
             <Pressable
               accessibilityRole="button"
-              style={[styles.forwardButton, styles.forwardCancelButton]}
+              style={[styles.forwardButton, styles.forwardCancelButton, themed.surfaceMuted]}
               onPress={onClose}
               disabled={loading}
             >
-              <Text style={styles.forwardCancelText}>Отмена</Text>
+              <Text style={[styles.forwardCancelText, themed.text]}>Отмена</Text>
             </Pressable>
             <Pressable
               accessibilityRole="button"
-              style={[styles.forwardButton, styles.forwardSubmitButton]}
+              style={[styles.forwardButton, styles.forwardSubmitButton, themed.accentBg]}
               onPress={onSubmit}
               disabled={loading || selectedIds.size === 0}
             >
@@ -2088,6 +2554,128 @@ function ForwardMessageModal({
     </Modal>
   );
 }
+
+const createChatThemeStyles = (theme: ThemeColors) =>
+  StyleSheet.create({
+    card: {
+      backgroundColor: theme.card,
+      borderColor: theme.border,
+    },
+    cardMuted: {
+      backgroundColor: theme.cardMuted,
+      borderColor: theme.border,
+    },
+    surfaceBar: {
+      backgroundColor: theme.surface,
+      borderColor: theme.border,
+      borderTopColor: theme.border,
+    },
+    surfaceMutedBar: {
+      backgroundColor: theme.surfaceMuted,
+      borderTopColor: theme.border,
+    },
+    surfaceMuted: {
+      backgroundColor: theme.surfaceMuted,
+    },
+    input: {
+      backgroundColor: theme.input,
+      borderColor: theme.border,
+      color: theme.text,
+    },
+    text: {
+      color: theme.text,
+    },
+    messageText: {
+      color: theme.messageOtherText,
+    },
+    mutedText: {
+      color: theme.muted,
+    },
+    softText: {
+      color: theme.soft,
+    },
+    accentText: {
+      color: theme.accent,
+    },
+    dangerText: {
+      color: theme.danger,
+    },
+    dangerSoft: {
+      backgroundColor: theme.dangerSoft,
+    },
+    accentBg: {
+      backgroundColor: theme.accent,
+    },
+    accentLeftBorder: {
+      borderLeftColor: theme.accent,
+    },
+    incomingBubble: {
+      backgroundColor: theme.messageOtherBg,
+      borderColor: theme.messageOtherBorder,
+    },
+    outgoingBubble: {
+      backgroundColor: theme.messageOwnBg,
+      borderColor: theme.messageOwnBorder,
+      borderWidth: 1,
+    },
+    replyPreview: {
+      backgroundColor: theme.surfaceMuted,
+      borderLeftColor: theme.accent,
+    },
+    voiceAttachment: {
+      backgroundColor: theme.surfaceMuted,
+    },
+    videoNoteOrbit: {
+      borderColor: theme.accent,
+      backgroundColor: theme.surfaceMuted,
+      shadowColor: theme.accent,
+    },
+    videoNoteOrbitActive: {
+      borderColor: theme.accentStrong,
+    },
+    videoNoteGlassButton: {
+      borderColor: theme.isDark
+        ? 'rgba(255, 255, 255, 0.34)'
+        : 'rgba(255, 255, 255, 0.72)',
+    },
+    videoNotePill: {
+      backgroundColor: theme.isDark
+        ? 'rgba(2, 6, 23, 0.68)'
+        : 'rgba(15, 23, 42, 0.56)',
+    },
+    videoNotePillProgress: {
+      backgroundColor: theme.accentSoft,
+    },
+    sheetBackdrop: {
+      backgroundColor: theme.overlay,
+    },
+    sheet: {
+      backgroundColor: theme.surface,
+    },
+    sheetHandle: {
+      backgroundColor: theme.border,
+    },
+    sheetActionIcon: {
+      backgroundColor: theme.surfaceMuted,
+      color: theme.muted,
+    },
+    forwardRecipient: {
+      backgroundColor: theme.surfaceMuted,
+      borderColor: theme.border,
+    },
+    forwardRecipientSelected: {
+      borderColor: theme.accent,
+      backgroundColor: theme.selected,
+    },
+    forwardCheck: {
+      backgroundColor: theme.surface,
+      color: theme.muted,
+    },
+    forwardCheckSelected: {
+      backgroundColor: theme.accent,
+      color: theme.white,
+    },
+  });
 
 const styles = StyleSheet.create({
   container: {
@@ -2282,35 +2870,84 @@ const styles = StyleSheet.create({
     color: 'rgba(248, 250, 252, 0.78)',
   },
   videoNoteAttachment: {
-    minWidth: 190,
-    flexDirection: 'row',
+    width: 116,
     alignItems: 'center',
-    gap: 10,
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    backgroundColor: colors.surfaceMuted,
+    gap: 4,
+    alignSelf: 'flex-start',
+    paddingVertical: 2,
+    backgroundColor: 'transparent',
   },
   videoNoteAttachmentOutgoing: {
-    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    alignSelf: 'flex-end',
+  },
+  videoNoteOrbit: {
+    width: 104,
+    height: 104,
+    borderRadius: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: colors.accent,
+    backgroundColor: colors.surfaceMuted,
+    overflow: 'hidden',
+    shadowColor: colors.accent,
+    shadowOpacity: 0.24,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+  },
+  videoNoteOrbitActive: {
+    borderColor: colors.accentStrong,
+    shadowOpacity: 0.36,
+    shadowRadius: 18,
+  },
+  videoNoteVideo: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: colors.surfaceMuted,
+  },
+  videoNoteGlassButton: {
+    position: 'absolute',
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.32)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.48)',
   },
   videoNoteIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    overflow: 'hidden',
     color: colors.white,
-    backgroundColor: colors.accent,
-    fontSize: 14,
-    lineHeight: 34,
+    fontSize: 16,
+    lineHeight: 19,
     fontWeight: '900',
     textAlign: 'center',
+    textShadowColor: 'rgba(2, 6, 23, 0.42)',
+    textShadowRadius: 6,
+  },
+  videoNotePill: {
+    minWidth: 48,
+    overflow: 'hidden',
+    borderRadius: 999,
+    backgroundColor: 'rgba(2, 6, 23, 0.58)',
+  },
+  videoNotePillProgress: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(255, 255, 255, 0.24)',
   },
   videoNoteText: {
-    color: colors.text,
-    fontSize: 14,
-    lineHeight: 18,
-    fontWeight: '700',
+    minWidth: 42,
+    color: colors.white,
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '800',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    textAlign: 'center',
   },
   videoNoteTextOutgoing: {
     color: colors.white,
@@ -2537,6 +3174,36 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
   },
+  previewVideoNoteCard: {
+    marginHorizontal: 12,
+    marginBottom: 6,
+    padding: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  previewVideoNoteMeta: {
+    flex: 1,
+    minWidth: 0,
+    gap: 3,
+  },
+  previewVideoNoteActions: {
+    flexDirection: 'column',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    paddingLeft: 0,
+    paddingTop: 0,
+    gap: 6,
+  },
+  previewHint: {
+    color: colors.soft,
+    fontSize: 12,
+    lineHeight: 16,
+  },
   // Preview voice card (new UX: record -> preview -> send/delete)
   previewVoiceCard: {
     marginHorizontal: 12,
@@ -2621,6 +3288,19 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontSize: 13,
     fontWeight: '700',
+  },
+  typingBar: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  typingText: {
+    color: colors.muted,
+    fontSize: 13,
+    lineHeight: 18,
+    fontStyle: 'italic',
   },
   composer: {
     flexDirection: 'row',
