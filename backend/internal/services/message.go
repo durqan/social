@@ -265,9 +265,25 @@ func ForwardEncryptedMessage(db *gorm.DB, userID uint, sourceMessageID uint, inp
 
 			attachments := make([]models.MessageAttachment, 0, len(input.Attachments))
 			for _, attachment := range input.Attachments {
+				fileURL := attachment.FileURL
+				filename := filepath.Base(fileURL)
+				// For E2EE attachments the client sends the temporary /api/messages/uploads/ URL from the upload step.
+				// Convert to the canonical internal storage key (e.g. "encrypted/...") so that
+				// KeyFromStoredValue + looksLikeObjectKey + serving via /attachments/:id works.
+				if strings.HasPrefix(fileURL, chatUploadURLPrefix) || strings.HasPrefix(fileURL, legacyChatUploadPrefix) {
+					if chatEncryptedExtensionFromFilename(filename) != "" {
+						fileURL = EncryptedChatUploadKey(filename, userID)
+					} else if attachment.FileType == "voice" {
+						fileURL = ChatUploadKey(filename, userID)
+					} else if attachment.FileType == "video_note" {
+						fileURL = VideoNoteUploadKey(filename, userID)
+					} else {
+						fileURL = ChatUploadKey(filename, userID)
+					}
+				}
 				attachments = append(attachments, models.MessageAttachment{
 					MessageID:         message.ID,
-					FileURL:           attachment.FileURL,
+					FileURL:           fileURL,
 					FileType:          attachment.FileType,
 					Width:             attachment.Width,
 					Height:            attachment.Height,
