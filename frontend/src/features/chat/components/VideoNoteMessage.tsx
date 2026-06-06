@@ -26,7 +26,7 @@ export const VideoNoteMessage = ({
   const [duration, setDuration] = useState(initialDuration);
 
   const togglePlay = useCallback(
-    async (event?: React.MouseEvent) => {
+    async (event?: React.MouseEvent | React.KeyboardEvent) => {
       event?.stopPropagation();
 
       if (selectionMode) {
@@ -73,6 +73,10 @@ export const VideoNoteMessage = ({
     const onLoadedMetadata = () => {
       if (video.duration && Number.isFinite(video.duration) && video.duration > 0) {
         setDuration(video.duration);
+      }
+      // Force a frame to be decoded so the paused state shows a video thumbnail
+      if (video.readyState >= 1 && video.currentTime < 0.1) {
+        video.currentTime = 0.001;
       }
     };
     const onTimeUpdate = () => setCurrentTime(video.currentTime);
@@ -125,10 +129,19 @@ export const VideoNoteMessage = ({
     : formatDuration(duration);
 
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={selectionMode && !canSelect ? -1 : 0}
       onClick={togglePlay}
-      className={`group relative block overflow-hidden rounded-full bg-black shadow-sm outline-none ring-1 ring-black/5 transition-[width,height,transform] duration-200 ease-out active:scale-[0.98] ${sizeClass}`}
+      onKeyDown={(e) => {
+        if ((e.key === 'Enter' || e.key === ' ') && !selectionMode) {
+          e.preventDefault();
+          void togglePlay(e);
+        } else if (selectionMode && canSelect) {
+          void togglePlay(e);
+        }
+      }}
+      className={`group relative block cursor-pointer overflow-hidden rounded-full bg-black shadow-sm outline-none ring-1 ring-black/5 transition-[width,height,transform] duration-200 ease-out active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-sky-400/70 ${sizeClass}`}
       aria-label={isPlaying ? 'Пауза' : 'Воспроизвести видео-сообщение'}
       title={isPlaying ? 'Пауза' : 'Воспроизвести видео-сообщение'}
     >
@@ -142,13 +155,22 @@ export const VideoNoteMessage = ({
       />
 
       <div className="pointer-events-none absolute inset-0 rounded-full ring-1 ring-inset ring-white/20" />
-      <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/15 opacity-100 transition group-hover:bg-black/20">
-        <span
-          className={`flex items-center justify-center rounded-full shadow-sm transition ${isPlaying ? 'h-9 w-9 bg-black/35 text-white opacity-0 group-hover:opacity-100' : `h-10 w-10 ${isOwn ? 'bg-white/90 text-sky-700' : 'bg-white/90 text-sky-600'}`}`}
-        >
-          <Icon name={isPlaying ? 'pause' : 'play'} className={`${isPlaying ? '' : 'ml-0.5'} h-4 w-4`} filled />
-        </span>
-      </div>
+      {!isPlaying && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/15 transition group-hover:bg-black/20">
+          <span
+            className={`flex h-10 w-10 items-center justify-center rounded-full shadow-sm ${isOwn ? 'bg-white/90 text-sky-700' : 'bg-white/90 text-sky-600'}`}
+          >
+            <Icon name="play" className="ml-0.5 h-4 w-4" filled />
+          </span>
+        </div>
+      )}
+      {isPlaying && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-black/35 text-white shadow-sm transition-opacity opacity-0 group-hover:opacity-100">
+            <Icon name="pause" className="h-4 w-4" filled />
+          </span>
+        </div>
+      )}
       {duration > 0 && (
         <div className="pointer-events-none absolute bottom-2 left-1/2 w-[72%] -translate-x-1/2 overflow-hidden rounded-full bg-black/60 text-center text-[10px] font-medium tabular-nums text-white">
           <div className="relative px-2 py-0.5">
@@ -160,6 +182,6 @@ export const VideoNoteMessage = ({
           </div>
         </div>
       )}
-    </button>
+    </div>
   );
 };
