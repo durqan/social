@@ -13,11 +13,30 @@ self.addEventListener('push', event => {
         }
     }
 
+    let tag = payload.tag;
+    if (!tag) {
+        switch (payload.type) {
+            case 'message_received':
+                tag = 'messages';
+                break;
+            case 'friend_request':
+            case 'friend_accepted':
+                tag = 'friends';
+                break;
+            case 'post_liked':
+            case 'comment_created':
+                tag = 'activity';
+                break;
+            default:
+                tag = `notification-${payload.notification_id || Date.now()}`;
+        }
+    }
+
     event.waitUntil(self.registration.showNotification(payload.title, {
         body: payload.body,
         icon: '/pwa-icon-192.png',
         badge: '/pwa-icon-192.png',
-        tag: payload.tag || `notification-${payload.notification_id || Date.now()}`,
+        tag: tag,
         data: {
             url: payload.url || '/',
             notification_id: payload.notification_id,

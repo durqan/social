@@ -35,6 +35,7 @@ type Payload struct {
 	Type           string `json:"type"`
 	EntityID       uint   `json:"entity_id"`
 	ActorID        uint   `json:"actor_id"`
+	ConversationID uint   `json:"conversation_id"`
 }
 
 type Service struct {
@@ -163,6 +164,7 @@ func (s *Service) SendMobile(token models.MobilePushToken, payload Payload) erro
 				"notification_id": fmt.Sprintf("%d", payload.NotificationID),
 				"entity_id":       fmt.Sprintf("%d", payload.EntityID),
 				"actor_id":        fmt.Sprintf("%d", payload.ActorID),
+				"conversation_id": fmt.Sprintf("%d", payload.ConversationID),
 			},
 			Android: fcmAndroidConfig{
 				Priority: "HIGH",

@@ -65,6 +65,12 @@ func TestBuildPushPayloadMessageReceivedWithText(t *testing.T) {
 	if payload.URL != "/users/1/chat/2" {
 		t.Fatalf("payload.URL = %q, want %q", payload.URL, "/users/1/chat/2")
 	}
+	if payload.Tag != "conversation:2" {
+		t.Fatalf("payload.Tag = %q, want %q", payload.Tag, "conversation:2")
+	}
+	if payload.ConversationID != 2 {
+		t.Fatalf("payload.ConversationID = %d, want %d", payload.ConversationID, 2)
+	}
 }
 
 func TestBuildPushPayloadMessageReceivedWithEmptyTextAndAttachment(t *testing.T) {
@@ -114,6 +120,12 @@ func TestBuildPushPayloadMessageReceivedWithEmptyTextAndAttachment(t *testing.T)
 			}
 			if payload.Body != tt.wantBody {
 				t.Fatalf("payload.Body = %q, want %q", payload.Body, tt.wantBody)
+			}
+			if payload.Tag != "conversation:2" {
+				t.Fatalf("payload.Tag = %q, want %q", payload.Tag, "conversation:2")
+			}
+			if payload.ConversationID != 2 {
+				t.Fatalf("payload.ConversationID = %d, want %d", payload.ConversationID, 2)
 			}
 		})
 	}
@@ -165,6 +177,12 @@ func TestBuildPushPayloadMessageReceivedFallsBackOnLoadErrors(t *testing.T) {
 			if payload.URL != "/users/1/chat/2" {
 				t.Fatalf("payload.URL = %q, want %q", payload.URL, "/users/1/chat/2")
 			}
+			if payload.Tag != "messages" {
+				t.Fatalf("payload.Tag = %q, want %q", payload.Tag, "messages")
+			}
+			if payload.ConversationID != 0 {
+				t.Fatalf("payload.ConversationID = %d, want %d", payload.ConversationID, 0)
+			}
 		})
 	}
 }
@@ -176,6 +194,7 @@ func TestBuildPushPayloadFallbackTypesUnchanged(t *testing.T) {
 		wantTitle    string
 		wantBody     string
 		wantURL      string
+		wantTag      string
 	}{
 		{
 			name: "friend request",
@@ -189,6 +208,7 @@ func TestBuildPushPayloadFallbackTypesUnchanged(t *testing.T) {
 			wantTitle: "Новая заявка в друзья",
 			wantBody:  "Вам отправили заявку в друзья",
 			wantURL:   "/users/1/friends",
+			wantTag:   "friends",
 		},
 		{
 			name: "friend accepted",
@@ -202,6 +222,7 @@ func TestBuildPushPayloadFallbackTypesUnchanged(t *testing.T) {
 			wantTitle: "Заявка принята",
 			wantBody:  "Вашу заявку в друзья приняли",
 			wantURL:   "/users/2",
+			wantTag:   "friends",
 		},
 		{
 			name: "post liked",
@@ -215,6 +236,7 @@ func TestBuildPushPayloadFallbackTypesUnchanged(t *testing.T) {
 			wantTitle: "Новый лайк",
 			wantBody:  "Ваш пост лайкнули",
 			wantURL:   "/users/1/wall",
+			wantTag:   "activity",
 		},
 		{
 			name: "comment created",
@@ -228,6 +250,7 @@ func TestBuildPushPayloadFallbackTypesUnchanged(t *testing.T) {
 			wantTitle: "Новый комментарий",
 			wantBody:  "Ваш пост прокомментировали",
 			wantURL:   "/users/1/wall",
+			wantTag:   "activity",
 		},
 	}
 
@@ -243,6 +266,12 @@ func TestBuildPushPayloadFallbackTypesUnchanged(t *testing.T) {
 			}
 			if payload.URL != tt.wantURL {
 				t.Fatalf("payload.URL = %q, want %q", payload.URL, tt.wantURL)
+			}
+			if payload.Tag != tt.wantTag {
+				t.Fatalf("payload.Tag = %q, want %q", payload.Tag, tt.wantTag)
+			}
+			if payload.ConversationID != 0 {
+				t.Fatalf("payload.ConversationID = %d, want %d", payload.ConversationID, 0)
 			}
 		})
 	}

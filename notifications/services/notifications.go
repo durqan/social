@@ -148,7 +148,7 @@ func buildPushPayload(notification models.Notification, dataSource pushPayloadDa
 		Title:          pushTitle(notification.Type),
 		Body:           pushBody(notification.Type),
 		URL:            pushURL(notification),
-		Tag:            fmt.Sprintf("notification-%d", notification.ID),
+		Tag:            buildTag(notification, 0),
 		NotificationID: notification.ID,
 		Type:           notification.Type,
 		EntityID:       notification.EntityID,
@@ -168,17 +168,23 @@ func buildMessagePushPayload(
 	fallback pushsvc.Payload,
 ) pushsvc.Payload {
 	if dataSource == nil {
-		return fallback
+		fb := fallback
+		fb.Tag = "messages"
+		return fb
 	}
 
 	message, err := dataSource.FindMessageByID(notification.EntityID)
 	if err != nil {
-		return fallback
+		fb := fallback
+		fb.Tag = "messages"
+		return fb
 	}
 
 	actor, err := dataSource.FindUserByID(notification.ActorID)
 	if err != nil {
-		return fallback
+		fb := fallback
+		fb.Tag = "messages"
+		return fb
 	}
 
 	payload := fallback
@@ -188,6 +194,9 @@ func buildMessagePushPayload(
 	if body := messagePreview(message); body != "" {
 		payload.Body = body
 	}
+	convID := notification.ActorID
+	payload.ConversationID = convID
+	payload.Tag = buildTag(notification, convID)
 	return payload
 }
 
@@ -259,5 +268,22 @@ func pushURL(notification models.Notification) string {
 		return fmt.Sprintf("/users/%d/wall", notification.RecipientID)
 	default:
 		return fmt.Sprintf("/users/%d", notification.RecipientID)
+	}
+}
+
+func buildTag(notification models.Notification, conversationID uint) string {
+	if notification.Type == dto.NotificationTypeMessage {
+		if conversationID != 0 {
+			return fmt.Sprintf("conversation:%d", conversationID)
+		}
+		return "messages"
+	}
+	switch notification.Type {
+	case dto.NotificationTypeFriendRequest, dto.NotificationTypeFriendAccepted:
+		return "friends"
+	case dto.NotificationTypePostLiked, dto.NotificationTypeCommentCreated:
+		return "activity"
+	default:
+		return fmt.Sprintf("notification-%d", notification.ID)
 	}
 }
