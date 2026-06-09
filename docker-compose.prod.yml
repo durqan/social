@@ -35,7 +35,7 @@ services:
       - social_network
 
   rabbitmq:
-    image: rabbitmq:3-management
+    image: rabbitmq:3-alpine
     container_name: social_rabbitmq
     restart: unless-stopped
     environment:
