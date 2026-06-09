@@ -9,6 +9,7 @@ import {
 
 import { useThemeColors } from '../theme/ThemeContext';
 import type { ThemeColors } from '../theme/themes';
+import { radius, spacing, typography } from '../theme/layout';
 
 type TextFieldProps = TextInputProps & {
   label: string;
@@ -36,29 +37,29 @@ export function TextField({ label, error, style, ...props }: TextFieldProps) {
 const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
   wrapper: {
-    gap: 8,
+    gap: spacing.sm,
   },
   label: {
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: '600',
+    ...typography.caption,
+    color: colors.muted,
+    fontWeight: '800',
   },
   input: {
-    minHeight: 50,
+    minHeight: 52,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    borderRadius: radius.lg,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
     backgroundColor: colors.input,
     color: colors.text,
-    fontSize: 16,
+    ...typography.body,
   },
   inputError: {
     borderColor: colors.danger,
   },
   error: {
     color: colors.danger,
-    fontSize: 13,
+    ...typography.caption,
   },
 });

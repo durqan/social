@@ -3,6 +3,7 @@ import { Image, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
+import { isEmailVerified } from '../../api/auth';
 import { assetURL } from '../../config/env';
 import { getApiErrorMessage } from '../../api/http';
 import type { User } from '../../api/types';
@@ -17,8 +18,10 @@ import {
 import { Screen } from '../../components/Screen';
 import { useAuth } from '../../context/AuthContext';
 import { colors } from '../../theme/colors';
+import { avatarImageStyle } from '../../utils/avatar';
 import { formatDateTime } from '../../utils/format';
 import type { MainStackParamList } from '../../navigation/types';
+import { WallFeed } from './WallFeed';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'UserProfile'>;
 type FriendshipStatus =
@@ -75,6 +78,36 @@ export default function UserProfileScreen({ navigation, route }: Props) {
     }
   }
 
+  async function handleBlockUser() {
+    setBusy(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      await friendsApi.blockUser(route.params.userId);
+      setStatus('blocked');
+      setSuccess('Пользователь заблокирован.');
+    } catch (apiError) {
+      setError(getApiErrorMessage(apiError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleUnblockUser() {
+    setBusy(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      await friendsApi.unblockUser(route.params.userId);
+      setStatus('none');
+      setSuccess('Пользователь разблокирован.');
+    } catch (apiError) {
+      setError(getApiErrorMessage(apiError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function openChat() {
     if (!profile?.id) {
       return;
@@ -89,6 +122,16 @@ export default function UserProfileScreen({ navigation, route }: Props) {
           name: profile.name || profile.email,
         },
       },
+    });
+  }
+
+  function openWallUser(nextUser: { id?: number; name?: string }) {
+    if (!nextUser.id) {
+      return;
+    }
+    navigation.push('UserProfile', {
+      userId: nextUser.id,
+      name: nextUser.name,
     });
   }
 
@@ -118,7 +161,15 @@ export default function UserProfileScreen({ navigation, route }: Props) {
           {profile.avatar ? (
             <Image
               source={{ uri: assetURL(profile.avatar) }}
-              style={styles.avatarImage}
+              style={[
+                styles.avatarImage,
+                avatarImageStyle({
+                  size: 82,
+                  positionX: profile.avatarPositionX,
+                  positionY: profile.avatarPositionY,
+                  scale: profile.avatarScale,
+                }),
+              ]}
             />
           ) : (
             <Text style={styles.avatarText}>
@@ -159,6 +210,30 @@ export default function UserProfileScreen({ navigation, route }: Props) {
           <Text style={styles.noticeText}>Заявка в друзья уже отправлена.</Text>
         </View>
       ) : null}
+      {!isCurrentUser && status !== 'blocked' ? (
+        <AppButton
+          title="Заблокировать"
+          variant="danger"
+          loading={busy}
+          onPress={handleBlockUser}
+        />
+      ) : null}
+      {!isCurrentUser && status === 'blocked' ? (
+        <AppButton
+          title="Разблокировать"
+          variant="secondary"
+          loading={busy}
+          onPress={handleUnblockUser}
+        />
+      ) : null}
+
+      <WallFeed
+        currentUser={currentUser}
+        userId={profile.id}
+        isOwner={isCurrentUser}
+        emailVerified={isEmailVerified(currentUser)}
+        onOpenUser={openWallUser}
+      />
     </Screen>
   );
 }

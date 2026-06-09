@@ -19,6 +19,7 @@ import { TextField } from '../../components/TextField';
 import { useAuth } from '../../context/AuthContext';
 import { useThemeColors } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/themes';
+import { avatarImageStyle } from '../../utils/avatar';
 import { formatDateTime } from '../../utils/format';
 
 type ProfileForm = {
@@ -26,6 +27,9 @@ type ProfileForm = {
   email: string;
   age: string;
   bio: string;
+  avatarPositionX: string;
+  avatarPositionY: string;
+  avatarScale: string;
 };
 
 export default function ProfileScreen() {
@@ -37,6 +41,9 @@ export default function ProfileScreen() {
     email: '',
     age: '',
     bio: '',
+    avatarPositionX: '50',
+    avatarPositionY: '50',
+    avatarScale: '1',
   });
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -54,6 +61,9 @@ export default function ProfileScreen() {
       email: user.email || '',
       age: user.age ? String(user.age) : '',
       bio: user.bio || '',
+      avatarPositionX: String(user.avatarPositionX ?? 50),
+      avatarPositionY: String(user.avatarPositionY ?? 50),
+      avatarScale: String(user.avatarScale ?? 1),
     });
   }, [user]);
 
@@ -84,6 +94,9 @@ export default function ProfileScreen() {
     const nextName = form.name.trim();
     const nextBio = form.bio.trim();
     const nextAge = form.age.trim() ? Number(form.age.trim()) : undefined;
+    const nextAvatarPositionX = Number(form.avatarPositionX.trim() || 50);
+    const nextAvatarPositionY = Number(form.avatarPositionY.trim() || 50);
+    const nextAvatarScale = Number(form.avatarScale.trim() || 1);
 
     if (!nextName || !nextEmail) {
       setError('Заполните имя и email');
@@ -100,6 +113,27 @@ export default function ProfileScreen() {
       return;
     }
 
+    if (
+      !Number.isFinite(nextAvatarPositionX) ||
+      nextAvatarPositionX < 0 ||
+      nextAvatarPositionX > 100 ||
+      !Number.isFinite(nextAvatarPositionY) ||
+      nextAvatarPositionY < 0 ||
+      nextAvatarPositionY > 100
+    ) {
+      setError('Позиция аватара должна быть от 0 до 100.');
+      return;
+    }
+
+    if (
+      !Number.isFinite(nextAvatarScale) ||
+      nextAvatarScale < 1 ||
+      nextAvatarScale > 3
+    ) {
+      setError('Масштаб аватара должен быть от 1 до 3.');
+      return;
+    }
+
     setSaving(true);
     setError(null);
     setSuccess(null);
@@ -109,6 +143,9 @@ export default function ProfileScreen() {
         email: nextEmail,
         age: nextAge,
         bio: nextBio,
+        avatar_position_x: nextAvatarPositionX,
+        avatar_position_y: nextAvatarPositionY,
+        avatar_scale: nextAvatarScale,
       });
       await refreshUser();
       setSuccess(
@@ -185,7 +222,15 @@ export default function ProfileScreen() {
           {user.avatar ? (
             <Image
               source={{ uri: assetURL(user.avatar) }}
-              style={styles.avatarImage}
+              style={[
+                styles.avatarImage,
+                avatarImageStyle({
+                  size: 82,
+                  positionX: user.avatarPositionX,
+                  positionY: user.avatarPositionY,
+                  scale: user.avatarScale,
+                }),
+              ]}
             />
           ) : (
             <Text style={styles.avatarText}>
@@ -254,6 +299,33 @@ export default function ProfileScreen() {
           multiline
           style={styles.bioInput}
         />
+        <Text style={styles.avatarSettingsTitle}>Позиция аватара</Text>
+        <View style={styles.avatarSettingsGrid}>
+          <TextField
+            label="X (0-100)"
+            value={form.avatarPositionX}
+            onChangeText={avatarPositionX =>
+              setForm(previous => ({ ...previous, avatarPositionX }))
+            }
+            keyboardType="decimal-pad"
+          />
+          <TextField
+            label="Y (0-100)"
+            value={form.avatarPositionY}
+            onChangeText={avatarPositionY =>
+              setForm(previous => ({ ...previous, avatarPositionY }))
+            }
+            keyboardType="decimal-pad"
+          />
+          <TextField
+            label="Масштаб (1-3)"
+            value={form.avatarScale}
+            onChangeText={avatarScale =>
+              setForm(previous => ({ ...previous, avatarScale }))
+            }
+            keyboardType="decimal-pad"
+          />
+        </View>
         <AppButton title="Сохранить" loading={saving} onPress={handleSave} />
       </View>
 
@@ -386,6 +458,15 @@ const createStyles = (colors: ThemeColors) =>
     padding: 10,
     fontSize: 13,
     lineHeight: 18,
+  },
+  avatarSettingsTitle: {
+    color: colors.text,
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '800',
+  },
+  avatarSettingsGrid: {
+    gap: 10,
   },
   bioInput: {
     minHeight: 96,

@@ -9,6 +9,8 @@ import {
   CHAT_VIDEO_NOTE_MIME_TYPES,
 } from '../config/env';
 import { formatDuration } from '../utils/format';
+import type { EncryptedAttachmentFields } from '../crypto/attachment';
+import type { EncryptedMessagePayload } from '../crypto/encryptMessage';
 import { apiRequest, toQueryString } from './http';
 import type {
   Conversation,
@@ -24,6 +26,8 @@ export type LocalChatImage = {
   type: string;
   fileName: string;
   fileSize?: number;
+  width?: number;
+  height?: number;
 };
 
 export type LocalVoiceMessage = {
@@ -41,6 +45,93 @@ export type LocalVideoNoteMessage = {
   durationSeconds: number;
   fileSize?: number;
 };
+
+export type UploadFilePart =
+  | {
+      uri: string;
+      type: string;
+      fileName: string;
+      fileSize?: number;
+    }
+  | {
+      blob: Blob;
+      type: string;
+      fileName: string;
+      fileSize?: number;
+    };
+
+type AttachmentUploadEncryption = EncryptedAttachmentFields & {
+  width?: number;
+  height?: number;
+};
+
+type UploadTimedFilePart = UploadFilePart & {
+  durationSeconds: number;
+};
+
+type EncryptedForwardPayload = Partial<EncryptedMessagePayload> & {
+  toUserId: number;
+  attachments?: MessageAttachment[];
+};
+
+function appendUploadFile(
+  formData: FormData,
+  fieldName: string,
+  file: UploadFilePart,
+) {
+  if ('blob' in file) {
+    formData.append(fieldName, file.blob as unknown as Blob);
+    return;
+  }
+
+  formData.append(fieldName, {
+    uri: file.uri,
+    type: file.type,
+    name: file.fileName,
+  } as unknown as Blob);
+}
+
+function appendAttachmentEncryption(
+  formData: FormData,
+  encryption?: AttachmentUploadEncryption,
+) {
+  if (!encryption) {
+    return;
+  }
+
+  formData.append('encryption_version', String(encryption.encryption_version));
+  formData.append('encrypted_file_key', encryption.encrypted_file_key);
+  formData.append('file_nonce', encryption.file_nonce);
+  formData.append('encrypted_metadata', encryption.encrypted_metadata);
+  if (encryption.width !== undefined) {
+    formData.append('width', String(encryption.width));
+  }
+  if (encryption.height !== undefined) {
+    formData.append('height', String(encryption.height));
+  }
+}
+
+export function attachmentForApi(
+  attachment: MessageAttachment,
+): MessageAttachment {
+  return {
+    id: attachment.id,
+    attachment_id: attachment.attachment_id,
+    message_id: attachment.message_id,
+    file_url: attachment.file_url,
+    file_type: attachment.file_type,
+    width: attachment.width,
+    height: attachment.height,
+    duration: attachment.duration,
+    duration_seconds: attachment.duration_seconds,
+    size: attachment.size,
+    encryption_version: attachment.encryption_version,
+    encrypted_file_key: attachment.encrypted_file_key,
+    file_nonce: attachment.file_nonce,
+    encrypted_metadata: attachment.encrypted_metadata,
+    created_at: attachment.created_at,
+  };
+}
 
 export function validateLocalChatImage(image: LocalChatImage) {
   if (!(CHAT_IMAGE_MIME_TYPES as readonly string[]).includes(image.type)) {
@@ -165,13 +256,13 @@ export const messageApi = {
     return response.unread_count;
   },
 
-  async uploadImage(image: LocalChatImage) {
+  async uploadImage(
+    image: LocalChatImage | UploadFilePart,
+    encryption?: AttachmentUploadEncryption,
+  ) {
     const formData = new FormData();
-    formData.append('image', {
-      uri: image.uri,
-      type: image.type,
-      name: image.fileName,
-    } as unknown as Blob);
+    appendUploadFile(formData, 'image', image);
+    appendAttachmentEncryption(formData, encryption);
 
     return apiRequest<MessageAttachment>('/messages/upload', {
       method: 'POST',
@@ -179,14 +270,14 @@ export const messageApi = {
     });
   },
 
-  async uploadVoice(voice: LocalVoiceMessage) {
+  async uploadVoice(
+    voice: LocalVoiceMessage | UploadTimedFilePart,
+    encryption?: EncryptedAttachmentFields,
+  ) {
     const formData = new FormData();
-    formData.append('voice', {
-      uri: voice.uri,
-      type: voice.type,
-      name: voice.fileName,
-    } as unknown as Blob);
+    appendUploadFile(formData, 'voice', voice);
     formData.append('duration', String(voice.durationSeconds));
+    appendAttachmentEncryption(formData, encryption);
 
     return apiRequest<MessageAttachment>('/messages/upload-voice', {
       method: 'POST',
@@ -194,14 +285,14 @@ export const messageApi = {
     });
   },
 
-  async uploadVideoNote(videoNote: LocalVideoNoteMessage) {
+  async uploadVideoNote(
+    videoNote: LocalVideoNoteMessage | UploadTimedFilePart,
+    encryption?: EncryptedAttachmentFields,
+  ) {
     const formData = new FormData();
-    formData.append('video_note', {
-      uri: videoNote.uri,
-      type: videoNote.type,
-      name: videoNote.fileName,
-    } as unknown as Blob);
+    appendUploadFile(formData, 'video_note', videoNote);
     formData.append('duration', String(videoNote.durationSeconds));
+    appendAttachmentEncryption(formData, encryption);
 
     return apiRequest<MessageAttachment>('/messages/upload-video-note', {
       method: 'POST',
@@ -214,13 +305,15 @@ export const messageApi = {
     content: string,
     attachments: MessageAttachment[] = [],
     replyToMessageId?: number | null,
+    encryption?: EncryptedMessagePayload,
   ) {
     return apiRequest<Message>(`/messages/send/${toId}`, {
       method: 'POST',
       body: {
         content,
-        attachments,
+        attachments: attachments.map(attachmentForApi),
         replyToMessageId: replyToMessageId ?? null,
+        ...(encryption || {}),
       },
     });
   },
@@ -231,6 +324,26 @@ export const messageApi = {
       {
         method: 'POST',
         body: { toUserIds },
+      },
+    );
+    return response.messages || [];
+  },
+
+  async forwardEncryptedMessage(
+    messageId: number,
+    encryptedMessages: EncryptedForwardPayload[],
+  ) {
+    const response = await apiRequest<{ messages: Message[] }>(
+      `/messages/${messageId}/forward`,
+      {
+        method: 'POST',
+        body: {
+          toUserIds: encryptedMessages.map(message => message.toUserId),
+          encryptedMessages: encryptedMessages.map(message => ({
+            ...message,
+            attachments: message.attachments?.map(attachmentForApi) || [],
+          })),
+        },
       },
     );
     return response.messages || [];
@@ -261,11 +374,16 @@ export const messageApi = {
     );
   },
 
-  async updateMessage(messageId: number, content: string) {
+  async updateMessage(
+    messageId: number,
+    content: string,
+    encryption?: EncryptedMessagePayload,
+  ) {
     return apiRequest<Message>(`/messages/${messageId}`, {
       method: 'PATCH',
       body: {
         content,
+        ...(encryption || {}),
       },
     });
   },

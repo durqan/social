@@ -35,6 +35,7 @@ import {
   CHAT_VOICE_MAX_DURATION_SECONDS,
   CHAT_VOICE_MIME_TYPE,
 } from '../../config/env';
+import { e2eeApi } from '../../api/e2ee';
 import { friendsApi } from '../../api/friends';
 import { getApiErrorMessage, getCookieHeader } from '../../api/http';
 import {
@@ -45,6 +46,7 @@ import {
   type LocalChatImage,
   type LocalVideoNoteMessage,
   type LocalVoiceMessage,
+  type UploadFilePart,
 } from '../../api/messages';
 import type { Message, MessageAttachment, PinnedMessage, User } from '../../api/types';
 import { chatSocket, type WsEvent } from '../../api/ws';
@@ -65,9 +67,34 @@ import { colors } from '../../theme/colors';
 import type { ThemeColors } from '../../theme/themes';
 import { formatDateTime, formatDuration } from '../../utils/format';
 import type { ChatStackParamList } from '../../navigation/types';
+import {
+  encryptAttachmentForUpload,
+  isEncryptedAttachment,
+  localSourceFromAttachment,
+  withDecryptedAttachmentPreview,
+  type AttachmentFileType,
+  type LocalAttachmentSource,
+} from '../../crypto/attachment';
+import { encryptMessage, type EncryptedMessagePayload } from '../../crypto/encryptMessage';
+import {
+  addLocalE2EEKeyChangeListener,
+  getLocalE2EEKeyBundle,
+  type LocalE2EEKeyBundle,
+} from '../../crypto/masterKey';
+import {
+  decryptMessageForDisplay,
+  decryptMessagesForDisplay,
+} from '../../features/chat/lib/e2eeMessageTransform';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'Chat'>;
 type LoadMode = 'initial' | 'refresh' | 'silent';
+type ChatE2EEState = {
+  loading: boolean;
+  selfEnabled: boolean;
+  recipientEnabled: boolean;
+  recipientPublicKey: string;
+  localKey: LocalE2EEKeyBundle | null;
+};
 const composerInputMinHeight = 48;
 const composerInputMaxHeight = 136;
 const messagePageSize = 50;
@@ -165,6 +192,19 @@ function messagePreviewText(message?: Message | null) {
     return 'Видео-сообщение';
   }
   return 'Вложение';
+}
+
+function chatErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    if (
+      error.message === 'E2EE is not ready for this conversation' ||
+      error.message === 'Recipient E2EE is not enabled'
+    ) {
+      return 'Сквозное шифрование недоступно: восстановите ключ или попросите собеседника включить E2EE.';
+    }
+  }
+
+  return getApiErrorMessage(error);
 }
 
 function linkParts(value: string) {
@@ -277,6 +317,20 @@ export default function ChatScreen({ route }: Props) {
   const [otherTyping, setOtherTyping] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copyNotice, setCopyNotice] = useState<string | null>(null);
+  const [e2eeState, setE2eeState] = useState<ChatE2EEState>({
+    loading: true,
+    selfEnabled: false,
+    recipientEnabled: false,
+    recipientPublicKey: '',
+    localKey: null,
+  });
+  const e2eeReady = Boolean(
+    user?.id &&
+      e2eeState.selfEnabled &&
+      e2eeState.recipientEnabled &&
+      e2eeState.recipientPublicKey &&
+      e2eeState.localKey,
+  );
 
   const pendingImagesRef = useRef<LocalChatImage[]>([]);
   const sendingRef = useRef<
@@ -409,6 +463,264 @@ export default function ChatScreen({ route }: Props) {
     });
   }, []);
 
+  const decryptChatMessages = useCallback(
+    (items: Message[]) =>
+      decryptMessagesForDisplay(items, user?.id, e2eeState.localKey),
+    [e2eeState.localKey, user?.id],
+  );
+
+  const decryptIncomingMessage = useCallback(
+    async (message: Message) => {
+      if (!user?.id || !e2eeState.localKey) {
+        const [fallback] = await decryptMessagesForDisplay(
+          [message],
+          user?.id,
+          e2eeState.localKey,
+        );
+        return fallback || message;
+      }
+
+      return decryptMessageForDisplay(message, user.id, e2eeState.localKey);
+    },
+    [e2eeState.localKey, user?.id],
+  );
+
+  const encryptContentForRecipient = useCallback(
+    async (
+      content: string,
+      recipientId: number,
+      recipientPublicKey?: string,
+    ): Promise<EncryptedMessagePayload | undefined> => {
+      if (!content) {
+        return undefined;
+      }
+      if (!user?.id || !e2eeState.localKey || !e2eeState.selfEnabled) {
+        return undefined;
+      }
+
+      let publicKey = recipientPublicKey;
+      if (!publicKey) {
+        const status = await e2eeApi.getStatus(recipientId);
+        if (!status.enabled || !status.public_key) {
+          throw new Error('Recipient E2EE is not enabled');
+        }
+        publicKey = status.public_key;
+      }
+
+      return encryptMessage({
+        plaintext: content,
+        senderUserId: user.id,
+        recipientUserId: recipientId,
+        senderBundle: e2eeState.localKey,
+        recipientPublicKeyBase64: publicKey,
+      });
+    },
+    [e2eeState.localKey, e2eeState.selfEnabled, user?.id],
+  );
+
+  const encryptCurrentChatContent = useCallback(
+    async (content: string) => {
+      if (!content) {
+        return undefined;
+      }
+      if (e2eeState.loading || (e2eeState.selfEnabled && !e2eeReady)) {
+        throw new Error('E2EE is not ready for this conversation');
+      }
+      if (!e2eeReady) {
+        return undefined;
+      }
+
+      return encryptContentForRecipient(
+        content,
+        otherUserId,
+        e2eeState.recipientPublicKey,
+      );
+    },
+    [
+      e2eeReady,
+      e2eeState.loading,
+      e2eeState.recipientPublicKey,
+      e2eeState.selfEnabled,
+      encryptContentForRecipient,
+      otherUserId,
+    ],
+  );
+
+  const recipientPublicKeyForUser = useCallback(
+    async (recipientId: number) => {
+      if (recipientId === otherUserId && e2eeState.recipientPublicKey) {
+        return e2eeState.recipientPublicKey;
+      }
+
+      const status = await e2eeApi.getStatus(recipientId);
+      if (!status.enabled || !status.public_key) {
+        throw new Error('Recipient E2EE is not enabled');
+      }
+      return status.public_key;
+    },
+    [e2eeState.recipientPublicKey, otherUserId],
+  );
+
+  const encryptAndUploadAttachment = useCallback(
+    async (
+      source: LocalAttachmentSource,
+      fileType: AttachmentFileType,
+      recipientId: number,
+    ): Promise<MessageAttachment> => {
+      if (!user?.id || !e2eeState.localKey) {
+        throw new Error('E2EE is not ready for this conversation');
+      }
+
+      const recipientPublicKey = await recipientPublicKeyForUser(recipientId);
+      const encrypted = await encryptAttachmentForUpload({
+        source,
+        fileType,
+        senderUserId: user.id,
+        recipientUserId: recipientId,
+        senderBundle: e2eeState.localKey,
+        recipientPublicKeyBase64: recipientPublicKey,
+      });
+      const uploadFile: UploadFilePart = {
+        uri: encrypted.encryptedUri,
+        type: 'application/octet-stream',
+        fileName: encrypted.encryptedFileName,
+        fileSize: encrypted.encryptedSize,
+      };
+
+      if (fileType === 'voice') {
+        const attachment = await messageApi.uploadVoice(
+          {
+            ...uploadFile,
+            durationSeconds: source.durationSeconds || 0,
+          },
+          encrypted.fields,
+        );
+        return withDecryptedAttachmentPreview(
+          attachment,
+          encrypted.previewUri,
+          encrypted.metadata,
+          encrypted.fields,
+        );
+      }
+
+      if (fileType === 'video_note') {
+        const attachment = await messageApi.uploadVideoNote(
+          {
+            ...uploadFile,
+            durationSeconds: source.durationSeconds || 0,
+          },
+          encrypted.fields,
+        );
+        return withDecryptedAttachmentPreview(
+          attachment,
+          encrypted.previewUri,
+          encrypted.metadata,
+          encrypted.fields,
+        );
+      }
+
+      const attachment = await messageApi.uploadImage(uploadFile, {
+        ...encrypted.fields,
+        width: encrypted.metadata.width,
+        height: encrypted.metadata.height,
+      });
+      return withDecryptedAttachmentPreview(
+        attachment,
+        encrypted.previewUri,
+        encrypted.metadata,
+        encrypted.fields,
+      );
+    },
+    [e2eeState.localKey, recipientPublicKeyForUser, user?.id],
+  );
+
+  const uploadForwardedAttachments = useCallback(
+    async (attachments: MessageAttachment[], recipientId: number) => {
+      const uploaded: MessageAttachment[] = [];
+      for (const attachment of attachments) {
+        const source = await localSourceFromAttachment(attachment);
+        uploaded.push(
+          await encryptAndUploadAttachment(
+            source,
+            attachment.file_type,
+            recipientId,
+          ),
+        );
+      }
+      return uploaded;
+    },
+    [encryptAndUploadAttachment],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    setE2eeState(previous => ({ ...previous, loading: true }));
+
+    if (!user?.id) {
+      setE2eeState({
+        loading: false,
+        selfEnabled: false,
+        recipientEnabled: false,
+        recipientPublicKey: '',
+        localKey: null,
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    Promise.all([
+      e2eeApi.getStatus(),
+      e2eeApi.getStatus(otherUserId),
+      getLocalE2EEKeyBundle(user.id),
+    ])
+      .then(([selfStatus, recipientStatus, localKey]) => {
+        if (cancelled) {
+          return;
+        }
+        setE2eeState({
+          loading: false,
+          selfEnabled: selfStatus.enabled,
+          recipientEnabled: recipientStatus.enabled,
+          recipientPublicKey: recipientStatus.public_key || '',
+          localKey,
+        });
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+        setE2eeState(previous => ({
+          ...previous,
+          loading: false,
+          recipientEnabled: false,
+          recipientPublicKey: '',
+        }));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [otherUserId, user?.id]);
+
+  useEffect(() => {
+    const unsubscribe = addLocalE2EEKeyChangeListener(() => {
+      if (!user?.id) {
+        return;
+      }
+
+      getLocalE2EEKeyBundle(user.id)
+        .then(localKey => {
+          setE2eeState(previous => ({ ...previous, localKey }));
+        })
+        .catch(() => undefined);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [user?.id]);
+
   const markConversationRead = useCallback(async () => {
     await messageApi.markAsRead(otherUserId);
     refreshUnreadCount().catch(() => undefined);
@@ -445,7 +757,7 @@ export default function ChatScreen({ route }: Props) {
           mode !== 'silent' || messagesRef.current.length === 0;
         hasMoreRef.current = response.has_more;
         setHasMore(response.has_more);
-        setMessages(response.messages);
+        setMessages(await decryptChatMessages(response.messages));
         markConversationRead().catch(() => undefined);
       } catch (apiError) {
         setError(getApiErrorMessage(apiError));
@@ -460,7 +772,7 @@ export default function ChatScreen({ route }: Props) {
         }
       }
     },
-    [markConversationRead, otherUserId],
+    [decryptChatMessages, markConversationRead, otherUserId],
   );
 
   const loadOlderMessages = useCallback(async () => {
@@ -489,9 +801,10 @@ export default function ChatScreen({ route }: Props) {
       setHasMore(response.has_more);
 
       if (response.messages.length) {
+        const displayMessages = await decryptChatMessages(response.messages);
         setMessages(previous => {
           const existingIds = new Set(previous.map(message => message.id));
-          const olderMessages = response.messages.filter(
+          const olderMessages = displayMessages.filter(
             message => !existingIds.has(message.id),
           );
 
@@ -501,12 +814,12 @@ export default function ChatScreen({ route }: Props) {
         });
       }
     } catch (apiError) {
-      setError(getApiErrorMessage(apiError));
+      setError(chatErrorMessage(apiError));
     } finally {
       loadingOlderRef.current = false;
       setLoadingOlder(false);
     }
-  }, [otherUserId, refreshing]);
+  }, [decryptChatMessages, otherUserId, refreshing]);
 
   const handleMessagesScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -528,11 +841,18 @@ export default function ChatScreen({ route }: Props) {
   const loadPinnedMessage = useCallback(async () => {
     try {
       const pin = await messageApi.getPinnedMessage(otherUserId);
-      setPinnedMessage(pin);
+      setPinnedMessage(
+        pin?.message
+          ? {
+              ...pin,
+              message: await decryptIncomingMessage(pin.message),
+            }
+          : pin,
+      );
     } catch {
       setPinnedMessage(null);
     }
-  }, [otherUserId]);
+  }, [decryptIncomingMessage, otherUserId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -625,21 +945,37 @@ export default function ChatScreen({ route }: Props) {
           return;
         }
 
-        setMessages(previous =>
-          previous.map(item =>
-            item.id === message.id && shouldApplyMessageUpdate(item, message)
-              ? message
-              : item,
-          ),
-        );
-        signalChatDataChanged();
+        decryptIncomingMessage(message)
+          .then(displayMessage => {
+            setMessages(previous =>
+              previous.map(item =>
+                item.id === message.id &&
+                shouldApplyMessageUpdate(item, displayMessage)
+                  ? displayMessage
+                  : item,
+              ),
+            );
+            signalChatDataChanged();
+          })
+          .catch(() => undefined);
         return;
       }
 
       if (event.type === 'message_pinned') {
         const payload = event.payload as { conversation_user_id?: number; pinned_message?: PinnedMessage | null };
         if (!payload.conversation_user_id || payload.conversation_user_id === otherUserId) {
-          setPinnedMessage(payload.pinned_message ?? null);
+          if (payload.pinned_message?.message) {
+            decryptIncomingMessage(payload.pinned_message.message)
+              .then(displayMessage => {
+                setPinnedMessage({
+                  ...payload.pinned_message!,
+                  message: displayMessage,
+                });
+              })
+              .catch(() => undefined);
+          } else {
+            setPinnedMessage(payload.pinned_message ?? null);
+          }
         }
         return;
       }
@@ -695,19 +1031,24 @@ export default function ChatScreen({ route }: Props) {
         draftRef.current = null;
       }
 
-      setMessages(previous => {
-        if (previous.some(item => item.id === message.id)) {
-          return previous;
-        }
-        shouldScrollToEndRef.current = true;
-        return [...previous, message];
-      });
+      decryptIncomingMessage(message)
+        .then(displayMessage => {
+          setMessages(previous => {
+            if (previous.some(item => item.id === displayMessage.id)) {
+              return previous;
+            }
+            shouldScrollToEndRef.current = true;
+            return [...previous, displayMessage];
+          });
 
-      if (message.from_id === otherUserId) {
-        markConversationRead().catch(() => undefined);
-      }
+          if (message.from_id === otherUserId) {
+            markConversationRead().catch(() => undefined);
+          }
+        })
+        .catch(() => undefined);
     },
     [
+      decryptIncomingMessage,
       markConversationRead,
       otherUserId,
       refreshUnreadCount,
@@ -947,16 +1288,35 @@ export default function ChatScreen({ route }: Props) {
     setError(null);
 
     try {
-      const attachment = await messageApi.uploadVoice(voiceToSend);
+      const commentEncryption = await encryptCurrentChatContent(comment);
+      if (e2eeState.loading || (e2eeState.selfEnabled && !e2eeReady)) {
+        throw new Error('E2EE is not ready for this conversation');
+      }
+      const attachment = e2eeReady
+        ? await encryptAndUploadAttachment(voiceToSend, 'voice', otherUserId)
+        : await messageApi.uploadVoice(voiceToSend);
       const attachments = [attachment];
 
       setSending('sending');
       if (chatSocket.isConnected()) {
-        chatSocket.sendMessage(otherUserId, comment, attachments, replyToMessageRef.current?.id ?? null);
+        chatSocket.sendMessage(
+          otherUserId,
+          commentEncryption ? '' : comment,
+          attachments,
+          replyToMessageRef.current?.id ?? null,
+          commentEncryption,
+        );
       } else {
-        const sent = await messageApi.sendMessage(otherUserId, comment, attachments, replyToMessageRef.current?.id ?? null);
+        const sent = await messageApi.sendMessage(
+          otherUserId,
+          commentEncryption ? '' : comment,
+          attachments,
+          replyToMessageRef.current?.id ?? null,
+          commentEncryption,
+        );
+        const displayMessage = await decryptIncomingMessage(sent);
         shouldScrollToEndRef.current = true;
-        setMessages(previous => [...previous, sent]);
+        setMessages(previous => [...previous, displayMessage]);
         signalChatDataChanged();
       }
       if (comment) {
@@ -967,7 +1327,7 @@ export default function ChatScreen({ route }: Props) {
       setReplyToMessage(null);
       return true;
     } catch (apiError) {
-      setError(getApiErrorMessage(apiError));
+      setError(chatErrorMessage(apiError));
       return false;
     } finally {
       setSending(null);
@@ -1130,26 +1490,39 @@ export default function ChatScreen({ route }: Props) {
     setError(null);
 
     try {
-      const attachment = await messageApi.uploadVideoNote(videoNoteToSend);
+      const commentEncryption = await encryptCurrentChatContent(comment);
+      if (e2eeState.loading || (e2eeState.selfEnabled && !e2eeReady)) {
+        throw new Error('E2EE is not ready for this conversation');
+      }
+      const attachment = e2eeReady
+        ? await encryptAndUploadAttachment(
+            videoNoteToSend,
+            'video_note',
+            otherUserId,
+          )
+        : await messageApi.uploadVideoNote(videoNoteToSend);
       const attachments = [attachment];
 
       setSending('sending');
       if (chatSocket.isConnected()) {
         chatSocket.sendMessage(
           otherUserId,
-          comment,
+          commentEncryption ? '' : comment,
           attachments,
           replyToMessageRef.current?.id ?? null,
+          commentEncryption,
         );
       } else {
         const sent = await messageApi.sendMessage(
           otherUserId,
-          comment,
+          commentEncryption ? '' : comment,
           attachments,
           replyToMessageRef.current?.id ?? null,
+          commentEncryption,
         );
+        const displayMessage = await decryptIncomingMessage(sent);
         shouldScrollToEndRef.current = true;
-        setMessages(previous => [...previous, sent]);
+        setMessages(previous => [...previous, displayMessage]);
         signalChatDataChanged();
       }
 
@@ -1161,7 +1534,7 @@ export default function ChatScreen({ route }: Props) {
       setReplyToMessage(null);
       return true;
     } catch (apiError) {
-      setError(getApiErrorMessage(apiError));
+      setError(chatErrorMessage(apiError));
       return false;
     } finally {
       setSending(null);
@@ -1225,15 +1598,76 @@ export default function ChatScreen({ route }: Props) {
       setSending('sending');
       setError(null);
       try {
+        const shouldEncryptEdit = Boolean(
+          (editingMessage.encryption_version ?? 0) > 0 ||
+            e2eeState.selfEnabled,
+        );
+        if (shouldEncryptEdit) {
+          if (editingMessage.decryption_error) {
+            setError(
+              'Нельзя редактировать сообщение, которое не удалось расшифровать',
+            );
+            return;
+          }
+          if (e2eeState.selfEnabled && !e2eeReady) {
+            setError(
+              'Сквозное шифрование недоступно для редактирования сообщения',
+            );
+            return;
+          }
+
+          const recipientId =
+            editingMessage.to_id === user?.id
+              ? editingMessage.from_id
+              : editingMessage.to_id;
+          const recipientPublicKey =
+            recipientId === otherUserId
+              ? e2eeState.recipientPublicKey
+              : undefined;
+          const encryption = await encryptContentForRecipient(
+            trimmed,
+            recipientId,
+            recipientPublicKey,
+          );
+          if (!encryption) {
+            setError(
+              'Сквозное шифрование недоступно для редактирования сообщения',
+            );
+            return;
+          }
+
+          const updated = await messageApi.updateMessage(
+            editingMessage.id,
+            '',
+            encryption,
+          );
+          const displayMessage = await decryptIncomingMessage(updated);
+          setMessages(previous =>
+            previous.map(message =>
+              message.id === editingMessage.id &&
+              shouldApplyMessageUpdate(message, displayMessage)
+                ? displayMessage
+                : message,
+            ),
+          );
+          setInput('');
+          setInputHeight(composerInputMinHeight);
+          setEditingMessage(null);
+          stopLocalTyping();
+          signalChatDataChanged();
+          return;
+        }
+
         const updated = await messageApi.updateMessage(
           editingMessage.id,
           trimmed,
         );
+        const displayMessage = await decryptIncomingMessage(updated);
         setMessages(previous =>
           previous.map(message =>
             message.id === editingMessage.id &&
-            shouldApplyMessageUpdate(message, updated)
-              ? updated
+            shouldApplyMessageUpdate(message, displayMessage)
+              ? displayMessage
               : message,
           ),
         );
@@ -1243,7 +1677,7 @@ export default function ChatScreen({ route }: Props) {
         stopLocalTyping();
         signalChatDataChanged();
       } catch (apiError) {
-        setError(getApiErrorMessage(apiError));
+        setError(chatErrorMessage(apiError));
       } finally {
         setSending(null);
       }
@@ -1267,10 +1701,19 @@ export default function ChatScreen({ route }: Props) {
     );
     setError(null);
     try {
+      const contentEncryption = await encryptCurrentChatContent(trimmed);
+      if (e2eeState.selfEnabled && !e2eeReady) {
+        throw new Error('E2EE is not ready for this conversation');
+      }
+
       const attachments: MessageAttachment[] = [];
       for (const [index, image] of pendingImages.entries()) {
         try {
-          attachments.push(await messageApi.uploadImage(image));
+          attachments.push(
+            e2eeReady
+              ? await encryptAndUploadAttachment(image, 'image', otherUserId)
+              : await messageApi.uploadImage(image),
+          );
           setUploadProgress({
             current: index + 1,
             total: pendingImages.length,
@@ -1290,17 +1733,25 @@ export default function ChatScreen({ route }: Props) {
       };
 
       if (chatSocket.isConnected()) {
-        chatSocket.sendMessage(otherUserId, trimmed, attachments, replyToMessage?.id ?? null);
+        chatSocket.sendMessage(
+          otherUserId,
+          contentEncryption ? '' : trimmed,
+          attachments,
+          replyToMessage?.id ?? null,
+          contentEncryption,
+        );
       } else {
         const sent = await messageApi.sendMessage(
           otherUserId,
-          trimmed,
+          contentEncryption ? '' : trimmed,
           attachments,
           replyToMessage?.id ?? null,
+          contentEncryption,
         );
+        const displayMessage = await decryptIncomingMessage(sent);
         draftRef.current = null;
         shouldScrollToEndRef.current = true;
-        setMessages(previous => [...previous, sent]);
+        setMessages(previous => [...previous, displayMessage]);
         signalChatDataChanged();
       }
 
@@ -1310,7 +1761,7 @@ export default function ChatScreen({ route }: Props) {
       setReplyToMessage(null);
       stopLocalTyping();
     } catch (apiError) {
-      const message = getApiErrorMessage(apiError);
+      const message = chatErrorMessage(apiError);
       setError(
         uploadFailed
           ? `${message} Удалите изображение из предпросмотра или попробуйте отправить снова.`
@@ -1522,7 +1973,78 @@ export default function ChatScreen({ route }: Props) {
     setForwardLoading(true);
     setForwardError(null);
     try {
-      const forwarded = await messageApi.forwardMessage(forwardMessage.id, Array.from(forwardSelectedIds));
+      const forwardAttachments = forwardMessage.attachments || [];
+      const hasEncryptedAttachments = forwardAttachments.some(attachment =>
+        isEncryptedAttachment(attachment),
+      );
+      const requiresClientEncryption =
+        (forwardMessage.encryption_version ?? 0) > 0 ||
+        hasEncryptedAttachments;
+
+      if (requiresClientEncryption) {
+        const content = forwardMessage.content.trim();
+        const encryptedContentRequired =
+          (forwardMessage.encryption_version ?? 0) > 0;
+        if (
+          forwardMessage.decryption_error ||
+          (encryptedContentRequired && !content)
+        ) {
+          setForwardError(
+            'Нельзя переслать сообщение, которое не удалось расшифровать',
+          );
+          return;
+        }
+        if (forwardAttachments.some(attachment => attachment.decryption_error)) {
+          setForwardError(
+            'Нельзя переслать вложение, которое не удалось расшифровать',
+          );
+          return;
+        }
+
+        const encryptedMessages = [];
+        for (const recipientId of Array.from(forwardSelectedIds)) {
+          const encryption = content
+            ? await encryptContentForRecipient(content, recipientId)
+            : undefined;
+          if (encryptedContentRequired && !encryption) {
+            throw new Error('E2EE is not ready for forward recipient');
+          }
+          const attachments = forwardAttachments.length
+            ? await uploadForwardedAttachments(forwardAttachments, recipientId)
+            : [];
+          encryptedMessages.push({
+            toUserId: recipientId,
+            ...(encryption || {}),
+            attachments,
+          });
+        }
+
+        const forwardedRaw = await messageApi.forwardEncryptedMessage(
+          forwardMessage.id,
+          encryptedMessages,
+        );
+        const forwarded = await Promise.all(
+          forwardedRaw.map(message => decryptIncomingMessage(message)),
+        );
+        const currentChatMessages = forwarded.filter(message =>
+          (message.from_id === user?.id && message.to_id === otherUserId) ||
+          (message.to_id === user?.id && message.from_id === otherUserId),
+        );
+        if (currentChatMessages.length) {
+          shouldScrollToEndRef.current = true;
+          setMessages(previous => [...previous, ...currentChatMessages]);
+        }
+        setForwardMessage(null);
+        setForwardSelectedIds(new Set());
+        setCopyNotice('Сообщение переслано');
+        signalChatDataChanged();
+        return;
+      }
+
+      const forwardedRaw = await messageApi.forwardMessage(forwardMessage.id, Array.from(forwardSelectedIds));
+      const forwarded = await Promise.all(
+        forwardedRaw.map(message => decryptIncomingMessage(message)),
+      );
       const currentChatMessages = forwarded.filter(message =>
         (message.from_id === user?.id && message.to_id === otherUserId) ||
         (message.to_id === user?.id && message.from_id === otherUserId),
@@ -1535,7 +2057,11 @@ export default function ChatScreen({ route }: Props) {
       setCopyNotice('Сообщение переслано');
       signalChatDataChanged();
     } catch (apiError) {
-      setForwardError(getApiErrorMessage(apiError));
+      setForwardError(
+        apiError instanceof Error && apiError.message.includes('E2EE')
+          ? 'Не удалось переслать сообщение. Проверьте, что у получателя включено E2EE.'
+          : getApiErrorMessage(apiError),
+      );
     } finally {
       setForwardLoading(false);
     }
@@ -1546,7 +2072,7 @@ export default function ChatScreen({ route }: Props) {
   }
 
   return (
-    <Screen scroll={false} contentContainerStyle={styles.container}>
+    <Screen scroll={false} padded={false} contentContainerStyle={styles.container}>
       <ErrorBanner message={error} />
       <SuccessBanner message={copyNotice} />
 
@@ -1564,6 +2090,20 @@ export default function ChatScreen({ route }: Props) {
           onPress={() => startVideoCall(otherUserId, route.params.name)}
         />
       </View>
+
+      {e2eeReady ? (
+        <View style={[styles.e2eeStatusBar, themed.surfaceBar]}>
+          <Text style={[styles.e2eeStatusText, themed.accentText]}>
+            E2EE включено для этого диалога
+          </Text>
+        </View>
+      ) : e2eeState.selfEnabled && !e2eeState.loading ? (
+        <View style={[styles.e2eeStatusBar, themed.dangerSoft]}>
+          <Text style={[styles.e2eeStatusText, themed.dangerText]}>
+            E2EE недоступно: восстановите ключ или проверьте ключ собеседника
+          </Text>
+        </View>
+      ) : null}
 
       {pinnedMessage?.message ? (
         <Pressable
@@ -1986,6 +2526,8 @@ function assetToLocalImage(asset: Asset): LocalChatImage | null {
     type: asset.type,
     fileName: asset.fileName || `chat-image-${Date.now()}.jpg`,
     fileSize: asset.fileSize,
+    width: asset.width,
+    height: asset.height,
   };
 }
 
@@ -2100,7 +2642,11 @@ function MessageBubble({
         ) : null}
 
         {message.attachments?.map(attachment => {
-          if ((attachment.encryption_version ?? 0) > 0 || attachment.decryption_error) {
+          if (
+            ((attachment.encryption_version ?? 0) > 0 &&
+              !attachment.decrypted_file_url) ||
+            attachment.decryption_error
+          ) {
             return (
               <View
                 key={attachment.id ?? attachment.file_url}
@@ -2123,7 +2669,8 @@ function MessageBubble({
             );
           }
 
-          const attachmentUrl = assetURL(attachment.file_url);
+          const attachmentUrl =
+            attachment.decrypted_file_url || assetURL(attachment.file_url);
 
           if (attachment.file_type === 'voice') {
             const isPlaying = playingVoiceUrl === attachmentUrl;
@@ -2699,7 +3246,9 @@ const styles = StyleSheet.create({
     paddingTop: 10,
   },
   messageList: {
-    padding: 16,
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 18,
     gap: 8,
     flexGrow: 1,
   },
@@ -2714,9 +3263,10 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   bubble: {
-    maxWidth: '82%',
-    borderRadius: 14,
-    padding: 10,
+    maxWidth: '84%',
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
     gap: 6,
   },
   incoming: {
@@ -2955,9 +3505,12 @@ const styles = StyleSheet.create({
   previewStrip: {
     flexDirection: 'row',
     gap: 8,
+    marginHorizontal: 10,
+    marginBottom: 6,
+    borderRadius: 18,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    borderWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
     backgroundColor: colors.surface,
   },
@@ -2992,11 +3545,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginHorizontal: 12,
+    marginHorizontal: 14,
     marginTop: 10,
-    marginBottom: 2,
-    borderRadius: 16,
-    padding: 10,
+    marginBottom: 4,
+    borderRadius: 18,
+    padding: 12,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
@@ -3034,13 +3587,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
+    borderColor: colors.border,
     backgroundColor: colors.surface,
   },
   sendStatusText: {
     color: colors.muted,
     fontSize: 13,
     lineHeight: 18,
+  },
+  e2eeStatusBar: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  e2eeStatusText: {
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '800',
   },
   replyBar: {
     flexDirection: 'row',
@@ -3306,16 +3870,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: 8,
-    padding: 10,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
+    marginHorizontal: 8,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 24,
+    padding: 8,
     backgroundColor: colors.surface,
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.16,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 6,
   },
   input: {
     flex: 1,
+    minWidth: 0,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 12,
+    borderRadius: 18,
     paddingHorizontal: 12,
     paddingVertical: 10,
     backgroundColor: colors.input,
@@ -3356,8 +3929,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(2, 6, 23, 0.58)',
   },
   sheet: {
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
     backgroundColor: colors.surface,
     paddingHorizontal: 14,
     paddingTop: 10,

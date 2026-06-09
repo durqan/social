@@ -29,6 +29,7 @@ import { Screen } from '../../components/Screen';
 import { useNotifications } from '../../context/NotificationsContext';
 import { useThemeColors } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/themes';
+import { avatarImageStyle } from '../../utils/avatar';
 import type {
   MainStackParamList,
   MainTabParamList,
@@ -292,7 +293,15 @@ function UserAvatar({ user, colors }: { user?: User; colors: ThemeColors }) {
       {user?.avatar ? (
         <Image
           source={{ uri: assetURL(user.avatar) }}
-          style={styles.avatarImage}
+          style={[
+            styles.avatarImage,
+            avatarImageStyle({
+              size: 44,
+              positionX: user.avatarPositionX,
+              positionY: user.avatarPositionY,
+              scale: user.avatarScale,
+            }),
+          ]}
           resizeMode="cover"
         />
       ) : (

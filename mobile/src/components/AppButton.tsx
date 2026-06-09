@@ -11,6 +11,7 @@ import {
 
 import { useThemeColors } from '../theme/ThemeContext';
 import type { ThemeColors } from '../theme/themes';
+import { radius, spacing, typography } from '../theme/layout';
 
 type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost';
 
@@ -59,24 +60,26 @@ export function AppButton({
 const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
   base: {
-    minHeight: 48,
-    borderRadius: 12,
+    minHeight: 46,
+    borderRadius: radius.lg,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
   },
   primary: {
     backgroundColor: colors.accent,
   },
   secondary: {
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: colors.accentSoft,
+    borderWidth: 1,
+    borderColor: colors.accentBorder,
   },
   danger: {
     backgroundColor: colors.danger,
   },
   ghost: {
-    backgroundColor: 'transparent',
+    backgroundColor: colors.surface,
   },
   disabled: {
     opacity: 0.55,
@@ -85,9 +88,8 @@ const createStyles = (colors: ThemeColors) =>
     transform: [{ scale: 0.98 }],
   },
   text: {
-    fontSize: 16,
-    lineHeight: 20,
-    fontWeight: '700',
+    ...typography.body,
+    fontWeight: '800',
   },
   primaryText: {
     color: colors.white,

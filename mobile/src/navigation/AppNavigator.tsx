@@ -1,5 +1,6 @@
 import React from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -15,8 +16,10 @@ import {
 } from '../notifications/navigation';
 import { useThemeColors } from '../theme/ThemeContext';
 import type { ThemeColors } from '../theme/themes';
+import { radius, spacing } from '../theme/layout';
 import LoginScreen from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
+import VerifyEmailScreen from '../screens/auth/VerifyEmailScreen';
 import HomeScreen from '../screens/main/HomeScreen';
 import ProfileScreen from '../screens/main/ProfileScreen';
 import FriendsScreen from '../screens/main/FriendsScreen';
@@ -39,6 +42,19 @@ const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const ChatStack = createNativeStackNavigator<ChatStackParamList>();
 const MainStack = createNativeStackNavigator<MainStackParamList>();
 const MainTabs = createBottomTabNavigator<MainTabParamList>();
+const linking = {
+  prefixes: ['social://'],
+  config: {
+    screens: {
+      Login: 'login',
+      Register: 'register',
+      VerifyEmail: 'verify-email/:token',
+      MainTabs: '',
+      UserProfile: 'users/:userId',
+      UserSearch: 'users/search',
+    },
+  },
+};
 
 function AuthNavigator() {
   const colors = useThemeColors();
@@ -62,6 +78,11 @@ function AuthNavigator() {
         name="Register"
         component={RegisterScreen}
         options={{ title: 'Регистрация' }}
+      />
+      <AuthStack.Screen
+        name="VerifyEmail"
+        component={VerifyEmailScreen}
+        options={{ title: 'Подтверждение email' }}
       />
     </AuthStack.Navigator>
   );
@@ -124,15 +145,59 @@ function MainNavigator() {
         component={UserSearchScreen}
         options={{ title: 'Поиск' }}
       />
+      <MainStack.Screen
+        name="VerifyEmail"
+        component={VerifyEmailScreen}
+        options={{ title: 'Подтверждение email' }}
+      />
     </MainStack.Navigator>
   );
+}
+
+
+function TabIcon({ icon, color }: { icon: string; color: string }) {
+  return <Text style={[stylesStatic.tabIcon, { color }]}>{icon}</Text>;
+}
+
+
+function HomeTabIcon({ color }: { color: string }) {
+  return <TabIcon color={color} icon="⌂" />;
+}
+
+function ProfileTabIcon({ color }: { color: string }) {
+  return <TabIcon color={color} icon="☺" />;
+}
+
+function FriendsTabIcon({ color }: { color: string }) {
+  return <TabIcon color={color} icon="◇" />;
+}
+
+function ChatsTabIcon({ color }: { color: string }) {
+  return <TabIcon color={color} icon="✉" />;
+}
+
+function NotificationsTabIcon({ color }: { color: string }) {
+  return <TabIcon color={color} icon="◔" />;
+}
+
+function SettingsTabIcon({ color }: { color: string }) {
+  return <TabIcon color={color} icon="⚙" />;
 }
 
 function MainTabsNavigator() {
   const { unreadCount } = useUnread();
   const { unreadNotificationCount } = useNotifications();
   const colors = useThemeColors();
+  const insets = useSafeAreaInsets();
   const styles = createStyles(colors);
+
+  const tabBarStyle = [
+    styles.tabBar,
+    {
+      height: 58 + insets.bottom,
+      paddingBottom: Math.max(insets.bottom, 8),
+    },
+  ];
 
   return (
     <MainTabs.Navigator
@@ -142,24 +207,24 @@ function MainTabsNavigator() {
         headerTintColor: colors.text,
         tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.muted,
-        tabBarStyle: styles.tabBar,
+        tabBarStyle,
         tabBarLabelStyle: styles.tabBarLabel,
       }}
     >
       <MainTabs.Screen
         name="Home"
         component={HomeScreen}
-        options={{ title: 'Главная', tabBarLabel: 'Главная' }}
+        options={{ title: 'Главная', tabBarLabel: 'Главная', tabBarIcon: HomeTabIcon }}
       />
       <MainTabs.Screen
         name="Profile"
         component={ProfileScreen}
-        options={{ title: 'Профиль', tabBarLabel: 'Профиль' }}
+        options={{ title: 'Профиль', tabBarLabel: 'Профиль', tabBarIcon: ProfileTabIcon }}
       />
       <MainTabs.Screen
         name="Friends"
         component={FriendsScreen}
-        options={{ title: 'Друзья', tabBarLabel: 'Друзья' }}
+        options={{ title: 'Друзья', tabBarLabel: 'Друзья', tabBarIcon: FriendsTabIcon }}
       />
       <MainTabs.Screen
         name="Chats"
@@ -167,6 +232,7 @@ function MainTabsNavigator() {
         options={{
           headerShown: false,
           tabBarLabel: 'Чаты',
+          tabBarIcon: ChatsTabIcon,
           tabBarBadge: unreadCount > 0 ? unreadCount : undefined,
         }}
       />
@@ -176,6 +242,7 @@ function MainTabsNavigator() {
         options={{
           title: 'Уведомления',
           tabBarLabel: 'Уведомления',
+          tabBarIcon: NotificationsTabIcon,
           tabBarBadge:
             unreadNotificationCount > 0 ? unreadNotificationCount : undefined,
         }}
@@ -183,7 +250,7 @@ function MainTabsNavigator() {
       <MainTabs.Screen
         name="Settings"
         component={SettingsScreen}
-        options={{ title: 'Настройки', tabBarLabel: 'Еще' }}
+        options={{ title: 'Настройки', tabBarLabel: 'Еще', tabBarIcon: SettingsTabIcon }}
       />
     </MainTabs.Navigator>
   );
@@ -233,6 +300,7 @@ export function AppNavigator() {
       <ConnectionBanner />
       <NavigationContainer
         ref={navigationRef}
+        linking={linking}
         onReady={flushPendingNotificationNavigation}
       >
         {!user ? <AuthNavigator /> : <MainNavigator />}
@@ -254,8 +322,8 @@ const createStyles = (colors: ThemeColors) =>
     backgroundColor: colors.warningSoft,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.warning,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
   },
   connectionText: {
     color: colors.text,
@@ -267,15 +335,26 @@ const createStyles = (colors: ThemeColors) =>
     backgroundColor: colors.background,
   },
   tabBar: {
-    borderTopColor: colors.border,
+    position: 'absolute',
+    left: spacing.md,
+    right: spacing.md,
+    bottom: spacing.sm,
+    borderTopWidth: 0,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
     backgroundColor: colors.surface,
-    height: 62,
-    paddingBottom: 8,
-    paddingTop: 6,
+    paddingTop: 7,
+    shadowColor: colors.shadow,
+    shadowOpacity: colors.isDark ? 0 : 0.2,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
   },
   tabBarLabel: {
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 10,
+    lineHeight: 12,
+    fontWeight: '800',
   },
   loading: {
     flex: 1,
@@ -287,5 +366,13 @@ const createStyles = (colors: ThemeColors) =>
   loadingText: {
     color: colors.muted,
     fontSize: 15,
+  },
+});
+
+const stylesStatic = StyleSheet.create({
+  tabIcon: {
+    fontSize: 18,
+    lineHeight: 20,
+    fontWeight: '900',
   },
 });

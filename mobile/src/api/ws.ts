@@ -1,6 +1,7 @@
 import NetInfo from '@react-native-community/netinfo';
 
 import { WS_URL } from '../config/env';
+import type { EncryptedMessagePayload } from '../crypto/encryptMessage';
 import { getCookieHeader, refreshSession } from './http';
 import type { Message, MessageAttachment } from './types';
 import { logDev } from '../utils/logger';
@@ -101,6 +102,28 @@ type RNWebSocketConstructor = new (
   },
 ) => WebSocket;
 
+function attachmentForTransport(
+  attachment: MessageAttachment,
+): MessageAttachment {
+  return {
+    id: attachment.id,
+    attachment_id: attachment.attachment_id,
+    message_id: attachment.message_id,
+    file_url: attachment.file_url,
+    file_type: attachment.file_type,
+    width: attachment.width,
+    height: attachment.height,
+    duration: attachment.duration,
+    duration_seconds: attachment.duration_seconds,
+    size: attachment.size,
+    encryption_version: attachment.encryption_version,
+    encrypted_file_key: attachment.encrypted_file_key,
+    file_nonce: attachment.file_nonce,
+    encrypted_metadata: attachment.encrypted_metadata,
+    created_at: attachment.created_at,
+  };
+}
+
 class ChatSocket {
   private readonly maxReconnectAttempts = 8;
   private readonly minReconnectDelay = 1000;
@@ -198,14 +221,16 @@ class ChatSocket {
     content: string,
     attachments: MessageAttachment[],
     replyToMessageId?: number | null,
+    encryption?: EncryptedMessagePayload,
   ) {
     this.sendEvent({
       type: 'message:send',
       payload: {
         to_id: toId,
         content,
-        attachments,
+        attachments: attachments.map(attachmentForTransport),
         replyToMessageId: replyToMessageId ?? null,
+        ...(encryption || {}),
       },
     });
   }

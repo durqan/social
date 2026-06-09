@@ -25,6 +25,7 @@ import { Screen } from '../../components/Screen';
 import { useUnread } from '../../context/UnreadContext';
 import { useThemeColors } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/themes';
+import { avatarImageStyle } from '../../utils/avatar';
 import { formatDateTime } from '../../utils/format';
 import type { ChatStackParamList } from '../../navigation/types';
 
@@ -179,7 +180,7 @@ export default function ChatListScreen({ navigation }: Props) {
   }
 
   return (
-    <Screen scroll={false} contentContainerStyle={styles.container}>
+    <Screen scroll={false} padded={false} contentContainerStyle={styles.container}>
       <ErrorBanner message={error} />
       <SuccessBanner message={success} />
 
@@ -290,7 +291,15 @@ function ConversationAvatar({
       {conversation.avatar ? (
         <Image
           source={{ uri: assetURL(conversation.avatar) }}
-          style={styles.avatarImage}
+          style={[
+            styles.avatarImage,
+            avatarImageStyle({
+              size: 48,
+              positionX: conversation.avatar_position_x,
+              positionY: conversation.avatar_position_y,
+              scale: conversation.avatar_scale,
+            }),
+          ]}
         />
       ) : (
         <Text style={styles.avatarText}>
@@ -378,8 +387,10 @@ const createStyles = (colors: ThemeColors) =>
     padding: 0,
   },
   listContent: {
-    padding: 16,
-    gap: 10,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 110,
+    gap: 12,
   },
   emptyListContent: {
     flexGrow: 1,
@@ -390,9 +401,9 @@ const createStyles = (colors: ThemeColors) =>
     alignItems: 'center',
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
-    padding: 12,
+    borderRadius: 18,
+    backgroundColor: colors.card,
+    padding: 14,
     gap: 12,
   },
   rowUnread: {
@@ -460,7 +471,7 @@ const createStyles = (colors: ThemeColors) =>
   badge: {
     minWidth: 24,
     height: 24,
-    borderRadius: 12,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.accent,
@@ -477,8 +488,8 @@ const createStyles = (colors: ThemeColors) =>
     backgroundColor: colors.overlay,
   },
   sheet: {
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
     backgroundColor: colors.surface,
     paddingHorizontal: 14,
     paddingTop: 10,

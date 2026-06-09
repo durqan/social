@@ -3,6 +3,9 @@ import type { NavigatorScreenParams } from '@react-navigation/native';
 export type AuthStackParamList = {
   Login: undefined;
   Register: undefined;
+  VerifyEmail: {
+    token: string;
+  };
 };
 
 export type ChatStackParamList = {
@@ -29,4 +32,7 @@ export type MainStackParamList = {
     name?: string;
   };
   UserSearch: undefined;
+  VerifyEmail: {
+    token: string;
+  };
 };

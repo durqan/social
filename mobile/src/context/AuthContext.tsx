@@ -9,11 +9,15 @@ import React, {
 } from 'react';
 
 import { authApi } from '../api/auth';
+import { e2eeApi } from '../api/e2ee';
 import { getApiErrorMessage } from '../api/http';
 import type { LoginPayload, RegisterPayload, User } from '../api/types';
 import { userApi } from '../api/users';
 import { chatSocket } from '../api/ws';
+import { restoreE2EEFromBackup } from '../crypto/keyBackup';
+import { getLocalE2EEKeyBundle } from '../crypto/masterKey';
 import { revokeRegisteredPushToken } from '../notifications/pushNotifications';
+import { warnDev } from '../utils/logger';
 
 type AuthContextValue = {
   user: User | null;
@@ -70,6 +74,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const response = await authApi.login(payload);
       setUser(response.user);
+      if (response.user.id) {
+        restoreLocalE2EEKey(response.user.id, payload.password).catch(() =>
+          undefined,
+        );
+      }
     } catch (error) {
       const message = getApiErrorMessage(error);
       setAuthError(message);
@@ -139,4 +148,23 @@ export function useAuth() {
     throw new Error('useAuth must be used inside AuthProvider');
   }
   return value;
+}
+
+async function restoreLocalE2EEKey(userId: number, password: string) {
+  try {
+    if (await getLocalE2EEKeyBundle(userId)) {
+      return;
+    }
+
+    const backup = await e2eeApi.getBackup();
+    if (backup.enabled && backup.encrypted_master_key) {
+      await restoreE2EEFromBackup(
+        userId,
+        password,
+        backup.encrypted_master_key,
+      );
+    }
+  } catch (error) {
+    warnDev('[SocialMobile] E2EE key restore failed', error);
+  }
 }

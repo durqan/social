@@ -25,6 +25,7 @@ import { Screen } from '../../components/Screen';
 import { TextField } from '../../components/TextField';
 import { useAuth } from '../../context/AuthContext';
 import { colors } from '../../theme/colors';
+import { avatarImageStyle } from '../../utils/avatar';
 import type { MainStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'UserSearch'>;
@@ -147,7 +148,7 @@ export default function UserSearchScreen({ navigation }: Props) {
   }
 
   return (
-    <Screen scroll={false} contentContainerStyle={styles.container}>
+    <Screen scroll={false} padded={false} contentContainerStyle={styles.container}>
       <View style={styles.searchBox}>
         <TextField
           label="Поиск"
@@ -221,7 +222,15 @@ function SearchResultRow({
         {user.avatar ? (
           <Image
             source={{ uri: assetURL(user.avatar) }}
-            style={styles.avatarImage}
+            style={[
+              styles.avatarImage,
+              avatarImageStyle({
+                size: 44,
+                positionX: user.avatarPositionX,
+                positionY: user.avatarPositionY,
+                scale: user.avatarScale,
+              }),
+            ]}
           />
         ) : (
           <Text style={styles.avatarText}>
@@ -275,8 +284,10 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   listContent: {
-    padding: 16,
-    gap: 10,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 110,
+    gap: 12,
   },
   emptyListContent: {
     flexGrow: 1,
@@ -287,9 +298,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
-    padding: 12,
+    borderRadius: 18,
+    backgroundColor: colors.card,
+    padding: 14,
     gap: 12,
   },
   avatar: {

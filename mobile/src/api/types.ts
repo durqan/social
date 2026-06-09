@@ -132,6 +132,10 @@ export interface MessageAttachment {
   file_nonce?: string;
   encrypted_metadata?: string;
   decryption_error?: boolean;
+  decrypted_file_url?: string;
+  original_mime_type?: string;
+  original_filename?: string;
+  original_size?: number;
   created_at?: string;
 }
 
@@ -185,6 +189,12 @@ export interface UpdateProfilePayload {
   avatar_position_x?: number;
   avatar_position_y?: number;
   avatar_scale?: number;
+}
+
+export interface ChangePasswordPayload {
+  current_password: string;
+  new_password: string;
+  encrypted_master_key?: string;
 }
 
 export function normalizeUser(user: User): User {

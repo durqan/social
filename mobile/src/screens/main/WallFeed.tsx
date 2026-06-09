@@ -22,6 +22,7 @@ import {
 import { useNotifications } from '../../context/NotificationsContext';
 import { useThemeColors } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/themes';
+import { avatarImageStyle } from '../../utils/avatar';
 import { formatDateTime } from '../../utils/format';
 
 const maxPostLength = 500;
@@ -556,7 +557,12 @@ function PostAvatar({
       {user?.avatar ? (
         <Image
           source={{ uri: assetURL(user.avatar) }}
-          style={{ width: size, height: size }}
+          style={avatarImageStyle({
+            size,
+            positionX: user.avatar_position_x,
+            positionY: user.avatar_position_y,
+            scale: user.avatar_scale,
+          })}
         />
       ) : (
         <Text style={[styles.avatarText, small && styles.avatarTextSmall]}>

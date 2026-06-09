@@ -161,7 +161,7 @@ export default function NotificationsScreen() {
   }
 
   return (
-    <Screen scroll={false} contentContainerStyle={styles.container}>
+    <Screen scroll={false} padded={false} contentContainerStyle={styles.container}>
       <ErrorBanner message={error} />
       <FlatList
         data={notifications}
@@ -220,8 +220,10 @@ const createStyles = (colors: ThemeColors) =>
     padding: 0,
   },
   listContent: {
-    padding: 16,
-    gap: 10,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 110,
+    gap: 12,
   },
   emptyListContent: {
     flexGrow: 1,
@@ -235,8 +237,8 @@ const createStyles = (colors: ThemeColors) =>
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 14,
-    backgroundColor: colors.surface,
-    padding: 12,
+    backgroundColor: colors.card,
+    padding: 14,
   },
   rowUnread: {
     borderColor: colors.accentBorder,

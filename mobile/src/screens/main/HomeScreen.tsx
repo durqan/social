@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import {
   useFocusEffect,
   useNavigation,
@@ -11,6 +11,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { isEmailVerified } from '../../api/auth';
 import type { PostUser } from '../../api/types';
 import { AppButton } from '../../components/AppButton';
+import { ActionTile, Card, HeroCard, Section } from '../../components/Layout';
 import { EmailVerificationNotice } from '../../components/EmailVerificationNotice';
 import { ErrorBanner } from '../../components/Feedback';
 import { Screen } from '../../components/Screen';
@@ -19,6 +20,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useUnread } from '../../context/UnreadContext';
 import { useThemeColors } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/themes';
+import { radius, spacing, typography } from '../../theme/layout';
 import type {
   MainStackParamList,
   MainTabParamList,
@@ -77,215 +79,89 @@ export default function HomeScreen() {
 
   return (
     <Screen contentContainerStyle={styles.content} scroll style={styles.screen}>
-      <View style={styles.hero}>
-        <Text style={styles.kicker}>Главная</Text>
-        <Text style={styles.title}>
-          Здравствуйте, {user?.name || user?.email}
-        </Text>
-        <Text style={styles.subtitle}>
-          Быстрый доступ к профилю, друзьям и сообщениям.
-        </Text>
-      </View>
+      <HeroCard
+        kicker="Главная"
+        title={`Привет, ${user?.name || user?.email || 'друг'}`}
+        subtitle="Лента, быстрые действия и статус аккаунта — без лишней каши на экране."
+      />
 
       <ErrorBanner message={error} />
-
       {!emailVerified ? <EmailVerificationNotice /> : null}
 
-      <View style={styles.grid}>
-        <View style={styles.statCard}>
-          <Text style={styles.statValue}>{unreadCount}</Text>
-          <Text style={styles.statLabel}>непрочитанных сообщений</Text>
+      <Section title="Сводка" subtitle="Самое важное сейчас">
+        <View style={styles.grid}>
+          <Card style={styles.statCard}>
+            <Text style={styles.statValue}>{unreadCount}</Text>
+            <Text style={styles.statLabel}>непрочитанных сообщений</Text>
+          </Card>
+          <Card style={styles.statCard}>
+            <Text style={styles.statValue}>{emailVerified ? 'Готов' : 'Ждет'}</Text>
+            <Text style={styles.statLabel}>статус email</Text>
+          </Card>
         </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statValue}>
-            {emailVerified ? 'Готов' : 'Ждет'}
-          </Text>
-          <Text style={styles.statLabel}>статус email</Text>
+      </Section>
+
+      <Section title="Быстрый доступ" subtitle="Частые действия в один тап">
+        <View style={styles.quickGrid}>
+          <ActionTile title="Профиль" text="Данные аккаунта" emoji="☺" onPress={() => navigation.navigate('Profile')} />
+          <ActionTile title="Друзья" text="Список и заявки" emoji="◇" onPress={() => navigation.navigate('Friends')} />
+          <ActionTile title="Чаты" text="Сообщения" emoji="✉" onPress={() => navigation.navigate('Chats', { screen: 'ChatList' })} />
+          <ActionTile title="Настройки" text="Тема и выход" emoji="⚙" onPress={() => navigation.navigate('Settings')} />
         </View>
+      </Section>
+
+      <View style={styles.refreshBox}>
+        <AppButton title="Обновить" variant="ghost" loading={loading} onPress={load} />
       </View>
 
-      <View style={styles.quickGrid}>
-        <QuickAction
-          title="Профиль"
-          text="Данные аккаунта"
-          colors={colors}
-          onPress={() => navigation.navigate('Profile')}
+      <Section title="Лента" subtitle="Публикации и активность">
+        <WallFeed
+          currentUser={user}
+          userId={user?.id}
+          isOwner
+          emailVerified={emailVerified}
+          onOpenUser={openWallUser}
         />
-        <QuickAction
-          title="Друзья"
-          text="Список и заявки"
-          colors={colors}
-          onPress={() => navigation.navigate('Friends')}
-        />
-        <QuickAction
-          title="Чаты"
-          text="Сообщения"
-          colors={colors}
-          onPress={() => navigation.navigate('Chats', { screen: 'ChatList' })}
-        />
-        <QuickAction
-          title="Настройки"
-          text="Аккаунт и выход"
-          colors={colors}
-          onPress={() => navigation.navigate('Settings')}
-        />
-      </View>
-
-      <RefreshControlView
-        loading={loading}
-        onRefresh={load}
-        colors={colors}
-      />
-
-      <WallFeed
-        currentUser={user}
-        userId={user?.id}
-        isOwner
-        emailVerified={emailVerified}
-        onOpenUser={openWallUser}
-      />
+      </Section>
     </Screen>
-  );
-}
-
-function QuickAction({
-  title,
-  text,
-  onPress,
-  colors,
-}: {
-  title: string;
-  text: string;
-  onPress: () => void;
-  colors: ThemeColors;
-}) {
-  const styles = createStyles(colors);
-
-  return (
-    <Pressable
-      accessibilityRole="button"
-      style={({ pressed }) => [
-        styles.quickAction,
-        pressed && styles.quickActionPressed,
-      ]}
-      onPress={onPress}
-    >
-      <Text style={styles.quickTitle}>{title}</Text>
-      <Text style={styles.quickText}>{text}</Text>
-    </Pressable>
-  );
-}
-
-function RefreshControlView({
-  loading,
-  onRefresh,
-  colors,
-}: {
-  loading: boolean;
-  onRefresh: () => Promise<void>;
-  colors: ThemeColors;
-}) {
-  const styles = createStyles(colors);
-
-  return (
-    <View style={styles.refreshBox}>
-      <AppButton
-        title="Обновить"
-        variant="ghost"
-        loading={loading}
-        onPress={onRefresh}
-      />
-    </View>
   );
 }
 
 const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
-  screen: {
-    backgroundColor: colors.background,
-  },
-  content: {
-    gap: 16,
-  },
-  hero: {
-    borderWidth: 1,
-    borderColor: 'rgba(17, 24, 39, 0.06)',
-    borderRadius: 14,
-    backgroundColor: colors.surface,
-    padding: 18,
-    gap: 8,
-  },
-  kicker: {
-    color: colors.accentStrong,
-    fontSize: 13,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-  },
-  title: {
-    color: colors.text,
-    fontSize: 26,
-    lineHeight: 32,
-    fontWeight: '800',
-  },
-  subtitle: {
-    color: colors.muted,
-    fontSize: 15,
-    lineHeight: 22,
-  },
-  grid: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  statCard: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
-    padding: 14,
-    gap: 4,
-  },
-  statValue: {
-    color: colors.text,
-    fontSize: 24,
-    lineHeight: 30,
-    fontWeight: '800',
-  },
-  statLabel: {
-    color: colors.muted,
-    fontSize: 13,
-  },
-  quickGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  quickAction: {
-    flexBasis: '47%',
-    flexGrow: 1,
-    minHeight: 96,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
-    padding: 14,
-    justifyContent: 'space-between',
-  },
-  quickActionPressed: {
-    backgroundColor: colors.surfaceMuted,
-  },
-  quickTitle: {
-    color: colors.text,
-    fontSize: 17,
-    lineHeight: 23,
-    fontWeight: '800',
-  },
-  quickText: {
-    color: colors.muted,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  refreshBox: {
-    alignItems: 'center',
-  },
-});
+    screen: {
+      backgroundColor: colors.background,
+    },
+    content: {
+      gap: spacing.xl,
+      paddingBottom: 108,
+    },
+    grid: {
+      flexDirection: 'row',
+      gap: spacing.md,
+    },
+    statCard: {
+      flex: 1,
+      minHeight: 90,
+      justifyContent: 'center',
+      gap: spacing.xs,
+      borderRadius: radius.lg,
+    },
+    statValue: {
+      ...typography.h2,
+      color: colors.text,
+    },
+    statLabel: {
+      ...typography.caption,
+      color: colors.muted,
+    },
+    quickGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing.md,
+    },
+    refreshBox: {
+      alignItems: 'center',
+      marginTop: -spacing.sm,
+    },
+  });

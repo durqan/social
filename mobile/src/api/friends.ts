@@ -40,6 +40,18 @@ export const friendsApi = {
     });
   },
 
+  async blockUser(userId: number) {
+    await apiRequest<{ message: string }>(`/users/friends/${userId}/block`, {
+      method: 'POST',
+    });
+  },
+
+  async unblockUser(userId: number) {
+    await apiRequest<{ message: string }>(`/users/friends/${userId}`, {
+      method: 'DELETE',
+    });
+  },
+
   async rejectFriendRequest(requesterId: number) {
     await apiRequest<{ message: string }>(`/users/friends/${requesterId}`, {
       method: 'DELETE',

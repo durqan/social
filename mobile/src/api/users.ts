@@ -1,5 +1,5 @@
 import { apiRequest } from './http';
-import type { UpdateProfilePayload, User } from './types';
+import type { ChangePasswordPayload, UpdateProfilePayload, User } from './types';
 import { normalizeUser } from './types';
 
 export const userApi = {
@@ -25,6 +25,13 @@ export const userApi = {
         body: payload,
       }),
     );
+  },
+
+  async changePassword(userId: number, payload: ChangePasswordPayload) {
+    await apiRequest<{ message: string }>(`/users/${userId}/password`, {
+      method: 'PATCH',
+      body: payload,
+    });
   },
 
   async uploadAvatar(
