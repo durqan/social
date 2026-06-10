@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
-import { useNavigate, useOutletContext, useParams } from 'react-router-dom';
+import { useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router-dom';
 import type { Message, MessageAttachment, PinnedMessage, User } from "@/shared/types/domain.js";
 import { messageService } from "@/features/chat/api/messageService.js";
 import { friendService } from "@/features/friends/api/friendService.js";
@@ -15,6 +15,7 @@ import { ChatMessageList } from "@/features/chat/components/ChatMessageList.js";
 import { useWebSocket } from "@/app/providers/WebSocketContext.js";
 import { useAppDialog } from "@/app/providers/AppDialogProvider.js";
 import { useAudioCall } from "@/features/call/AudioCallContext.js";
+import { toast } from 'react-hot-toast';
 import { Spinner } from "@/shared/ui/Spinner.js";
 import { formatMonthDayDate, formatTime } from "@/shared/utils/date.js";
 import {usePresence} from "@/shared/hooks/usePresence.js";
@@ -246,6 +247,13 @@ function Chat() {
     const { currentUser } = useOutletContext<{ currentUser: User }>();
     const wsService = useWebSocket();
     const { status: callStatus, startCall, startVideoCall } = useAudioCall();
+
+    // Handle deep links coming from web push notifications for incoming calls.
+    // The URL looks like /users/:me/chat/:peer?incomingCall=1&callId=xxx&ts=...
+    // We do NOT auto-accept here (the real offer still arrives over WS if the caller is still trying).
+    // If the offer has already expired, we show a lightweight "missed call" hint.
+    // Uses setSearchParams + replace to cleanly remove the params (prevents re-processing on refresh).
+    const [searchParams, setSearchParams] = useSearchParams();
     const [recipient, setRecipient] = useState<User | null>(null);
     const [e2eeState, setE2eeState] = useState<{
         loading: boolean;
@@ -310,6 +318,63 @@ function Chat() {
         e2eeState.recipientPublicKey &&
         e2eeState.localKey
     );
+
+    // Handle deep link from web push for incoming calls (checklist items 8-9).
+    // - Reads incomingCall, callId, ts
+    // - Cleans query via setSearchParams({replace:true}) — safe even if currentUser not loaded yet
+    // - TTL ~45-60s: if older → "Пропущенный звонок", else do nothing extra (rely on normal WS call:offer + CallOverlay)
+    // - Guard with processedCallRef so a single push click / load is handled only once (avoids re-toast on searchParams update after replace).
+    const processedCallRef = useRef<string | null>(null);
+
+    useEffect(() => {
+        const incomingCall = searchParams.get('incomingCall');
+        const callId = searchParams.get('callId');
+        const tsParam = searchParams.get('ts');
+
+        if (!incomingCall || !userId) {
+            return;
+        }
+
+        // Dedup guard: if we already handled this exact callId (or a synthetic key), skip.
+        const processingKey = callId || `peer-${userId}-${tsParam || 'no-ts'}`;
+        if (processedCallRef.current === processingKey) {
+            return;
+        }
+
+        const peerId = Number(userId);
+        if (!peerId) return;
+
+        const now = Date.now();
+        const offerTs = tsParam ? Number(tsParam) : now;
+        const ageMs = now - (Number.isFinite(offerTs) ? offerTs : now);
+        const isStale = ageMs > 60000; // 60s TTL (within the 45-60s range requested)
+
+        // Clean the query params using the searchParams API + replace.
+        // This is better than reconstructing full path because we are already on the correct chat route.
+        const next = new URLSearchParams(searchParams);
+        next.delete('incomingCall');
+        next.delete('callId');
+        next.delete('ts');
+
+        // Mark as processed *before* the state update to avoid double execution in the same render cycle.
+        processedCallRef.current = processingKey;
+
+        setSearchParams(next, { replace: true });
+
+        if (isStale) {
+            // Call offer is very likely already gone on the caller side (caller gave up or answered elsewhere).
+            // We deliberately do not attempt to synthesize a call here.
+            toast('Пропущенный звонок', {
+                duration: 4000,
+                position: 'top-center',
+            });
+            return;
+        }
+
+        // Fresh enough. Do NOT manually start/accept anything.
+        // The normal WS `call:offer` (if the caller is still offering) will arrive via AudioCallContext
+        // (which is mounted at App level) and will show the CallOverlay as usual.
+    }, [searchParams, userId, setSearchParams]);
 
     const decryptIncomingMessage = useCallback(async (message: Message) => {
         if (!currentUser?.id || !e2eeState.localKey) {

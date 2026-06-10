@@ -10,4 +10,10 @@ type Notification struct {
 	EntityID    uint      `json:"entity_id" gorm:"index"`
 	IsRead      bool      `json:"is_read" gorm:"index"`
 	CreatedAt   time.Time `json:"created_at" gorm:"index"`
+
+	// CallID is the ephemeral identifier of the call (UUID from client offer).
+	// Used for de-duplication in tags and for stale call detection on the client.
+	CallID string `json:"call_id" gorm:"size:64;index"`
+	// ConversationID is the peer user id to open the chat with (from recipient perspective).
+	ConversationID uint `json:"conversation_id" gorm:"index"`
 }

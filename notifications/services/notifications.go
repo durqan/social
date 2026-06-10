@@ -24,10 +24,12 @@ func NewService(repo *repository.Repository, hub *hub.Hub, push *pushsvc.Service
 
 func (s *Service) CreateNotification(req *dto.CreateNotificationReq) error {
 	note := &models.Notification{
-		RecipientID: req.RecipientID,
-		ActorID:     req.ActorID,
-		Type:        req.Type,
-		EntityID:    req.EntityID,
+		RecipientID:    req.RecipientID,
+		ActorID:        req.ActorID,
+		Type:           req.Type,
+		EntityID:       req.EntityID,
+		CallID:         req.CallID,
+		ConversationID: req.ConversationID,
 	}
 
 	if err := s.repo.Create(note); err != nil {
@@ -153,10 +155,16 @@ func buildPushPayload(notification models.Notification, dataSource pushPayloadDa
 		Type:           notification.Type,
 		EntityID:       notification.EntityID,
 		ActorID:        notification.ActorID,
+		CallID:         notification.CallID,
+		ConversationID: notification.ConversationID,
 	}
 
 	if notification.Type == dto.NotificationTypeMessage {
 		return buildMessagePushPayload(notification, dataSource, payload)
+	}
+
+	if notification.Type == dto.NotificationTypeIncomingCall {
+		return buildIncomingCallPushPayload(notification, dataSource, payload)
 	}
 
 	return payload
@@ -200,6 +208,42 @@ func buildMessagePushPayload(
 	return payload
 }
 
+// buildIncomingCallPushPayload enriches the payload for call invites.
+// We resolve the caller's name (same pattern as messages) so the push can say
+// "Ivan Ivanov звонит вам" instead of a generic body.
+// The callId is passed through for client-side stale detection and tag uniqueness.
+func buildIncomingCallPushPayload(
+	notification models.Notification,
+	dataSource pushPayloadDataSource,
+	fallback pushsvc.Payload,
+) pushsvc.Payload {
+	payload := fallback
+	payload.Title = "Входящий звонок"
+
+	convID := notification.ConversationID
+	if convID == 0 {
+		convID = notification.ActorID
+	}
+	payload.ConversationID = convID
+	payload.CallID = notification.CallID
+	payload.Tag = buildTag(notification, convID)
+
+	if dataSource == nil {
+		payload.Body = "Вам звонит пользователь"
+		return payload
+	}
+
+	actor, err := dataSource.FindUserByID(notification.ActorID)
+	if err != nil || displayUserName(actor) == "" {
+		payload.Body = "Вам звонит пользователь"
+		return payload
+	}
+
+	name := displayUserName(actor)
+	payload.Body = fmt.Sprintf("%s звонит вам", name)
+	return payload
+}
+
 func displayUserName(user models.User) string {
 	return strings.TrimSpace(user.Name)
 }
@@ -234,6 +278,8 @@ func pushTitle(notificationType string) string {
 		return "Новый лайк"
 	case dto.NotificationTypeCommentCreated:
 		return "Новый комментарий"
+	case dto.NotificationTypeIncomingCall:
+		return "Входящий звонок"
 	default:
 		return "Новое уведомление"
 	}
@@ -251,6 +297,9 @@ func pushBody(notificationType string) string {
 		return "Ваш пост лайкнули"
 	case dto.NotificationTypeCommentCreated:
 		return "Ваш пост прокомментировали"
+	case dto.NotificationTypeIncomingCall:
+		// Actual body is built in buildIncomingCallPushPayload using the caller's name.
+		return "Вам звонит пользователь"
 	default:
 		return "Откройте приложение, чтобы посмотреть"
 	}
@@ -266,6 +315,18 @@ func pushURL(notification models.Notification) string {
 		return fmt.Sprintf("/users/%d", notification.ActorID)
 	case dto.NotificationTypePostLiked, dto.NotificationTypeCommentCreated:
 		return fmt.Sprintf("/users/%d/wall", notification.RecipientID)
+	case dto.NotificationTypeIncomingCall:
+		// Deep link into the chat with the caller. The query params are used by the PWA
+		// to know it arrived from a call push (for stale detection / future auto-accept hints).
+		conv := notification.ConversationID
+		if conv == 0 {
+			conv = notification.ActorID
+		}
+		ts := notification.CreatedAt.UnixMilli()
+		if notification.CallID != "" {
+			return fmt.Sprintf("/users/%d/chat/%d?incomingCall=1&callId=%s&ts=%d", notification.RecipientID, conv, notification.CallID, ts)
+		}
+		return fmt.Sprintf("/users/%d/chat/%d?incomingCall=1&ts=%d", notification.RecipientID, conv, ts)
 	default:
 		return fmt.Sprintf("/users/%d", notification.RecipientID)
 	}
@@ -277,6 +338,15 @@ func buildTag(notification models.Notification, conversationID uint) string {
 			return fmt.Sprintf("conversation:%d", conversationID)
 		}
 		return "messages"
+	}
+	if notification.Type == dto.NotificationTypeIncomingCall {
+		if notification.CallID != "" {
+			return fmt.Sprintf("call-%s", notification.CallID)
+		}
+		if conversationID != 0 {
+			return fmt.Sprintf("call-%d", conversationID)
+		}
+		return "call"
 	}
 	switch notification.Type {
 	case dto.NotificationTypeFriendRequest, dto.NotificationTypeFriendAccepted:

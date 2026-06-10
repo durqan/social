@@ -36,6 +36,9 @@ type Payload struct {
 	EntityID       uint   `json:"entity_id"`
 	ActorID        uint   `json:"actor_id"`
 	ConversationID uint   `json:"conversation_id"`
+	// CallID is the ephemeral call identifier from the offer. Clients use it for
+	// matching against active call state and for stale call detection.
+	CallID string `json:"call_id,omitempty"`
 }
 
 type Service struct {
@@ -164,7 +167,10 @@ func (s *Service) SendMobile(token models.MobilePushToken, payload Payload) erro
 				"notification_id": fmt.Sprintf("%d", payload.NotificationID),
 				"entity_id":       fmt.Sprintf("%d", payload.EntityID),
 				"actor_id":        fmt.Sprintf("%d", payload.ActorID),
+				"caller_id":       fmt.Sprintf("%d", payload.ActorID), // explicit alias for call flows
 				"conversation_id": fmt.Sprintf("%d", payload.ConversationID),
+				"call_id":         payload.CallID,
+				"ts":              "", // best effort; web deep link carries authoritative ts in the URL query
 			},
 			Android: fcmAndroidConfig{
 				Priority: "HIGH",

@@ -411,6 +411,37 @@ func forwardCallEvent(ctx context.Context, eventType string, fromID uint, payloa
 		return
 	}
 
+	// === INCOMING CALL WEB PUSH (only for offer) ===
+	// All other signalling events (call:answer, call:ice, call:end, call:reject) MUST NOT
+	// create Notification records or trigger pushes. This is enforced by the if below.
+	if eventType == "call:offer" {
+		// Structured context for observability (call_id, ids, etc.).
+		log.Printf(
+			"call:offer received, attempting incoming_call push publish: call_id=%s caller_id=%d recipient_id=%d conversation_id=%d",
+			callID, fromID, toID, fromID,
+		)
+
+		// From the callee's (toID) perspective the conversation partner (for chat deep link) is the caller (fromID).
+		// Publish is intentionally decoupled (goroutine) so that any Rabbit / notifications-service
+		// unavailability or slowness CANNOT break or delay the WebSocket call signalling path.
+		// Errors inside publish are logged (as warning/error) but execution continues to WS forward.
+		go publishIncomingCallNotification(toID, fromID, callID, fromID)
+	}
+
+	// Why we send push even if the user has active WS connections:
+	// - The current architecture has no server-side "call session" concept and no
+	//   reliable signal "this user is actively watching for calls on this device".
+	// - A WebSocket connection only means "at least one tab/socket for the user is open".
+	//   The tab may be on another route, the PWA may be backgrounded, or the user
+	//   may simply not be looking at the screen.
+	// - The primary goal of this feature is to surface incoming calls when the web/PWA
+	//   client cannot deliver the offer via WS (closed tab, killed PWA, background, etc.).
+	// - Duplicate ringing is acceptable: the in-app CallOverlay (driven by WS) is the
+	//   preferred UX when possible. The push serves as wake-up + deep-link + missed-call record.
+	// - A future improvement could consult presence or the WS registry length before publishing,
+	//   but even that would be a heuristic, not a guarantee.
+	// We deliberately do NOT guard the publish on len(clients.getAll(toID)) == 0.
+
 	eventPayload := gin.H{
 		"from_id": fromID,
 	}
