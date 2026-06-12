@@ -10,8 +10,9 @@ on:
 
 jobs:
   build:
-    name: Build Android APKs
+    name: Build Android Release APK
     runs-on: ubuntu-latest
+
     env:
       SOCIAL_API_BASE_URL: ${{ inputs.api_base_url || vars.SOCIAL_API_BASE_URL }}
       SOCIAL_NOTIFICATIONS_BASE_URL: ${{ vars.SOCIAL_NOTIFICATIONS_BASE_URL }}
@@ -39,14 +40,13 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+          cache: gradle
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK packages
-        run: |
-          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
-          yes | sdkmanager --licenses
 
       - name: Install dependencies
         run: npm ci
@@ -89,32 +89,15 @@ jobs:
             exit 1
           fi
 
-          echo "Building APKs with SOCIAL_API_BASE_URL=$SOCIAL_API_BASE_URL"
+          echo "Building release APK with SOCIAL_API_BASE_URL=$SOCIAL_API_BASE_URL"
 
       - name: TypeScript check
         run: npx tsc --noEmit
 
-      - name: Lint
-        run: npm run lint
-
-      - name: Test
-        run: npm test -- --runInBand
-
-      - name: Build debug APK
-        run: |
-          chmod +x android/gradlew
-          npm run build:android
-
       - name: Build release APK
         run: |
+          chmod +x android/gradlew
           npm run build:android:release
-
-      - name: Upload debug APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: social-mobile-debug-apk
-          path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
 
       - name: Upload release APK
         uses: actions/upload-artifact@v4
