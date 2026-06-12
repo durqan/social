@@ -27,7 +27,7 @@ import {
 } from '../notifications/navigation';
 import { useThemeColors } from '../theme/ThemeContext';
 import type { ThemeColors } from '../theme/themes';
-import { spacing } from '../theme/layout';
+import { elevation, radius, spacing, typography } from '../theme/layout';
 import LoginScreen from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
 import VerifyEmailScreen from '../screens/auth/VerifyEmailScreen';
@@ -77,6 +77,7 @@ function AuthNavigator() {
         headerShadowVisible: false,
         headerStyle: styles.header,
         headerTintColor: colors.text,
+        headerTitleStyle: styles.headerTitle,
         contentStyle: styles.content,
       }}
     >
@@ -109,6 +110,7 @@ function ChatNavigator() {
         headerShadowVisible: false,
         headerStyle: styles.header,
         headerTintColor: colors.text,
+        headerTitleStyle: styles.headerTitle,
         contentStyle: styles.content,
       }}
     >
@@ -136,6 +138,7 @@ function MainNavigator() {
         headerShadowVisible: false,
         headerStyle: styles.header,
         headerTintColor: colors.text,
+        headerTitleStyle: styles.headerTitle,
         contentStyle: styles.content,
       }}
     >
@@ -164,7 +167,6 @@ function MainNavigator() {
     </MainStack.Navigator>
   );
 }
-
 
 type TabIconComponent = React.ComponentType<{
   color?: string;
@@ -198,16 +200,27 @@ function TabIcon({
   );
 }
 
-
 function HomeTabIcon({ color, focused }: { color: string; focused: boolean }) {
   return <TabIcon color={color} focused={focused} Icon={Home} />;
 }
 
-function ProfileTabIcon({ color, focused }: { color: string; focused: boolean }) {
+function ProfileTabIcon({
+  color,
+  focused,
+}: {
+  color: string;
+  focused: boolean;
+}) {
   return <TabIcon color={color} focused={focused} Icon={UserRound} />;
 }
 
-function FriendsTabIcon({ color, focused }: { color: string; focused: boolean }) {
+function FriendsTabIcon({
+  color,
+  focused,
+}: {
+  color: string;
+  focused: boolean;
+}) {
   return <TabIcon color={color} focused={focused} Icon={UsersRound} />;
 }
 
@@ -215,11 +228,23 @@ function ChatsTabIcon({ color, focused }: { color: string; focused: boolean }) {
   return <TabIcon color={color} focused={focused} Icon={MessageCircle} />;
 }
 
-function NotificationsTabIcon({ color, focused }: { color: string; focused: boolean }) {
+function NotificationsTabIcon({
+  color,
+  focused,
+}: {
+  color: string;
+  focused: boolean;
+}) {
   return <TabIcon color={color} focused={focused} Icon={Bell} />;
 }
 
-function SettingsTabIcon({ color, focused }: { color: string; focused: boolean }) {
+function SettingsTabIcon({
+  color,
+  focused,
+}: {
+  color: string;
+  focused: boolean;
+}) {
   return <TabIcon color={color} focused={focused} Icon={Menu} />;
 }
 
@@ -234,7 +259,7 @@ function MainTabsNavigator() {
     styles.tabBar,
     {
       height: 64 + insets.bottom,
-      paddingBottom: Math.max(insets.bottom, 10),
+      paddingBottom: Math.max(insets.bottom, 8),
     },
   ];
   const hiddenTabBarStyle = { display: 'none' as const };
@@ -245,6 +270,7 @@ function MainTabsNavigator() {
         headerShadowVisible: false,
         headerStyle: styles.header,
         headerTintColor: colors.text,
+        headerTitleStyle: styles.headerTitle,
         tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.muted,
         tabBarStyle,
@@ -252,22 +278,35 @@ function MainTabsNavigator() {
         tabBarItemStyle: styles.tabBarItem,
         tabBarIconStyle: styles.tabBarIcon,
         tabBarLabelStyle: styles.tabBarLabel,
+        tabBarBadgeStyle: styles.tabBarBadge,
       }}
     >
       <MainTabs.Screen
         name="Home"
         component={HomeScreen}
-        options={{ title: 'Главная', tabBarLabel: 'Главная', tabBarIcon: HomeTabIcon }}
+        options={{
+          title: 'Главная',
+          tabBarLabel: 'Главная',
+          tabBarIcon: HomeTabIcon,
+        }}
       />
       <MainTabs.Screen
         name="Profile"
         component={ProfileScreen}
-        options={{ title: 'Профиль', tabBarLabel: 'Профиль', tabBarIcon: ProfileTabIcon }}
+        options={{
+          title: 'Профиль',
+          tabBarLabel: 'Профиль',
+          tabBarIcon: ProfileTabIcon,
+        }}
       />
       <MainTabs.Screen
         name="Friends"
         component={FriendsScreen}
-        options={{ title: 'Друзья', tabBarLabel: 'Друзья', tabBarIcon: FriendsTabIcon }}
+        options={{
+          title: 'Друзья',
+          tabBarLabel: 'Друзья',
+          tabBarIcon: FriendsTabIcon,
+        }}
       />
       <MainTabs.Screen
         name="Chats"
@@ -280,8 +319,7 @@ function MainTabsNavigator() {
             tabBarLabel: 'Чаты',
             tabBarIcon: ChatsTabIcon,
             tabBarBadge: unreadCount > 0 ? unreadCount : undefined,
-            tabBarStyle:
-              routeName === 'Chat' ? hiddenTabBarStyle : tabBarStyle,
+            tabBarStyle: routeName === 'Chat' ? hiddenTabBarStyle : tabBarStyle,
           };
         }}
       />
@@ -299,7 +337,11 @@ function MainTabsNavigator() {
       <MainTabs.Screen
         name="Settings"
         component={SettingsScreen}
-        options={{ title: 'Настройки', tabBarLabel: 'Еще', tabBarIcon: SettingsTabIcon }}
+        options={{
+          title: 'Настройки',
+          tabBarLabel: 'Еще',
+          tabBarIcon: SettingsTabIcon,
+        }}
       />
     </MainTabs.Navigator>
   );
@@ -360,75 +402,81 @@ export function AppNavigator() {
 
 const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  content: {
-    backgroundColor: colors.background,
-  },
-  connectionBanner: {
-    backgroundColor: colors.warningSoft,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.warning,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-  },
-  connectionText: {
-    color: colors.text,
-    fontSize: 13,
-    lineHeight: 18,
-    textAlign: 'center',
-  },
-  header: {
-    backgroundColor: colors.background,
-  },
-  tabBar: {
-    position: 'absolute',
-    left: spacing.md,
-    right: spacing.md,
-    bottom: spacing.sm,
-    borderTopWidth: 0,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    paddingTop: 8,
-    shadowColor: colors.shadow,
-    shadowOpacity: colors.isDark ? 0 : 0.2,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 6,
-  },
-  tabBarItem: {
-    minWidth: 0,
-    paddingHorizontal: 0,
-  },
-  tabBarIcon: {
-    marginTop: 0,
-  },
-  tabBarLabel: {
-    fontSize: 10,
-    lineHeight: 12,
-    fontWeight: '700',
-    marginTop: 2,
-  },
-  loading: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.background,
-    gap: 12,
-  },
-  loadingText: {
-    color: colors.muted,
-    fontSize: 15,
-  },
-});
+    root: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    content: {
+      backgroundColor: colors.background,
+    },
+    connectionBanner: {
+      backgroundColor: colors.warningSoft,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.warning,
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.sm,
+    },
+    connectionText: {
+      color: colors.text,
+      fontSize: 13,
+      lineHeight: 18,
+      textAlign: 'center',
+    },
+    header: {
+      backgroundColor: colors.surface,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+    },
+    headerTitle: {
+      ...typography.h3,
+      color: colors.text,
+    },
+    tabBar: {
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      paddingTop: 6,
+      shadowColor: colors.shadow,
+      ...(colors.isDark ? elevation.none : elevation.bar),
+    },
+    tabBarItem: {
+      minWidth: 0,
+      paddingHorizontal: 0,
+    },
+    tabBarIcon: {
+      marginTop: 0,
+    },
+    tabBarLabel: {
+      fontSize: 10,
+      lineHeight: 12,
+      fontWeight: '700',
+      marginTop: 1,
+    },
+    tabBarBadge: {
+      minWidth: 18,
+      height: 18,
+      borderRadius: radius.pill,
+      backgroundColor: colors.danger,
+      color: colors.white,
+      fontSize: 10,
+      fontWeight: '900',
+    },
+    loading: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.background,
+      gap: 12,
+    },
+    loadingText: {
+      color: colors.muted,
+      fontSize: 15,
+    },
+  });
 
 const stylesStatic = StyleSheet.create({
   tabIconShell: {
-    width: 34,
+    width: 32,
     height: 28,
     borderRadius: 14,
     borderWidth: 1,

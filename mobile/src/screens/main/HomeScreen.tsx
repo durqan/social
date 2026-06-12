@@ -7,6 +7,12 @@ import {
 } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import {
+  MessageCircle,
+  Settings,
+  UserRound,
+  UsersRound,
+} from 'lucide-react-native';
 
 import { isEmailVerified } from '../../api/auth';
 import type { PostUser } from '../../api/types';
@@ -88,7 +94,7 @@ export default function HomeScreen() {
       <HeroCard
         kicker="Главная"
         title={`Привет, ${user?.name || user?.email || 'друг'}`}
-        subtitle="Лента, быстрые действия и статус аккаунта — без лишней каши на экране."
+        subtitle="Лента, быстрые действия и статус аккаунта в одном месте."
       />
 
       <ErrorBanner message={error} />
@@ -101,7 +107,9 @@ export default function HomeScreen() {
             <Text style={styles.statLabel}>непрочитанных сообщений</Text>
           </Card>
           <Card style={styles.statCard}>
-            <Text style={styles.statValue}>{emailVerified ? 'Готов' : 'Ждет'}</Text>
+            <Text style={styles.statValue}>
+              {emailVerified ? 'Готов' : 'Ждет'}
+            </Text>
             <Text style={styles.statLabel}>статус email</Text>
           </Card>
         </View>
@@ -109,10 +117,30 @@ export default function HomeScreen() {
 
       <Section title="Быстрый доступ" subtitle="Частые действия в один тап">
         <View style={styles.quickGrid}>
-          <ActionTile title="Профиль" text="Данные аккаунта" emoji="☺" onPress={() => navigation.navigate('Profile')} />
-          <ActionTile title="Друзья" text="Список и заявки" emoji="◇" onPress={() => navigation.navigate('Friends')} />
-          <ActionTile title="Чаты" text="Сообщения" emoji="✉" onPress={() => navigation.navigate('Chats', { screen: 'ChatList' })} />
-          <ActionTile title="Настройки" text="Тема и выход" emoji="⚙" onPress={() => navigation.navigate('Settings')} />
+          <ActionTile
+            title="Профиль"
+            text="Данные аккаунта"
+            icon={UserRound}
+            onPress={() => navigation.navigate('Profile')}
+          />
+          <ActionTile
+            title="Друзья"
+            text="Список и заявки"
+            icon={UsersRound}
+            onPress={() => navigation.navigate('Friends')}
+          />
+          <ActionTile
+            title="Чаты"
+            text="Сообщения"
+            icon={MessageCircle}
+            onPress={() => navigation.navigate('Chats', { screen: 'ChatList' })}
+          />
+          <ActionTile
+            title="Настройки"
+            text="Тема и выход"
+            icon={Settings}
+            onPress={() => navigation.navigate('Settings')}
+          />
         </View>
       </Section>
 

@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { MessageCircle, Pin, PinOff, Trash2 } from 'lucide-react-native';
 
 import { getApiErrorMessage } from '../../api/http';
 import { messageApi } from '../../api/messages';
@@ -25,6 +26,7 @@ import { Screen } from '../../components/Screen';
 import { useUnread } from '../../context/UnreadContext';
 import { useThemeColors } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/themes';
+import { radius, spacing, typography } from '../../theme/layout';
 import { avatarImageStyle } from '../../utils/avatar';
 import { formatDateTime } from '../../utils/format';
 import type { ChatStackParamList } from '../../navigation/types';
@@ -180,7 +182,11 @@ export default function ChatListScreen({ navigation }: Props) {
   }
 
   return (
-    <Screen scroll={false} padded={false} contentContainerStyle={styles.container}>
+    <Screen
+      scroll={false}
+      padded={false}
+      contentContainerStyle={styles.container}
+    >
       <ErrorBanner message={error} />
       <SuccessBanner message={success} />
 
@@ -337,9 +343,14 @@ function ConversationActionSheet({
       onRequestClose={onClose}
     >
       <Pressable style={styles.sheetBackdrop} onPress={onClose}>
-        <Pressable style={styles.sheet} onPress={event => event.stopPropagation()}>
+        <Pressable
+          style={styles.sheet}
+          onPress={event => event.stopPropagation()}
+        >
           <View style={styles.sheetHandle} />
-          <Text style={styles.sheetTitle}>{conversation?.name || 'Диалог'}</Text>
+          <Text style={styles.sheetTitle}>
+            {conversation?.name || 'Диалог'}
+          </Text>
 
           {conversation ? (
             <Pressable
@@ -348,6 +359,7 @@ function ConversationActionSheet({
               disabled={busy}
               onPress={() => onOpen(conversation)}
             >
+              <MessageCircle color={colors.muted} size={18} strokeWidth={2.2} />
               <Text style={styles.sheetActionText}>Открыть диалог</Text>
             </Pressable>
           ) : null}
@@ -358,6 +370,11 @@ function ConversationActionSheet({
               disabled={busy}
               onPress={() => onTogglePin(conversation)}
             >
+              {conversation.is_pinned ? (
+                <PinOff color={colors.muted} size={18} strokeWidth={2.2} />
+              ) : (
+                <Pin color={colors.muted} size={18} strokeWidth={2.2} />
+              )}
               <Text style={styles.sheetActionText}>
                 {conversation.is_pinned ? 'Открепить' : 'Закрепить'}
               </Text>
@@ -370,6 +387,7 @@ function ConversationActionSheet({
               disabled={busy}
               onPress={() => onDelete(conversation)}
             >
+              <Trash2 color={colors.danger} size={18} strokeWidth={2.2} />
               <Text style={[styles.sheetActionText, styles.sheetDangerText]}>
                 Удалить переписку
               </Text>
@@ -383,152 +401,155 @@ function ConversationActionSheet({
 
 const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
-  container: {
-    padding: 0,
-  },
-  listContent: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 124,
-    gap: 12,
-  },
-  emptyListContent: {
-    flexGrow: 1,
-    justifyContent: 'center',
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 18,
-    backgroundColor: colors.card,
-    padding: 14,
-    gap: 12,
-  },
-  rowUnread: {
-    borderColor: colors.accentBorder,
-    backgroundColor: colors.selected,
-  },
-  rowPressed: {
-    backgroundColor: colors.surfaceMuted,
-  },
-  avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    flexShrink: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.accent,
-    overflow: 'hidden',
-  },
-  avatarUnread: {
-    backgroundColor: colors.accentStrong,
-  },
-  avatarImage: {
-    width: 48,
-    height: 48,
-  },
-  avatarText: {
-    color: colors.white,
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  meta: {
-    flex: 1,
-    gap: 4,
-  },
-  rowHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  name: {
-    flex: 1,
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  nameUnread: {
-    color: colors.accentStrong,
-  },
-  date: {
-    color: colors.soft,
-    fontSize: 12,
-  },
-  preview: {
-    color: colors.muted,
-    fontSize: 14,
-  },
-  previewAuthor: {
-    fontWeight: '700',
-  },
-  previewUnread: {
-    color: colors.text,
-    fontWeight: '700',
-  },
-  badge: {
-    minWidth: 24,
-    height: 24,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.accent,
-    paddingHorizontal: 7,
-  },
-  badgeText: {
-    color: colors.white,
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  sheetBackdrop: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: colors.overlay,
-  },
-  sheet: {
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    backgroundColor: colors.surface,
-    paddingHorizontal: 14,
-    paddingTop: 10,
-    paddingBottom: 22,
-    gap: 4,
-  },
-  sheetHandle: {
-    alignSelf: 'center',
-    width: 42,
-    height: 4,
-    borderRadius: 999,
-    backgroundColor: colors.border,
-    marginBottom: 8,
-  },
-  sheetTitle: {
-    color: colors.muted,
-    fontSize: 13,
-    fontWeight: '700',
-    paddingHorizontal: 6,
-    paddingBottom: 4,
-    textTransform: 'uppercase',
-  },
-  sheetAction: {
-    minHeight: 52,
-    justifyContent: 'center',
-    borderRadius: 14,
-    paddingHorizontal: 10,
-  },
-  sheetActionText: {
-    color: colors.text,
-    fontSize: 16,
-    lineHeight: 22,
-    fontWeight: '700',
-  },
-  sheetDangerAction: {
-    marginTop: 2,
-    backgroundColor: colors.dangerSoft,
-  },
-  sheetDangerText: {
-    color: colors.danger,
-  },
-});
+    container: {
+      padding: 0,
+    },
+    listContent: {
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.lg,
+      paddingBottom: 124,
+      gap: spacing.sm,
+    },
+    emptyListContent: {
+      flexGrow: 1,
+      justifyContent: 'center',
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      backgroundColor: colors.card,
+      padding: spacing.md,
+      gap: spacing.md,
+    },
+    rowUnread: {
+      borderColor: colors.accentBorder,
+      backgroundColor: colors.selected,
+    },
+    rowPressed: {
+      backgroundColor: colors.pressed,
+    },
+    avatar: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      flexShrink: 0,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.surfaceMuted,
+      overflow: 'hidden',
+    },
+    avatarUnread: {
+      backgroundColor: colors.accent,
+    },
+    avatarImage: {
+      width: 48,
+      height: 48,
+    },
+    avatarText: {
+      color: colors.white,
+      fontSize: 18,
+      fontWeight: '800',
+    },
+    meta: {
+      flex: 1,
+      gap: 4,
+    },
+    rowHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    name: {
+      ...typography.body,
+      flex: 1,
+      color: colors.text,
+      fontWeight: '800',
+    },
+    nameUnread: {
+      color: colors.accentStrong,
+    },
+    date: {
+      ...typography.tiny,
+      color: colors.soft,
+    },
+    preview: {
+      ...typography.caption,
+      color: colors.muted,
+    },
+    previewAuthor: {
+      fontWeight: '700',
+    },
+    previewUnread: {
+      color: colors.text,
+      fontWeight: '700',
+    },
+    badge: {
+      minWidth: 24,
+      height: 24,
+      borderRadius: radius.pill,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.accent,
+      paddingHorizontal: 7,
+    },
+    badgeText: {
+      color: colors.white,
+      ...typography.tiny,
+      fontWeight: '800',
+    },
+    sheetBackdrop: {
+      flex: 1,
+      justifyContent: 'flex-end',
+      backgroundColor: colors.overlay,
+    },
+    sheet: {
+      borderTopLeftRadius: radius.xl,
+      borderTopRightRadius: radius.xl,
+      backgroundColor: colors.surface,
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.md,
+      paddingBottom: spacing.xl,
+      gap: spacing.xs,
+    },
+    sheetHandle: {
+      alignSelf: 'center',
+      width: 42,
+      height: 4,
+      borderRadius: radius.pill,
+      backgroundColor: colors.border,
+      marginBottom: 8,
+    },
+    sheetTitle: {
+      color: colors.muted,
+      ...typography.caption,
+      fontWeight: '700',
+      paddingHorizontal: spacing.xs,
+      paddingBottom: 4,
+      textTransform: 'uppercase',
+    },
+    sheetAction: {
+      minHeight: 48,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      paddingHorizontal: spacing.sm,
+    },
+    sheetActionText: {
+      flex: 1,
+      color: colors.text,
+      ...typography.body,
+      fontWeight: '700',
+    },
+    sheetDangerAction: {
+      marginTop: 2,
+      backgroundColor: colors.dangerSoft,
+    },
+    sheetDangerText: {
+      color: colors.danger,
+    },
+  });

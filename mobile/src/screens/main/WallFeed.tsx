@@ -22,6 +22,7 @@ import {
 import { useNotifications } from '../../context/NotificationsContext';
 import { useThemeColors } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/themes';
+import { elevation, radius, spacing, typography } from '../../theme/layout';
 import { avatarImageStyle } from '../../utils/avatar';
 import { formatDateTime } from '../../utils/format';
 
@@ -55,9 +56,9 @@ export function WallFeed({
   const [editDraft, setEditDraft] = useState('');
   const [openCommentsId, setOpenCommentsId] = useState<number | null>(null);
   const [comments, setComments] = useState<Record<number, Comment[]>>({});
-  const [commentsLoading, setCommentsLoading] = useState<Record<number, boolean>>(
-    {},
-  );
+  const [commentsLoading, setCommentsLoading] = useState<
+    Record<number, boolean>
+  >({});
   const [commentDraft, setCommentDraft] = useState<Record<number, string>>({});
   const [busyPostId, setBusyPostId] = useState<number | null>(null);
   const [busyCommentId, setBusyCommentId] = useState<number | null>(null);
@@ -477,7 +478,9 @@ export function WallFeed({
                         <Text style={styles.commentAuthor}>
                           {comment.user?.name || 'Пользователь'}
                         </Text>
-                        <Text style={styles.commentText}>{comment.content}</Text>
+                        <Text style={styles.commentText}>
+                          {comment.content}
+                        </Text>
                         <View style={styles.commentFooter}>
                           <Text style={styles.commentDate}>
                             {formatDateTime(comment.created_at)}
@@ -584,38 +587,37 @@ function PostAvatar({
 const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     wrapper: {
-      gap: 14,
+      gap: spacing.md,
     },
     composer: {
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: 14,
+      borderRadius: radius.md,
       backgroundColor: colors.card,
-      padding: 14,
-      gap: 10,
+      padding: spacing.md,
+      gap: spacing.sm,
     },
     composerInput: {
       minHeight: 92,
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: 12,
+      borderRadius: radius.md,
       backgroundColor: colors.input,
       color: colors.text,
-      paddingHorizontal: 12,
-      paddingVertical: 10,
-      fontSize: 15,
-      lineHeight: 21,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      ...typography.body,
       textAlignVertical: 'top',
     },
     composerFooter: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      gap: 12,
+      gap: spacing.md,
     },
     counter: {
+      ...typography.tiny,
       color: colors.muted,
-      fontSize: 12,
       fontWeight: '700',
     },
     submitButton: {
@@ -626,53 +628,46 @@ const createStyles = (colors: ThemeColors) =>
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      gap: 12,
+      gap: spacing.md,
     },
     sectionTitle: {
+      ...typography.h2,
       color: colors.text,
-      fontSize: 20,
-      lineHeight: 26,
-      fontWeight: '800',
     },
     postCard: {
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: 14,
+      borderRadius: radius.md,
       backgroundColor: colors.card,
-      padding: 14,
-      gap: 12,
+      padding: spacing.md,
+      gap: spacing.md,
       shadowColor: colors.shadow,
-      shadowOpacity: 0.16,
-      shadowRadius: 12,
-      shadowOffset: { width: 0, height: 8 },
-      elevation: 1,
+      ...(colors.isDark ? elevation.none : elevation.card),
     },
     postHeader: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      gap: 12,
+      gap: spacing.md,
     },
     author: {
       flex: 1,
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 10,
+      gap: spacing.sm,
     },
     authorMeta: {
       flex: 1,
       gap: 2,
     },
     authorName: {
+      ...typography.body,
       color: colors.text,
-      fontSize: 15,
-      lineHeight: 20,
       fontWeight: '800',
     },
     postDate: {
+      ...typography.tiny,
       color: colors.muted,
-      fontSize: 12,
-      lineHeight: 16,
     },
     postActions: {
       flexDirection: 'row',
@@ -683,7 +678,7 @@ const createStyles = (colors: ThemeColors) =>
       minHeight: 34,
       alignItems: 'center',
       justifyContent: 'center',
-      borderRadius: 10,
+      borderRadius: radius.md,
       backgroundColor: colors.surfaceMuted,
       paddingHorizontal: 8,
     },
@@ -691,17 +686,16 @@ const createStyles = (colors: ThemeColors) =>
       backgroundColor: colors.dangerSoft,
     },
     iconText: {
+      ...typography.tiny,
       color: colors.accentStrong,
-      fontSize: 12,
       fontWeight: '900',
     },
     dangerText: {
       color: colors.danger,
     },
     postContent: {
+      ...typography.body,
       color: colors.text,
-      fontSize: 15,
-      lineHeight: 22,
     },
     editBox: {
       gap: 10,
@@ -710,18 +704,17 @@ const createStyles = (colors: ThemeColors) =>
       minHeight: 98,
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: 12,
+      borderRadius: radius.md,
       backgroundColor: colors.input,
       color: colors.text,
-      paddingHorizontal: 12,
-      paddingVertical: 10,
-      fontSize: 15,
-      lineHeight: 21,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      ...typography.body,
       textAlignVertical: 'top',
     },
     editActions: {
       flexDirection: 'row',
-      gap: 8,
+      gap: spacing.sm,
     },
     editButton: {
       flex: 1,
@@ -730,10 +723,10 @@ const createStyles = (colors: ThemeColors) =>
     reactions: {
       flexDirection: 'row',
       flexWrap: 'wrap',
-      gap: 8,
+      gap: spacing.sm,
       borderTopWidth: StyleSheet.hairlineWidth,
       borderTopColor: colors.border,
-      paddingTop: 10,
+      paddingTop: spacing.sm,
     },
     reactionButton: {
       minHeight: 36,
@@ -751,40 +744,38 @@ const createStyles = (colors: ThemeColors) =>
       backgroundColor: colors.pressed,
     },
     reactionText: {
+      ...typography.caption,
       color: colors.muted,
-      fontSize: 13,
       fontWeight: '800',
     },
     reactionTextActive: {
       color: colors.accentStrong,
     },
     comments: {
-      gap: 10,
+      gap: spacing.sm,
       borderTopWidth: StyleSheet.hairlineWidth,
       borderTopColor: colors.border,
-      paddingTop: 12,
+      paddingTop: spacing.md,
     },
     commentRow: {
       flexDirection: 'row',
-      gap: 10,
+      gap: spacing.sm,
     },
     commentBody: {
       flex: 1,
-      borderRadius: 12,
+      borderRadius: radius.md,
       backgroundColor: colors.cardMuted,
-      padding: 10,
-      gap: 4,
+      padding: spacing.sm,
+      gap: spacing.xs,
     },
     commentAuthor: {
+      ...typography.caption,
       color: colors.text,
-      fontSize: 13,
-      lineHeight: 17,
       fontWeight: '800',
     },
     commentText: {
+      ...typography.caption,
       color: colors.text,
-      fontSize: 14,
-      lineHeight: 20,
     },
     commentFooter: {
       flexDirection: 'row',
@@ -793,8 +784,8 @@ const createStyles = (colors: ThemeColors) =>
       gap: 10,
     },
     commentDate: {
+      ...typography.tiny,
       color: colors.muted,
-      fontSize: 11,
     },
     commentLike: {
       color: colors.muted,
@@ -805,25 +796,23 @@ const createStyles = (colors: ThemeColors) =>
       color: colors.accentStrong,
     },
     noComments: {
+      ...typography.caption,
       color: colors.muted,
-      fontSize: 13,
-      lineHeight: 18,
       textAlign: 'center',
     },
     commentComposer: {
-      gap: 8,
+      gap: spacing.sm,
     },
     commentInput: {
       minHeight: 76,
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: 12,
+      borderRadius: radius.md,
       backgroundColor: colors.input,
       color: colors.text,
-      paddingHorizontal: 12,
-      paddingVertical: 9,
-      fontSize: 14,
-      lineHeight: 20,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      ...typography.caption,
       textAlignVertical: 'top',
     },
     commentSend: {

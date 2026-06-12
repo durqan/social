@@ -7,6 +7,13 @@ import {
 } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import {
+  Bell,
+  Heart,
+  MessageCircle,
+  UserCheck,
+  UserPlus,
+} from 'lucide-react-native';
 
 import type { SocialNotification, User } from '../../api/types';
 import { userApi } from '../../api/users';
@@ -24,6 +31,7 @@ import type {
 } from '../../navigation/types';
 import { useThemeColors } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/themes';
+import { radius, spacing, typography } from '../../theme/layout';
 import { formatDateTime } from '../../utils/format';
 
 type NotificationsNavigation = CompositeNavigationProp<
@@ -41,7 +49,9 @@ const notificationText: Record<string, (actorName: string) => string> = {
 
 function notificationTitle(notification: SocialNotification, actor?: User) {
   const actorName = actor?.name || 'Пользователь';
-  return notificationText[notification.type]?.(actorName) || 'Новое уведомление';
+  return (
+    notificationText[notification.type]?.(actorName) || 'Новое уведомление'
+  );
 }
 
 function notificationAction(notification: SocialNotification) {
@@ -60,18 +70,28 @@ function notificationAction(notification: SocialNotification) {
   }
 }
 
+function notificationIcon(type: string) {
+  switch (type) {
+    case 'message_received':
+      return MessageCircle;
+    case 'friend_request':
+      return UserPlus;
+    case 'friend_accepted':
+      return UserCheck;
+    case 'post_liked':
+      return Heart;
+    default:
+      return Bell;
+  }
+}
+
 export default function NotificationsScreen() {
   const navigation = useNavigation<NotificationsNavigation>();
   const { user } = useAuth();
   const colors = useThemeColors();
   const styles = createStyles(colors);
-  const {
-    notifications,
-    loading,
-    error,
-    refreshNotifications,
-    markAsRead,
-  } = useNotifications();
+  const { notifications, loading, error, refreshNotifications, markAsRead } =
+    useNotifications();
   const [actors, setActors] = useState<Record<number, User>>({});
 
   useFocusEffect(
@@ -161,7 +181,11 @@ export default function NotificationsScreen() {
   }
 
   return (
-    <Screen scroll={false} padded={false} contentContainerStyle={styles.container}>
+    <Screen
+      scroll={false}
+      padded={false}
+      contentContainerStyle={styles.container}
+    >
       <ErrorBanner message={error} />
       <FlatList
         data={notifications}
@@ -184,6 +208,7 @@ export default function NotificationsScreen() {
         }
         renderItem={({ item }) => {
           const actor = actors[item.actor_id];
+          const Icon = notificationIcon(item.type);
           return (
             <Pressable
               accessibilityRole="button"
@@ -196,7 +221,15 @@ export default function NotificationsScreen() {
                 openNotification(item).catch(() => undefined);
               }}
             >
-              <View style={[styles.dot, item.is_read && styles.dotRead]} />
+              <View
+                style={[styles.iconBadge, item.is_read && styles.iconBadgeRead]}
+              >
+                <Icon
+                  color={item.is_read ? colors.soft : colors.accentStrong}
+                  size={18}
+                  strokeWidth={2.2}
+                />
+              </View>
               <View style={styles.meta}>
                 <Text style={styles.title} numberOfLines={2}>
                   {notificationTitle(item, actor)}
@@ -216,70 +249,70 @@ export default function NotificationsScreen() {
 
 const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
-  container: {
-    padding: 0,
-  },
-  listContent: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 124,
-    gap: 12,
-  },
-  emptyListContent: {
-    flexGrow: 1,
-    justifyContent: 'center',
-  },
-  row: {
-    minHeight: 76,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 14,
-    backgroundColor: colors.card,
-    padding: 14,
-  },
-  rowUnread: {
-    borderColor: colors.accentBorder,
-    backgroundColor: colors.selected,
-  },
-  rowPressed: {
-    backgroundColor: colors.surfaceMuted,
-  },
-  dot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: colors.accent,
-  },
-  dotRead: {
-    backgroundColor: colors.border,
-  },
-  meta: {
-    flex: 1,
-    gap: 5,
-  },
-  title: {
-    color: colors.text,
-    fontSize: 15,
-    lineHeight: 20,
-    fontWeight: '800',
-  },
-  details: {
-    color: colors.muted,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  badge: {
-    overflow: 'hidden',
-    borderRadius: 999,
-    backgroundColor: colors.accent,
-    color: colors.white,
-    fontSize: 10,
-    fontWeight: '900',
-    paddingHorizontal: 7,
-    paddingVertical: 4,
-    textTransform: 'uppercase',
-  },
-});
+    container: {
+      padding: 0,
+    },
+    listContent: {
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.lg,
+      paddingBottom: 124,
+      gap: spacing.sm,
+    },
+    emptyListContent: {
+      flexGrow: 1,
+      justifyContent: 'center',
+    },
+    row: {
+      minHeight: 76,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      backgroundColor: colors.card,
+      padding: spacing.md,
+    },
+    rowUnread: {
+      borderColor: colors.accentBorder,
+      backgroundColor: colors.selected,
+    },
+    rowPressed: {
+      backgroundColor: colors.pressed,
+    },
+    iconBadge: {
+      width: 40,
+      height: 40,
+      borderRadius: radius.pill,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.accentSoft,
+    },
+    iconBadgeRead: {
+      backgroundColor: colors.surfaceMuted,
+    },
+    meta: {
+      flex: 1,
+      gap: 5,
+    },
+    title: {
+      ...typography.body,
+      color: colors.text,
+      fontWeight: '800',
+    },
+    details: {
+      ...typography.caption,
+      color: colors.muted,
+    },
+    badge: {
+      overflow: 'hidden',
+      borderRadius: radius.pill,
+      backgroundColor: colors.accent,
+      color: colors.white,
+      ...typography.tiny,
+      fontWeight: '900',
+      paddingHorizontal: spacing.sm,
+      paddingVertical: spacing.xs,
+      textTransform: 'uppercase',
+    },
+  });

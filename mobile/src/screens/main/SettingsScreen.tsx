@@ -5,11 +5,7 @@ import { e2eeApi } from '../../api/e2ee';
 import { getApiErrorMessage } from '../../api/http';
 import { userApi } from '../../api/users';
 import { AppButton } from '../../components/AppButton';
-import {
-  ErrorBanner,
-  Notice,
-  SuccessBanner,
-} from '../../components/Feedback';
+import { ErrorBanner, Notice, SuccessBanner } from '../../components/Feedback';
 import { Screen } from '../../components/Screen';
 import { TextField } from '../../components/TextField';
 import { useAuth } from '../../context/AuthContext';
@@ -23,6 +19,7 @@ import { getLocalE2EEKeyBundle } from '../../crypto/masterKey';
 import { isWebCryptoAvailable } from '../../crypto/webCrypto';
 import { useTheme, useThemeColors } from '../../theme/ThemeContext';
 import { themeOrder, themes, type ThemeColors } from '../../theme/themes';
+import { radius, spacing, typography } from '../../theme/layout';
 
 type SecurityBusyAction =
   | 'password'
@@ -156,10 +153,7 @@ export default function SettingsScreen() {
     setSecurityError(null);
     setSecuritySuccess(null);
     try {
-      const encryptedMasterKey = await enableE2EEForUser(
-        user.id,
-        e2eePassword,
-      );
+      const encryptedMasterKey = await enableE2EEForUser(user.id, e2eePassword);
       await e2eeApi.enable(encryptedMasterKey);
       setE2eePassword('');
       setE2eeEnabled(true);
@@ -310,8 +304,7 @@ export default function SettingsScreen() {
             </Text>
           </View>
           <Text style={styles.text}>
-            Локальный ключ:{' '}
-            {localKeyReady ? 'восстановлен' : 'не восстановлен'}
+            Локальный ключ: {localKeyReady ? 'восстановлен' : 'не восстановлен'}
           </Text>
           {!webCryptoAvailable ? (
             <Notice
@@ -449,41 +442,36 @@ const createStyles = (colors: ThemeColors) =>
     card: {
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: 12,
-      backgroundColor: colors.surface,
-      padding: 16,
-      gap: 10,
+      borderRadius: radius.md,
+      backgroundColor: colors.card,
+      padding: spacing.lg,
+      gap: spacing.md,
     },
     title: {
+      ...typography.h3,
       color: colors.text,
-      fontSize: 19,
-      lineHeight: 25,
-      fontWeight: '800',
     },
     text: {
+      ...typography.caption,
       color: colors.muted,
-      fontSize: 14,
-      lineHeight: 20,
     },
     section: {
       borderTopWidth: StyleSheet.hairlineWidth,
       borderTopColor: colors.border,
-      paddingTop: 14,
-      gap: 10,
+      paddingTop: spacing.md,
+      gap: spacing.sm,
     },
     sectionTitle: {
+      ...typography.body,
       color: colors.text,
-      fontSize: 16,
-      lineHeight: 22,
       fontWeight: '800',
     },
     hint: {
+      ...typography.caption,
       color: colors.muted,
-      fontSize: 13,
-      lineHeight: 18,
     },
     actions: {
-      gap: 8,
+      gap: spacing.sm,
     },
     statusRow: {
       flexDirection: 'row',
@@ -492,11 +480,10 @@ const createStyles = (colors: ThemeColors) =>
       gap: 10,
     },
     statusPill: {
-      borderRadius: 999,
-      paddingHorizontal: 10,
-      paddingVertical: 4,
-      fontSize: 12,
-      lineHeight: 16,
+      borderRadius: radius.pill,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: spacing.xs,
+      ...typography.tiny,
       fontWeight: '800',
       overflow: 'hidden',
     },
@@ -509,18 +496,18 @@ const createStyles = (colors: ThemeColors) =>
       color: colors.muted,
     },
     themeGrid: {
-      gap: 10,
+      gap: spacing.sm,
     },
     themeOption: {
       minHeight: 86,
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 12,
+      gap: spacing.md,
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: 12,
+      borderRadius: radius.md,
       backgroundColor: colors.cardMuted,
-      padding: 10,
+      padding: spacing.md,
     },
     themeOptionSelected: {
       borderColor: colors.accent,
@@ -535,7 +522,7 @@ const createStyles = (colors: ThemeColors) =>
       overflow: 'hidden',
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: 12,
+      borderRadius: radius.md,
       backgroundColor: colors.surface,
     },
     themePreviewBand: {
@@ -563,15 +550,13 @@ const createStyles = (colors: ThemeColors) =>
       gap: 3,
     },
     themeName: {
+      ...typography.body,
       color: colors.text,
-      fontSize: 15,
-      lineHeight: 20,
       fontWeight: '800',
     },
     themeDescription: {
+      ...typography.tiny,
       color: colors.muted,
-      fontSize: 12,
-      lineHeight: 16,
     },
     themeMark: {
       width: 12,

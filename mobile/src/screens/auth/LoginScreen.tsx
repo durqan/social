@@ -9,6 +9,7 @@ import { TextField } from '../../components/TextField';
 import { useAuth } from '../../context/AuthContext';
 import { useThemeColors } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/themes';
+import { radius, spacing, typography } from '../../theme/layout';
 import type { AuthStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
@@ -86,29 +87,26 @@ export default function LoginScreen({ navigation }: Props) {
 
 const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
-  container: {
-    flexGrow: 1,
-    justifyContent: 'center',
-  },
-  card: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 14,
-    backgroundColor: colors.surface,
-    padding: 20,
-    gap: 16,
-  },
-  title: {
-    color: colors.text,
-    fontSize: 26,
-    lineHeight: 32,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
-  subtitle: {
-    color: colors.muted,
-    fontSize: 15,
-    lineHeight: 21,
-    textAlign: 'center',
-  },
-});
+    container: {
+      flexGrow: 1,
+      justifyContent: 'center',
+    },
+    card: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      backgroundColor: colors.card,
+      padding: spacing.lg,
+      gap: spacing.md,
+    },
+    title: {
+      ...typography.h1,
+      color: colors.text,
+      textAlign: 'left',
+    },
+    subtitle: {
+      ...typography.body,
+      color: colors.muted,
+      textAlign: 'left',
+    },
+  });

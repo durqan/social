@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
   Clipboard,
@@ -14,9 +20,27 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import type { GestureResponderEvent, NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
+import type {
+  GestureResponderEvent,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+} from 'react-native';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import type { Asset } from 'react-native-image-picker';
+import {
+  Copy,
+  Forward,
+  ImagePlus,
+  Link,
+  Mic,
+  Pencil,
+  Phone,
+  Pin,
+  Reply,
+  Send,
+  Trash2,
+  Video as VideoIcon,
+} from 'lucide-react-native';
 import Sound, {
   AudioEncoderAndroidType,
   AudioSourceAndroidType,
@@ -47,7 +71,12 @@ import {
   type LocalVoiceMessage,
   type UploadFilePart,
 } from '../../api/messages';
-import type { Message, MessageAttachment, PinnedMessage, User } from '../../api/types';
+import type {
+  Message,
+  MessageAttachment,
+  PinnedMessage,
+  User,
+} from '../../api/types';
 import { chatSocket, type WsEvent } from '../../api/ws';
 import { AppButton } from '../../components/AppButton';
 import {
@@ -63,6 +92,7 @@ import { useCall } from '../../context/CallContext';
 import { useUnread } from '../../context/UnreadContext';
 import { useThemeColors } from '../../theme/ThemeContext';
 import { colors } from '../../theme/colors';
+import { radius, spacing, typography } from '../../theme/layout';
 import type { ThemeColors } from '../../theme/themes';
 import { formatDateTime, formatDuration } from '../../utils/format';
 import type { ChatStackParamList } from '../../navigation/types';
@@ -74,7 +104,10 @@ import {
   type AttachmentFileType,
   type LocalAttachmentSource,
 } from '../../crypto/attachment';
-import { encryptMessage, type EncryptedMessagePayload } from '../../crypto/encryptMessage';
+import {
+  encryptMessage,
+  type EncryptedMessagePayload,
+} from '../../crypto/encryptMessage';
 import {
   addLocalE2EEKeyChangeListener,
   getLocalE2EEKeyBundle,
@@ -274,7 +307,9 @@ export default function ChatScreen({ route }: Props) {
   const previewProgressBarRef = useRef<View>(null);
   const typingStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingActiveRef = useRef(false);
-  const otherTypingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const otherTypingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [inputHeight, setInputHeight] = useState(composerInputMinHeight);
@@ -283,10 +318,14 @@ export default function ChatScreen({ route }: Props) {
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [replyToMessage, setReplyToMessage] = useState<Message | null>(null);
-  const [pinnedMessage, setPinnedMessage] = useState<PinnedMessage | null>(null);
+  const [pinnedMessage, setPinnedMessage] = useState<PinnedMessage | null>(
+    null,
+  );
   const [forwardMessage, setForwardMessage] = useState<Message | null>(null);
   const [forwardFriends, setForwardFriends] = useState<User[]>([]);
-  const [forwardSelectedIds, setForwardSelectedIds] = useState<Set<number>>(new Set());
+  const [forwardSelectedIds, setForwardSelectedIds] = useState<Set<number>>(
+    new Set(),
+  );
   const [forwardLoading, setForwardLoading] = useState(false);
   const [forwardError, setForwardError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -306,7 +345,9 @@ export default function ChatScreen({ route }: Props) {
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [playingVoiceUrl, setPlayingVoiceUrl] = useState<string | null>(null);
 
-  const [pendingVoice, setPendingVoice] = useState<LocalVoiceMessage | null>(null);
+  const [pendingVoice, setPendingVoice] = useState<LocalVoiceMessage | null>(
+    null,
+  );
   const [pendingVideoNote, setPendingVideoNote] =
     useState<LocalVideoNoteMessage | null>(null);
   const [previewPlaying, setPreviewPlaying] = useState(false);
@@ -323,10 +364,10 @@ export default function ChatScreen({ route }: Props) {
   });
   const e2eeReady = Boolean(
     user?.id &&
-      e2eeState.selfEnabled &&
-      e2eeState.recipientEnabled &&
-      e2eeState.recipientPublicKey &&
-      e2eeState.localKey,
+    e2eeState.selfEnabled &&
+    e2eeState.recipientEnabled &&
+    e2eeState.recipientPublicKey &&
+    e2eeState.localKey,
   );
 
   const pendingImagesRef = useRef<LocalChatImage[]>([]);
@@ -336,8 +377,12 @@ export default function ChatScreen({ route }: Props) {
   const editingMessageRef = useRef<Message | null>(null);
   const replyToMessageRef = useRef<Message | null>(null);
   const recordingBusyRef = useRef<boolean>(false);
-  const startVoiceRecordingRef = useRef<() => Promise<void> | void>(null as any);
-  const stopVoiceRecordingRef = useRef<(send: boolean) => Promise<void> | void>(null as any);
+  const startVoiceRecordingRef = useRef<() => Promise<void> | void>(
+    null as any,
+  );
+  const stopVoiceRecordingRef = useRef<(send: boolean) => Promise<void> | void>(
+    null as any,
+  );
 
   useEffect(() => {
     if (!copyNotice) {
@@ -914,8 +959,14 @@ export default function ChatScreen({ route }: Props) {
       }
 
       if (event.type === 'message_pinned') {
-        const payload = event.payload as { conversation_user_id?: number; pinned_message?: PinnedMessage | null };
-        if (!payload.conversation_user_id || payload.conversation_user_id === otherUserId) {
+        const payload = event.payload as {
+          conversation_user_id?: number;
+          pinned_message?: PinnedMessage | null;
+        };
+        if (
+          !payload.conversation_user_id ||
+          payload.conversation_user_id === otherUserId
+        ) {
           if (payload.pinned_message?.message) {
             decryptIncomingMessage(payload.pinned_message.message)
               .then(displayMessage => {
@@ -934,7 +985,10 @@ export default function ChatScreen({ route }: Props) {
 
       if (event.type === 'message_unpinned') {
         const payload = event.payload as { conversation_user_id?: number };
-        if (!payload.conversation_user_id || payload.conversation_user_id === otherUserId) {
+        if (
+          !payload.conversation_user_id ||
+          payload.conversation_user_id === otherUserId
+        ) {
           setPinnedMessage(null);
         }
         return;
@@ -1072,7 +1126,8 @@ export default function ChatScreen({ route }: Props) {
       PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
       {
         title: 'Доступ к микрофону',
-        message: 'Разрешите доступ к микрофону, чтобы записывать голосовые сообщения.',
+        message:
+          'Разрешите доступ к микрофону, чтобы записывать голосовые сообщения.',
         buttonNegative: 'Отмена',
         buttonPositive: 'Разрешить',
       },
@@ -1107,7 +1162,12 @@ export default function ChatScreen({ route }: Props) {
   }
 
   async function startVoiceRecording() {
-    if (recordingActiveRef.current || recordingBusyRef.current || sendingRef.current || editingMessageRef.current) {
+    if (
+      recordingActiveRef.current ||
+      recordingBusyRef.current ||
+      sendingRef.current ||
+      editingMessageRef.current
+    ) {
       return;
     }
     if (previewPlayingRef.current) {
@@ -1129,7 +1189,9 @@ export default function ChatScreen({ route }: Props) {
     try {
       const permitted = await ensureRecordAudioPermission();
       if (!permitted) {
-        setError('Разрешите доступ к микрофону, чтобы записать голосовое сообщение');
+        setError(
+          'Разрешите доступ к микрофону, чтобы записать голосовое сообщение',
+        );
         return;
       }
 
@@ -1151,7 +1213,9 @@ export default function ChatScreen({ route }: Props) {
       setRecordingSeconds(0);
       setRecording(true);
       recordingMaxTimerRef.current = setTimeout(() => {
-        Promise.resolve((stopVoiceRecordingRef.current || stopVoiceRecording)(true)).catch(() => undefined);
+        Promise.resolve(
+          (stopVoiceRecordingRef.current || stopVoiceRecording)(true),
+        ).catch(() => undefined);
       }, CHAT_VOICE_MAX_DURATION_SECONDS * 1000);
     } catch (apiError) {
       Sound.removeRecordBackListener();
@@ -1297,7 +1361,9 @@ export default function ChatScreen({ route }: Props) {
     if (!pendingVoice) return;
     const raw = pendingVoice.uri;
     const uri =
-      raw.startsWith('file://') || raw.startsWith('content://') ? raw : `file://${raw}`;
+      raw.startsWith('file://') || raw.startsWith('content://')
+        ? raw
+        : `file://${raw}`;
 
     try {
       if (previewPlayingRef.current) {
@@ -1327,12 +1393,14 @@ export default function ChatScreen({ route }: Props) {
         setPreviewPosition(pendingVoice.durationSeconds || 0);
       });
 
-      Sound.addPlayBackListener((meta: { currentPosition?: number; duration?: number }) => {
-        if (typeof meta.currentPosition === 'number') {
-          const sec = Math.max(0, meta.currentPosition / 1000);
-          setPreviewPosition(sec);
-        }
-      });
+      Sound.addPlayBackListener(
+        (meta: { currentPosition?: number; duration?: number }) => {
+          if (typeof meta.currentPosition === 'number') {
+            const sec = Math.max(0, meta.currentPosition / 1000);
+            setPreviewPosition(sec);
+          }
+        },
+      );
 
       await Sound.startPlayer(uri);
       setPreviewPlaying(true);
@@ -1393,7 +1461,9 @@ export default function ChatScreen({ route }: Props) {
     setError(null);
     const permitted = await ensureVideoNotePermissions();
     if (!permitted) {
-      setError('Разрешите доступ к камере и микрофону, чтобы записать видео-сообщение');
+      setError(
+        'Разрешите доступ к камере и микрофону, чтобы записать видео-сообщение',
+      );
       return;
     }
 
@@ -1556,8 +1626,7 @@ export default function ChatScreen({ route }: Props) {
       setError(null);
       try {
         const shouldEncryptEdit = Boolean(
-          (editingMessage.encryption_version ?? 0) > 0 ||
-            e2eeState.selfEnabled,
+          (editingMessage.encryption_version ?? 0) > 0 || e2eeState.selfEnabled,
         );
         if (shouldEncryptEdit) {
           if (editingMessage.decryption_error) {
@@ -1935,8 +2004,7 @@ export default function ChatScreen({ route }: Props) {
         isEncryptedAttachment(attachment),
       );
       const requiresClientEncryption =
-        (forwardMessage.encryption_version ?? 0) > 0 ||
-        hasEncryptedAttachments;
+        (forwardMessage.encryption_version ?? 0) > 0 || hasEncryptedAttachments;
 
       if (requiresClientEncryption) {
         const content = forwardMessage.content.trim();
@@ -1951,7 +2019,9 @@ export default function ChatScreen({ route }: Props) {
           );
           return;
         }
-        if (forwardAttachments.some(attachment => attachment.decryption_error)) {
+        if (
+          forwardAttachments.some(attachment => attachment.decryption_error)
+        ) {
           setForwardError(
             'Нельзя переслать вложение, которое не удалось расшифровать',
           );
@@ -1983,9 +2053,10 @@ export default function ChatScreen({ route }: Props) {
         const forwarded = await Promise.all(
           forwardedRaw.map(message => decryptIncomingMessage(message)),
         );
-        const currentChatMessages = forwarded.filter(message =>
-          (message.from_id === user?.id && message.to_id === otherUserId) ||
-          (message.to_id === user?.id && message.from_id === otherUserId),
+        const currentChatMessages = forwarded.filter(
+          message =>
+            (message.from_id === user?.id && message.to_id === otherUserId) ||
+            (message.to_id === user?.id && message.from_id === otherUserId),
         );
         if (currentChatMessages.length) {
           shouldScrollToEndRef.current = true;
@@ -1998,13 +2069,17 @@ export default function ChatScreen({ route }: Props) {
         return;
       }
 
-      const forwardedRaw = await messageApi.forwardMessage(forwardMessage.id, Array.from(forwardSelectedIds));
+      const forwardedRaw = await messageApi.forwardMessage(
+        forwardMessage.id,
+        Array.from(forwardSelectedIds),
+      );
       const forwarded = await Promise.all(
         forwardedRaw.map(message => decryptIncomingMessage(message)),
       );
-      const currentChatMessages = forwarded.filter(message =>
-        (message.from_id === user?.id && message.to_id === otherUserId) ||
-        (message.to_id === user?.id && message.from_id === otherUserId),
+      const currentChatMessages = forwarded.filter(
+        message =>
+          (message.from_id === user?.id && message.to_id === otherUserId) ||
+          (message.to_id === user?.id && message.from_id === otherUserId),
       );
       if (currentChatMessages.length) {
         shouldScrollToEndRef.current = true;
@@ -2029,7 +2104,11 @@ export default function ChatScreen({ route }: Props) {
   }
 
   return (
-    <Screen scroll={false} padded={false} contentContainerStyle={styles.container}>
+    <Screen
+      scroll={false}
+      padded={false}
+      contentContainerStyle={styles.container}
+    >
       <ErrorBanner message={error} />
       <SuccessBanner message={copyNotice} />
 
@@ -2037,12 +2116,14 @@ export default function ChatScreen({ route }: Props) {
         <AppButton
           title="Аудио"
           variant="secondary"
+          icon={Phone}
           disabled={callStatus !== 'idle'}
           onPress={() => startAudioCall(otherUserId, route.params.name)}
         />
         <AppButton
           title="Видео"
           variant="secondary"
+          icon={VideoIcon}
           disabled={callStatus !== 'idle'}
           onPress={() => startVideoCall(otherUserId, route.params.name)}
         />
@@ -2068,7 +2149,9 @@ export default function ChatScreen({ route }: Props) {
           style={[styles.pinnedBar, themed.card]}
           onPress={() => {
             const targetId = pinnedMessage.message_id;
-            const index = messages.findIndex(message => message.id === targetId);
+            const index = messages.findIndex(
+              message => message.id === targetId,
+            );
             if (index >= 0) {
               listRef.current?.scrollToIndex({ index, animated: true });
             }
@@ -2077,7 +2160,9 @@ export default function ChatScreen({ route }: Props) {
         >
           <View style={[styles.pinnedStripe, themed.accentBg]} />
           <View style={styles.pinnedInfo}>
-            <Text style={[styles.pinnedTitle, themed.accentText]}>Закрепленное сообщение</Text>
+            <Text style={[styles.pinnedTitle, themed.accentText]}>
+              Закрепленное сообщение
+            </Text>
             <Text style={[styles.pinnedText, themed.text]} numberOfLines={1}>
               {messagePreviewText(pinnedMessage.message)}
             </Text>
@@ -2157,12 +2242,12 @@ export default function ChatScreen({ route }: Props) {
             {sending === 'uploadingVoice'
               ? 'Загружаем голосовое сообщение'
               : sending === 'uploadingVideoNote'
-              ? 'Загружаем видео-сообщение'
-              : sending === 'uploading'
-              ? uploadProgress
-                ? `Загружаем изображения: ${uploadProgress.current} из ${uploadProgress.total}`
-                : 'Загружаем изображение'
-              : 'Отправляем сообщение'}
+                ? 'Загружаем видео-сообщение'
+                : sending === 'uploading'
+                  ? uploadProgress
+                    ? `Загружаем изображения: ${uploadProgress.current} из ${uploadProgress.total}`
+                    : 'Загружаем изображение'
+                  : 'Отправляем сообщение'}
           </Text>
         </View>
       ) : null}
@@ -2170,8 +2255,13 @@ export default function ChatScreen({ route }: Props) {
       {editingMessage ? (
         <View style={[styles.editingBar, themed.surfaceBar]}>
           <View style={[styles.editingInfo, themed.accentLeftBorder]}>
-            <Text style={[styles.editingTitle, themed.accentText]}>Редактирование</Text>
-            <Text style={[styles.editingText, themed.mutedText]} numberOfLines={1}>
+            <Text style={[styles.editingTitle, themed.accentText]}>
+              Редактирование
+            </Text>
+            <Text
+              style={[styles.editingText, themed.mutedText]}
+              numberOfLines={1}
+            >
               {editingMessage.content}
             </Text>
           </View>
@@ -2188,8 +2278,13 @@ export default function ChatScreen({ route }: Props) {
       {replyToMessage && !editingMessage ? (
         <View style={[styles.replyBar, themed.surfaceBar]}>
           <View style={[styles.replyInfo, themed.accentLeftBorder]}>
-            <Text style={[styles.replyTitle, themed.accentText]}>Ответ {messageAuthorName(replyToMessage)}</Text>
-            <Text style={[styles.replyText, themed.mutedText]} numberOfLines={1}>
+            <Text style={[styles.replyTitle, themed.accentText]}>
+              Ответ {messageAuthorName(replyToMessage)}
+            </Text>
+            <Text
+              style={[styles.replyText, themed.mutedText]}
+              numberOfLines={1}
+            >
               {messagePreviewText(replyToMessage)}
             </Text>
           </View>
@@ -2206,7 +2301,9 @@ export default function ChatScreen({ route }: Props) {
       {recording ? (
         <View style={[styles.recordingBar, themed.surfaceMutedBar]}>
           <View style={[styles.recordingDot, themed.accentBg]} />
-          <Text style={[styles.recordingTime, themed.accentText]}>{formatDuration(recordingSeconds)}</Text>
+          <Text style={[styles.recordingTime, themed.accentText]}>
+            {formatDuration(recordingSeconds)}
+          </Text>
           <Text style={styles.recordingText} numberOfLines={1}>
             Идет запись
           </Text>
@@ -2243,7 +2340,8 @@ export default function ChatScreen({ route }: Props) {
           />
           <View style={styles.previewVideoNoteMeta}>
             <Text style={[styles.previewMetaText, themed.mutedText]}>
-              Видео-сообщение · {formatDuration(pendingVideoNote.durationSeconds)}
+              Видео-сообщение ·{' '}
+              {formatDuration(pendingVideoNote.durationSeconds)}
             </Text>
             <Text style={[styles.previewHint, themed.softText]}>
               Проверьте запись перед отправкой.
@@ -2283,7 +2381,9 @@ export default function ChatScreen({ route }: Props) {
               ]}
               disabled={Boolean(sending)}
             >
-              <Text style={styles.previewPlayText}>{previewPlaying ? 'Ⅱ' : '▶'}</Text>
+              <Text style={styles.previewPlayText}>
+                {previewPlaying ? 'Ⅱ' : '▶'}
+              </Text>
             </Pressable>
 
             <View
@@ -2298,7 +2398,9 @@ export default function ChatScreen({ route }: Props) {
                   {
                     width: `${Math.min(
                       100,
-                      ((previewPosition || 0) / (pendingVoice.durationSeconds || 1)) * 100,
+                      ((previewPosition || 0) /
+                        (pendingVoice.durationSeconds || 1)) *
+                        100,
                     )}%`,
                   },
                 ]}
@@ -2306,7 +2408,8 @@ export default function ChatScreen({ route }: Props) {
             </View>
 
             <Text style={[styles.previewDuration, themed.mutedText]}>
-              {formatDuration(previewPosition || 0)} / {formatDuration(pendingVoice.durationSeconds)}
+              {formatDuration(previewPosition || 0)} /{' '}
+              {formatDuration(pendingVoice.durationSeconds)}
             </Text>
           </View>
 
@@ -2324,7 +2427,7 @@ export default function ChatScreen({ route }: Props) {
               style={styles.previewDeleteBtn}
               disabled={Boolean(sending)}
             >
-              <Text style={styles.previewDeleteText}>🗑 Удалить</Text>
+              <Text style={styles.previewDeleteText}>Удалить</Text>
             </Pressable>
             <Pressable
               onPress={() => {
@@ -2333,7 +2436,7 @@ export default function ChatScreen({ route }: Props) {
               style={styles.previewSendBtn}
               disabled={Boolean(sending)}
             >
-              <Text style={styles.previewSendText}>➤ Отправить</Text>
+              <Text style={styles.previewSendText}>Отправить</Text>
             </Pressable>
           </View>
         </View>
@@ -2341,7 +2444,9 @@ export default function ChatScreen({ route }: Props) {
 
       {otherTyping ? (
         <View style={[styles.typingBar, themed.surfaceBar]}>
-          <Text style={[styles.typingText, themed.mutedText]}>{route.params.name} печатает...</Text>
+          <Text style={[styles.typingText, themed.mutedText]}>
+            {route.params.name} печатает...
+          </Text>
         </View>
       ) : null}
 
@@ -2350,6 +2455,7 @@ export default function ChatScreen({ route }: Props) {
           <AppButton
             title="Фото"
             variant="secondary"
+            icon={ImagePlus}
             disabled={Boolean(sending) || Boolean(editingMessage) || recording}
             onPress={pickImages}
             style={styles.composerToolButton}
@@ -2357,6 +2463,7 @@ export default function ChatScreen({ route }: Props) {
           <AppButton
             title={recording ? 'Готово' : 'Голос'}
             variant="secondary"
+            icon={Mic}
             disabled={
               Boolean(sending) ||
               Boolean(editingMessage) ||
@@ -2380,6 +2487,7 @@ export default function ChatScreen({ route }: Props) {
           <AppButton
             title="Видео"
             variant="secondary"
+            icon={VideoIcon}
             disabled={
               Boolean(sending) ||
               Boolean(editingMessage) ||
@@ -2399,7 +2507,9 @@ export default function ChatScreen({ route }: Props) {
             value={input}
             onChangeText={handleComposerTextChange}
             onContentSizeChange={event =>
-              handleComposerContentSizeChange(event.nativeEvent.contentSize.height)
+              handleComposerContentSizeChange(
+                event.nativeEvent.contentSize.height,
+              )
             }
             placeholder="Сообщение"
             placeholderTextColor={themeColors.soft}
@@ -2412,6 +2522,7 @@ export default function ChatScreen({ route }: Props) {
           />
           <AppButton
             title={editingMessage ? 'Сохранить' : 'Отправить'}
+            icon={editingMessage ? Pencil : Send}
             disabled={
               Boolean(sending) ||
               recording ||
@@ -2585,14 +2696,22 @@ function MessageBubble({
         ) : null}
 
         {message.reply_to_message_id ? (
-          <View style={[styles.replyPreview, themed.replyPreview, outgoing && styles.replyPreviewOutgoing]}>
+          <View
+            style={[
+              styles.replyPreview,
+              themed.replyPreview,
+              outgoing && styles.replyPreviewOutgoing,
+            ]}
+          >
             <Text
               style={[
                 styles.replyPreviewAuthor,
                 outgoing ? themed.outgoingAccentText : themed.accentText,
               ]}
             >
-              {message.reply_to_message ? messageAuthorName(message.reply_to_message) : 'Ответ'}
+              {message.reply_to_message
+                ? messageAuthorName(message.reply_to_message)
+                : 'Ответ'}
             </Text>
             <Text
               style={[
@@ -2829,7 +2948,9 @@ function VideoNoteAttachment({
             setPlaying(false);
           }}
         />
-        <View style={[styles.videoNoteGlassButton, themed.videoNoteGlassButton]}>
+        <View
+          style={[styles.videoNoteGlassButton, themed.videoNoteGlassButton]}
+        >
           <Text style={styles.videoNoteIcon}>{playing ? 'Ⅱ' : '▶'}</Text>
         </View>
       </View>
@@ -2842,10 +2963,7 @@ function VideoNoteAttachment({
           ]}
         />
         <Text
-          style={[
-            styles.videoNoteText,
-            outgoing && themed.outgoingMessageText,
-          ]}
+          style={[styles.videoNoteText, outgoing && themed.outgoingMessageText]}
         >
           {formatDuration(effectiveDuration)}
         </Text>
@@ -2893,8 +3011,14 @@ function MessageActionSheet({
       animationType="fade"
       onRequestClose={onClose}
     >
-      <Pressable style={[styles.sheetBackdrop, themed.sheetBackdrop]} onPress={onClose}>
-        <Pressable style={[styles.sheet, themed.sheet]} onPress={event => event.stopPropagation()}>
+      <Pressable
+        style={[styles.sheetBackdrop, themed.sheetBackdrop]}
+        onPress={onClose}
+      >
+        <Pressable
+          style={[styles.sheet, themed.sheet]}
+          onPress={event => event.stopPropagation()}
+        >
           <View style={[styles.sheetHandle, themed.sheetHandle]} />
           <Text style={[styles.sheetTitle, themed.mutedText]}>Сообщение</Text>
 
@@ -2904,8 +3028,12 @@ function MessageActionSheet({
               style={styles.sheetAction}
               onPress={() => onReply(message)}
             >
-              <Text style={[styles.sheetActionIcon, themed.sheetActionIcon]}>R</Text>
-              <Text style={[styles.sheetActionText, themed.text]}>Ответить</Text>
+              <View style={[styles.sheetActionIcon, themed.sheetActionIcon]}>
+                <Reply color={themeColors.muted} size={17} strokeWidth={2.2} />
+              </View>
+              <Text style={[styles.sheetActionText, themed.text]}>
+                Ответить
+              </Text>
             </Pressable>
           ) : null}
 
@@ -2915,8 +3043,16 @@ function MessageActionSheet({
               style={styles.sheetAction}
               onPress={() => onForward(message)}
             >
-              <Text style={[styles.sheetActionIcon, themed.sheetActionIcon]}>F</Text>
-              <Text style={[styles.sheetActionText, themed.text]}>Переслать</Text>
+              <View style={[styles.sheetActionIcon, themed.sheetActionIcon]}>
+                <Forward
+                  color={themeColors.muted}
+                  size={17}
+                  strokeWidth={2.2}
+                />
+              </View>
+              <Text style={[styles.sheetActionText, themed.text]}>
+                Переслать
+              </Text>
             </Pressable>
           ) : null}
 
@@ -2926,8 +3062,12 @@ function MessageActionSheet({
               style={styles.sheetAction}
               onPress={() => onPin(message)}
             >
-              <Text style={[styles.sheetActionIcon, themed.sheetActionIcon]}>P</Text>
-              <Text style={[styles.sheetActionText, themed.text]}>Закрепить</Text>
+              <View style={[styles.sheetActionIcon, themed.sheetActionIcon]}>
+                <Pin color={themeColors.muted} size={17} strokeWidth={2.2} />
+              </View>
+              <Text style={[styles.sheetActionText, themed.text]}>
+                Закрепить
+              </Text>
             </Pressable>
           ) : null}
 
@@ -2937,8 +3077,12 @@ function MessageActionSheet({
               style={styles.sheetAction}
               onPress={() => onEdit(message)}
             >
-              <Text style={[styles.sheetActionIcon, themed.sheetActionIcon]}>E</Text>
-              <Text style={[styles.sheetActionText, themed.text]}>Редактировать</Text>
+              <View style={[styles.sheetActionIcon, themed.sheetActionIcon]}>
+                <Pencil color={themeColors.muted} size={17} strokeWidth={2.2} />
+              </View>
+              <Text style={[styles.sheetActionText, themed.text]}>
+                Редактировать
+              </Text>
             </Pressable>
           ) : null}
 
@@ -2948,10 +3092,27 @@ function MessageActionSheet({
               style={[styles.sheetAction, styles.sheetDangerAction]}
               onPress={() => onDelete(message)}
             >
-              <Text style={[styles.sheetActionIcon, themed.sheetActionIcon, styles.sheetDangerIcon, themed.dangerSoft, themed.dangerText]}>
-                D
-              </Text>
-              <Text style={[styles.sheetActionText, styles.sheetDangerText, themed.dangerText]}>
+              <View
+                style={[
+                  styles.sheetActionIcon,
+                  themed.sheetActionIcon,
+                  styles.sheetDangerIcon,
+                  themed.dangerSoft,
+                ]}
+              >
+                <Trash2
+                  color={themeColors.danger}
+                  size={17}
+                  strokeWidth={2.2}
+                />
+              </View>
+              <Text
+                style={[
+                  styles.sheetActionText,
+                  styles.sheetDangerText,
+                  themed.dangerText,
+                ]}
+              >
                 Удалить сообщение
               </Text>
             </Pressable>
@@ -2963,8 +3124,12 @@ function MessageActionSheet({
               style={styles.sheetAction}
               onPress={() => message && onCopyText(message)}
             >
-              <Text style={[styles.sheetActionIcon, themed.sheetActionIcon]}>T</Text>
-              <Text style={[styles.sheetActionText, themed.text]}>Скопировать текст</Text>
+              <View style={[styles.sheetActionIcon, themed.sheetActionIcon]}>
+                <Copy color={themeColors.muted} size={17} strokeWidth={2.2} />
+              </View>
+              <Text style={[styles.sheetActionText, themed.text]}>
+                Скопировать текст
+              </Text>
             </Pressable>
           ) : null}
 
@@ -2974,8 +3139,12 @@ function MessageActionSheet({
               style={styles.sheetAction}
               onPress={() => onCopyLink(messageUrl)}
             >
-              <Text style={[styles.sheetActionIcon, themed.sheetActionIcon]}>L</Text>
-              <Text style={[styles.sheetActionText, themed.text]}>Скопировать ссылку</Text>
+              <View style={[styles.sheetActionIcon, themed.sheetActionIcon]}>
+                <Link color={themeColors.muted} size={17} strokeWidth={2.2} />
+              </View>
+              <Text style={[styles.sheetActionText, themed.text]}>
+                Скопировать ссылку
+              </Text>
             </Pressable>
           ) : null}
         </Pressable>
@@ -2983,7 +3152,6 @@ function MessageActionSheet({
     </Modal>
   );
 }
-
 
 function ForwardMessageModal({
   message,
@@ -3017,26 +3185,45 @@ function ForwardMessageModal({
       animationType="fade"
       onRequestClose={onClose}
     >
-      <Pressable style={[styles.sheetBackdrop, themed.sheetBackdrop]} onPress={onClose}>
-        <Pressable style={[styles.sheet, themed.sheet]} onPress={event => event.stopPropagation()}>
+      <Pressable
+        style={[styles.sheetBackdrop, themed.sheetBackdrop]}
+        onPress={onClose}
+      >
+        <Pressable
+          style={[styles.sheet, themed.sheet]}
+          onPress={event => event.stopPropagation()}
+        >
           <View style={[styles.sheetHandle, themed.sheetHandle]} />
-          <Text style={[styles.sheetTitle, themed.mutedText]}>Переслать сообщение</Text>
+          <Text style={[styles.sheetTitle, themed.mutedText]}>
+            Переслать сообщение
+          </Text>
           {message ? (
             <View style={[styles.forwardPreview, themed.surfaceMuted]}>
-              <Text style={[styles.forwardPreviewText, themed.text]} numberOfLines={2}>
+              <Text
+                style={[styles.forwardPreviewText, themed.text]}
+                numberOfLines={2}
+              >
                 {messagePreviewText(message)}
               </Text>
             </View>
           ) : null}
 
-          {error ? <Text style={[styles.forwardError, themed.dangerText]}>{error}</Text> : null}
+          {error ? (
+            <Text style={[styles.forwardError, themed.dangerText]}>
+              {error}
+            </Text>
+          ) : null}
           {loading && friends.length === 0 ? (
             <View style={styles.forwardLoading}>
               <ActivityIndicator color={themeColors.accent} />
-              <Text style={[styles.sendStatusText, themed.mutedText]}>Загружаем друзей</Text>
+              <Text style={[styles.sendStatusText, themed.mutedText]}>
+                Загружаем друзей
+              </Text>
             </View>
           ) : friends.length === 0 ? (
-            <Text style={[styles.forwardEmpty, themed.mutedText]}>Нет друзей для пересылки</Text>
+            <Text style={[styles.forwardEmpty, themed.mutedText]}>
+              Нет друзей для пересылки
+            </Text>
           ) : (
             <View style={styles.forwardList}>
               {friends.map(friend => {
@@ -3058,15 +3245,20 @@ function ForwardMessageModal({
                     ]}
                     onPress={() => onToggleRecipient(friendId)}
                   >
-                    <Text style={[styles.forwardRecipientName, themed.text]} numberOfLines={1}>
+                    <Text
+                      style={[styles.forwardRecipientName, themed.text]}
+                      numberOfLines={1}
+                    >
                       {friend.name || 'Пользователь'}
                     </Text>
-                    <Text style={[
-                      styles.forwardCheck,
-                      themed.forwardCheck,
-                      selected && styles.forwardCheckSelected,
-                      selected && themed.forwardCheckSelected,
-                    ]}>
+                    <Text
+                      style={[
+                        styles.forwardCheck,
+                        themed.forwardCheck,
+                        selected && styles.forwardCheckSelected,
+                        selected && themed.forwardCheckSelected,
+                      ]}
+                    >
                       {selected ? '✓' : '+'}
                     </Text>
                   </Pressable>
@@ -3078,15 +3270,25 @@ function ForwardMessageModal({
           <View style={styles.forwardActions}>
             <Pressable
               accessibilityRole="button"
-              style={[styles.forwardButton, styles.forwardCancelButton, themed.surfaceMuted]}
+              style={[
+                styles.forwardButton,
+                styles.forwardCancelButton,
+                themed.surfaceMuted,
+              ]}
               onPress={onClose}
               disabled={loading}
             >
-              <Text style={[styles.forwardCancelText, themed.text]}>Отмена</Text>
+              <Text style={[styles.forwardCancelText, themed.text]}>
+                Отмена
+              </Text>
             </Pressable>
             <Pressable
               accessibilityRole="button"
-              style={[styles.forwardButton, styles.forwardSubmitButton, themed.accentBg]}
+              style={[
+                styles.forwardButton,
+                styles.forwardSubmitButton,
+                themed.accentBg,
+              ]}
               onPress={onSubmit}
               disabled={loading || selectedIds.size === 0}
             >
@@ -3259,15 +3461,15 @@ const styles = StyleSheet.create({
   callActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingTop: 10,
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
   },
   messageList: {
-    paddingHorizontal: 14,
-    paddingTop: 12,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
     paddingBottom: 18,
-    gap: 8,
+    gap: spacing.sm,
     flexGrow: 1,
   },
   emptyMessageList: {
@@ -3282,10 +3484,10 @@ const styles = StyleSheet.create({
   },
   bubble: {
     maxWidth: '84%',
-    borderRadius: 18,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    gap: 6,
+    borderRadius: radius.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    gap: spacing.xs,
   },
   incoming: {
     backgroundColor: colors.surface,
@@ -3296,9 +3498,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
   },
   messageText: {
+    ...typography.body,
     color: colors.text,
-    fontSize: 15,
-    lineHeight: 21,
   },
   outgoingText: {
     color: colors.white,
@@ -3312,9 +3513,8 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
   },
   forwardedLabel: {
+    ...typography.tiny,
     color: colors.accent,
-    fontSize: 12,
-    lineHeight: 16,
     fontWeight: '800',
   },
   forwardedLabelOutgoing: {
@@ -3323,9 +3523,9 @@ const styles = StyleSheet.create({
   replyPreview: {
     borderLeftWidth: 3,
     borderLeftColor: colors.accent,
-    borderRadius: 10,
-    paddingHorizontal: 9,
-    paddingVertical: 7,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
     backgroundColor: colors.surfaceMuted,
   },
   replyPreviewOutgoing: {
@@ -3350,8 +3550,8 @@ const styles = StyleSheet.create({
     color: 'rgba(248, 250, 252, 0.82)',
   },
   messageDate: {
+    ...typography.tiny,
     color: colors.soft,
-    fontSize: 11,
     alignSelf: 'flex-end',
   },
   outgoingDate: {
@@ -3359,20 +3559,19 @@ const styles = StyleSheet.create({
   },
   outgoingStatus: {
     color: 'rgba(248, 250, 252, 0.78)',
-    fontSize: 11,
-    lineHeight: 14,
+    ...typography.tiny,
     alignSelf: 'flex-end',
   },
   messageImage: {
     width: 210,
     height: 150,
-    borderRadius: 10,
+    borderRadius: radius.md,
     backgroundColor: colors.surfaceMuted,
   },
   attachmentDecryptError: {
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     backgroundColor: colors.dangerSoft,
   },
   attachmentDecryptErrorOutgoing: {
@@ -3391,9 +3590,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    borderRadius: 14,
-    paddingHorizontal: 10,
-    paddingVertical: 9,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
     backgroundColor: colors.surfaceMuted,
   },
   voiceAttachmentOutgoing: {
@@ -3522,12 +3721,12 @@ const styles = StyleSheet.create({
   },
   previewStrip: {
     flexDirection: 'row',
-    gap: 8,
-    marginHorizontal: 10,
-    marginBottom: 6,
-    borderRadius: 18,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    gap: spacing.sm,
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     borderWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
     backgroundColor: colors.surface,
@@ -3539,7 +3738,7 @@ const styles = StyleSheet.create({
   previewImage: {
     width: 64,
     height: 64,
-    borderRadius: 10,
+    borderRadius: radius.md,
     backgroundColor: colors.surfaceMuted,
   },
   previewRemove: {
@@ -3566,8 +3765,8 @@ const styles = StyleSheet.create({
     marginHorizontal: 14,
     marginTop: 10,
     marginBottom: 4,
-    borderRadius: 18,
-    padding: 12,
+    borderRadius: radius.md,
+    padding: spacing.md,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
@@ -3614,8 +3813,8 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   e2eeStatusBar: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
   },
@@ -3627,9 +3826,9 @@ const styles = StyleSheet.create({
   replyBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
     backgroundColor: colors.surface,
@@ -3654,9 +3853,9 @@ const styles = StyleSheet.create({
   editingBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
     backgroundColor: colors.surface,
@@ -3681,7 +3880,7 @@ const styles = StyleSheet.create({
   editingCancel: {
     width: 34,
     height: 34,
-    borderRadius: 17,
+    borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.surfaceMuted,
@@ -3695,9 +3894,9 @@ const styles = StyleSheet.create({
   recordingBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 9,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
     backgroundColor: colors.surfaceMuted,
@@ -3726,9 +3925,9 @@ const styles = StyleSheet.create({
     opacity: 1,
   },
   recordingCancel: {
-    borderRadius: 12,
-    paddingHorizontal: 9,
-    paddingVertical: 7,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
     backgroundColor: colors.surface,
   },
   recordingCancelText: {
@@ -3737,9 +3936,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   recordingSend: {
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
     backgroundColor: colors.accent,
   },
   recordingSendText: {
@@ -3748,10 +3947,10 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   previewVideoNoteCard: {
-    marginHorizontal: 12,
-    marginBottom: 6,
-    padding: 10,
-    borderRadius: 14,
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+    padding: spacing.sm,
+    borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surfaceMuted,
@@ -3779,10 +3978,10 @@ const styles = StyleSheet.create({
   },
   // Preview voice card (new UX: record -> preview -> send/delete)
   previewVoiceCard: {
-    marginHorizontal: 12,
-    marginBottom: 6,
-    padding: 10,
-    borderRadius: 14,
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+    padding: spacing.sm,
+    borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surfaceMuted,
@@ -3844,7 +4043,7 @@ const styles = StyleSheet.create({
   previewDeleteBtn: {
     paddingVertical: 6,
     paddingHorizontal: 10,
-    borderRadius: 8,
+    borderRadius: radius.sm,
   },
   previewDeleteText: {
     color: colors.danger || colors.danger,
@@ -3854,7 +4053,7 @@ const styles = StyleSheet.create({
   previewSendBtn: {
     paddingVertical: 6,
     paddingHorizontal: 12,
-    borderRadius: 8,
+    borderRadius: radius.sm,
     backgroundColor: colors.accent,
   },
   previewSendText: {
@@ -3876,13 +4075,13 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   composer: {
-    gap: 8,
-    marginHorizontal: 8,
-    marginBottom: 8,
+    gap: spacing.sm,
+    marginHorizontal: spacing.sm,
+    marginBottom: spacing.sm,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 24,
-    padding: 8,
+    borderRadius: radius.lg,
+    padding: spacing.sm,
     backgroundColor: colors.surface,
     shadowColor: colors.shadow,
     shadowOpacity: 0.16,
@@ -3892,7 +4091,7 @@ const styles = StyleSheet.create({
   },
   composerTools: {
     flexDirection: 'row',
-    gap: 8,
+    gap: spacing.sm,
   },
   composerToolButton: {
     flex: 1,
@@ -3903,7 +4102,7 @@ const styles = StyleSheet.create({
   composerInputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    gap: 8,
+    gap: spacing.sm,
   },
   composerSendButton: {
     minHeight: 48,
@@ -3914,9 +4113,9 @@ const styles = StyleSheet.create({
     minWidth: 0,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 18,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     backgroundColor: colors.input,
     color: colors.text,
     fontSize: 15,
@@ -3955,8 +4154,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(2, 6, 23, 0.58)',
   },
   sheet: {
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
     backgroundColor: colors.surface,
     paddingHorizontal: 14,
     paddingTop: 10,
@@ -3980,29 +4179,25 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   sheetAction: {
-    minHeight: 52,
+    minHeight: 48,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    borderRadius: 14,
-    paddingHorizontal: 10,
+    gap: spacing.md,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm,
   },
   sheetActionIcon: {
     width: 32,
     height: 32,
-    borderRadius: 16,
+    borderRadius: radius.pill,
     overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: colors.surfaceMuted,
-    color: colors.muted,
-    fontSize: 13,
-    lineHeight: 32,
-    fontWeight: '800',
-    textAlign: 'center',
   },
   sheetActionText: {
     color: colors.text,
-    fontSize: 16,
-    lineHeight: 22,
+    ...typography.body,
     fontWeight: '600',
   },
   forwardPreview: {

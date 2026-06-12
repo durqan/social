@@ -6,6 +6,7 @@ import { getApiErrorMessage } from '../api/http';
 import { useAuth } from '../context/AuthContext';
 import { useThemeColors } from '../theme/ThemeContext';
 import type { ThemeColors } from '../theme/themes';
+import { radius, spacing, typography } from '../theme/layout';
 import { AppButton } from './AppButton';
 import { ErrorBanner, SuccessBanner } from './Feedback';
 
@@ -95,29 +96,27 @@ export function EmailVerificationNotice({
 
 const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
-  card: {
-    borderWidth: 1,
-    borderColor: colors.warning,
-    borderRadius: 12,
-    backgroundColor: colors.warningSoft,
-    padding: 16,
-    gap: 12,
-  },
-  textBlock: {
-    gap: 6,
-  },
-  title: {
-    color: colors.text,
-    fontSize: 17,
-    lineHeight: 23,
-    fontWeight: '800',
-  },
-  text: {
-    color: colors.muted,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  actions: {
-    gap: 10,
-  },
-});
+    card: {
+      borderWidth: 1,
+      borderColor: colors.warningSoft,
+      borderRadius: radius.md,
+      backgroundColor: colors.warningSoft,
+      padding: spacing.md,
+      gap: spacing.md,
+    },
+    textBlock: {
+      gap: spacing.xs,
+    },
+    title: {
+      ...typography.body,
+      color: colors.text,
+      fontWeight: '800',
+    },
+    text: {
+      ...typography.caption,
+      color: colors.muted,
+    },
+    actions: {
+      gap: spacing.sm,
+    },
+  });

@@ -17,7 +17,9 @@ import {
 } from '../../components/Feedback';
 import { Screen } from '../../components/Screen';
 import { useAuth } from '../../context/AuthContext';
-import { colors } from '../../theme/colors';
+import { useThemeColors } from '../../theme/ThemeContext';
+import type { ThemeColors } from '../../theme/themes';
+import { radius, spacing, typography } from '../../theme/layout';
 import { avatarImageStyle } from '../../utils/avatar';
 import { formatDateTime } from '../../utils/format';
 import type { MainStackParamList } from '../../navigation/types';
@@ -33,6 +35,8 @@ type FriendshipStatus =
 
 export default function UserProfileScreen({ navigation, route }: Props) {
   const { user: currentUser } = useAuth();
+  const colors = useThemeColors();
+  const styles = createStyles(colors);
   const [profile, setProfile] = useState<User | null>(null);
   const [status, setStatus] = useState<FriendshipStatus>('none');
   const [loading, setLoading] = useState(false);
@@ -178,7 +182,9 @@ export default function UserProfileScreen({ navigation, route }: Props) {
           )}
         </View>
         <Text style={styles.name}>{profile.name || 'Без имени'}</Text>
-        {profile.email ? <Text style={styles.email}>{profile.email}</Text> : null}
+        {profile.email ? (
+          <Text style={styles.email}>{profile.email}</Text>
+        ) : null}
       </View>
 
       <ErrorBanner message={error} />
@@ -239,6 +245,9 @@ export default function UserProfileScreen({ navigation, route }: Props) {
 }
 
 function InfoRow({ label, value }: { label: string; value?: string }) {
+  const colors = useThemeColors();
+  const styles = createStyles(colors);
+
   return (
     <View style={styles.infoRow}>
       <Text style={styles.infoLabel}>{label}</Text>
@@ -247,77 +256,75 @@ function InfoRow({ label, value }: { label: string; value?: string }) {
   );
 }
 
-const styles = StyleSheet.create({
-  card: {
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(17, 24, 39, 0.06)',
-    borderRadius: 14,
-    backgroundColor: colors.surface,
-    padding: 20,
-    gap: 8,
-  },
-  avatar: {
-    width: 82,
-    height: 82,
-    borderRadius: 41,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-    backgroundColor: colors.accent,
-  },
-  avatarImage: {
-    width: 82,
-    height: 82,
-  },
-  avatarText: {
-    color: '#ffffff',
-    fontSize: 30,
-    fontWeight: '800',
-  },
-  name: {
-    color: colors.text,
-    fontSize: 23,
-    lineHeight: 29,
-    fontWeight: '800',
-  },
-  email: {
-    color: colors.muted,
-    fontSize: 15,
-  },
-  infoCard: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
-  },
-  infoRow: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-    padding: 14,
-    gap: 4,
-  },
-  infoLabel: {
-    color: colors.muted,
-    fontSize: 13,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-  },
-  infoValue: {
-    color: colors.text,
-    fontSize: 15,
-    lineHeight: 21,
-  },
-  notice: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
-    padding: 14,
-  },
-  noticeText: {
-    color: colors.muted,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-});
+const createStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    card: {
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      backgroundColor: colors.card,
+      padding: spacing.lg,
+      gap: spacing.sm,
+    },
+    avatar: {
+      width: 82,
+      height: 82,
+      borderRadius: 41,
+      alignItems: 'center',
+      justifyContent: 'center',
+      overflow: 'hidden',
+      backgroundColor: colors.surfaceMuted,
+    },
+    avatarImage: {
+      width: 82,
+      height: 82,
+    },
+    avatarText: {
+      color: colors.accentStrong,
+      fontSize: 30,
+      fontWeight: '800',
+    },
+    name: {
+      ...typography.h2,
+      color: colors.text,
+    },
+    email: {
+      ...typography.body,
+      color: colors.muted,
+    },
+    infoCard: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      backgroundColor: colors.card,
+      overflow: 'hidden',
+    },
+    infoRow: {
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+      padding: spacing.md,
+      gap: spacing.xs,
+    },
+    infoLabel: {
+      ...typography.tiny,
+      color: colors.muted,
+      fontWeight: '700',
+      textTransform: 'uppercase',
+    },
+    infoValue: {
+      ...typography.body,
+      color: colors.text,
+    },
+    notice: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      backgroundColor: colors.card,
+      padding: spacing.md,
+    },
+    noticeText: {
+      ...typography.caption,
+      color: colors.muted,
+    },
+  });

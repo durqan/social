@@ -3,6 +3,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 import { useThemeColors } from '../theme/ThemeContext';
 import type { ThemeColors } from '../theme/themes';
+import { radius, spacing, typography } from '../theme/layout';
 
 export function ErrorBanner({ message }: { message?: string | null }) {
   const colors = useThemeColors();
@@ -72,85 +73,81 @@ export function LoadingState({ text }: { text: string }) {
 
 const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
-  errorBox: {
-    borderWidth: 1,
-    borderColor: colors.danger,
-    borderRadius: 12,
-    backgroundColor: colors.dangerSoft,
-    padding: 12,
-  },
-  errorText: {
-    color: colors.danger,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  successBox: {
-    borderWidth: 1,
-    borderColor: colors.success,
-    borderRadius: 12,
-    backgroundColor: colors.successSoft,
-    padding: 12,
-  },
-  successText: {
-    color: colors.success,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  noticeBox: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
-    padding: 14,
-    gap: 6,
-  },
-  noticeTitle: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  noticeText: {
-    color: colors.muted,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  emptyBox: {
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
-    paddingHorizontal: 18,
-    paddingVertical: 22,
-    gap: 6,
-  },
-  emptyTitle: {
-    color: colors.text,
-    fontSize: 16,
-    lineHeight: 22,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
-  emptyText: {
-    color: colors.muted,
-    fontSize: 14,
-    lineHeight: 20,
-    textAlign: 'center',
-  },
-  loadingBox: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
-    padding: 22,
-    gap: 10,
-  },
-  loadingText: {
-    color: colors.muted,
-    fontSize: 14,
-    lineHeight: 20,
-    textAlign: 'center',
-  },
-});
+    errorBox: {
+      borderWidth: 1,
+      borderColor: colors.dangerSoft,
+      borderRadius: radius.md,
+      backgroundColor: colors.dangerSoft,
+      padding: spacing.md,
+    },
+    errorText: {
+      color: colors.danger,
+      ...typography.caption,
+      fontWeight: '700',
+    },
+    successBox: {
+      borderWidth: 1,
+      borderColor: colors.successSoft,
+      borderRadius: radius.md,
+      backgroundColor: colors.successSoft,
+      padding: spacing.md,
+    },
+    successText: {
+      color: colors.success,
+      ...typography.caption,
+      fontWeight: '700',
+    },
+    noticeBox: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      backgroundColor: colors.card,
+      padding: spacing.md,
+      gap: spacing.xs,
+    },
+    noticeTitle: {
+      color: colors.text,
+      ...typography.body,
+      fontWeight: '800',
+    },
+    noticeText: {
+      color: colors.muted,
+      ...typography.caption,
+    },
+    emptyBox: {
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      backgroundColor: colors.card,
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.xl,
+      gap: spacing.xs,
+    },
+    emptyTitle: {
+      color: colors.text,
+      ...typography.body,
+      fontWeight: '800',
+      textAlign: 'center',
+    },
+    emptyText: {
+      color: colors.muted,
+      ...typography.caption,
+      textAlign: 'center',
+    },
+    loadingBox: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      backgroundColor: colors.card,
+      padding: spacing.xl,
+      gap: spacing.sm,
+    },
+    loadingText: {
+      color: colors.muted,
+      ...typography.caption,
+      textAlign: 'center',
+    },
+  });

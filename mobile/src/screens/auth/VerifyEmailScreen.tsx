@@ -11,7 +11,9 @@ import {
 } from '../../components/Feedback';
 import { Screen } from '../../components/Screen';
 import { useAuth } from '../../context/AuthContext';
-import { colors } from '../../theme/colors';
+import { useThemeColors } from '../../theme/ThemeContext';
+import type { ThemeColors } from '../../theme/themes';
+import { spacing, typography } from '../../theme/layout';
 
 type VerifyEmailRoute = {
   params?: {
@@ -31,6 +33,8 @@ export default function VerifyEmailScreen({
   navigation: VerifyEmailNavigation;
 }) {
   const { user, refreshUser } = useAuth();
+  const colors = useThemeColors();
+  const styles = createStyles(colors);
   const token = route.params?.token || '';
   const [loading, setLoading] = useState(true);
   const [success, setSuccess] = useState<string | null>(null);
@@ -95,26 +99,24 @@ export default function VerifyEmailScreen({
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    gap: 16,
-  },
-  header: {
-    gap: 8,
-  },
-  title: {
-    color: colors.text,
-    fontSize: 25,
-    lineHeight: 31,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
-  subtitle: {
-    color: colors.muted,
-    fontSize: 15,
-    lineHeight: 21,
-    textAlign: 'center',
-  },
-});
+const createStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    container: {
+      flexGrow: 1,
+      justifyContent: 'center',
+      gap: spacing.md,
+    },
+    header: {
+      gap: spacing.sm,
+    },
+    title: {
+      ...typography.h1,
+      color: colors.text,
+      textAlign: 'left',
+    },
+    subtitle: {
+      ...typography.body,
+      color: colors.muted,
+      textAlign: 'left',
+    },
+  });

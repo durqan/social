@@ -14,6 +14,7 @@ import {
 } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RefreshCw, Search } from 'lucide-react-native';
 
 import { friendsApi } from '../../api/friends';
 import { getApiErrorMessage } from '../../api/http';
@@ -29,6 +30,7 @@ import { Screen } from '../../components/Screen';
 import { useNotifications } from '../../context/NotificationsContext';
 import { useThemeColors } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/themes';
+import { radius, spacing, typography } from '../../theme/layout';
 import { avatarImageStyle } from '../../utils/avatar';
 import type {
   MainStackParamList,
@@ -171,11 +173,13 @@ export default function FriendsScreen() {
           <AppButton
             title="Поиск"
             variant="secondary"
+            icon={Search}
             onPress={() => navigation.navigate('UserSearch')}
           />
           <AppButton
             title="Обновить"
             variant="ghost"
+            icon={RefreshCw}
             loading={manualRefreshing}
             onPress={handleManualRefresh}
           />
@@ -325,100 +329,96 @@ function UserAvatar({ user, colors }: { user?: User; colors: ThemeColors }) {
 
 const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  headerActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  sectionTitle: {
-    color: colors.text,
-    fontSize: 20,
-    lineHeight: 26,
-    fontWeight: '800',
-  },
-  subsection: {
-    gap: 10,
-  },
-  subsectionTitle: {
-    color: colors.text,
-    fontSize: 17,
-    lineHeight: 23,
-    fontWeight: '800',
-  },
-  listCard: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
-    overflow: 'hidden',
-  },
-  requestRow: {
-    padding: 14,
-    gap: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-  },
-  requestUser: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  requestActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  actionButton: {
-    flex: 1,
-  },
-  friendRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
-    padding: 12,
-    gap: 12,
-    marginBottom: 10,
-  },
-  avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    flexShrink: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surfaceMuted,
-    overflow: 'hidden',
-  },
-  avatarImage: {
-    width: 44,
-    height: 44,
-  },
-  avatarText: {
-    color: colors.accentStrong,
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  userMeta: {
-    flex: 1,
-    gap: 3,
-  },
-  userName: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  userEmail: {
-    color: colors.muted,
-    fontSize: 13,
-  },
-  friendAction: {
-    paddingHorizontal: 10,
-  },
-});
+    sectionHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: spacing.md,
+    },
+    headerActions: {
+      flexDirection: 'row',
+      gap: spacing.sm,
+    },
+    sectionTitle: {
+      ...typography.h2,
+      color: colors.text,
+    },
+    subsection: {
+      gap: spacing.sm,
+    },
+    subsectionTitle: {
+      ...typography.h3,
+      color: colors.text,
+    },
+    listCard: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      backgroundColor: colors.card,
+      overflow: 'hidden',
+    },
+    requestRow: {
+      padding: spacing.md,
+      gap: spacing.md,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+    },
+    requestUser: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+    },
+    requestActions: {
+      flexDirection: 'row',
+      gap: spacing.sm,
+    },
+    actionButton: {
+      flex: 1,
+    },
+    friendRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      backgroundColor: colors.card,
+      padding: spacing.md,
+      gap: spacing.md,
+      marginBottom: spacing.sm,
+    },
+    avatar: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      flexShrink: 0,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.surfaceMuted,
+      overflow: 'hidden',
+    },
+    avatarImage: {
+      width: 44,
+      height: 44,
+    },
+    avatarText: {
+      color: colors.accentStrong,
+      fontSize: 18,
+      fontWeight: '800',
+    },
+    userMeta: {
+      flex: 1,
+      gap: 3,
+    },
+    userName: {
+      ...typography.body,
+      color: colors.text,
+      fontWeight: '700',
+    },
+    userEmail: {
+      ...typography.caption,
+      color: colors.muted,
+    },
+    friendAction: {
+      paddingHorizontal: 10,
+    },
+  });

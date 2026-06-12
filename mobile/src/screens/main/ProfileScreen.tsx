@@ -19,6 +19,7 @@ import { TextField } from '../../components/TextField';
 import { useAuth } from '../../context/AuthContext';
 import { useThemeColors } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/themes';
+import { radius, spacing, typography } from '../../theme/layout';
 import { avatarImageStyle } from '../../utils/avatar';
 import { formatDateTime } from '../../utils/format';
 
@@ -369,107 +370,100 @@ function InfoRow({ label, value }: { label: string; value?: string }) {
 
 const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
-  card: {
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 14,
-    backgroundColor: colors.surface,
-    padding: 20,
-    gap: 8,
-  },
-  avatar: {
-    width: 82,
-    height: 82,
-    borderRadius: 41,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-    backgroundColor: colors.accent,
-  },
-  avatarImage: {
-    width: 82,
-    height: 82,
-  },
-  avatarText: {
-    color: colors.white,
-    fontSize: 30,
-    fontWeight: '800',
-  },
-  avatarHint: {
-    color: colors.soft,
-    fontSize: 13,
-    lineHeight: 18,
-    textAlign: 'center',
-  },
-  name: {
-    color: colors.text,
-    fontSize: 23,
-    lineHeight: 29,
-    fontWeight: '800',
-  },
-  email: {
-    color: colors.muted,
-    fontSize: 15,
-  },
-  infoCard: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
-  },
-  infoRow: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-    padding: 14,
-    gap: 4,
-  },
-  infoLabel: {
-    color: colors.muted,
-    fontSize: 13,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-  },
-  infoValue: {
-    color: colors.text,
-    fontSize: 15,
-    lineHeight: 21,
-  },
-  formCard: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
-    padding: 16,
-    gap: 14,
-  },
-  formTitle: {
-    color: colors.text,
-    fontSize: 19,
-    lineHeight: 25,
-    fontWeight: '800',
-  },
-  warningText: {
-    color: colors.text,
-    borderWidth: 1,
-    borderColor: colors.warning,
-    borderRadius: 10,
-    backgroundColor: colors.warningSoft,
-    padding: 10,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  avatarSettingsTitle: {
-    color: colors.text,
-    fontSize: 15,
-    lineHeight: 20,
-    fontWeight: '800',
-  },
-  avatarSettingsGrid: {
-    gap: 10,
-  },
-  bioInput: {
-    minHeight: 96,
-    textAlignVertical: 'top',
-  },
-});
+    card: {
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      backgroundColor: colors.card,
+      padding: spacing.lg,
+      gap: spacing.sm,
+    },
+    avatar: {
+      width: 82,
+      height: 82,
+      borderRadius: 41,
+      alignItems: 'center',
+      justifyContent: 'center',
+      overflow: 'hidden',
+      backgroundColor: colors.surfaceMuted,
+    },
+    avatarImage: {
+      width: 82,
+      height: 82,
+    },
+    avatarText: {
+      color: colors.accentStrong,
+      fontSize: 30,
+      fontWeight: '800',
+    },
+    avatarHint: {
+      ...typography.caption,
+      color: colors.soft,
+      textAlign: 'center',
+    },
+    name: {
+      ...typography.h2,
+      color: colors.text,
+    },
+    email: {
+      ...typography.body,
+      color: colors.muted,
+    },
+    infoCard: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      backgroundColor: colors.card,
+      overflow: 'hidden',
+    },
+    infoRow: {
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+      padding: spacing.md,
+      gap: spacing.xs,
+    },
+    infoLabel: {
+      ...typography.tiny,
+      color: colors.muted,
+      fontWeight: '700',
+      textTransform: 'uppercase',
+    },
+    infoValue: {
+      ...typography.body,
+      color: colors.text,
+    },
+    formCard: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      backgroundColor: colors.card,
+      padding: spacing.lg,
+      gap: spacing.md,
+    },
+    formTitle: {
+      ...typography.h3,
+      color: colors.text,
+    },
+    warningText: {
+      ...typography.caption,
+      color: colors.text,
+      borderWidth: 1,
+      borderColor: colors.warningSoft,
+      borderRadius: radius.md,
+      backgroundColor: colors.warningSoft,
+      padding: spacing.md,
+    },
+    avatarSettingsTitle: {
+      ...typography.body,
+      color: colors.text,
+      fontWeight: '800',
+    },
+    avatarSettingsGrid: {
+      gap: spacing.sm,
+    },
+    bioInput: {
+      minHeight: 96,
+      textAlignVertical: 'top',
+    },
+  });

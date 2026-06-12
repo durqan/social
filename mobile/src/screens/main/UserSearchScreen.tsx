@@ -24,7 +24,9 @@ import {
 import { Screen } from '../../components/Screen';
 import { TextField } from '../../components/TextField';
 import { useAuth } from '../../context/AuthContext';
-import { colors } from '../../theme/colors';
+import { useThemeColors } from '../../theme/ThemeContext';
+import type { ThemeColors } from '../../theme/themes';
+import { radius, spacing, typography } from '../../theme/layout';
 import { avatarImageStyle } from '../../utils/avatar';
 import type { MainStackParamList } from '../../navigation/types';
 
@@ -33,6 +35,8 @@ type FriendshipStatus = Friendship['status'] | 'none';
 
 export default function UserSearchScreen({ navigation }: Props) {
   const { user: currentUser } = useAuth();
+  const colors = useThemeColors();
+  const styles = createStyles(colors);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<User[]>([]);
   const [statuses, setStatuses] = useState<Record<number, FriendshipStatus>>(
@@ -148,7 +152,11 @@ export default function UserSearchScreen({ navigation }: Props) {
   }
 
   return (
-    <Screen scroll={false} padded={false} contentContainerStyle={styles.container}>
+    <Screen
+      scroll={false}
+      padded={false}
+      contentContainerStyle={styles.container}
+    >
       <View style={styles.searchBox}>
         <TextField
           label="Поиск"
@@ -189,7 +197,7 @@ export default function UserSearchScreen({ navigation }: Props) {
         renderItem={({ item }) => (
           <SearchResultRow
             user={item}
-            status={item.id ? statuses[item.id] ?? 'none' : 'none'}
+            status={item.id ? (statuses[item.id] ?? 'none') : 'none'}
             busy={busyId === item.id}
             onAdd={() => sendRequest(item)}
             onChat={() => openChat(item)}
@@ -216,6 +224,9 @@ function SearchResultRow({
   onChat: () => void;
   onProfile: () => void;
 }) {
+  const colors = useThemeColors();
+  const styles = createStyles(colors);
+
   return (
     <Pressable style={styles.row} onPress={onProfile}>
       <View style={styles.avatar}>
@@ -277,84 +288,85 @@ function SearchResultRow({
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    padding: 0,
-  },
-  searchBox: {
-    padding: 16,
-    paddingBottom: 8,
-  },
-  listContent: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 124,
-    gap: 12,
-  },
-  emptyListContent: {
-    flexGrow: 1,
-    justifyContent: 'center',
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 18,
-    backgroundColor: colors.card,
-    padding: 14,
-    gap: 12,
-  },
-  avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-    backgroundColor: colors.surfaceMuted,
-  },
-  avatarImage: {
-    width: 44,
-    height: 44,
-  },
-  avatarText: {
-    color: colors.accentStrong,
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  meta: {
-    flex: 1,
-    gap: 3,
-  },
-  name: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  email: {
-    color: colors.muted,
-    fontSize: 13,
-  },
-  actions: {
-    minWidth: 104,
-    alignItems: 'flex-end',
-  },
-  actionButton: {
-    minHeight: 42,
-    paddingHorizontal: 12,
-  },
-  statusPill: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    backgroundColor: colors.surfaceMuted,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  statusPillText: {
-    color: colors.muted,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-});
+const createStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    container: {
+      padding: 0,
+    },
+    searchBox: {
+      padding: spacing.lg,
+      paddingBottom: spacing.sm,
+    },
+    listContent: {
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.lg,
+      paddingBottom: 124,
+      gap: spacing.sm,
+    },
+    emptyListContent: {
+      flexGrow: 1,
+      justifyContent: 'center',
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      backgroundColor: colors.card,
+      padding: spacing.md,
+      gap: spacing.md,
+    },
+    avatar: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      alignItems: 'center',
+      justifyContent: 'center',
+      overflow: 'hidden',
+      backgroundColor: colors.surfaceMuted,
+    },
+    avatarImage: {
+      width: 44,
+      height: 44,
+    },
+    avatarText: {
+      color: colors.accentStrong,
+      fontSize: 18,
+      fontWeight: '800',
+    },
+    meta: {
+      flex: 1,
+      gap: 3,
+    },
+    name: {
+      ...typography.body,
+      color: colors.text,
+      fontWeight: '800',
+    },
+    email: {
+      ...typography.caption,
+      color: colors.muted,
+    },
+    actions: {
+      minWidth: 104,
+      alignItems: 'flex-end',
+    },
+    actionButton: {
+      minHeight: 42,
+      paddingHorizontal: spacing.md,
+    },
+    statusPill: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      backgroundColor: colors.surfaceMuted,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: spacing.sm,
+    },
+    statusPillText: {
+      ...typography.tiny,
+      color: colors.muted,
+      fontWeight: '700',
+    },
+  });

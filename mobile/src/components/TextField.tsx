@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -19,6 +19,7 @@ type TextFieldProps = TextInputProps & {
 export function TextField({ label, error, style, ...props }: TextFieldProps) {
   const colors = useThemeColors();
   const styles = createStyles(colors);
+  const [focused, setFocused] = useState(false);
 
   return (
     <View style={styles.wrapper}>
@@ -26,8 +27,21 @@ export function TextField({ label, error, style, ...props }: TextFieldProps) {
       <TextInput
         placeholderTextColor={colors.soft}
         autoCapitalize="none"
-        style={[styles.input, error && styles.inputError, style]}
+        style={[
+          styles.input,
+          focused && styles.inputFocused,
+          error && styles.inputError,
+          style,
+        ]}
         {...props}
+        onFocus={event => {
+          setFocused(true);
+          props.onFocus?.(event);
+        }}
+        onBlur={event => {
+          setFocused(false);
+          props.onBlur?.(event);
+        }}
       />
       {error ? <Text style={styles.error}>{error}</Text> : null}
     </View>
@@ -36,30 +50,34 @@ export function TextField({ label, error, style, ...props }: TextFieldProps) {
 
 const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
-  wrapper: {
-    gap: spacing.sm,
-  },
-  label: {
-    ...typography.caption,
-    color: colors.muted,
-    fontWeight: '800',
-  },
-  input: {
-    minHeight: 52,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.lg,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    backgroundColor: colors.input,
-    color: colors.text,
-    ...typography.body,
-  },
-  inputError: {
-    borderColor: colors.danger,
-  },
-  error: {
-    color: colors.danger,
-    ...typography.caption,
-  },
-});
+    wrapper: {
+      gap: spacing.sm,
+    },
+    label: {
+      ...typography.caption,
+      color: colors.soft,
+      fontWeight: '800',
+    },
+    input: {
+      minHeight: 48,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      backgroundColor: colors.input,
+      color: colors.text,
+      ...typography.body,
+    },
+    inputFocused: {
+      borderColor: colors.accentBorder,
+      backgroundColor: colors.inputFocus,
+    },
+    inputError: {
+      borderColor: colors.danger,
+    },
+    error: {
+      color: colors.danger,
+      ...typography.caption,
+    },
+  });

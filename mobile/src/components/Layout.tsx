@@ -1,17 +1,44 @@
 import React, { type ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import {
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 
 import { useThemeColors } from '../theme/ThemeContext';
 import type { ThemeColors } from '../theme/themes';
-import { radius, spacing, typography } from '../theme/layout';
+import { elevation, radius, spacing, typography } from '../theme/layout';
 
-export function Card({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
+type TileIcon = React.ComponentType<{
+  color?: string;
+  size?: number;
+  strokeWidth?: number;
+}>;
+
+export function Card({
+  children,
+  style,
+}: {
+  children: ReactNode;
+  style?: StyleProp<ViewStyle>;
+}) {
   const colors = useThemeColors();
   const styles = createStyles(colors);
   return <View style={[styles.card, style]}>{children}</View>;
 }
 
-export function Section({ title, subtitle, children }: { title?: string; subtitle?: string; children: ReactNode }) {
+export function Section({
+  title,
+  subtitle,
+  children,
+}: {
+  title?: string;
+  subtitle?: string;
+  children: ReactNode;
+}) {
   const colors = useThemeColors();
   const styles = createStyles(colors);
   return (
@@ -19,7 +46,9 @@ export function Section({ title, subtitle, children }: { title?: string; subtitl
       {title || subtitle ? (
         <View style={styles.sectionHeader}>
           {title ? <Text style={styles.sectionTitle}>{title}</Text> : null}
-          {subtitle ? <Text style={styles.sectionSubtitle}>{subtitle}</Text> : null}
+          {subtitle ? (
+            <Text style={styles.sectionSubtitle}>{subtitle}</Text>
+          ) : null}
         </View>
       ) : null}
       {children}
@@ -27,7 +56,17 @@ export function Section({ title, subtitle, children }: { title?: string; subtitl
   );
 }
 
-export function HeroCard({ kicker, title, subtitle, children }: { kicker?: string; title: string; subtitle?: string; children?: ReactNode }) {
+export function HeroCard({
+  kicker,
+  title,
+  subtitle,
+  children,
+}: {
+  kicker?: string;
+  title: string;
+  subtitle?: string;
+  children?: ReactNode;
+}) {
   const colors = useThemeColors();
   const styles = createStyles(colors);
   return (
@@ -40,12 +79,34 @@ export function HeroCard({ kicker, title, subtitle, children }: { kicker?: strin
   );
 }
 
-export function ActionTile({ title, text, emoji, onPress }: { title: string; text?: string; emoji?: string; onPress: () => void }) {
+export function ActionTile({
+  title,
+  text,
+  emoji,
+  icon: Icon,
+  onPress,
+}: {
+  title: string;
+  text?: string;
+  emoji?: string;
+  icon?: TileIcon;
+  onPress: () => void;
+}) {
   const colors = useThemeColors();
   const styles = createStyles(colors);
   return (
-    <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.tile, pressed && styles.pressed]}>
-      <View style={styles.tileIcon}><Text style={styles.tileEmoji}>{emoji || '•'}</Text></View>
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [styles.tile, pressed && styles.pressed]}
+    >
+      <View style={styles.tileIcon}>
+        {Icon ? (
+          <Icon color={colors.accentStrong} size={18} strokeWidth={2.2} />
+        ) : (
+          <Text style={styles.tileEmoji}>{emoji || '•'}</Text>
+        )}
+      </View>
       <View style={styles.tileTextBox}>
         <Text style={styles.tileTitle}>{title}</Text>
         {text ? <Text style={styles.tileText}>{text}</Text> : null}
@@ -54,49 +115,52 @@ export function ActionTile({ title, text, emoji, onPress }: { title: string; tex
   );
 }
 
-const createStyles = (colors: ThemeColors) => StyleSheet.create({
-  card: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.lg,
-    backgroundColor: colors.card,
-    padding: spacing.lg,
-    shadowColor: colors.shadow,
-    shadowOpacity: colors.isDark ? 0 : 0.18,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 1,
-  },
-  section: { gap: spacing.md },
-  sectionHeader: { gap: 3 },
-  sectionTitle: { ...typography.h3, color: colors.text },
-  sectionSubtitle: { ...typography.caption, color: colors.muted },
-  hero: { gap: spacing.sm, padding: spacing.xl, overflow: 'hidden' },
-  kicker: { ...typography.caption, color: colors.accentStrong, fontWeight: '900', textTransform: 'uppercase' },
-  heroTitle: { ...typography.h1, color: colors.text },
-  heroSubtitle: { ...typography.body, color: colors.muted },
-  tile: {
-    flexBasis: '47%',
-    flexGrow: 1,
-    minHeight: 92,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.lg,
-    backgroundColor: colors.surface,
-    padding: spacing.md,
-    gap: spacing.sm,
-  },
-  pressed: { backgroundColor: colors.pressed, transform: [{ scale: 0.99 }] },
-  tileIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: radius.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.accentSoft,
-  },
-  tileEmoji: { fontSize: 17, lineHeight: 20 },
-  tileTextBox: { gap: 2 },
-  tileTitle: { ...typography.h3, color: colors.text },
-  tileText: { ...typography.caption, color: colors.muted },
-});
+const createStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    card: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      backgroundColor: colors.card,
+      padding: spacing.md,
+      shadowColor: colors.shadow,
+      ...(colors.isDark ? elevation.none : elevation.card),
+    },
+    section: { gap: spacing.md },
+    sectionHeader: { gap: 3 },
+    sectionTitle: { ...typography.h3, color: colors.text },
+    sectionSubtitle: { ...typography.caption, color: colors.muted },
+    hero: { gap: spacing.sm, padding: spacing.lg, overflow: 'hidden' },
+    kicker: {
+      ...typography.caption,
+      color: colors.accentStrong,
+      fontWeight: '800',
+      textTransform: 'uppercase',
+    },
+    heroTitle: { ...typography.h1, color: colors.text },
+    heroSubtitle: { ...typography.body, color: colors.muted },
+    tile: {
+      flexBasis: '47%',
+      flexGrow: 1,
+      minHeight: 88,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      backgroundColor: colors.card,
+      padding: spacing.md,
+      gap: spacing.sm,
+    },
+    pressed: { backgroundColor: colors.pressed },
+    tileIcon: {
+      width: 32,
+      height: 32,
+      borderRadius: radius.pill,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.accentSoft,
+    },
+    tileEmoji: { fontSize: 17, lineHeight: 20 },
+    tileTextBox: { gap: 2 },
+    tileTitle: { ...typography.body, color: colors.text, fontWeight: '800' },
+    tileText: { ...typography.caption, color: colors.muted },
+  });

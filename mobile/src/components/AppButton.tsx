@@ -4,6 +4,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  View,
   type PressableProps,
   type StyleProp,
   type ViewStyle,
@@ -14,11 +15,17 @@ import type { ThemeColors } from '../theme/themes';
 import { radius, spacing, typography } from '../theme/layout';
 
 type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost';
+type ButtonIcon = React.ComponentType<{
+  color?: string;
+  size?: number;
+  strokeWidth?: number;
+}>;
 
 type AppButtonProps = Omit<PressableProps, 'style'> & {
   title: string;
   variant?: ButtonVariant;
   loading?: boolean;
+  icon?: ButtonIcon;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -27,12 +34,16 @@ export function AppButton({
   variant = 'primary',
   loading = false,
   disabled,
+  icon: Icon,
   style,
   ...props
 }: AppButtonProps) {
   const isDisabled = disabled || loading;
   const colors = useThemeColors();
   const styles = createStyles(colors);
+  const textStyle = [styles.text, styles[`${variant}Text`]];
+  const iconColor =
+    variant === 'primary' || variant === 'danger' ? colors.white : colors.text;
 
   return (
     <Pressable
@@ -45,13 +56,21 @@ export function AppButton({
         pressed && !isDisabled && styles.pressed,
         style,
       ]}
-      {...props}>
+      {...props}
+    >
       {loading ? (
         <ActivityIndicator
-          color={variant === 'primary' ? colors.white : colors.accent}
+          color={
+            variant === 'primary' || variant === 'danger'
+              ? colors.white
+              : colors.accent
+          }
         />
       ) : (
-        <Text style={[styles.text, styles[`${variant}Text`]]}>{title}</Text>
+        <View style={styles.content}>
+          {Icon ? <Icon color={iconColor} size={17} strokeWidth={2.3} /> : null}
+          <Text style={textStyle}>{title}</Text>
+        </View>
       )}
     </Pressable>
   );
@@ -59,48 +78,59 @@ export function AppButton({
 
 const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
-  base: {
-    minHeight: 46,
-    borderRadius: radius.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-  },
-  primary: {
-    backgroundColor: colors.accent,
-  },
-  secondary: {
-    backgroundColor: colors.accentSoft,
-    borderWidth: 1,
-    borderColor: colors.accentBorder,
-  },
-  danger: {
-    backgroundColor: colors.danger,
-  },
-  ghost: {
-    backgroundColor: colors.surface,
-  },
-  disabled: {
-    opacity: 0.55,
-  },
-  pressed: {
-    transform: [{ scale: 0.98 }],
-  },
-  text: {
-    ...typography.body,
-    fontWeight: '800',
-  },
-  primaryText: {
-    color: colors.white,
-  },
-  secondaryText: {
-    color: colors.text,
-  },
-  dangerText: {
-    color: colors.white,
-  },
-  ghostText: {
-    color: colors.accentStrong,
-  },
-});
+    base: {
+      minHeight: 44,
+      borderRadius: radius.md,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      borderWidth: 1,
+      borderColor: 'transparent',
+    },
+    primary: {
+      backgroundColor: colors.accent,
+      borderColor: colors.accent,
+    },
+    secondary: {
+      backgroundColor: colors.surfaceMuted,
+      borderColor: colors.borderStrong,
+    },
+    danger: {
+      backgroundColor: colors.danger,
+      borderColor: colors.danger,
+    },
+    ghost: {
+      backgroundColor: 'transparent',
+      borderColor: colors.border,
+    },
+    disabled: {
+      opacity: 0.48,
+    },
+    pressed: {
+      backgroundColor: colors.pressed,
+      transform: [{ scale: 0.99 }],
+    },
+    content: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.sm,
+    },
+    text: {
+      ...typography.caption,
+      fontWeight: '800',
+    },
+    primaryText: {
+      color: colors.white,
+    },
+    secondaryText: {
+      color: colors.text,
+    },
+    dangerText: {
+      color: colors.white,
+    },
+    ghostText: {
+      color: colors.text,
+    },
+  });

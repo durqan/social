@@ -5,10 +5,14 @@ import { AppButton } from '../../components/AppButton';
 import { EmailVerificationNotice } from '../../components/EmailVerificationNotice';
 import { Screen } from '../../components/Screen';
 import { useAuth } from '../../context/AuthContext';
-import { colors } from '../../theme/colors';
+import { useThemeColors } from '../../theme/ThemeContext';
+import type { ThemeColors } from '../../theme/themes';
+import { spacing, typography } from '../../theme/layout';
 
 export default function EmailVerificationNoticeScreen() {
   const { logout } = useAuth();
+  const colors = useThemeColors();
+  const styles = createStyles(colors);
   const [loggingOut, setLoggingOut] = useState(false);
 
   async function handleLogout() {
@@ -36,26 +40,24 @@ export default function EmailVerificationNoticeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    gap: 16,
-  },
-  header: {
-    gap: 8,
-  },
-  title: {
-    color: colors.text,
-    fontSize: 25,
-    lineHeight: 31,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
-  subtitle: {
-    color: colors.muted,
-    fontSize: 15,
-    lineHeight: 21,
-    textAlign: 'center',
-  },
-});
+const createStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    container: {
+      flexGrow: 1,
+      justifyContent: 'center',
+      gap: spacing.md,
+    },
+    header: {
+      gap: spacing.sm,
+    },
+    title: {
+      ...typography.h1,
+      color: colors.text,
+      textAlign: 'left',
+    },
+    subtitle: {
+      ...typography.body,
+      color: colors.muted,
+      textAlign: 'left',
+    },
+  });
