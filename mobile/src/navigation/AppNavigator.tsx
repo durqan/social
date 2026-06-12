@@ -8,6 +8,14 @@ import {
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { enableScreens } from 'react-native-screens';
+import {
+  Bell,
+  Home,
+  Menu,
+  MessageCircle,
+  UserRound,
+  UsersRound,
+} from 'lucide-react-native';
 
 import { useAppLifecycle } from '../context/AppLifecycleContext';
 import { useAuth } from '../context/AuthContext';
@@ -19,7 +27,7 @@ import {
 } from '../notifications/navigation';
 import { useThemeColors } from '../theme/ThemeContext';
 import type { ThemeColors } from '../theme/themes';
-import { radius, spacing } from '../theme/layout';
+import { spacing } from '../theme/layout';
 import LoginScreen from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
 import VerifyEmailScreen from '../screens/auth/VerifyEmailScreen';
@@ -158,33 +166,61 @@ function MainNavigator() {
 }
 
 
-function TabIcon({ icon, color }: { icon: string; color: string }) {
-  return <Text style={[stylesStatic.tabIcon, { color }]}>{icon}</Text>;
+type TabIconComponent = React.ComponentType<{
+  color?: string;
+  size?: number;
+  strokeWidth?: number;
+}>;
+
+function TabIcon({
+  Icon,
+  color,
+  focused,
+}: {
+  Icon: TabIconComponent;
+  color: string;
+  focused: boolean;
+}) {
+  const colors = useThemeColors();
+
+  return (
+    <View
+      style={[
+        stylesStatic.tabIconShell,
+        focused && {
+          backgroundColor: colors.selected,
+          borderColor: colors.accentBorder,
+        },
+      ]}
+    >
+      <Icon color={color} size={20} strokeWidth={focused ? 2.6 : 2.2} />
+    </View>
+  );
 }
 
 
-function HomeTabIcon({ color }: { color: string }) {
-  return <TabIcon color={color} icon="⌂" />;
+function HomeTabIcon({ color, focused }: { color: string; focused: boolean }) {
+  return <TabIcon color={color} focused={focused} Icon={Home} />;
 }
 
-function ProfileTabIcon({ color }: { color: string }) {
-  return <TabIcon color={color} icon="☺" />;
+function ProfileTabIcon({ color, focused }: { color: string; focused: boolean }) {
+  return <TabIcon color={color} focused={focused} Icon={UserRound} />;
 }
 
-function FriendsTabIcon({ color }: { color: string }) {
-  return <TabIcon color={color} icon="◇" />;
+function FriendsTabIcon({ color, focused }: { color: string; focused: boolean }) {
+  return <TabIcon color={color} focused={focused} Icon={UsersRound} />;
 }
 
-function ChatsTabIcon({ color }: { color: string }) {
-  return <TabIcon color={color} icon="✉" />;
+function ChatsTabIcon({ color, focused }: { color: string; focused: boolean }) {
+  return <TabIcon color={color} focused={focused} Icon={MessageCircle} />;
 }
 
-function NotificationsTabIcon({ color }: { color: string }) {
-  return <TabIcon color={color} icon="◔" />;
+function NotificationsTabIcon({ color, focused }: { color: string; focused: boolean }) {
+  return <TabIcon color={color} focused={focused} Icon={Bell} />;
 }
 
-function SettingsTabIcon({ color }: { color: string }) {
-  return <TabIcon color={color} icon="⚙" />;
+function SettingsTabIcon({ color, focused }: { color: string; focused: boolean }) {
+  return <TabIcon color={color} focused={focused} Icon={Menu} />;
 }
 
 function MainTabsNavigator() {
@@ -353,28 +389,29 @@ const createStyles = (colors: ThemeColors) =>
     right: spacing.md,
     bottom: spacing.sm,
     borderTopWidth: 0,
-    borderRadius: radius.xl,
+    borderRadius: 22,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
-    paddingTop: 7,
+    paddingTop: 8,
     shadowColor: colors.shadow,
     shadowOpacity: colors.isDark ? 0 : 0.2,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 8,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 6,
   },
   tabBarItem: {
     minWidth: 0,
     paddingHorizontal: 0,
   },
   tabBarIcon: {
-    marginTop: 2,
+    marginTop: 0,
   },
   tabBarLabel: {
-    fontSize: 9,
+    fontSize: 10,
     lineHeight: 12,
-    fontWeight: '800',
+    fontWeight: '700',
+    marginTop: 2,
   },
   loading: {
     flex: 1,
@@ -390,9 +427,13 @@ const createStyles = (colors: ThemeColors) =>
 });
 
 const stylesStatic = StyleSheet.create({
-  tabIcon: {
-    fontSize: 18,
-    lineHeight: 20,
-    fontWeight: '900',
+  tabIconShell: {
+    width: 34,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'transparent',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

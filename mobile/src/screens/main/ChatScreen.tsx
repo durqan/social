@@ -8,7 +8,6 @@ import {
   Modal,
   PermissionsAndroid,
   Platform,
-  PanResponder,
   Pressable,
   StyleSheet,
   Text,
@@ -269,7 +268,6 @@ export default function ChatScreen({ route }: Props) {
   const recordingMaxTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
-  const voicePressStartXRef = useRef(0);
   const playingVoiceUrlRef = useRef<string | null>(null);
   const previewPlayingRef = useRef<boolean>(false);
   const pendingVoiceRef = useRef<LocalVoiceMessage | null>(null);
@@ -306,7 +304,6 @@ export default function ChatScreen({ route }: Props) {
   const [recording, setRecording] = useState(false);
   const [recordingBusy, setRecordingBusy] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
-  const [isVoiceCancelling, setIsVoiceCancelling] = useState(false);
   const [playingVoiceUrl, setPlayingVoiceUrl] = useState<string | null>(null);
 
   const [pendingVoice, setPendingVoice] = useState<LocalVoiceMessage | null>(null);
@@ -410,51 +407,6 @@ export default function ChatScreen({ route }: Props) {
       }
     };
   }, [otherUserId]);
-
-  const voicePanResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: evt => {
-        if (recordingActiveRef.current || recordingBusyRef.current || sendingRef.current || editingMessageRef.current) {
-          return;
-        }
-        if (pendingImagesRef.current.length > 0) {
-          setError('Сначала отправьте или удалите выбранные изображения');
-          return;
-        }
-        if (pendingVoiceRef.current) {
-          setError('Сначала отправьте или удалите записанное голосовое сообщение');
-          return;
-        }
-        voicePressStartXRef.current = evt.nativeEvent.pageX || 0;
-        setIsVoiceCancelling(false);
-        Promise.resolve((startVoiceRecordingRef.current || startVoiceRecording)()).catch(() => undefined);
-      },
-      onPanResponderMove: (_evt, gestureState) => {
-        if (!recordingActiveRef.current) {
-          return;
-        }
-        const leftDist = Math.max(0, -gestureState.dx);
-        const cancelling = leftDist > 80;
-        if (cancelling !== isVoiceCancelling) {
-          setIsVoiceCancelling(cancelling);
-        }
-      },
-      onPanResponderRelease: (_evt, gestureState) => {
-        const leftDist = Math.max(0, -gestureState.dx);
-        const shouldCommit = leftDist <= 80; // commit to preview (not auto-send)
-        Promise.resolve((stopVoiceRecordingRef.current || stopVoiceRecording)(shouldCommit)).catch(() => undefined);
-        setIsVoiceCancelling(false);
-      },
-      onPanResponderTerminate: () => {
-        if (recordingActiveRef.current) {
-          Promise.resolve((stopVoiceRecordingRef.current || stopVoiceRecording)(false)).catch(() => undefined);
-        }
-        setIsVoiceCancelling(false);
-      },
-    }),
-  ).current;
 
   const scrollToLatestMessage = useCallback(() => {
     requestAnimationFrame(() => {
@@ -1170,6 +1122,7 @@ export default function ChatScreen({ route }: Props) {
       return;
     }
 
+    recordingBusyRef.current = true;
     setRecordingBusy(true);
     setError(null);
 
@@ -1203,18 +1156,18 @@ export default function ChatScreen({ route }: Props) {
     } catch (apiError) {
       Sound.removeRecordBackListener();
       setError(getApiErrorMessage(apiError));
-      setIsVoiceCancelling(false);
     } finally {
+      recordingBusyRef.current = false;
       setRecordingBusy(false);
     }
   }
 
   async function stopVoiceRecording(commitToPreview: boolean) {
-    if (!recordingActiveRef.current || recordingBusy) {
-      setIsVoiceCancelling(false);
+    if (!recordingActiveRef.current || recordingBusyRef.current) {
       return;
     }
 
+    recordingBusyRef.current = true;
     setRecordingBusy(true);
     clearRecordingLimitTimer();
     Sound.removeRecordBackListener();
@@ -1239,13 +1192,17 @@ export default function ChatScreen({ route }: Props) {
     recordingActiveRef.current = false;
     recordingStartedAtRef.current = 0;
     recordingSecondsRef.current = 0;
+    recordingBusyRef.current = false;
     setRecording(false);
     setRecordingSeconds(0);
     setRecordingBusy(false);
-    setIsVoiceCancelling(false);
 
-    if (!commitToPreview || durationSeconds < 1 || !path) {
-      // New UX: cancelled via slide or too short -> no preview, discard
+    if (!commitToPreview) {
+      return;
+    }
+
+    if (durationSeconds < 1 || !path) {
+      setError('Голосовое сообщение слишком короткое');
       return;
     }
 
@@ -2250,20 +2207,29 @@ export default function ChatScreen({ route }: Props) {
         <View style={[styles.recordingBar, themed.surfaceMutedBar]}>
           <View style={[styles.recordingDot, themed.accentBg]} />
           <Text style={[styles.recordingTime, themed.accentText]}>{formatDuration(recordingSeconds)}</Text>
-          <Text
-            style={[
-              styles.recordingText,
-              isVoiceCancelling ? styles.recordingTextCancelling : null,
-            ]}
-            numberOfLines={1}
-          >
-            {isVoiceCancelling ? 'Отпустите, чтобы отменить' : 'Отпустите, чтобы завершить запись'}
+          <Text style={styles.recordingText} numberOfLines={1}>
+            Идет запись
           </Text>
-          {!isVoiceCancelling && (
-            <Text style={styles.recordingHint} numberOfLines={1}>
-              Сдвиньте влево для отмены
-            </Text>
-          )}
+          <Pressable
+            accessibilityRole="button"
+            style={styles.recordingCancel}
+            disabled={recordingBusy}
+            onPress={() => {
+              stopVoiceRecording(false).catch(() => undefined);
+            }}
+          >
+            <Text style={styles.recordingCancelText}>Отмена</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            style={styles.recordingSend}
+            disabled={recordingBusy}
+            onPress={() => {
+              stopVoiceRecording(true).catch(() => undefined);
+            }}
+          >
+            <Text style={styles.recordingSendText}>Готово</Text>
+          </Pressable>
         </View>
       ) : null}
 
@@ -2389,7 +2355,7 @@ export default function ChatScreen({ route }: Props) {
             style={styles.composerToolButton}
           />
           <AppButton
-            title="Голос"
+            title={recording ? 'Готово' : 'Голос'}
             variant="secondary"
             disabled={
               Boolean(sending) ||
@@ -2399,12 +2365,17 @@ export default function ChatScreen({ route }: Props) {
               Boolean(pendingVoice) ||
               Boolean(pendingVideoNote)
             }
-            onPress={() => {}}
+            onPress={() => {
+              if (recordingActiveRef.current) {
+                stopVoiceRecording(true).catch(() => undefined);
+                return;
+              }
+              startVoiceRecording().catch(() => undefined);
+            }}
             style={[
               styles.composerToolButton,
               recording ? styles.voiceButtonRecording : undefined,
             ]}
-            {...voicePanResponder.panHandlers}
           />
           <AppButton
             title="Видео"
@@ -3749,15 +3720,6 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 13,
     lineHeight: 18,
-  },
-  recordingHint: {
-    color: colors.muted,
-    fontSize: 11,
-    marginLeft: 6,
-  },
-  recordingTextCancelling: {
-    color: colors.danger,
-    fontWeight: '700',
   },
   voiceButtonRecording: {
     backgroundColor: colors.danger,
