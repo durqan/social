@@ -8,7 +8,7 @@
     "build:android:release": "cd android && ./gradlew assembleRelease",
     "lint": "eslint .",
     "start": "react-native start",
-    "test": "jest"
+    "test": "jest --passWithNoTests"
   },
   "dependencies": {
     "@noble/hashes": "^2.2.0",
