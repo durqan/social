@@ -37,9 +37,11 @@ export function FriendRequestItem({ request, onAccept }: FriendRequestItemProps)
                     <span className="block truncate font-semibold text-gray-800">
                         {user.name || 'Пользователь'}
                     </span>
-                    <span className="block truncate text-sm text-gray-500">
-                        {user.email}
-                    </span>
+                    {user.email ? (
+                        <span className="block truncate text-sm text-gray-500">
+                            {user.email}
+                        </span>
+                    ) : null}
                 </span>
             </button>
 

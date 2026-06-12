@@ -40,7 +40,7 @@ const notificationText: Record<string, (actorName: string) => string> = {
 };
 
 function notificationTitle(notification: SocialNotification, actor?: User) {
-  const actorName = actor?.name || actor?.email || 'Пользователь';
+  const actorName = actor?.name || 'Пользователь';
   return notificationText[notification.type]?.(actorName) || 'Новое уведомление';
 }
 
@@ -136,7 +136,7 @@ export default function NotificationsScreen() {
           screen: 'Chat',
           params: {
             userId: notification.actor_id,
-            name: actor?.name || actor?.email || 'Пользователь',
+            name: actor?.name || 'Пользователь',
           },
         });
         return;
@@ -146,7 +146,7 @@ export default function NotificationsScreen() {
       case 'friend_accepted':
         navigation.navigate('UserProfile', {
           userId: notification.actor_id,
-          name: actor?.name || actor?.email,
+          name: actor?.name || 'Пользователь',
         });
         return;
       case 'post_liked':

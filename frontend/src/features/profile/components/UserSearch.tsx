@@ -78,9 +78,11 @@ export function UserSearch({ className = '' }: UserSearchProps) {
                                         <span className="block truncate font-semibold text-gray-800">
                                             {user.name || 'Пользователь'}
                                         </span>
-                                        <span className="block truncate text-xs text-gray-500">
-                                            {user.email}
-                                        </span>
+                                        {user.email ? (
+                                            <span className="block truncate text-xs text-gray-500">
+                                                {user.email}
+                                            </span>
+                                        ) : null}
                                     </span>
                                 </button>
                             );

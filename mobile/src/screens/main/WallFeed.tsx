@@ -348,7 +348,7 @@ export function WallFeed({
                 <PostAvatar user={post.user} colors={colors} />
                 <View style={styles.authorMeta}>
                   <Text style={styles.authorName} numberOfLines={1}>
-                    {post.user?.name || post.user?.email || 'Пользователь'}
+                    {post.user?.name || 'Пользователь'}
                   </Text>
                   <Text style={styles.postDate}>
                     {formatDateTime(post.created_at)}
@@ -465,9 +465,7 @@ export function WallFeed({
                       <PostAvatar user={comment.user} colors={colors} small />
                       <View style={styles.commentBody}>
                         <Text style={styles.commentAuthor}>
-                          {comment.user?.name ||
-                            comment.user?.email ||
-                            'Пользователь'}
+                          {comment.user?.name || 'Пользователь'}
                         </Text>
                         <Text style={styles.commentText}>{comment.content}</Text>
                         <View style={styles.commentFooter}>

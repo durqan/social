@@ -133,7 +133,7 @@ export default function FriendsScreen() {
 
     navigation.navigate('UserProfile', {
       userId: target.id,
-      name: target.name || target.email,
+      name: target.name || 'Пользователь',
     });
   }
 
@@ -146,7 +146,7 @@ export default function FriendsScreen() {
       screen: 'Chat',
       params: {
         userId: friend.id,
-        name: friend.name || friend.email,
+        name: friend.name || 'Пользователь',
       },
     });
   }
@@ -194,9 +194,7 @@ export default function FriendsScreen() {
                       <UserAvatar user={request.user} colors={colors} />
                       <View style={styles.userMeta}>
                         <Text style={styles.userName}>
-                          {request.user?.name ||
-                            request.user?.email ||
-                            'Пользователь'}
+                          {request.user?.name || 'Пользователь'}
                         </Text>
                         {request.user?.email ? (
                           <Text style={styles.userEmail}>
@@ -238,7 +236,7 @@ export default function FriendsScreen() {
             <Text style={styles.subsectionTitle}>Мои друзья</Text>
             <FlatList
               data={friends}
-              keyExtractor={item => String(item.id ?? item.email)}
+              keyExtractor={item => String(item.id)}
               scrollEnabled={false}
               ListEmptyComponent={
                 <EmptyState
@@ -254,9 +252,11 @@ export default function FriendsScreen() {
                   <UserAvatar user={item} colors={colors} />
                   <View style={styles.userMeta}>
                     <Text style={styles.userName}>
-                      {item.name || item.email}
+                      {item.name || 'Пользователь'}
                     </Text>
-                    <Text style={styles.userEmail}>{item.email}</Text>
+                    {item.email ? (
+                      <Text style={styles.userEmail}>{item.email}</Text>
+                    ) : null}
                   </View>
                   {item.id ? (
                     <AppButton

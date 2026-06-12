@@ -2,7 +2,7 @@ import type { Dispatch, SetStateAction } from 'react';
 
 export interface User {
     id?: number;
-    email: string;
+    email?: string;
     password?: string;
     name?: string;
     bio?: string;
@@ -23,7 +23,7 @@ export interface User {
 export interface MessageUser {
     id: number;
     name: string;
-    email: string;
+    email?: string;
     age?: number;
     bio?: string;
     avatar?: string | null;

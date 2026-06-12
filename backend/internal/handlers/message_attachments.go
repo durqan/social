@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"image"
@@ -222,17 +221,17 @@ func UploadMessageVoice(db *gorm.DB) gin.HandlerFunc {
 		}
 		defer src.Close()
 
-		data, err := io.ReadAll(src)
+		header, err := readUploadHeader(src)
 		if err != nil {
 			c.JSON(400, gin.H{"error": "failed to read voice"})
 			return
 		}
-		if int64(len(data)) > services.ChatVoiceMaxSize {
+		if file.Size > services.ChatVoiceMaxSize {
 			c.JSON(413, gin.H{"error": "voice is too large"})
 			return
 		}
 
-		contentType, ext, err := services.ValidateChatVoiceUpload(data, file.Header.Get("Content-Type"))
+		contentType, ext, err := services.ValidateChatVoiceUploadMagic(header, file.Header.Get("Content-Type"))
 		if err != nil {
 			c.JSON(415, gin.H{"error": err.Error()})
 			return
@@ -262,7 +261,7 @@ func UploadMessageVoice(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		if err := store.Upload(c.Request.Context(), key, bytes.NewReader(data), contentType); err != nil {
+		if err := store.Upload(c.Request.Context(), key, src, contentType); err != nil {
 			c.JSON(500, gin.H{"error": "failed to save voice"})
 			return
 		}
@@ -274,7 +273,7 @@ func UploadMessageVoice(db *gorm.DB) gin.HandlerFunc {
 			FileType:        "voice",
 			Duration:        durationSeconds,
 			DurationSeconds: durationSeconds,
-			Size:            int64(len(data)),
+			Size:            file.Size,
 		})
 	}
 }
@@ -354,17 +353,17 @@ func UploadMessageVideoNote(db *gorm.DB) gin.HandlerFunc {
 		}
 		defer src.Close()
 
-		data, err := io.ReadAll(src)
+		header, err := readUploadHeader(src)
 		if err != nil {
 			c.JSON(400, gin.H{"error": "failed to read video note"})
 			return
 		}
-		if int64(len(data)) > services.ChatVideoNoteMaxSize {
+		if file.Size > services.ChatVideoNoteMaxSize {
 			c.JSON(413, gin.H{"error": "video note is too large"})
 			return
 		}
 
-		contentType, ext, err := services.ValidateChatVideoNoteUpload(data, file.Header.Get("Content-Type"))
+		contentType, ext, err := services.ValidateChatVideoNoteUploadMagic(header, file.Header.Get("Content-Type"))
 		if err != nil {
 			c.JSON(415, gin.H{"error": err.Error()})
 			return
@@ -394,7 +393,7 @@ func UploadMessageVideoNote(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		if err := store.Upload(c.Request.Context(), key, bytes.NewReader(data), contentType); err != nil {
+		if err := store.Upload(c.Request.Context(), key, src, contentType); err != nil {
 			c.JSON(500, gin.H{"error": "failed to save video note"})
 			return
 		}
@@ -406,9 +405,21 @@ func UploadMessageVideoNote(db *gorm.DB) gin.HandlerFunc {
 			FileType:        "video_note",
 			Duration:        durationSeconds,
 			DurationSeconds: durationSeconds,
-			Size:            int64(len(data)),
+			Size:            file.Size,
 		})
 	}
+}
+
+func readUploadHeader(src multipart.File) ([]byte, error) {
+	header := make([]byte, 512)
+	n, err := src.Read(header)
+	if err != nil && err != io.EOF {
+		return nil, err
+	}
+	if _, err := src.Seek(0, 0); err != nil {
+		return nil, err
+	}
+	return header[:n], nil
 }
 
 func voiceDurationSecondsFromForm(c *gin.Context) (int, bool) {

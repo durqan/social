@@ -42,6 +42,7 @@ func main() {
 	}
 
 	services.StartUnverifiedUserCleanup(database)
+	services.StartAbandonedUploadCleanup(database)
 
 	router := server.NewRouter(database, cfg)
 

@@ -7,6 +7,7 @@ import (
 	"image"
 	_ "image/jpeg"
 	_ "image/png"
+	"io"
 	"math"
 	"mime"
 	"os"
@@ -105,12 +106,16 @@ func ChatVoiceExtension(contentType string) (string, string, bool) {
 }
 
 func ValidateChatVoiceUpload(data []byte, declaredContentType string) (string, string, error) {
+	return ValidateChatVoiceUploadMagic(data, declaredContentType)
+}
+
+func ValidateChatVoiceUploadMagic(header []byte, declaredContentType string) (string, string, error) {
 	declaredExtension, canonicalContentType, ok := ChatVoiceExtension(declaredContentType)
 	if !ok {
 		return "", "", errors.New("voice must be webm or ogg")
 	}
 
-	actualExtension, ok := chatVoiceExtensionFromMagic(data)
+	actualExtension, ok := chatVoiceExtensionFromMagic(header)
 	if !ok {
 		return "", "", errors.New("invalid voice")
 	}
@@ -135,12 +140,16 @@ func ChatVideoNoteExtension(contentType string) (string, string, bool) {
 }
 
 func ValidateChatVideoNoteUpload(data []byte, declaredContentType string) (string, string, error) {
+	return ValidateChatVideoNoteUploadMagic(data, declaredContentType)
+}
+
+func ValidateChatVideoNoteUploadMagic(header []byte, declaredContentType string) (string, string, error) {
 	declaredExtension, canonicalContentType, ok := ChatVideoNoteExtension(declaredContentType)
 	if !ok {
 		return "", "", errors.New("video note must be webm or mp4")
 	}
 
-	actualExtension, ok := chatVideoNoteExtensionFromMagic(data)
+	actualExtension, ok := chatVideoNoteExtensionFromMagic(header)
 	if !ok {
 		return "", "", errors.New("invalid video note")
 	}
@@ -430,10 +439,10 @@ func chatUploadOwnerKey(filename string) string {
 }
 
 func WithPrivateAttachmentURLs(message models.Message) models.Message {
-	message.From = dto.WithResolvedAvatar(message.From)
-	message.To = dto.WithResolvedAvatar(message.To)
+	message.From = dto.ToPublicUser(message.From)
+	message.To = dto.ToPublicUser(message.To)
 	if message.ForwardedFromUser != nil {
-		user := dto.WithResolvedAvatar(*message.ForwardedFromUser)
+		user := dto.ToPublicUser(*message.ForwardedFromUser)
 		message.ForwardedFromUser = &user
 	}
 	for i := range message.Attachments {
@@ -647,11 +656,11 @@ func voiceAttachmentStorageMetadata(key string, item MessageAttachmentInput) (st
 			return "", 0, 0, errors.New("voice is too large")
 		}
 
-		data, err := os.ReadFile(filePath)
+		header, err := readFileHeader(filePath)
 		if err != nil {
 			return "", 0, 0, errors.New("failed to read voice")
 		}
-		if !chatVoiceMagicMatchesExtension(data, chatVoiceExtensionFromFilename(cleanKey)) {
+		if !chatVoiceMagicMatchesExtension(header, chatVoiceExtensionFromFilename(cleanKey)) {
 			return "", 0, 0, errors.New("invalid voice")
 		}
 
@@ -694,11 +703,11 @@ func videoNoteAttachmentStorageMetadata(key string, item MessageAttachmentInput)
 			return "", 0, 0, errors.New("video note is too large")
 		}
 
-		data, err := os.ReadFile(filePath)
+		header, err := readFileHeader(filePath)
 		if err != nil {
 			return "", 0, 0, errors.New("failed to read video note")
 		}
-		if !chatVideoNoteMagicMatchesExtension(data, chatVideoNoteExtensionFromFilename(cleanKey)) {
+		if !chatVideoNoteMagicMatchesExtension(header, chatVideoNoteExtensionFromFilename(cleanKey)) {
 			return "", 0, 0, errors.New("invalid video note")
 		}
 
@@ -755,6 +764,21 @@ func chatVoiceExtensionFromFilename(filename string) string {
 	default:
 		return ""
 	}
+}
+
+func readFileHeader(filePath string) ([]byte, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	header := make([]byte, 512)
+	n, err := file.Read(header)
+	if err != nil && err != io.EOF {
+		return nil, err
+	}
+	return header[:n], nil
 }
 
 func chatVideoNoteExtensionFromFilename(filename string) string {

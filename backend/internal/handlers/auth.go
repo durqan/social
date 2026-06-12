@@ -47,7 +47,7 @@ func Register(db *gorm.DB) gin.HandlerFunc {
 
 		c.JSON(201, gin.H{
 			"message": "registration successful",
-			"user":    dto.ToUserResponse(user),
+			"user":    dto.ToPrivateUserResponse(user),
 		})
 	}
 }
@@ -79,7 +79,7 @@ func Login(db *gorm.DB) gin.HandlerFunc {
 
 		c.JSON(200, gin.H{
 			"message": "login successful",
-			"user":    dto.ToUserResponse(user),
+			"user":    dto.ToPrivateUserResponse(user),
 		})
 	}
 }

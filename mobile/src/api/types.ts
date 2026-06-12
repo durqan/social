@@ -1,6 +1,6 @@
 export interface User {
   id?: number;
-  email: string;
+  email?: string;
   name?: string;
   age?: number;
   bio?: string;
@@ -142,7 +142,7 @@ export interface MessageAttachment {
 export interface MessageUser {
   id: number;
   name: string;
-  email: string;
+  email?: string;
   age?: number;
   bio?: string;
   avatar?: string | null;

@@ -8,10 +8,9 @@ import (
 	"tester/internal/models"
 )
 
-type UserResponse struct {
+type PublicUserResponse struct {
 	ID              uint       `json:"id"`
 	Name            string     `json:"name"`
-	Email           string     `json:"email"`
 	Age             int        `json:"age"`
 	Bio             string     `json:"bio"`
 	Avatar          string     `json:"avatar"`
@@ -21,6 +20,11 @@ type UserResponse struct {
 	IsEmailVerified bool       `json:"is_email_verified"`
 	CreatedAt       time.Time  `json:"created_at"`
 	LastSeenAt      *time.Time `json:"last_seen_at"`
+}
+
+type PrivateUserResponse struct {
+	PublicUserResponse
+	Email string `json:"email"`
 }
 
 type UpdateUserRequest struct {
@@ -39,12 +43,11 @@ type ChangePasswordRequest struct {
 	EncryptedMasterKey *string `json:"encrypted_master_key"`
 }
 
-func ToUserResponse(user models.User) UserResponse {
+func ToPublicUserResponse(user models.User) PublicUserResponse {
 	user = WithResolvedAvatar(user)
-	return UserResponse{
+	return PublicUserResponse{
 		ID:              user.ID,
 		Name:            user.Name,
-		Email:           user.Email,
 		Age:             user.Age,
 		Bio:             user.Bio,
 		Avatar:          user.Avatar,
@@ -57,16 +60,29 @@ func ToUserResponse(user models.User) UserResponse {
 	}
 }
 
-func ToUserResponses(users []models.User) []UserResponse {
-	responses := make([]UserResponse, 0, len(users))
+func ToPublicUserResponses(users []models.User) []PublicUserResponse {
+	responses := make([]PublicUserResponse, 0, len(users))
 	for _, user := range users {
-		responses = append(responses, ToUserResponse(user))
+		responses = append(responses, ToPublicUserResponse(user))
 	}
 	return responses
 }
 
+func ToPrivateUserResponse(user models.User) PrivateUserResponse {
+	return PrivateUserResponse{
+		PublicUserResponse: ToPublicUserResponse(user),
+		Email:              user.Email,
+	}
+}
+
 func WithResolvedAvatar(user models.User) models.User {
 	user.Avatar = AvatarEndpoint(user.ID, user.Avatar)
+	return user
+}
+
+func ToPublicUser(user models.User) models.User {
+	user = WithResolvedAvatar(user)
+	user.Email = ""
 	return user
 }
 

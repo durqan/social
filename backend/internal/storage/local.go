@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type LocalStorage struct {
@@ -78,4 +79,56 @@ func (s *LocalStorage) Path(key string) (string, bool) {
 		return "", false
 	}
 	return filepath.Join(s.root, filepath.FromSlash(cleanedKey)), true
+}
+
+func (s *LocalStorage) ListPrefix(_ context.Context, prefix string) ([]ObjectInfo, error) {
+	cleanPrefix, err := cleanKey(prefix)
+	if err != nil {
+		return nil, err
+	}
+	if strings.HasSuffix(strings.TrimSpace(prefix), "/") {
+		cleanPrefix += "/"
+	}
+
+	root := filepath.Join(s.root, filepath.FromSlash(cleanPrefix))
+	var objects []ObjectInfo
+	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			if os.IsNotExist(walkErr) {
+				return nil
+			}
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(s.root, path)
+		if err != nil {
+			return err
+		}
+		objects = append(objects, ObjectInfo{
+			Key:          filepath.ToSlash(rel),
+			LastModified: info.ModTime().UTC(),
+			Size:         info.Size(),
+		})
+		return nil
+	})
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range objects {
+		if objects[i].LastModified.IsZero() {
+			objects[i].LastModified = time.Now().UTC()
+		}
+	}
+	return objects, nil
 }

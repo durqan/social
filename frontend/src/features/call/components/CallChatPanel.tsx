@@ -133,7 +133,7 @@ export function CallChatPanel({
                 from: {
                     id: currentUser.id || 0,
                     name: currentUser.name || '',
-                    email: currentUser.email,
+                    email: currentUser.email || '',
                 },
                 attachments,
             };

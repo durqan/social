@@ -407,7 +407,7 @@ func pinnedMessageResponse(pin *models.PinnedMessage) interface{} {
 		"pinned_by_id":    pin.PinnedByID,
 		"created_at":      pin.CreatedAt,
 		"message":         services.WithPrivateAttachmentURLs(pin.Message),
-		"pinned_by":       pin.PinnedBy,
+		"pinned_by":       dto.ToPublicUser(pin.PinnedBy),
 	}
 }
 

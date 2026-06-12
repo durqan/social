@@ -19,6 +19,7 @@ func Migrate(database *gorm.DB) error {
 		&models.EncryptedKeyBackup{},
 		&models.ConversationPin{},
 		&models.PinnedMessage{},
+		&models.CallLog{},
 		&models.Friendship{},
 		&models.EmailVerification{},
 	); err != nil {

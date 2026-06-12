@@ -32,6 +32,9 @@ func handleWebSocketMessage(ctx context.Context, userID uint, wsMsg WSMessage) {
 	case "message:read":
 		handleWebSocketReadReceipt(ctx, userID, wsMsg.Payload)
 	case "call:offer", "call:answer", "call:ice", "call:end", "call:reject":
+		if _, ok := authorizeRealtimePeerEvent(userID, wsMsg.Payload, wsMsg.Type); !ok {
+			return
+		}
 		forwardCallEvent(ctx, wsMsg.Type, userID, wsMsg.Payload)
 	default:
 		log.Println("Unknown websocket event:", wsMsg.Type)
@@ -174,16 +177,8 @@ func sendWebSocketError(ctx context.Context, userID uint, message string) {
 }
 
 func handleWebSocketTyping(ctx context.Context, userID uint, eventType string, rawPayload json.RawMessage) {
-	var payload struct {
-		ToID uint `json:"to_id"`
-	}
-
-	if err := json.Unmarshal(rawPayload, &payload); err != nil {
-		log.Println("Invalid typing payload:", err)
-		return
-	}
-
-	if payload.ToID == 0 {
+	toID, ok := authorizeRealtimePeerEvent(userID, rawPayload, eventType)
+	if !ok {
 		return
 	}
 
@@ -194,7 +189,7 @@ func handleWebSocketTyping(ctx context.Context, userID uint, eventType string, r
 		},
 	})
 
-	for _, toConn := range clients.getAll(payload.ToID) {
+	for _, toConn := range clients.getAll(toID) {
 		if err := toConn.write(ctx, typingBytes); err != nil {
 			log.Println("Failed to send typing event:", err)
 		}
@@ -411,6 +406,9 @@ func forwardCallEvent(ctx context.Context, eventType string, fromID uint, payloa
 		return
 	}
 
+	callType := callTypeFromPayload(callPayload)
+	recordCallEvent(eventType, fromID, toID, callID, callType)
+
 	// === INCOMING CALL WEB PUSH (only for offer) ===
 	// All other signalling events (call:answer, call:ice, call:end, call:reject) MUST NOT
 	// create Notification records or trigger pushes. This is enforced by the if below.
@@ -463,5 +461,45 @@ func forwardCallEvent(ctx context.Context, eventType string, fromID uint, payloa
 		if err := toConn.write(ctx, eventBytes); err != nil {
 			log.Println("Failed to forward call event:", err)
 		}
+	}
+}
+
+func callTypeFromPayload(callPayload map[string]json.RawMessage) string {
+	raw, ok := callPayload["call_type"]
+	if !ok {
+		return models.CallTypeAudio
+	}
+
+	var callType string
+	if err := json.Unmarshal(raw, &callType); err != nil {
+		return models.CallTypeAudio
+	}
+	return repository.NormalizeCallType(callType)
+}
+
+func recordCallEvent(eventType string, fromID uint, toID uint, callID string, callType string) {
+	if dbInstance == nil {
+		return
+	}
+
+	// TODO: mark stale ringing calls as missed with a bounded background sweep.
+	// A disconnect alone is not reliable enough here because users may reconnect,
+	// have multiple devices, or keep a tab alive while the callee never answers.
+	var err error
+	switch eventType {
+	case "call:offer":
+		_, err = repository.CreateCallOffer(dbInstance, fromID, toID, callID, callType, nil)
+	case "call:answer":
+		err = repository.MarkCallAnswered(dbInstance, fromID, toID, callID)
+	case "call:reject":
+		err = repository.MarkCallDeclined(dbInstance, fromID, toID, callID)
+	case "call:end":
+		err = repository.MarkCallEnded(dbInstance, fromID, toID, callID)
+	case "call:ice":
+		return
+	}
+
+	if err != nil {
+		log.Printf("failed to record %s call event: call_id=%s from_id=%d to_id=%d error=%v", eventType, callID, fromID, toID, err)
 	}
 }

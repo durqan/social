@@ -5,6 +5,7 @@ import (
 	"tester/internal/dto"
 	"tester/internal/models"
 	"tester/internal/repository"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -62,7 +63,7 @@ func GetFriendsList(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		c.JSON(200, dto.ToUserResponses(friends))
+		c.JSON(200, dto.ToPublicUserResponses(friends))
 	}
 }
 
@@ -79,13 +80,36 @@ func GetFriendRequests(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		for i := range requests {
-			requests[i].User = dto.WithResolvedAvatar(requests[i].User)
-			requests[i].Friend = dto.WithResolvedAvatar(requests[i].Friend)
-		}
-
-		c.JSON(200, requests)
+		c.JSON(200, friendRequestResponses(requests))
 	}
+}
+
+type friendRequestResponse struct {
+	ID        uint                   `json:"id"`
+	UserID    uint                   `json:"user_id"`
+	FriendID  uint                   `json:"friend_id"`
+	Status    string                 `json:"status"`
+	CreatedAt time.Time              `json:"created_at"`
+	UpdatedAt time.Time              `json:"updated_at"`
+	User      dto.PublicUserResponse `json:"user"`
+	Friend    dto.PublicUserResponse `json:"friend"`
+}
+
+func friendRequestResponses(requests []models.Friendship) []friendRequestResponse {
+	responses := make([]friendRequestResponse, 0, len(requests))
+	for _, request := range requests {
+		responses = append(responses, friendRequestResponse{
+			ID:        request.ID,
+			UserID:    request.UserID,
+			FriendID:  request.FriendID,
+			Status:    request.Status,
+			CreatedAt: request.CreatedAt,
+			UpdatedAt: request.UpdatedAt,
+			User:      dto.ToPublicUserResponse(request.User),
+			Friend:    dto.ToPublicUserResponse(request.Friend),
+		})
+	}
+	return responses
 }
 
 func AcceptFriendRequest(db *gorm.DB) gin.HandlerFunc {

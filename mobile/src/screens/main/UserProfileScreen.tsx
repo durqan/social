@@ -119,7 +119,7 @@ export default function UserProfileScreen({ navigation, route }: Props) {
         screen: 'Chat',
         params: {
           userId: profile.id,
-          name: profile.name || profile.email,
+          name: profile.name || 'Пользователь',
         },
       },
     });
@@ -173,12 +173,12 @@ export default function UserProfileScreen({ navigation, route }: Props) {
             />
           ) : (
             <Text style={styles.avatarText}>
-              {(profile.name || profile.email || '?').slice(0, 1).toUpperCase()}
+              {(profile.name || '?').slice(0, 1).toUpperCase()}
             </Text>
           )}
         </View>
         <Text style={styles.name}>{profile.name || 'Без имени'}</Text>
-        <Text style={styles.email}>{profile.email}</Text>
+        {profile.email ? <Text style={styles.email}>{profile.email}</Text> : null}
       </View>
 
       <ErrorBanner message={error} />

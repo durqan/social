@@ -73,7 +73,7 @@ export default function HomeScreen() {
 
     navigation.navigate('UserProfile', {
       userId: target.id,
-      name: target.name || target.email,
+      name: target.name || 'Пользователь',
     });
   }
 

@@ -120,9 +120,11 @@ export function FriendItem({friend, active, onOpenMenu}: FriendItemProps) {
                 <span className="block truncate font-semibold text-gray-800">
                     {friend.name || 'Пользователь'}
                 </span>
-                <span className="block truncate text-sm text-gray-500">
-                    {friend.email}
-                </span>
+                {friend.email ? (
+                    <span className="block truncate text-sm text-gray-500">
+                        {friend.email}
+                    </span>
+                ) : null}
                 {statusText && (
                     <span className={online ? 'block text-sm text-green-500' : 'block text-sm text-gray-400'}>
                         {statusText}

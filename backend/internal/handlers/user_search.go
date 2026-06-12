@@ -22,6 +22,6 @@ func SearchUsersByNameOrEmail(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		c.JSON(200, dto.ToUserResponses(users))
+		c.JSON(200, dto.ToPublicUserResponses(users))
 	}
 }

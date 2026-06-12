@@ -25,6 +25,16 @@ type SignedURLer interface {
 	SignedURL(ctx context.Context, key string, ttl time.Duration) (string, error)
 }
 
+type ObjectInfo struct {
+	Key          string
+	LastModified time.Time
+	Size         int64
+}
+
+type ObjectLister interface {
+	ListPrefix(ctx context.Context, prefix string) ([]ObjectInfo, error)
+}
+
 type LocalPathProvider interface {
 	Path(key string) (string, bool)
 }

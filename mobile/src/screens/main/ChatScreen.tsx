@@ -161,7 +161,7 @@ function messageAuthorName(message?: Message | null) {
   if (!message) {
     return 'Сообщение';
   }
-  return message.from?.name || message.from?.email || 'Пользователь';
+  return message.from?.name || 'Пользователь';
 }
 
 function messagePreviewText(message?: Message | null) {
@@ -3060,7 +3060,7 @@ function ForwardMessageModal({
                     onPress={() => onToggleRecipient(friendId)}
                   >
                     <Text style={[styles.forwardRecipientName, themed.text]} numberOfLines={1}>
-                      {friend.name || friend.email}
+                      {friend.name || 'Пользователь'}
                     </Text>
                     <Text style={[
                       styles.forwardCheck,

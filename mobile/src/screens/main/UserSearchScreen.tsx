@@ -126,7 +126,7 @@ export default function UserSearchScreen({ navigation }: Props) {
 
     navigation.navigate('UserProfile', {
       userId: target.id,
-      name: target.name || target.email,
+      name: target.name || 'Пользователь',
     });
   }
 
@@ -141,7 +141,7 @@ export default function UserSearchScreen({ navigation }: Props) {
         screen: 'Chat',
         params: {
           userId: target.id,
-          name: target.name || target.email,
+          name: target.name || 'Пользователь',
         },
       },
     });
@@ -165,7 +165,7 @@ export default function UserSearchScreen({ navigation }: Props) {
 
       <FlatList
         data={results}
-        keyExtractor={item => String(item.id ?? item.email)}
+        keyExtractor={item => String(item.id)}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={[
           styles.listContent,
@@ -234,17 +234,19 @@ function SearchResultRow({
           />
         ) : (
           <Text style={styles.avatarText}>
-            {(user.name || user.email || '?').slice(0, 1).toUpperCase()}
+            {(user.name || '?').slice(0, 1).toUpperCase()}
           </Text>
         )}
       </View>
       <View style={styles.meta}>
         <Text style={styles.name} numberOfLines={1}>
-          {user.name || user.email}
+          {user.name || 'Пользователь'}
         </Text>
-        <Text style={styles.email} numberOfLines={1}>
-          {user.email}
-        </Text>
+        {user.email ? (
+          <Text style={styles.email} numberOfLines={1}>
+            {user.email}
+          </Text>
+        ) : null}
       </View>
       <View style={styles.actions}>
         {status === 'accepted' ? (

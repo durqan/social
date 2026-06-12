@@ -41,8 +41,41 @@ type EncryptedForwardInput struct {
 	Attachments []models.MessageAttachment
 }
 
+type ConversationE2EEPolicy struct {
+	SenderEnabled    bool
+	RecipientEnabled bool
+	Required         bool
+	Ready            bool
+}
+
 func (input MessageEncryptionInput) Enabled() bool {
 	return input.Version > 0 || strings.TrimSpace(input.Ciphertext) != "" || strings.TrimSpace(input.Nonce) != ""
+}
+
+func E2EEPolicyForConversation(db *gorm.DB, senderID uint, recipientID uint) (ConversationE2EEPolicy, error) {
+	senderStatus, err := E2EEPublicStatusForUser(db, senderID)
+	if err != nil {
+		return ConversationE2EEPolicy{}, err
+	}
+	recipientStatus, err := E2EEPublicStatusForUser(db, recipientID)
+	if err != nil {
+		return ConversationE2EEPolicy{}, err
+	}
+
+	// Product policy: E2EE is conversation-wide for 1:1 chats.
+	// If either participant has enabled E2EE, the backend must not accept new
+	// plaintext message bodies or plaintext attachments for that pair. A new
+	// encrypted payload is accepted only when both participants are E2EE-enabled.
+	// TODO: multi-device/prekey support should replace this backup/public-key
+	// readiness check with per-device recipient key availability.
+	required := senderStatus.Enabled || recipientStatus.Enabled
+	ready := senderStatus.Enabled && recipientStatus.Enabled
+	return ConversationE2EEPolicy{
+		SenderEnabled:    senderStatus.Enabled,
+		RecipientEnabled: recipientStatus.Enabled,
+		Required:         required,
+		Ready:            ready,
+	}, nil
 }
 
 func SendMessage(db *gorm.DB, fromID, toID uint, content string, attachments []models.MessageAttachment, replyToMessageID *uint, encryption MessageEncryptionInput) (models.Message, error) {
@@ -58,14 +91,11 @@ func SendMessage(db *gorm.DB, fromID, toID uint, content string, attachments []m
 	if status != "accepted" {
 		return models.Message{}, ErrMessageNotFriends
 	}
-	e2eeStatus, err := E2EEPublicStatusForUser(db, fromID)
+	e2eePolicy, err := E2EEPolicyForConversation(db, fromID, toID)
 	if err != nil {
 		return models.Message{}, err
 	}
-	if e2eeStatus.Enabled && !normalizedEncryption.Enabled() && normalizedContent != "" {
-		return models.Message{}, ErrMessageInvalidEncryption
-	}
-	if e2eeStatus.Enabled && attachmentsHavePlaintext(attachments) {
+	if err := enforceE2EEMessagePolicy(e2eePolicy, normalizedContent, normalizedEncryption, attachments); err != nil {
 		return models.Message{}, ErrMessageInvalidEncryption
 	}
 
@@ -88,19 +118,26 @@ func SendMessage(db *gorm.DB, fromID, toID uint, content string, attachments []m
 		ReplyToMessageID:  replyToMessageID,
 	}
 
-	if err := repository.CreateMessage(db, &message); err != nil {
-		return models.Message{}, err
-	}
+	err = db.Transaction(func(tx *gorm.DB) error {
+		if err := repository.CreateMessage(tx, &message); err != nil {
+			return err
+		}
 
-	for i := range attachments {
-		attachments[i].MessageID = message.ID
-	}
+		for i := range attachments {
+			attachments[i].MessageID = message.ID
+		}
 
-	if err := repository.CreateMessageAttachments(db, attachments); err != nil {
-		return models.Message{}, err
-	}
+		if err := repository.CreateMessageAttachments(tx, attachments); err != nil {
+			return err
+		}
 
-	message, err = LoadMessage(db, message.ID)
+		fullMessage, err := LoadMessage(tx, message.ID)
+		if err != nil {
+			return err
+		}
+		message = fullMessage
+		return nil
+	})
 	if err != nil {
 		return models.Message{}, err
 	}
@@ -137,6 +174,13 @@ func ForwardMessage(db *gorm.DB, userID uint, sourceMessageID uint, toIDs []uint
 			}
 			if status != "accepted" {
 				return ErrMessageNotFriends
+			}
+			e2eePolicy, err := E2EEPolicyForConversation(tx, userID, toID)
+			if err != nil {
+				return err
+			}
+			if err := enforceE2EEMessagePolicy(e2eePolicy, source.Content, MessageEncryptionInput{}, source.Attachments); err != nil {
+				return ErrMessageInvalidEncryption
 			}
 
 			var replyToMessageID *uint
@@ -244,6 +288,13 @@ func ForwardEncryptedMessage(db *gorm.DB, userID uint, sourceMessageID uint, inp
 			}
 			if status != "accepted" {
 				return ErrMessageNotFriends
+			}
+			e2eePolicy, err := E2EEPolicyForConversation(tx, userID, toID)
+			if err != nil {
+				return err
+			}
+			if err := enforceE2EEMessagePolicy(e2eePolicy, "", normalizedEncryption, input.Attachments); err != nil {
+				return err
 			}
 
 			sourceID := source.ID
@@ -425,14 +476,12 @@ func UpdateMessage(db *gorm.DB, userID, messageID uint, content string, encrypti
 	if message.EncryptionVersion > 0 && !normalizedEncryption.Enabled() {
 		return models.Message{}, ErrMessageInvalidEncryption
 	}
-	if !normalizedEncryption.Enabled() && normalizedContent != "" {
-		e2eeStatus, err := E2EEPublicStatusForUser(db, userID)
-		if err != nil {
-			return models.Message{}, err
-		}
-		if e2eeStatus.Enabled {
-			return models.Message{}, ErrMessageInvalidEncryption
-		}
+	e2eePolicy, err := E2EEPolicyForConversation(db, message.FromID, message.ToID)
+	if err != nil {
+		return models.Message{}, err
+	}
+	if err := enforceE2EEMessagePolicy(e2eePolicy, normalizedContent, normalizedEncryption, nil); err != nil {
+		return models.Message{}, ErrMessageInvalidEncryption
 	}
 
 	message.Content = normalizedContent
@@ -472,6 +521,20 @@ func normalizeMessageContent(content string, attachmentCount int, encryption Mes
 		return "", MessageEncryptionInput{}, ErrMessageContentTooLong
 	}
 	return content, MessageEncryptionInput{}, nil
+}
+
+func enforceE2EEMessagePolicy(policy ConversationE2EEPolicy, content string, encryption MessageEncryptionInput, attachments []models.MessageAttachment) error {
+	hasPlaintextContent := strings.TrimSpace(content) != ""
+	hasPlaintextAttachments := attachmentsHavePlaintext(attachments)
+	hasEncryptedPayload := encryption.Enabled() || messageAttachmentsHaveEncryption(attachments)
+
+	if policy.Required && (hasPlaintextContent || hasPlaintextAttachments) {
+		return ErrMessageInvalidEncryption
+	}
+	if hasEncryptedPayload && !policy.Ready {
+		return ErrMessageInvalidEncryption
+	}
+	return nil
 }
 
 func DeleteMessageForUser(db *gorm.DB, userID, messageID uint) error {
@@ -587,7 +650,11 @@ func messageHasEncryptedAttachments(message *models.Message) bool {
 	if message == nil {
 		return false
 	}
-	for _, attachment := range message.Attachments {
+	return messageAttachmentsHaveEncryption(message.Attachments)
+}
+
+func messageAttachmentsHaveEncryption(attachments []models.MessageAttachment) bool {
+	for _, attachment := range attachments {
 		if attachment.EncryptionVersion > 0 {
 			return true
 		}

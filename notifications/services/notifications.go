@@ -1,6 +1,8 @@
 package services
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
@@ -30,15 +32,34 @@ func (s *Service) CreateNotification(req *dto.CreateNotificationReq) error {
 		EntityID:       req.EntityID,
 		CallID:         req.CallID,
 		ConversationID: req.ConversationID,
+		DedupeKey:      DedupeKey(*req),
 	}
 
-	if err := s.repo.Create(note); err != nil {
+	created, err := s.repo.CreateOnce(note)
+	if err != nil {
 		return err
+	}
+	if !created {
+		return nil
 	}
 
 	s.hub.SendToUser(note.RecipientID, *note)
 	go s.sendPushNotifications(*note)
 	return nil
+}
+
+func DedupeKey(req dto.CreateNotificationReq) string {
+	raw := fmt.Sprintf(
+		"recipient:%d|actor:%d|type:%s|entity:%d|call:%s|conversation:%d",
+		req.RecipientID,
+		req.ActorID,
+		req.Type,
+		req.EntityID,
+		strings.TrimSpace(req.CallID),
+		req.ConversationID,
+	)
+	sum := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(sum[:])
 }
 
 func (s *Service) SavePushSubscription(req *dto.PushSubscriptionReq) error {

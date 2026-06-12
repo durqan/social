@@ -1416,7 +1416,7 @@ function Chat() {
                                             scale={friend.avatarScale}
                                         />
                                         <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-800">
-                                            {friend.name || friend.email}
+                                            {friend.name || 'Пользователь'}
                                         </span>
                                     </label>
                                 ))

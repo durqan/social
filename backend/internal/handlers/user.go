@@ -17,7 +17,7 @@ func GetUsers(db *gorm.DB) gin.HandlerFunc {
 			c.JSON(500, gin.H{"error": "failed to fetch users"})
 			return
 		}
-		c.JSON(200, dto.ToUserResponses(users))
+		c.JSON(200, dto.ToPublicUserResponses(users))
 	}
 }
 
@@ -38,7 +38,13 @@ func GetUser(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		c.JSON(200, dto.ToUserResponse(user))
+		currentUserID, _ := authenticatedUserID(c)
+		if currentUserID == id {
+			c.JSON(200, dto.ToPrivateUserResponse(user))
+			return
+		}
+
+		c.JSON(200, dto.ToPublicUserResponse(user))
 	}
 }
 
@@ -59,7 +65,7 @@ func GetProfile(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		c.JSON(200, dto.ToUserResponse(user))
+		c.JSON(200, dto.ToPrivateUserResponse(user))
 	}
 }
 
@@ -167,6 +173,6 @@ func PatchUser(db *gorm.DB) gin.HandlerFunc {
 			c.JSON(500, gin.H{"error": "failed to fetch updated user"})
 			return
 		}
-		c.JSON(200, dto.ToUserResponse(user))
+		c.JSON(200, dto.ToPrivateUserResponse(user))
 	}
 }

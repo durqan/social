@@ -21,6 +21,17 @@ func (r *Repository) Create(notification *models.Notification) error {
 	return r.db.Create(notification).Error
 }
 
+func (r *Repository) CreateOnce(notification *models.Notification) (bool, error) {
+	result := r.db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "dedupe_key"}},
+		DoNothing: true,
+	}).Create(notification)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
+}
+
 func (r *Repository) FindByRecipientID(userID uint) ([]models.Notification, error) {
 	var notifications []models.Notification
 

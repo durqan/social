@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"context"
 	"encoding/json"
 
 	"github.com/gin-gonic/gin"
@@ -23,9 +22,6 @@ func broadcastPresence(
 	recipients := clients.all()
 
 	for _, client := range recipients {
-		client.write(
-			context.Background(),
-			payload,
-		)
+		_ = client.write(nil, payload)
 	}
 }

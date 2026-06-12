@@ -26,6 +26,8 @@ var onlineUsers = struct {
 var dbInstance *gorm.DB
 var websocketOriginPatterns []string
 
+const websocketPingInterval = 30 * time.Second
+
 func InitWebSocket(db *gorm.DB, originPatterns []string) {
 	dbInstance = db
 	websocketOriginPatterns = originPatterns
@@ -64,34 +66,17 @@ func WebSocketHandler(c *gin.Context) {
 		broadcastPresence(userID, true)
 	}
 
-	defer func() {
-		isOffline := clients.remove(userID, client)
-		if !isOffline {
-			return
-		}
-
-		onlineUsers.mu.Lock()
-		delete(onlineUsers.users, userID)
-		onlineUsers.mu.Unlock()
-
-		if dbInstance != nil {
-			if err := dbInstance.Model(&models.User{}).
-				Where("id = ?", userID).
-				Update("last_seen_at", time.Now()).
-				Error; err != nil {
-				log.Println("failed to update last_seen_at:", err)
-			}
-		}
-
-		broadcastPresence(userID, false)
-	}()
-
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	defer removeWebSocketClient(userID, client, "read loop exit")
+	go keepWebSocketAlive(ctx, client)
 
 	for {
 		_, data, err := conn.Read(ctx)
 		if err != nil {
-			log.Printf("User %s disconnected", err)
+			if !isClosedWebSocketError(err) {
+				log.Printf("websocket user %d disconnected: %v", userID, err)
+			}
 			break
 		}
 
@@ -103,4 +88,49 @@ func WebSocketHandler(c *gin.Context) {
 
 		handleWebSocketMessage(ctx, userID, wsMsg)
 	}
+}
+
+func keepWebSocketAlive(ctx context.Context, client *websocketClient) {
+	ticker := time.NewTicker(websocketPingInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := client.ping(ctx); err != nil {
+				_ = client.conn.Close(websocket.StatusPolicyViolation, "ping timeout")
+				return
+			}
+		}
+	}
+}
+
+func removeWebSocketClient(userID uint, client *websocketClient, reason string) {
+	removed, isOffline := clients.remove(userID, client)
+	if !removed {
+		return
+	}
+
+	_ = client.conn.CloseNow()
+
+	if !isOffline {
+		return
+	}
+
+	onlineUsers.mu.Lock()
+	delete(onlineUsers.users, userID)
+	onlineUsers.mu.Unlock()
+
+	if dbInstance != nil {
+		if err := dbInstance.Model(&models.User{}).
+			Where("id = ?", userID).
+			Update("last_seen_at", time.Now()).
+			Error; err != nil {
+			log.Println("failed to update last_seen_at:", err)
+		}
+	}
+
+	broadcastPresence(userID, false)
 }

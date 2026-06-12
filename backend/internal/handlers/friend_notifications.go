@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"context"
 	"encoding/json"
 
 	"tester/internal/models"
@@ -30,6 +29,6 @@ func notifyFriendEvent(
 	})
 
 	for _, toConn := range clients.getAll(recipientID) {
-		_ = toConn.write(context.Background(), notificationBytes)
+		_ = toConn.write(nil, notificationBytes)
 	}
 }

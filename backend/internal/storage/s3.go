@@ -1,17 +1,18 @@
 package storage
 
 import (
-	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -33,6 +34,7 @@ type S3Storage struct {
 	publicBase   string
 	pathStyle    bool
 	client       *http.Client
+	uploadSlots  chan struct{}
 }
 
 func NewS3StorageFromEnv() (*S3Storage, error) {
@@ -46,6 +48,7 @@ func NewS3StorageFromEnv() (*S3Storage, error) {
 		publicBase:   strings.TrimRight(strings.TrimSpace(os.Getenv("S3_PUBLIC_BASE_URL")), "/"),
 		pathStyle:    strings.ToLower(strings.TrimSpace(os.Getenv("S3_FORCE_PATH_STYLE"))) != "false",
 		client:       &http.Client{Timeout: 30 * time.Second},
+		uploadSlots:  make(chan struct{}, uploadConcurrencyFromEnv()),
 	}
 
 	if store.endpoint == "" || store.bucket == "" || store.accessKey == "" || store.secretKey == "" {
@@ -61,22 +64,25 @@ func (s *S3Storage) Upload(ctx context.Context, key string, reader io.Reader, co
 		return err
 	}
 
-	body, err := io.ReadAll(reader)
-	if err != nil {
-		return err
-	}
-
 	if strings.TrimSpace(contentType) == "" {
 		contentType = "application/octet-stream"
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, s.objectEndpoint(cleanedKey), bytes.NewReader(body))
+	if err := s.acquireUploadSlot(ctx); err != nil {
+		return err
+	}
+	defer s.releaseUploadSlot()
+
+	contentLength := contentLengthFromReader(reader)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, s.objectEndpoint(cleanedKey), reader)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", contentType)
-	payloadHash := sha256Hex(body)
-	s.signHeaderRequest(req, payloadHash, time.Now().UTC())
+	if contentLength >= 0 {
+		req.ContentLength = contentLength
+	}
+	s.signHeaderRequest(req, unsignedPayload, time.Now().UTC())
 
 	resp, err := s.client.Do(req)
 	if resp != nil {
@@ -90,6 +96,43 @@ func (s *S3Storage) Upload(ctx context.Context, key string, reader io.Reader, co
 	}
 
 	return nil
+}
+
+func (s *S3Storage) acquireUploadSlot(ctx context.Context) error {
+	select {
+	case s.uploadSlots <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (s *S3Storage) releaseUploadSlot() {
+	<-s.uploadSlots
+}
+
+func contentLengthFromReader(reader io.Reader) int64 {
+	seeker, ok := reader.(io.Seeker)
+	if !ok {
+		return -1
+	}
+
+	current, err := seeker.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return -1
+	}
+	end, err := seeker.Seek(0, io.SeekEnd)
+	if err != nil {
+		_, _ = seeker.Seek(current, io.SeekStart)
+		return -1
+	}
+	if _, err := seeker.Seek(current, io.SeekStart); err != nil {
+		return -1
+	}
+	if end < current {
+		return -1
+	}
+	return end - current
 }
 
 func (s *S3Storage) Delete(ctx context.Context, key string) error {
@@ -130,6 +173,70 @@ func (s *S3Storage) URL(_ context.Context, key string) (string, error) {
 		return s.publicBase + "/" + escapeKey(cleanedKey), nil
 	}
 	return s.objectEndpoint(cleanedKey), nil
+}
+
+func (s *S3Storage) ListPrefix(ctx context.Context, prefix string) ([]ObjectInfo, error) {
+	cleanPrefix, err := cleanKey(prefix)
+	if err != nil {
+		return nil, err
+	}
+	if strings.HasSuffix(strings.TrimSpace(prefix), "/") {
+		cleanPrefix += "/"
+	}
+
+	var objects []ObjectInfo
+	continuationToken := ""
+	for {
+		endpoint, err := url.Parse(s.bucketEndpoint())
+		if err != nil {
+			return nil, err
+		}
+		query := endpoint.Query()
+		query.Set("list-type", "2")
+		query.Set("prefix", cleanPrefix)
+		if continuationToken != "" {
+			query.Set("continuation-token", continuationToken)
+		}
+		endpoint.RawQuery = query.Encode()
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+		if err != nil {
+			return nil, err
+		}
+		s.signHeaderRequest(req, emptyPayloadHash, time.Now().UTC())
+
+		resp, err := s.client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		if resp == nil {
+			return nil, fmt.Errorf("S3 list failed without response")
+		}
+		if resp.StatusCode >= http.StatusBadRequest {
+			_ = resp.Body.Close()
+			return nil, fmt.Errorf("S3 list failed with status %d", resp.StatusCode)
+		}
+
+		var result listBucketResult
+		err = xml.NewDecoder(resp.Body).Decode(&result)
+		_ = resp.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range result.Contents {
+			objects = append(objects, ObjectInfo{
+				Key:          item.Key,
+				LastModified: item.LastModified,
+				Size:         item.Size,
+			})
+		}
+		if !result.IsTruncated || result.NextContinuationToken == "" {
+			break
+		}
+		continuationToken = result.NextContinuationToken
+	}
+
+	return objects, nil
 }
 
 func (s *S3Storage) SignedURL(_ context.Context, key string, ttl time.Duration) (string, error) {
@@ -201,6 +308,32 @@ func (s *S3Storage) objectEndpoint(key string) string {
 	return parsed.String()
 }
 
+func (s *S3Storage) bucketEndpoint() string {
+	if s.pathStyle {
+		return fmt.Sprintf("%s/%s", s.endpoint, s.bucket)
+	}
+
+	parsed, err := url.Parse(s.endpoint)
+	if err != nil {
+		return fmt.Sprintf("%s/%s", s.endpoint, s.bucket)
+	}
+	parsed.Host = s.bucket + "." + parsed.Host
+	return parsed.String()
+}
+
+type listBucketResult struct {
+	XMLName               xml.Name       `xml:"ListBucketResult"`
+	IsTruncated           bool           `xml:"IsTruncated"`
+	NextContinuationToken string         `xml:"NextContinuationToken"`
+	Contents              []s3ObjectInfo `xml:"Contents"`
+}
+
+type s3ObjectInfo struct {
+	Key          string    `xml:"Key"`
+	LastModified time.Time `xml:"LastModified"`
+	Size         int64     `xml:"Size"`
+}
+
 func (s *S3Storage) signHeaderRequest(req *http.Request, payloadHash string, now time.Time) {
 	date := now.Format("20060102")
 	amzDate := now.Format("20060102T150405Z")
@@ -260,6 +393,22 @@ func firstEnv(keys ...string) string {
 		}
 	}
 	return ""
+}
+
+func uploadConcurrencyFromEnv() int {
+	raw := firstEnv("S3_UPLOAD_CONCURRENCY", "STORAGE_UPLOAD_CONCURRENCY")
+	if raw == "" {
+		return 4
+	}
+
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 1 {
+		return 4
+	}
+	if value > 32 {
+		return 32
+	}
+	return value
 }
 
 func hmacSHA256(key []byte, value string) []byte {

@@ -135,7 +135,7 @@ function Friends() {
 
         const ok = await dialog.confirm({
             title: 'Удалить из друзей?',
-            message: `${friend.name || friend.email || 'Пользователь'} будет удалён из списка друзей.`,
+            message: `${friend.name || 'Пользователь'} будет удалён из списка друзей.`,
             confirmText: 'Удалить',
             cancelText: 'Отмена',
             variant: 'danger',

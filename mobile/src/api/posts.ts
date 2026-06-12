@@ -18,7 +18,7 @@ function normalizePost(post: Post): Post {
     user: {
       ...post.user,
       id: Number(post.user?.id ?? post.user_id ?? 0),
-      name: post.user?.name || post.user?.email || 'Пользователь',
+      name: post.user?.name || 'Пользователь',
       avatar: post.user?.avatar ?? null,
       avatar_position_x: Number(post.user?.avatar_position_x) || 50,
       avatar_position_y: Number(post.user?.avatar_position_y) || 50,
@@ -39,7 +39,7 @@ function normalizeComment(comment: Comment): Comment {
     user: {
       ...comment.user,
       id: Number(comment.user?.id ?? comment.user_id ?? 0),
-      name: comment.user?.name || comment.user?.email || 'Пользователь',
+      name: comment.user?.name || 'Пользователь',
       avatar: comment.user?.avatar ?? null,
       avatar_position_x: Number(comment.user?.avatar_position_x) || 50,
       avatar_position_y: Number(comment.user?.avatar_position_y) || 50,

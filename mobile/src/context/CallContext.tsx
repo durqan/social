@@ -290,7 +290,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
       try {
         const profile = await userApi.getUser(userId);
-        setPeerName(profile.name || profile.email || 'Пользователь');
+        setPeerName(profile.name || 'Пользователь');
       } catch {
         setPeerName('Пользователь');
       }
