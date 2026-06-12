@@ -48,6 +48,7 @@ export default function FriendsScreen() {
   const [friends, setFriends] = useState<User[]>([]);
   const [requests, setRequests] = useState<Friendship[]>([]);
   const [loading, setLoading] = useState(false);
+  const [manualRefreshing, setManualRefreshing] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -69,6 +70,15 @@ export default function FriendsScreen() {
       setLoading(false);
     }
   }, []);
+
+  async function handleManualRefresh() {
+    setManualRefreshing(true);
+    try {
+      await load();
+    } finally {
+      setManualRefreshing(false);
+    }
+  }
 
   useFocusEffect(
     useCallback(() => {
@@ -166,8 +176,8 @@ export default function FriendsScreen() {
           <AppButton
             title="Обновить"
             variant="ghost"
-            loading={loading}
-            onPress={load}
+            loading={manualRefreshing}
+            onPress={handleManualRefresh}
           />
         </View>
       </View>

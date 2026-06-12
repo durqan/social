@@ -47,6 +47,7 @@ export function WallFeed({
   const { markMatchingAsRead } = useNotifications();
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(false);
+  const [manualRefreshing, setManualRefreshing] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [draft, setDraft] = useState('');
@@ -84,6 +85,15 @@ export function WallFeed({
   useEffect(() => {
     loadPosts().catch(() => undefined);
   }, [loadPosts]);
+
+  async function handleManualRefresh() {
+    setManualRefreshing(true);
+    try {
+      await loadPosts();
+    } finally {
+      setManualRefreshing(false);
+    }
+  }
 
   async function loadComments(postId: number) {
     setCommentsLoading(previous => ({ ...previous, [postId]: true }));
@@ -323,8 +333,8 @@ export function WallFeed({
         <AppButton
           title="Обновить"
           variant="ghost"
-          loading={loading}
-          onPress={loadPosts}
+          loading={manualRefreshing}
+          onPress={handleManualRefresh}
         />
       </View>
 

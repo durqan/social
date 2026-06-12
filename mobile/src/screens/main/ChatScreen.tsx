@@ -2380,73 +2380,83 @@ export default function ChatScreen({ route }: Props) {
       ) : null}
 
       <View style={[styles.composer, themed.surfaceBar]}>
-        <AppButton
-          title="Фото"
-          variant="secondary"
-          disabled={Boolean(sending) || Boolean(editingMessage) || recording}
-          onPress={pickImages}
-        />
-        <AppButton
-          title="Голос"
-          variant="secondary"
-          disabled={
-            Boolean(sending) ||
-            Boolean(editingMessage) ||
-            pendingImages.length > 0 ||
-            recordingBusy ||
-            Boolean(pendingVoice) ||
-            Boolean(pendingVideoNote)
-          }
-          onPress={() => {}}
-          style={recording ? styles.voiceButtonRecording : undefined}
-          {...voicePanResponder.panHandlers}
-        />
-        <AppButton
-          title="Видео"
-          variant="secondary"
-          disabled={
-            Boolean(sending) ||
-            Boolean(editingMessage) ||
-            pendingImages.length > 0 ||
-            recording ||
-            Boolean(pendingVoice) ||
-            Boolean(pendingVideoNote)
-          }
-          onPress={() => {
-            recordVideoNote().catch(() => undefined);
-          }}
-        />
-        <TextInput
-          value={input}
-          onChangeText={handleComposerTextChange}
-          onContentSizeChange={event =>
-            handleComposerContentSizeChange(event.nativeEvent.contentSize.height)
-          }
-          placeholder="Сообщение"
-          placeholderTextColor={themeColors.soft}
-          multiline
-          scrollEnabled={inputHeight >= composerInputMaxHeight}
-          maxLength={1000}
-          editable={!sending && !recording}
-          textAlignVertical="top"
-          style={[styles.input, themed.input, { height: inputHeight }]}
-        />
-        <AppButton
-          title={editingMessage ? 'Сохранить' : 'Отправить'}
-          disabled={
-            Boolean(sending) ||
-            recording ||
-            (!input.trim() &&
-              !editingMessage &&
-              pendingImages.length === 0 &&
-              !pendingVoice &&
-              !pendingVideoNote) ||
-            Boolean(pendingVoice) ||
-            Boolean(pendingVideoNote)
-          }
-          loading={Boolean(sending)}
-          onPress={sendMessage}
-        />
+        <View style={styles.composerTools}>
+          <AppButton
+            title="Фото"
+            variant="secondary"
+            disabled={Boolean(sending) || Boolean(editingMessage) || recording}
+            onPress={pickImages}
+            style={styles.composerToolButton}
+          />
+          <AppButton
+            title="Голос"
+            variant="secondary"
+            disabled={
+              Boolean(sending) ||
+              Boolean(editingMessage) ||
+              pendingImages.length > 0 ||
+              recordingBusy ||
+              Boolean(pendingVoice) ||
+              Boolean(pendingVideoNote)
+            }
+            onPress={() => {}}
+            style={[
+              styles.composerToolButton,
+              recording ? styles.voiceButtonRecording : undefined,
+            ]}
+            {...voicePanResponder.panHandlers}
+          />
+          <AppButton
+            title="Видео"
+            variant="secondary"
+            disabled={
+              Boolean(sending) ||
+              Boolean(editingMessage) ||
+              pendingImages.length > 0 ||
+              recording ||
+              Boolean(pendingVoice) ||
+              Boolean(pendingVideoNote)
+            }
+            onPress={() => {
+              recordVideoNote().catch(() => undefined);
+            }}
+            style={styles.composerToolButton}
+          />
+        </View>
+        <View style={styles.composerInputRow}>
+          <TextInput
+            value={input}
+            onChangeText={handleComposerTextChange}
+            onContentSizeChange={event =>
+              handleComposerContentSizeChange(event.nativeEvent.contentSize.height)
+            }
+            placeholder="Сообщение"
+            placeholderTextColor={themeColors.soft}
+            multiline
+            scrollEnabled={inputHeight >= composerInputMaxHeight}
+            maxLength={1000}
+            editable={!sending && !recording}
+            textAlignVertical="top"
+            style={[styles.input, themed.input, { height: inputHeight }]}
+          />
+          <AppButton
+            title={editingMessage ? 'Сохранить' : 'Отправить'}
+            disabled={
+              Boolean(sending) ||
+              recording ||
+              (!input.trim() &&
+                !editingMessage &&
+                pendingImages.length === 0 &&
+                !pendingVoice &&
+                !pendingVideoNote) ||
+              Boolean(pendingVoice) ||
+              Boolean(pendingVideoNote)
+            }
+            loading={Boolean(sending)}
+            onPress={sendMessage}
+            style={styles.composerSendButton}
+          />
+        </View>
       </View>
 
       <Modal
@@ -2591,7 +2601,12 @@ function MessageBubble({
         ]}
       >
         {message.forwarded_from_message_id ? (
-          <Text style={[styles.forwardedLabel, themed.accentText, outgoing && styles.forwardedLabelOutgoing]}>
+          <Text
+            style={[
+              styles.forwardedLabel,
+              outgoing ? themed.outgoingAccentText : themed.accentText,
+            ]}
+          >
             {message.forwarded_from_user?.name
               ? `↪ Переслано от ${message.forwarded_from_user.name}`
               : '↪ Пересланное сообщение'}
@@ -2600,10 +2615,21 @@ function MessageBubble({
 
         {message.reply_to_message_id ? (
           <View style={[styles.replyPreview, themed.replyPreview, outgoing && styles.replyPreviewOutgoing]}>
-            <Text style={[styles.replyPreviewAuthor, themed.accentText, outgoing && styles.replyPreviewAuthorOutgoing]}>
+            <Text
+              style={[
+                styles.replyPreviewAuthor,
+                outgoing ? themed.outgoingAccentText : themed.accentText,
+              ]}
+            >
               {message.reply_to_message ? messageAuthorName(message.reply_to_message) : 'Ответ'}
             </Text>
-            <Text style={[styles.replyPreviewText, themed.mutedText, outgoing && styles.replyPreviewTextOutgoing]} numberOfLines={1}>
+            <Text
+              style={[
+                styles.replyPreviewText,
+                outgoing ? themed.outgoingMutedText : themed.mutedText,
+              ]}
+              numberOfLines={1}
+            >
               {messagePreviewText(message.reply_to_message)}
             </Text>
           </View>
@@ -2614,7 +2640,7 @@ function MessageBubble({
             selectable
             style={[
               styles.messageText,
-              outgoing ? styles.outgoingText : themed.messageText,
+              outgoing ? themed.outgoingMessageText : themed.messageText,
             ]}
           >
             {linkParts(displayContent).map((part, index) => {
@@ -2624,8 +2650,7 @@ function MessageBubble({
                     key={`${part.href}-${index}`}
                     style={[
                       styles.messageLink,
-                      !outgoing && themed.accentText,
-                      outgoing && styles.outgoingLink,
+                      outgoing ? themed.outgoingLink : themed.accentText,
                     ]}
                     onPress={() =>
                       Linking.openURL(part.href ?? '').catch(() => undefined)
@@ -2701,8 +2726,7 @@ function MessageBubble({
                   <Text
                     style={[
                       styles.voiceTitle,
-                      !outgoing && themed.text,
-                      outgoing && styles.voiceTitleOutgoing,
+                      outgoing ? themed.outgoingMessageText : themed.text,
                     ]}
                   >
                     Голосовое сообщение
@@ -2710,8 +2734,7 @@ function MessageBubble({
                   <Text
                     style={[
                       styles.voiceDuration,
-                      !outgoing && themed.mutedText,
-                      outgoing && styles.voiceDurationOutgoing,
+                      outgoing ? themed.outgoingSoftText : themed.mutedText,
                     ]}
                   >
                     {formatDuration(
@@ -2752,11 +2775,16 @@ function MessageBubble({
           );
         })}
 
-        <Text style={[styles.messageDate, !outgoing && themed.softText, outgoing && styles.outgoingDate]}>
+        <Text
+          style={[
+            styles.messageDate,
+            outgoing ? themed.outgoingSoftText : themed.softText,
+          ]}
+        >
           {formatDateTime(message.created_at)}
         </Text>
         {outgoing ? (
-          <Text style={styles.outgoingStatus}>
+          <Text style={[styles.outgoingStatus, themed.outgoingSoftText]}>
             {message.is_read ? 'Прочитано' : 'Отправлено'}
           </Text>
         ) : null}
@@ -2845,7 +2873,7 @@ function VideoNoteAttachment({
         <Text
           style={[
             styles.videoNoteText,
-            outgoing && styles.videoNoteTextOutgoing,
+            outgoing && themed.outgoingMessageText,
           ]}
         >
           {formatDuration(effectiveDuration)}
@@ -3134,6 +3162,25 @@ const createChatThemeStyles = (theme: ThemeColors) =>
     },
     messageText: {
       color: theme.messageOtherText,
+    },
+    outgoingMessageText: {
+      color: theme.messageOwnText,
+    },
+    outgoingAccentText: {
+      color: theme.messageOwnText,
+      opacity: 0.9,
+    },
+    outgoingMutedText: {
+      color: theme.messageOwnText,
+      opacity: 0.78,
+    },
+    outgoingSoftText: {
+      color: theme.messageOwnText,
+      opacity: 0.68,
+    },
+    outgoingLink: {
+      color: theme.messageOwnText,
+      textDecorationLine: 'underline',
     },
     mutedText: {
       color: theme.muted,
@@ -3867,8 +3914,6 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   composer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
     gap: 8,
     marginHorizontal: 8,
     marginBottom: 8,
@@ -3882,6 +3927,25 @@ const styles = StyleSheet.create({
     shadowRadius: 14,
     shadowOffset: { width: 0, height: 8 },
     elevation: 6,
+  },
+  composerTools: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  composerToolButton: {
+    flex: 1,
+    minHeight: 40,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+  },
+  composerInputRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+  },
+  composerSendButton: {
+    minHeight: 48,
+    paddingHorizontal: 12,
   },
   input: {
     flex: 1,

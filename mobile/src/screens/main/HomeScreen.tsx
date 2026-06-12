@@ -39,11 +39,10 @@ export default function HomeScreen() {
   const colors = useThemeColors();
   const styles = createStyles(colors);
   const emailVerified = isEmailVerified(user);
-  const [loading, setLoading] = useState(false);
+  const [manualRefreshing, setManualRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    setLoading(true);
     setError(null);
     try {
       if (!emailVerified) {
@@ -54,10 +53,17 @@ export default function HomeScreen() {
       await Promise.all([refreshUnreadCount(), refreshUser()]);
     } catch (apiError) {
       setError(getApiErrorMessage(apiError));
-    } finally {
-      setLoading(false);
     }
   }, [emailVerified, refreshUnreadCount, refreshUser]);
+
+  async function handleManualRefresh() {
+    setManualRefreshing(true);
+    try {
+      await load();
+    } finally {
+      setManualRefreshing(false);
+    }
+  }
 
   useFocusEffect(
     useCallback(() => {
@@ -111,7 +117,12 @@ export default function HomeScreen() {
       </Section>
 
       <View style={styles.refreshBox}>
-        <AppButton title="Обновить" variant="ghost" loading={loading} onPress={load} />
+        <AppButton
+          title="Обновить"
+          variant="ghost"
+          loading={manualRefreshing}
+          onPress={handleManualRefresh}
+        />
       </View>
 
       <Section title="Лента" subtitle="Публикации и активность">

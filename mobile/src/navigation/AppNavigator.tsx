@@ -1,7 +1,10 @@
 import React from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { NavigationContainer } from '@react-navigation/native';
+import {
+  NavigationContainer,
+  getFocusedRouteNameFromRoute,
+} from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { enableScreens } from 'react-native-screens';
@@ -198,6 +201,7 @@ function MainTabsNavigator() {
       paddingBottom: Math.max(insets.bottom, 10),
     },
   ];
+  const hiddenTabBarStyle = { display: 'none' as const };
 
   return (
     <MainTabs.Navigator
@@ -232,11 +236,17 @@ function MainTabsNavigator() {
       <MainTabs.Screen
         name="Chats"
         component={ChatNavigator}
-        options={{
-          headerShown: false,
-          tabBarLabel: 'Чаты',
-          tabBarIcon: ChatsTabIcon,
-          tabBarBadge: unreadCount > 0 ? unreadCount : undefined,
+        options={({ route }) => {
+          const routeName = getFocusedRouteNameFromRoute(route) ?? 'ChatList';
+
+          return {
+            headerShown: false,
+            tabBarLabel: 'Чаты',
+            tabBarIcon: ChatsTabIcon,
+            tabBarBadge: unreadCount > 0 ? unreadCount : undefined,
+            tabBarStyle:
+              routeName === 'Chat' ? hiddenTabBarStyle : tabBarStyle,
+          };
         }}
       />
       <MainTabs.Screen
