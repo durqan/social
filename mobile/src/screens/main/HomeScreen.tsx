@@ -134,7 +134,7 @@ const createStyles = (colors: ThemeColors) =>
     },
     content: {
       gap: spacing.xl,
-      paddingBottom: 108,
+      paddingBottom: 124,
     },
     grid: {
       flexDirection: 'row',

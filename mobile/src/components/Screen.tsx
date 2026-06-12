@@ -73,7 +73,7 @@ const createStyles = (colors: ThemeColors) =>
     content: {
       paddingHorizontal: spacing.lg,
       paddingTop: spacing.lg,
-      paddingBottom: 108,
+      paddingBottom: 124,
       gap: spacing.lg,
     },
     contentFlush: {

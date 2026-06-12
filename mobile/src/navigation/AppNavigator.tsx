@@ -194,8 +194,8 @@ function MainTabsNavigator() {
   const tabBarStyle = [
     styles.tabBar,
     {
-      height: 58 + insets.bottom,
-      paddingBottom: Math.max(insets.bottom, 8),
+      height: 64 + insets.bottom,
+      paddingBottom: Math.max(insets.bottom, 10),
     },
   ];
 
@@ -208,6 +208,9 @@ function MainTabsNavigator() {
         tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.muted,
         tabBarStyle,
+        tabBarHideOnKeyboard: true,
+        tabBarItemStyle: styles.tabBarItem,
+        tabBarIconStyle: styles.tabBarIcon,
         tabBarLabelStyle: styles.tabBarLabel,
       }}
     >
@@ -241,7 +244,7 @@ function MainTabsNavigator() {
         component={NotificationsScreen}
         options={{
           title: 'Уведомления',
-          tabBarLabel: 'Уведомления',
+          tabBarLabel: 'Увед.',
           tabBarIcon: NotificationsTabIcon,
           tabBarBadge:
             unreadNotificationCount > 0 ? unreadNotificationCount : undefined,
@@ -351,8 +354,15 @@ const createStyles = (colors: ThemeColors) =>
     shadowOffset: { width: 0, height: 8 },
     elevation: 8,
   },
+  tabBarItem: {
+    minWidth: 0,
+    paddingHorizontal: 0,
+  },
+  tabBarIcon: {
+    marginTop: 2,
+  },
   tabBarLabel: {
-    fontSize: 10,
+    fontSize: 9,
     lineHeight: 12,
     fontWeight: '800',
   },

@@ -7,13 +7,16 @@ import { ErrorBanner } from '../../components/Feedback';
 import { Screen } from '../../components/Screen';
 import { TextField } from '../../components/TextField';
 import { useAuth } from '../../context/AuthContext';
-import { colors } from '../../theme/colors';
+import { useThemeColors } from '../../theme/ThemeContext';
+import type { ThemeColors } from '../../theme/themes';
 import type { AuthStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Register'>;
 
 export default function RegisterScreen({ navigation }: Props) {
   const { register, authError, clearAuthError } = useAuth();
+  const colors = useThemeColors();
+  const styles = createStyles(colors);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -122,14 +125,15 @@ export default function RegisterScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   container: {
     flexGrow: 1,
     justifyContent: 'center',
   },
   card: {
     borderWidth: 1,
-    borderColor: 'rgba(17, 24, 39, 0.06)',
+    borderColor: colors.border,
     borderRadius: 14,
     backgroundColor: colors.surface,
     padding: 20,

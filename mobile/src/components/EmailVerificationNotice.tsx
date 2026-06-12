@@ -4,7 +4,8 @@ import { StyleSheet, Text, View } from 'react-native';
 import { isEmailVerified } from '../api/auth';
 import { getApiErrorMessage } from '../api/http';
 import { useAuth } from '../context/AuthContext';
-import { colors } from '../theme/colors';
+import { useThemeColors } from '../theme/ThemeContext';
+import type { ThemeColors } from '../theme/themes';
 import { AppButton } from './AppButton';
 import { ErrorBanner, SuccessBanner } from './Feedback';
 
@@ -16,6 +17,8 @@ export function EmailVerificationNotice({
   showRefresh = false,
 }: EmailVerificationNoticeProps) {
   const { user, refreshUser, sendVerificationEmail } = useAuth();
+  const colors = useThemeColors();
+  const styles = createStyles(colors);
   const [loading, setLoading] = useState<'send' | 'refresh' | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -90,12 +93,13 @@ export function EmailVerificationNotice({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   card: {
     borderWidth: 1,
-    borderColor: '#fde68a',
+    borderColor: colors.warning,
     borderRadius: 12,
-    backgroundColor: '#fffbeb',
+    backgroundColor: colors.warningSoft,
     padding: 16,
     gap: 12,
   },
