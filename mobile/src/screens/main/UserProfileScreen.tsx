@@ -2,6 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { Ban, MessageCircle, RotateCcw, UserPlus } from 'lucide-react-native';
 
 import { isEmailVerified } from '../../api/auth';
 import { assetURL } from '../../config/env';
@@ -202,11 +203,12 @@ export default function UserProfileScreen({ navigation, route }: Props) {
       </View>
 
       {!isCurrentUser && status === 'accepted' ? (
-        <AppButton title="Написать" onPress={openChat} />
+        <AppButton title="Написать" icon={MessageCircle} onPress={openChat} />
       ) : null}
       {!isCurrentUser && status === 'none' ? (
         <AppButton
           title="Добавить в друзья"
+          icon={UserPlus}
           loading={busy}
           onPress={handleAddFriend}
         />
@@ -220,6 +222,7 @@ export default function UserProfileScreen({ navigation, route }: Props) {
         <AppButton
           title="Заблокировать"
           variant="danger"
+          icon={Ban}
           loading={busy}
           onPress={handleBlockUser}
         />
@@ -228,6 +231,7 @@ export default function UserProfileScreen({ navigation, route }: Props) {
         <AppButton
           title="Разблокировать"
           variant="secondary"
+          icon={RotateCcw}
           loading={busy}
           onPress={handleUnblockUser}
         />
@@ -261,10 +265,10 @@ const createStyles = (colors: ThemeColors) =>
     card: {
       alignItems: 'center',
       borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: radius.md,
+      borderColor: colors.accentBorder,
+      borderRadius: radius.lg,
       backgroundColor: colors.card,
-      padding: spacing.lg,
+      padding: spacing.xl,
       gap: spacing.sm,
     },
     avatar: {
@@ -274,7 +278,9 @@ const createStyles = (colors: ThemeColors) =>
       alignItems: 'center',
       justifyContent: 'center',
       overflow: 'hidden',
-      backgroundColor: colors.surfaceMuted,
+      backgroundColor: colors.accentSoft,
+      borderWidth: 2,
+      borderColor: colors.borderStrong,
     },
     avatarImage: {
       width: 82,
@@ -296,7 +302,7 @@ const createStyles = (colors: ThemeColors) =>
     infoCard: {
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: radius.md,
+      borderRadius: radius.lg,
       backgroundColor: colors.card,
       overflow: 'hidden',
     },
@@ -319,7 +325,7 @@ const createStyles = (colors: ThemeColors) =>
     notice: {
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: radius.md,
+      borderRadius: radius.lg,
       backgroundColor: colors.card,
       padding: spacing.md,
     },

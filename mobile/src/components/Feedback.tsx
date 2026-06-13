@@ -76,7 +76,7 @@ const createStyles = (colors: ThemeColors) =>
     errorBox: {
       borderWidth: 1,
       borderColor: colors.dangerSoft,
-      borderRadius: radius.md,
+      borderRadius: radius.lg,
       backgroundColor: colors.dangerSoft,
       padding: spacing.md,
     },
@@ -88,7 +88,7 @@ const createStyles = (colors: ThemeColors) =>
     successBox: {
       borderWidth: 1,
       borderColor: colors.successSoft,
-      borderRadius: radius.md,
+      borderRadius: radius.lg,
       backgroundColor: colors.successSoft,
       padding: spacing.md,
     },
@@ -100,7 +100,7 @@ const createStyles = (colors: ThemeColors) =>
     noticeBox: {
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: radius.md,
+      borderRadius: radius.lg,
       backgroundColor: colors.card,
       padding: spacing.md,
       gap: spacing.xs,
@@ -118,10 +118,10 @@ const createStyles = (colors: ThemeColors) =>
       alignItems: 'center',
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: radius.md,
+      borderRadius: radius.lg,
       backgroundColor: colors.card,
       paddingHorizontal: spacing.lg,
-      paddingVertical: spacing.xl,
+      paddingVertical: spacing.xxl,
       gap: spacing.xs,
     },
     emptyTitle: {
@@ -140,7 +140,7 @@ const createStyles = (colors: ThemeColors) =>
       justifyContent: 'center',
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: radius.md,
+      borderRadius: radius.lg,
       backgroundColor: colors.card,
       padding: spacing.xl,
       gap: spacing.sm,

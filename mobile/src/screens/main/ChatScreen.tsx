@@ -33,9 +33,11 @@ import {
   ImagePlus,
   Link,
   Mic,
+  Pause,
   Pencil,
   Phone,
   Pin,
+  Play,
   Reply,
   Send,
   Trash2,
@@ -79,7 +81,7 @@ import type {
   User,
 } from '../../api/types';
 import { chatSocket, type WsEvent } from '../../api/ws';
-import { AppButton } from '../../components/AppButton';
+import { IconButton } from '../../components/IconButton';
 import {
   EmptyState,
   ErrorBanner,
@@ -367,10 +369,10 @@ export default function ChatScreen({ route }: Props) {
   });
   const e2eeReady = Boolean(
     user?.id &&
-    e2eeState.selfEnabled &&
-    e2eeState.recipientEnabled &&
-    e2eeState.recipientPublicKey &&
-    e2eeState.localKey,
+      e2eeState.selfEnabled &&
+      e2eeState.recipientEnabled &&
+      e2eeState.recipientPublicKey &&
+      e2eeState.localKey,
   );
 
   const pendingImagesRef = useRef<LocalChatImage[]>([]);
@@ -2161,15 +2163,15 @@ export default function ChatScreen({ route }: Props) {
       <SuccessBanner message={copyNotice} />
 
       <View style={styles.callActions}>
-        <AppButton
-          title="Аудио"
+        <IconButton
+          label="Аудиозвонок"
           variant="secondary"
           icon={Phone}
           disabled={callStatus !== 'idle'}
           onPress={() => startAudioCall(otherUserId, route.params.name)}
         />
-        <AppButton
-          title="Видео"
+        <IconButton
+          label="Видеозвонок"
           variant="secondary"
           icon={VideoIcon}
           disabled={callStatus !== 'idle'}
@@ -2290,12 +2292,12 @@ export default function ChatScreen({ route }: Props) {
             {sending === 'uploadingVoice'
               ? 'Загружаем голосовое сообщение'
               : sending === 'uploadingVideoNote'
-                ? 'Загружаем видео-сообщение'
-                : sending === 'uploading'
-                  ? uploadProgress
-                    ? `Загружаем изображения: ${uploadProgress.current} из ${uploadProgress.total}`
-                    : 'Загружаем изображение'
-                  : 'Отправляем сообщение'}
+              ? 'Загружаем видео-сообщение'
+              : sending === 'uploading'
+              ? uploadProgress
+                ? `Загружаем изображения: ${uploadProgress.current} из ${uploadProgress.total}`
+                : 'Загружаем изображение'
+              : 'Отправляем сообщение'}
           </Text>
         </View>
       ) : null}
@@ -2388,30 +2390,31 @@ export default function ChatScreen({ route }: Props) {
           />
           <View style={styles.previewVideoNoteMeta}>
             <Text style={[styles.previewMetaText, themed.mutedText]}>
-              Видео-сообщение ·{' '}
-              {formatDuration(pendingVideoNote.durationSeconds)}
+              Запись · {formatDuration(pendingVideoNote.durationSeconds)}
             </Text>
             <Text style={[styles.previewHint, themed.softText]}>
               Проверьте запись перед отправкой.
             </Text>
           </View>
           <View style={[styles.previewActions, styles.previewVideoNoteActions]}>
-            <Pressable
+            <IconButton
+              icon={Trash2}
+              label="Удалить видео-сообщение"
+              variant="danger"
+              size="sm"
               onPress={() => setPendingVideoNote(null)}
-              style={styles.previewDeleteBtn}
               disabled={Boolean(sending)}
-            >
-              <Text style={styles.previewDeleteText}>Удалить</Text>
-            </Pressable>
-            <Pressable
+            />
+            <IconButton
+              icon={Send}
+              label="Отправить видео-сообщение"
+              variant="primary"
+              size="sm"
               onPress={() => {
                 sendPendingVideoNote().catch(() => undefined);
               }}
-              style={styles.previewSendBtn}
               disabled={Boolean(sending)}
-            >
-              <Text style={styles.previewSendText}>Отправить</Text>
-            </Pressable>
+            />
           </View>
         </View>
       ) : null}
@@ -2420,6 +2423,12 @@ export default function ChatScreen({ route }: Props) {
         <View style={[styles.previewVoiceCard, themed.cardMuted]}>
           <View style={styles.previewVoiceRow}>
             <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={
+                previewPlaying
+                  ? 'Остановить прослушивание'
+                  : 'Прослушать голосовое сообщение'
+              }
               onPress={() => {
                 togglePreviewPlayback().catch(() => undefined);
               }}
@@ -2429,9 +2438,11 @@ export default function ChatScreen({ route }: Props) {
               ]}
               disabled={Boolean(sending)}
             >
-              <Text style={styles.previewPlayText}>
-                {previewPlaying ? 'Ⅱ' : '▶'}
-              </Text>
+              {previewPlaying ? (
+                <Pause color={themeColors.white} size={16} strokeWidth={2.6} />
+              ) : (
+                <Play color={themeColors.white} size={16} strokeWidth={2.6} />
+              )}
             </Pressable>
 
             <View
@@ -2468,24 +2479,26 @@ export default function ChatScreen({ route }: Props) {
           </View>
 
           <View style={styles.previewActions}>
-            <Pressable
+            <IconButton
+              icon={Trash2}
+              label="Удалить голосовое сообщение"
+              variant="danger"
+              size="sm"
               onPress={() => {
                 deletePendingVoice().catch(() => undefined);
               }}
-              style={styles.previewDeleteBtn}
               disabled={Boolean(sending)}
-            >
-              <Text style={styles.previewDeleteText}>Удалить</Text>
-            </Pressable>
-            <Pressable
+            />
+            <IconButton
+              icon={Send}
+              label="Отправить голосовое сообщение"
+              variant="primary"
+              size="sm"
               onPress={() => {
                 sendPendingVoice().catch(() => undefined);
               }}
-              style={styles.previewSendBtn}
               disabled={Boolean(sending)}
-            >
-              <Text style={styles.previewSendText}>Отправить</Text>
-            </Pressable>
+            />
           </View>
         </View>
       ) : null}
@@ -2500,17 +2513,17 @@ export default function ChatScreen({ route }: Props) {
 
       <View style={[styles.composer, themed.surfaceBar]}>
         <View style={styles.composerTools}>
-          <AppButton
-            title="Фото"
+          <IconButton
+            label="Прикрепить фото"
             variant="secondary"
             icon={ImagePlus}
             disabled={Boolean(sending) || Boolean(editingMessage) || recording}
             onPress={pickImages}
             style={styles.composerToolButton}
           />
-          <AppButton
-            title={recording ? 'Готово' : 'Голос'}
-            variant="secondary"
+          <IconButton
+            label={recording ? 'Завершить запись' : 'Записать голосовое'}
+            variant={recording ? 'danger' : 'secondary'}
             icon={Mic}
             disabled={
               Boolean(sending) ||
@@ -2532,8 +2545,8 @@ export default function ChatScreen({ route }: Props) {
               recording ? styles.voiceButtonRecording : undefined,
             ]}
           />
-          <AppButton
-            title="Видео"
+          <IconButton
+            label="Записать видео-сообщение"
             variant="secondary"
             icon={VideoIcon}
             disabled={
@@ -2568,9 +2581,10 @@ export default function ChatScreen({ route }: Props) {
             textAlignVertical="top"
             style={[styles.input, themed.input, { height: inputHeight }]}
           />
-          <AppButton
-            title={editingMessage ? 'Сохранить' : 'Отправить'}
+          <IconButton
+            label={editingMessage ? 'Сохранить сообщение' : 'Отправить'}
             icon={editingMessage ? Pencil : Send}
+            variant="primary"
             disabled={
               Boolean(sending) ||
               recording ||
@@ -4017,7 +4031,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingLeft: 0,
     paddingTop: 0,
-    gap: 6,
+    gap: spacing.sm,
   },
   previewHint: {
     color: colors.soft,
@@ -4051,11 +4065,6 @@ const styles = StyleSheet.create({
   previewPlayButtonActive: {
     backgroundColor: colors.accentStrong,
   },
-  previewPlayText: {
-    color: colors.white,
-    fontSize: 14,
-    fontWeight: '700',
-  },
   previewProgressBar: {
     flex: 1,
     height: 6,
@@ -4084,30 +4093,10 @@ const styles = StyleSheet.create({
   previewActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-end',
+    gap: spacing.sm,
     paddingLeft: 42,
     paddingTop: 4,
-  },
-  previewDeleteBtn: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: radius.sm,
-  },
-  previewDeleteText: {
-    color: colors.danger || colors.danger,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  previewSendBtn: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: radius.sm,
-    backgroundColor: colors.accent,
-  },
-  previewSendText: {
-    color: colors.white,
-    fontSize: 13,
-    fontWeight: '700',
   },
   typingBar: {
     paddingHorizontal: 14,
@@ -4140,12 +4129,11 @@ const styles = StyleSheet.create({
   composerTools: {
     flexDirection: 'row',
     gap: spacing.sm,
+    alignItems: 'center',
   },
   composerToolButton: {
-    flex: 1,
-    minHeight: 40,
-    paddingHorizontal: 8,
-    paddingVertical: 8,
+    width: 42,
+    height: 42,
   },
   composerInputRow: {
     flexDirection: 'row',
@@ -4153,8 +4141,8 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   composerSendButton: {
-    minHeight: 48,
-    paddingHorizontal: 12,
+    width: 48,
+    height: 48,
   },
   input: {
     flex: 1,

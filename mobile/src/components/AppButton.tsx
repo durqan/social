@@ -79,11 +79,11 @@ export function AppButton({
 const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     base: {
-      minHeight: 44,
-      borderRadius: radius.md,
+      minHeight: 46,
+      borderRadius: radius.lg,
       alignItems: 'center',
       justifyContent: 'center',
-      paddingHorizontal: spacing.md,
+      paddingHorizontal: spacing.lg,
       paddingVertical: spacing.sm,
       borderWidth: 1,
       borderColor: 'transparent',
@@ -91,10 +91,15 @@ const createStyles = (colors: ThemeColors) =>
     primary: {
       backgroundColor: colors.accent,
       borderColor: colors.accent,
+      shadowColor: colors.shadow,
+      shadowOpacity: colors.isDark ? 0 : 0.18,
+      shadowRadius: 12,
+      shadowOffset: { width: 0, height: 6 },
+      elevation: colors.isDark ? 0 : 2,
     },
     secondary: {
       backgroundColor: colors.surfaceMuted,
-      borderColor: colors.borderStrong,
+      borderColor: colors.border,
     },
     danger: {
       backgroundColor: colors.danger,
@@ -108,8 +113,8 @@ const createStyles = (colors: ThemeColors) =>
       opacity: 0.48,
     },
     pressed: {
-      backgroundColor: colors.pressed,
-      transform: [{ scale: 0.99 }],
+      opacity: 0.82,
+      transform: [{ scale: 0.985 }],
     },
     content: {
       flexDirection: 'row',
@@ -120,6 +125,7 @@ const createStyles = (colors: ThemeColors) =>
     text: {
       ...typography.caption,
       fontWeight: '800',
+      textAlign: 'center',
     },
     primaryText: {
       color: colors.white,

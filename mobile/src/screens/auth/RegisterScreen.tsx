@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { LogIn, MessageCircle, UserPlus } from 'lucide-react-native';
 
 import { AppButton } from '../../components/AppButton';
 import { ErrorBanner } from '../../components/Feedback';
@@ -67,6 +68,9 @@ export default function RegisterScreen({ navigation }: Props) {
   return (
     <Screen contentContainerStyle={styles.container}>
       <View style={styles.card}>
+        <View style={styles.brandMark}>
+          <MessageCircle color={colors.white} size={24} strokeWidth={2.5} />
+        </View>
         <Text style={styles.title}>Регистрация</Text>
         <Text style={styles.subtitle}>
           После регистрации backend попросит подтвердить email.
@@ -113,12 +117,14 @@ export default function RegisterScreen({ navigation }: Props) {
 
         <AppButton
           title="Зарегистрироваться"
+          icon={UserPlus}
           loading={loading}
           onPress={handleSubmit}
         />
         <AppButton
           title="Уже есть аккаунт"
           variant="ghost"
+          icon={LogIn}
           onPress={() => navigation.navigate('Login')}
         />
       </View>
@@ -134,11 +140,20 @@ const createStyles = (colors: ThemeColors) =>
     },
     card: {
       borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: radius.md,
+      borderColor: colors.accentBorder,
+      borderRadius: radius.lg,
       backgroundColor: colors.card,
-      padding: spacing.lg,
+      padding: spacing.xl,
       gap: spacing.md,
+    },
+    brandMark: {
+      width: 54,
+      height: 54,
+      borderRadius: radius.lg,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.accent,
+      marginBottom: spacing.xs,
     },
     title: {
       ...typography.h1,

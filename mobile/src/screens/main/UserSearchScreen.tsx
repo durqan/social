@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
+import { MessageCircle, UserPlus } from 'lucide-react-native';
 
 import { friendsApi } from '../../api/friends';
 import { getApiErrorMessage } from '../../api/http';
@@ -221,7 +222,7 @@ export default function UserSearchScreen({ navigation }: Props) {
         renderItem={({ item }) => (
           <SearchResultRow
             user={item}
-            status={item.id ? (statuses[item.id] ?? 'none') : 'none'}
+            status={item.id ? statuses[item.id] ?? 'none' : 'none'}
             busy={busyId === item.id}
             onAdd={() => sendRequest(item)}
             onChat={() => openChat(item)}
@@ -287,6 +288,7 @@ function SearchResultRow({
         {status === 'accepted' ? (
           <AppButton
             title="Написать"
+            icon={MessageCircle}
             style={styles.actionButton}
             onPress={onChat}
           />
@@ -302,6 +304,7 @@ function SearchResultRow({
           <AppButton
             title="Добавить"
             variant="secondary"
+            icon={UserPlus}
             style={styles.actionButton}
             loading={busy}
             onPress={onAdd}

@@ -258,7 +258,7 @@ export default function NotificationsScreen() {
                   {notificationAction(item)} · {formatDateTime(item.created_at)}
                 </Text>
               </View>
-              {!item.is_read ? <Text style={styles.badge}>new</Text> : null}
+              {!item.is_read ? <View style={styles.unreadDot} /> : null}
             </Pressable>
           );
         }}
@@ -289,7 +289,7 @@ const createStyles = (colors: ThemeColors) =>
       gap: 12,
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: radius.md,
+      borderRadius: radius.lg,
       backgroundColor: colors.card,
       padding: spacing.md,
     },
@@ -324,15 +324,10 @@ const createStyles = (colors: ThemeColors) =>
       ...typography.caption,
       color: colors.muted,
     },
-    badge: {
-      overflow: 'hidden',
-      borderRadius: radius.pill,
+    unreadDot: {
+      width: 10,
+      height: 10,
+      borderRadius: 5,
       backgroundColor: colors.accent,
-      color: colors.white,
-      ...typography.tiny,
-      fontWeight: '900',
-      paddingHorizontal: spacing.sm,
-      paddingVertical: spacing.xs,
-      textTransform: 'uppercase',
     },
   });

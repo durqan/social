@@ -1,6 +1,13 @@
 import React, { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
+import {
+  KeyRound,
+  LogOut,
+  RefreshCcw,
+  ShieldCheck,
+  ShieldOff,
+} from 'lucide-react-native';
 
 import { e2eeApi } from '../../api/e2ee';
 import { getApiErrorMessage } from '../../api/http';
@@ -256,6 +263,7 @@ export default function SettingsScreen() {
         <AppButton
           title="Выйти"
           variant="danger"
+          icon={LogOut}
           loading={loggingOut}
           onPress={handleLogout}
         />
@@ -302,6 +310,7 @@ export default function SettingsScreen() {
           ) : null}
           <AppButton
             title="Сменить пароль"
+            icon={KeyRound}
             loading={securityBusy === 'password'}
             disabled={securityBusyNow}
             onPress={handleChangePassword}
@@ -340,6 +349,7 @@ export default function SettingsScreen() {
           <View style={styles.actions}>
             <AppButton
               title="Включить E2EE"
+              icon={ShieldCheck}
               loading={securityBusy === 'enableE2EE'}
               disabled={securityBusyNow || e2eeEnabled || !webCryptoAvailable}
               onPress={handleEnableE2EE}
@@ -347,6 +357,7 @@ export default function SettingsScreen() {
             <AppButton
               title="Восстановить ключ"
               variant="secondary"
+              icon={RefreshCcw}
               loading={securityBusy === 'restoreE2EE'}
               disabled={securityBusyNow || !e2eeEnabled || !webCryptoAvailable}
               onPress={handleRestoreE2EE}
@@ -354,6 +365,7 @@ export default function SettingsScreen() {
             <AppButton
               title="Отключить E2EE"
               variant="danger"
+              icon={ShieldOff}
               loading={securityBusy === 'disableE2EE'}
               disabled={securityBusyNow || !e2eeEnabled}
               onPress={handleDisableE2EE}
@@ -450,7 +462,7 @@ const createStyles = (colors: ThemeColors) =>
     card: {
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: radius.md,
+      borderRadius: radius.lg,
       backgroundColor: colors.card,
       padding: spacing.lg,
       gap: spacing.md,
@@ -513,7 +525,7 @@ const createStyles = (colors: ThemeColors) =>
       gap: spacing.md,
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: radius.md,
+      borderRadius: radius.lg,
       backgroundColor: colors.cardMuted,
       padding: spacing.md,
     },

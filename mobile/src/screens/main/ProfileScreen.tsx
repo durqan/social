@@ -3,6 +3,7 @@ import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { launchImageLibrary } from 'react-native-image-picker';
 import type { Asset } from 'react-native-image-picker';
+import { Camera, Save } from 'lucide-react-native';
 
 import { isEmailVerified } from '../../api/auth';
 import { assetURL, CHAT_IMAGE_MIME_TYPES } from '../../config/env';
@@ -261,6 +262,9 @@ export default function ProfileScreen() {
               {(user.name || user.email || '?').slice(0, 1).toUpperCase()}
             </Text>
           )}
+          <View style={styles.avatarEditBadge}>
+            <Camera color={colors.white} size={15} strokeWidth={2.4} />
+          </View>
         </Pressable>
         <Text style={styles.name}>{user.name || 'Без имени'}</Text>
         <Text style={styles.email}>{user.email}</Text>
@@ -350,7 +354,12 @@ export default function ProfileScreen() {
             keyboardType="decimal-pad"
           />
         </View>
-        <AppButton title="Сохранить" loading={saving} onPress={handleSave} />
+        <AppButton
+          title="Сохранить"
+          icon={Save}
+          loading={saving}
+          onPress={handleSave}
+        />
       </View>
     </Screen>
   );
@@ -389,10 +398,10 @@ const createStyles = (colors: ThemeColors) =>
     card: {
       alignItems: 'center',
       borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: radius.md,
+      borderColor: colors.accentBorder,
+      borderRadius: radius.lg,
       backgroundColor: colors.card,
-      padding: spacing.lg,
+      padding: spacing.xl,
       gap: spacing.sm,
     },
     avatar: {
@@ -402,7 +411,9 @@ const createStyles = (colors: ThemeColors) =>
       alignItems: 'center',
       justifyContent: 'center',
       overflow: 'hidden',
-      backgroundColor: colors.surfaceMuted,
+      backgroundColor: colors.accentSoft,
+      borderWidth: 2,
+      borderColor: colors.borderStrong,
     },
     avatarImage: {
       width: 82,
@@ -412,6 +423,19 @@ const createStyles = (colors: ThemeColors) =>
       color: colors.accentStrong,
       fontSize: 30,
       fontWeight: '800',
+    },
+    avatarEditBadge: {
+      position: 'absolute',
+      right: 0,
+      bottom: 0,
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.accent,
+      borderWidth: 2,
+      borderColor: colors.card,
     },
     avatarHint: {
       ...typography.caption,
@@ -429,7 +453,7 @@ const createStyles = (colors: ThemeColors) =>
     infoCard: {
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: radius.md,
+      borderRadius: radius.lg,
       backgroundColor: colors.card,
       overflow: 'hidden',
     },
@@ -452,7 +476,7 @@ const createStyles = (colors: ThemeColors) =>
     formCard: {
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: radius.md,
+      borderRadius: radius.lg,
       backgroundColor: colors.card,
       padding: spacing.lg,
       gap: spacing.md,

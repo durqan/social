@@ -15,13 +15,14 @@ import {
 } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Search } from 'lucide-react-native';
+import { Check, Search, Trash2, UserRound, X } from 'lucide-react-native';
 
 import { friendsApi } from '../../api/friends';
 import { getApiErrorMessage } from '../../api/http';
 import type { Friendship, User } from '../../api/types';
 import { assetURL } from '../../config/env';
 import { AppButton } from '../../components/AppButton';
+import { IconButton } from '../../components/IconButton';
 import {
   EmptyState,
   ErrorBanner,
@@ -231,6 +232,7 @@ export default function FriendsScreen() {
                       <AppButton
                         title="Профиль"
                         variant="secondary"
+                        icon={UserRound}
                         style={styles.actionButton}
                         onPress={() =>
                           request.user && openProfile(request.user)
@@ -238,6 +240,7 @@ export default function FriendsScreen() {
                       />
                       <AppButton
                         title="Принять"
+                        icon={Check}
                         style={styles.actionButton}
                         loading={busyId === request.id}
                         onPress={() => acceptRequest(request)}
@@ -245,6 +248,7 @@ export default function FriendsScreen() {
                       <AppButton
                         title="Отклонить"
                         variant="ghost"
+                        icon={X}
                         style={styles.actionButton}
                         loading={busyId === request.id}
                         onPress={() => rejectRequest(request)}
@@ -283,17 +287,21 @@ export default function FriendsScreen() {
                     ) : null}
                   </View>
                   {item.id ? (
-                    <AppButton
-                      title="Профиль"
+                    <IconButton
+                      label="Открыть профиль"
                       variant="ghost"
+                      icon={UserRound}
+                      size="sm"
                       style={styles.friendAction}
                       onPress={() => openProfile(item)}
                     />
                   ) : null}
                   {item.id ? (
-                    <AppButton
-                      title="Удалить"
-                      variant="secondary"
+                    <IconButton
+                      label="Удалить из друзей"
+                      variant="danger"
+                      icon={Trash2}
+                      size="sm"
                       style={styles.friendAction}
                       loading={busyId === item.id}
                       onPress={() => removeFriend(item.id as number)}
@@ -429,6 +437,7 @@ const createStyles = (colors: ThemeColors) =>
       color: colors.muted,
     },
     friendAction: {
-      paddingHorizontal: 10,
+      width: 38,
+      height: 38,
     },
   });

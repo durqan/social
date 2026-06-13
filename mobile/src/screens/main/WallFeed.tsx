@@ -9,12 +9,20 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
+import {
+  Heart,
+  MessageCircle,
+  Pencil,
+  Send,
+  Trash2,
+} from 'lucide-react-native';
 
 import { getApiErrorMessage } from '../../api/http';
 import { postApi } from '../../api/posts';
 import type { Comment, Post, PostUser, User } from '../../api/types';
 import { assetURL } from '../../config/env';
 import { AppButton } from '../../components/AppButton';
+import { IconButton } from '../../components/IconButton';
 import {
   EmptyState,
   ErrorBanner,
@@ -382,24 +390,22 @@ export function WallFeed({
 
               {currentUser?.id === post.user?.id ? (
                 <View style={styles.postActions}>
-                  <Pressable
-                    accessibilityRole="button"
-                    style={styles.iconButton}
+                  <IconButton
+                    icon={Pencil}
+                    label="Редактировать пост"
+                    size="sm"
+                    variant="ghost"
                     disabled={busyPostId === post.id}
                     onPress={() => startEditing(post)}
-                  >
-                    <Text style={styles.iconText}>Изм</Text>
-                  </Pressable>
-                  <Pressable
-                    accessibilityRole="button"
-                    style={[styles.iconButton, styles.dangerIconButton]}
+                  />
+                  <IconButton
+                    icon={Trash2}
+                    label="Удалить пост"
+                    size="sm"
+                    variant="danger"
                     disabled={busyPostId === post.id}
                     onPress={() => requestDeletePost(post)}
-                  >
-                    <Text style={[styles.iconText, styles.dangerText]}>
-                      Удал
-                    </Text>
-                  </Pressable>
+                  />
                 </View>
               ) : null}
             </View>
@@ -448,13 +454,19 @@ export function WallFeed({
                 ]}
                 onPress={() => togglePostLike(post.id)}
               >
+                <Heart
+                  color={post.is_liked ? colors.accentStrong : colors.muted}
+                  fill={post.is_liked ? colors.accentStrong : 'transparent'}
+                  size={16}
+                  strokeWidth={2.2}
+                />
                 <Text
                   style={[
                     styles.reactionText,
                     post.is_liked && styles.reactionTextActive,
                   ]}
                 >
-                  {post.is_liked ? 'Нравится' : 'Лайк'} · {post.likes_count}
+                  {post.likes_count}
                 </Text>
               </Pressable>
               <Pressable
@@ -468,13 +480,22 @@ export function WallFeed({
                   toggleComments(post.id).catch(() => undefined);
                 }}
               >
+                <MessageCircle
+                  color={
+                    openCommentsId === post.id
+                      ? colors.accentStrong
+                      : colors.muted
+                  }
+                  size={16}
+                  strokeWidth={2.2}
+                />
                 <Text
                   style={[
                     styles.reactionText,
                     openCommentsId === post.id && styles.reactionTextActive,
                   ]}
                 >
-                  Комментарии · {post.comments_count}
+                  {post.comments_count}
                 </Text>
               </Pressable>
             </View>
@@ -511,7 +532,7 @@ export function WallFeed({
                                 comment.is_liked && styles.commentLikeActive,
                               ]}
                             >
-                              {comment.is_liked ? 'Нравится' : 'Лайк'} ·{' '}
+                              {comment.is_liked ? '♥' : '♡'}{' '}
                               {comment.likes_count}
                             </Text>
                           </Pressable>
@@ -538,8 +559,10 @@ export function WallFeed({
                     maxLength={maxPostLength}
                     style={styles.commentInput}
                   />
-                  <AppButton
-                    title="Отправить"
+                  <IconButton
+                    icon={Send}
+                    label="Отправить комментарий"
+                    variant="primary"
                     loading={busyPostId === post.id}
                     disabled={!commentDraft[post.id]?.trim()}
                     onPress={() => createComment(post.id)}
@@ -680,26 +703,6 @@ const createStyles = (colors: ThemeColors) =>
       flexDirection: 'row',
       gap: 6,
     },
-    iconButton: {
-      minWidth: 42,
-      minHeight: 34,
-      alignItems: 'center',
-      justifyContent: 'center',
-      borderRadius: radius.md,
-      backgroundColor: colors.surfaceMuted,
-      paddingHorizontal: 8,
-    },
-    dangerIconButton: {
-      backgroundColor: colors.dangerSoft,
-    },
-    iconText: {
-      ...typography.tiny,
-      color: colors.accentStrong,
-      fontWeight: '900',
-    },
-    dangerText: {
-      color: colors.danger,
-    },
     postContent: {
       ...typography.body,
       color: colors.text,
@@ -737,10 +740,13 @@ const createStyles = (colors: ThemeColors) =>
     },
     reactionButton: {
       minHeight: 36,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
       justifyContent: 'center',
       borderRadius: 999,
       backgroundColor: colors.surfaceMuted,
-      paddingHorizontal: 12,
+      paddingHorizontal: spacing.md,
     },
     reactionButtonActive: {
       backgroundColor: colors.accentSoft,
@@ -824,7 +830,8 @@ const createStyles = (colors: ThemeColors) =>
     },
     commentSend: {
       alignSelf: 'flex-end',
-      minHeight: 40,
+      width: 42,
+      height: 42,
     },
     avatar: {
       flexShrink: 0,

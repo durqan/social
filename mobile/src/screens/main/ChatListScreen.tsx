@@ -243,13 +243,21 @@ export default function ChatListScreen({ navigation }: Props) {
               />
               <View style={styles.meta}>
                 <View style={styles.rowHeader}>
-                  <Text
-                    style={[styles.name, isUnread && styles.nameUnread]}
-                    numberOfLines={1}
-                  >
-                    {item.is_pinned ? '● ' : ''}
-                    {item.name}
-                  </Text>
+                  <View style={styles.nameBox}>
+                    {item.is_pinned ? (
+                      <Pin
+                        color={colors.accentStrong}
+                        size={13}
+                        strokeWidth={2.5}
+                      />
+                    ) : null}
+                    <Text
+                      style={[styles.name, isUnread && styles.nameUnread]}
+                      numberOfLines={1}
+                    >
+                      {item.name}
+                    </Text>
+                  </View>
                   <Text style={styles.date} numberOfLines={1}>
                     {formatDateTime(item.last_message_at)}
                   </Text>
@@ -317,7 +325,7 @@ function ConversationAvatar({
           ]}
         />
       ) : (
-        <Text style={styles.avatarText}>
+        <Text style={[styles.avatarText, isUnread && styles.avatarTextUnread]}>
           {conversation.name.slice(0, 1).toUpperCase()}
         </Text>
       )}
@@ -428,7 +436,7 @@ const createStyles = (colors: ThemeColors) =>
       alignItems: 'center',
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: radius.md,
+      borderRadius: radius.lg,
       backgroundColor: colors.card,
       padding: spacing.md,
       gap: spacing.md,
@@ -447,7 +455,7 @@ const createStyles = (colors: ThemeColors) =>
       flexShrink: 0,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: colors.surfaceMuted,
+      backgroundColor: colors.accentSoft,
       overflow: 'hidden',
     },
     avatarUnread: {
@@ -458,9 +466,12 @@ const createStyles = (colors: ThemeColors) =>
       height: 48,
     },
     avatarText: {
-      color: colors.white,
+      color: colors.accentStrong,
       fontSize: 18,
       fontWeight: '800',
+    },
+    avatarTextUnread: {
+      color: colors.white,
     },
     meta: {
       flex: 1,
@@ -470,6 +481,13 @@ const createStyles = (colors: ThemeColors) =>
       flexDirection: 'row',
       alignItems: 'center',
       gap: 8,
+    },
+    nameBox: {
+      flex: 1,
+      minWidth: 0,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
     },
     name: {
       ...typography.body,

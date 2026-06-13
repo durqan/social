@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { LogIn, MessageCircle, UserPlus } from 'lucide-react-native';
 
 import { AppButton } from '../../components/AppButton';
 import { ErrorBanner } from '../../components/Feedback';
@@ -48,6 +49,9 @@ export default function LoginScreen({ navigation }: Props) {
   return (
     <Screen contentContainerStyle={styles.container}>
       <View style={styles.card}>
+        <View style={styles.brandMark}>
+          <MessageCircle color={colors.white} size={24} strokeWidth={2.5} />
+        </View>
         <Text style={styles.title}>Вход</Text>
         <Text style={styles.subtitle}>
           Используйте тот же аккаунт, что и в веб-версии.
@@ -74,10 +78,16 @@ export default function LoginScreen({ navigation }: Props) {
           placeholder="Ваш пароль"
         />
 
-        <AppButton title="Войти" loading={loading} onPress={handleSubmit} />
+        <AppButton
+          title="Войти"
+          icon={LogIn}
+          loading={loading}
+          onPress={handleSubmit}
+        />
         <AppButton
           title="Создать аккаунт"
           variant="ghost"
+          icon={UserPlus}
           onPress={() => navigation.navigate('Register')}
         />
       </View>
@@ -93,11 +103,20 @@ const createStyles = (colors: ThemeColors) =>
     },
     card: {
       borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: radius.md,
+      borderColor: colors.accentBorder,
+      borderRadius: radius.lg,
       backgroundColor: colors.card,
-      padding: spacing.lg,
+      padding: spacing.xl,
       gap: spacing.md,
+    },
+    brandMark: {
+      width: 54,
+      height: 54,
+      borderRadius: radius.lg,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.accent,
+      marginBottom: spacing.xs,
     },
     title: {
       ...typography.h1,
