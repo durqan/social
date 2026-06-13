@@ -9,6 +9,7 @@ import { Icon } from "@/shared/ui/Icon.js";
 import { useWebSocket } from "@/app/providers/WebSocketContext.js";
 import { useAppDialog } from "@/app/providers/AppDialogProvider.js";
 import type { WsEvent } from "@/shared/types/ws.js";
+import { WS_EVENTS } from '@social/shared';
 
 type ConversationMenuState = {
     userId: number;
@@ -63,26 +64,26 @@ function Conversations() {
 
         const handleMessage = (event: WsEvent) => {
             switch (event.type) {
-                case 'message:new':
-                case 'message:update':
+                case WS_EVENTS.MESSAGE_NEW:
+                case WS_EVENTS.MESSAGE_UPDATE:
                     if (event.payload.from_id === currentUser.id || event.payload.to_id === currentUser.id) {
                         void fetchConversations();
                     }
                     return;
 
-                case 'message:read':
+                case WS_EVENTS.MESSAGE_READ:
                     if (event.payload.from_id === currentUser.id || event.payload.to_id === currentUser.id) {
                         void fetchConversations();
                     }
                     return;
 
-                case 'conversation:read':
+                case WS_EVENTS.CONVERSATION_READ:
                     if (event.payload.reader_id === currentUser.id) {
                         void fetchConversations();
                     }
                     return;
 
-                case 'message:delete':
+                case WS_EVENTS.MESSAGE_DELETE:
                     void fetchConversations();
                     return;
 

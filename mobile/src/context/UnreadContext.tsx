@@ -8,6 +8,7 @@ import React, {
   useState,
   type ReactNode,
 } from 'react';
+import { WS_EVENTS } from '@social/shared';
 
 import { messageApi } from '../api/messages';
 import { chatSocket, type WsEvent } from '../api/ws';
@@ -114,11 +115,11 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
 
     const handleSocketEvent = (event: WsEvent) => {
       if (
-        event.type === 'message:new' ||
-        event.type === 'message:update' ||
-        event.type === 'message:delete' ||
-        event.type === 'message:read' ||
-        event.type === 'conversation:read'
+        event.type === WS_EVENTS.MESSAGE_NEW ||
+        event.type === WS_EVENTS.MESSAGE_UPDATE ||
+        event.type === WS_EVENTS.MESSAGE_DELETE ||
+        event.type === WS_EVENTS.MESSAGE_READ ||
+        event.type === WS_EVENTS.CONVERSATION_READ
       ) {
         signalChatDataChanged();
       }

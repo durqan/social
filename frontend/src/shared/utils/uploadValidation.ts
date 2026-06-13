@@ -1,33 +1,33 @@
-const imageTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
-const voiceTypes = new Set(['audio/webm', 'audio/ogg']);
-const videoNoteTypes = new Set(['video/webm', 'video/mp4']);
+import {
+    CHAT_IMAGE_MIME_TYPES,
+    CHAT_VIDEO_NOTE_MIME_TYPES,
+    CHAT_VOICE_MIME_TYPE,
+    chatImageMaxCount,
+    chatImageMaxSize,
+    chatVideoNoteMaxDurationSeconds,
+    chatVideoNoteMaxSize,
+    chatVoiceMaxDurationSeconds,
+    chatVoiceMaxSize,
+    formatDuration,
+    formatFileSize,
+} from '@social/shared';
 
 export const avatarMaxSize = 5 * 1024 * 1024;
-export const chatImageMaxSize = 10 * 1024 * 1024;
-export const chatImageMaxCount = 5;
-export const chatVoiceMaxSize = 12 * 1024 * 1024;
-export const chatVoiceMaxDurationSeconds = 5 * 60;
-export const chatVideoNoteMaxSize = 25 * 1024 * 1024;
-export const chatVideoNoteMaxDurationSeconds = 60;
 
-export function formatFileSize(bytes: number) {
-    if (bytes >= 1024 * 1024) {
-        return `${(bytes / (1024 * 1024)).toFixed(bytes % (1024 * 1024) === 0 ? 0 : 1)} МБ`;
-    }
+const imageTypes = new Set<string>(CHAT_IMAGE_MIME_TYPES);
+const voiceTypes = new Set([CHAT_VOICE_MIME_TYPE, 'audio/ogg']);
+const videoNoteTypes = new Set<string>(CHAT_VIDEO_NOTE_MIME_TYPES);
 
-    if (bytes >= 1024) {
-        return `${Math.ceil(bytes / 1024)} КБ`;
-    }
-
-    return `${bytes} Б`;
-}
-
-export function formatDuration(totalSeconds?: number) {
-    const safeSeconds = Math.max(0, Math.floor(totalSeconds || 0));
-    const minutes = Math.floor(safeSeconds / 60);
-    const seconds = safeSeconds % 60;
-    return `${minutes}:${String(seconds).padStart(2, '0')}`;
-}
+export {
+    chatImageMaxCount,
+    chatImageMaxSize,
+    chatVideoNoteMaxDurationSeconds,
+    chatVideoNoteMaxSize,
+    chatVoiceMaxDurationSeconds,
+    chatVoiceMaxSize,
+    formatDuration,
+    formatFileSize,
+};
 
 export function validateImageFile(file: File, maxSize: number) {
     if (file.size <= 0) {

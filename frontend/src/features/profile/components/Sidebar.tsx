@@ -7,6 +7,7 @@ import { messageService } from "@/features/chat/api/messageService.js";
 import type { WsEvent } from "@/shared/types/ws.js";
 import { Avatar } from "@/shared/ui/Avatar.js";
 import { Icon, type IconName } from "@/shared/ui/Icon.js";
+import { WS_EVENTS } from '@social/shared';
 
 interface SidebarProps {
     userId?: number;
@@ -114,11 +115,11 @@ function Sidebar({
 
         const handleMessage = (event: WsEvent) => {
             switch (event.type) {
-                case 'friend:request':
+                case WS_EVENTS.FRIEND_REQUEST:
                     refreshFriendRequestCount();
                     return;
 
-                case 'message:new':
+                case WS_EVENTS.MESSAGE_NEW:
                     if (event.payload.to_id === userId) {
                         if (location.pathname.includes(`/chat/${event.payload.from_id}`)) {
                             return;
@@ -127,13 +128,13 @@ function Sidebar({
                     }
                     return;
 
-                case 'message:read':
+                case WS_EVENTS.MESSAGE_READ:
                     if (event.payload.from_id === userId) {
                         refreshUnreadCount();
                     }
                     return;
 
-                case 'conversation:read':
+                case WS_EVENTS.CONVERSATION_READ:
                     if (event.payload.reader_id === userId) {
                         refreshUnreadCount();
                     }

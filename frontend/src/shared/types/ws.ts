@@ -1,110 +1,29 @@
-import type { Message, PinnedMessage } from "@/shared/types/domain.js";
+import {
+    WS_EVENTS,
+    type BaseWsEvent,
+    type NonCallWsEvent,
+} from '@social/shared';
 
-export interface BaseWsEvent<T extends string, P> {
-    type: T;
-    payload: P;
-}
-
-export type MessageEvent = BaseWsEvent<
-    'message:new',
-    Message
->;
-
-export type MessageUpdatedEvent = BaseWsEvent<
-    'message:update',
-    Message
->;
-
-export type MessageErrorEvent = BaseWsEvent<
-    'message:error',
-    {
-        error: string;
-    }
->;
-
-export type TypingStartEvent = BaseWsEvent<
-    'typing:start',
-    {
-        from_id: number;
-    }
->;
-
-export type TypingStopEvent = BaseWsEvent<
-    'typing:stop',
-    {
-        from_id: number;
-    }
->;
-
-export type ReadReceiptEvent = BaseWsEvent<
-    'message:read',
-    {
-        from_id: number;
-        to_id: number;
-        conversation_id?: number;
-    }
->;
-
-export type ConversationReadEvent = BaseWsEvent<
-    'conversation:read',
-    {
-        reader_id: number;
-        conversation_id: number;
-    }
->;
-
-export type MessageDeletedEvent = BaseWsEvent<
-    'message:delete',
-    {
-        message_id: number;
-    }
->;
-
-export type MessagePinnedEvent = BaseWsEvent<
-    'message_pinned',
-    {
-        pinned_message: PinnedMessage;
-    }
->;
-
-export type MessageUnpinnedEvent = BaseWsEvent<
-    'message_unpinned',
-    {
-        conversation_id: number;
-        message_id: number;
-        participant_ids: number[];
-    }
->;
-
-export type FriendRequestEvent = BaseWsEvent<
-    'friend:request',
-    {
-        from_id: number;
-        from_name: string;
-        message: string;
-    }
->;
-
-export type FriendAcceptedEvent = BaseWsEvent<
-    'friend:accepted',
-    {
-        from_id: number;
-        from_name: string;
-        message: string;
-    }
->;
-
-export interface PresenceUpdateEvent {
-    type: 'presence:update';
-
-    payload: {
-        user_id: number;
-        online: boolean;
-    };
-}
+export {
+    WS_EVENTS,
+    type BaseWsEvent,
+    type ConversationReadEvent,
+    type FriendAcceptedEvent,
+    type FriendRequestEvent,
+    type MessageDeletedEvent,
+    type MessageErrorEvent,
+    type MessageEvent,
+    type MessagePinnedEvent,
+    type MessageUnpinnedEvent,
+    type MessageUpdatedEvent,
+    type PresenceUpdateEvent,
+    type ReadReceiptEvent,
+    type TypingStartEvent,
+    type TypingStopEvent,
+} from '@social/shared';
 
 export type CallOfferEvent = BaseWsEvent<
-    'call:offer',
+    typeof WS_EVENTS.CALL_OFFER,
     {
         from_id: number;
         call_id: string;
@@ -114,7 +33,7 @@ export type CallOfferEvent = BaseWsEvent<
 >;
 
 export type CallAnswerEvent = BaseWsEvent<
-    'call:answer',
+    typeof WS_EVENTS.CALL_ANSWER,
     {
         from_id: number;
         call_id: string;
@@ -123,7 +42,7 @@ export type CallAnswerEvent = BaseWsEvent<
 >;
 
 export type CallIceEvent = BaseWsEvent<
-    'call:ice',
+    typeof WS_EVENTS.CALL_ICE,
     {
         from_id: number;
         call_id: string;
@@ -132,7 +51,7 @@ export type CallIceEvent = BaseWsEvent<
 >;
 
 export type CallEndEvent = BaseWsEvent<
-    'call:end',
+    typeof WS_EVENTS.CALL_END,
     {
         from_id: number;
         call_id: string;
@@ -140,7 +59,7 @@ export type CallEndEvent = BaseWsEvent<
 >;
 
 export type CallRejectEvent = BaseWsEvent<
-    'call:reject',
+    typeof WS_EVENTS.CALL_REJECT,
     {
         from_id: number;
         call_id: string;
@@ -148,19 +67,7 @@ export type CallRejectEvent = BaseWsEvent<
 >;
 
 export type WsEvent =
-    | MessageEvent
-    | MessageUpdatedEvent
-    | MessageErrorEvent
-    | TypingStartEvent
-    | TypingStopEvent
-    | ReadReceiptEvent
-    | ConversationReadEvent
-    | MessageDeletedEvent
-    | MessagePinnedEvent
-    | MessageUnpinnedEvent
-    | FriendRequestEvent
-    | FriendAcceptedEvent
-    | PresenceUpdateEvent
+    | NonCallWsEvent
     | CallOfferEvent
     | CallAnswerEvent
     | CallIceEvent

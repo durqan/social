@@ -1,14 +1,7 @@
 import { request } from "@/shared/api/axios.js";
+import type { E2EEBackupResponse, E2EEStatus } from '@social/shared';
 
-export type E2EEStatus = {
-    enabled: boolean;
-    public_key?: string;
-};
-
-export type E2EEBackupResponse = {
-    enabled: boolean;
-    encrypted_master_key?: string | null;
-};
+export type { E2EEBackupResponse, E2EEStatus } from '@social/shared';
 
 export const e2eeService = {
     async getStatus(userId?: number): Promise<E2EEStatus> {

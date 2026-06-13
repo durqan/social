@@ -1,5 +1,5 @@
 import { createArgon2idSalt, defaultArgon2idParams, deriveBackupKey, type Argon2idParams } from "@/crypto/argon.js";
-import { base64ToBytes, bytesToBase64, randomNonce } from "@/crypto/encoding.js";
+import { base64ToBytes, bytesToArrayBuffer, bytesToBase64, randomNonce } from "@/crypto/encoding.js";
 import {
     createLocalE2EEKeyBundle,
     exportPublicKeyBase64,
@@ -42,12 +42,12 @@ export async function createEncryptedMasterKeyBackup(bundle: LocalE2EEKeyBundle,
     const publicKey = bundle.publicKeyBase64 || await exportPublicKeyBase64(bundle.publicKey);
 
     const encryptedMasterKey = await crypto.subtle.encrypt(
-        { name: 'AES-GCM', iv: masterKeyNonce },
+        { name: 'AES-GCM', iv: bytesToArrayBuffer(masterKeyNonce) },
         backupKey,
         rawMasterKey,
     );
     const encryptedPrivateKey = await crypto.subtle.encrypt(
-        { name: 'AES-GCM', iv: privateKeyNonce },
+        { name: 'AES-GCM', iv: bytesToArrayBuffer(privateKeyNonce) },
         bundle.masterKey,
         rawPrivateKey,
     );
@@ -76,15 +76,15 @@ export async function restoreE2EEFromBackup(userId: number, password: string, en
     const payload = parseEncryptedMasterKeyBackup(encryptedBackup);
     const backupKey = await deriveBackupKey(password, payload.kdf.salt, payload.kdf);
     const rawMasterKey = await crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv: base64ToBytes(payload.masterKeyNonce) },
+        { name: 'AES-GCM', iv: bytesToArrayBuffer(base64ToBytes(payload.masterKeyNonce)) },
         backupKey,
-        base64ToBytes(payload.encryptedMasterKey),
+        bytesToArrayBuffer(base64ToBytes(payload.encryptedMasterKey)),
     );
     const masterKey = await importMasterKey(rawMasterKey);
     const rawPrivateKey = await crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv: base64ToBytes(payload.privateKeyNonce) },
+        { name: 'AES-GCM', iv: bytesToArrayBuffer(base64ToBytes(payload.privateKeyNonce)) },
         masterKey,
-        base64ToBytes(payload.encryptedPrivateKey),
+        bytesToArrayBuffer(base64ToBytes(payload.encryptedPrivateKey)),
     );
     const privateKey = await importPrivateKey(rawPrivateKey);
     const publicKey = await importPublicKey(payload.publicKey);

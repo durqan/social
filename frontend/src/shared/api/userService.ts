@@ -1,21 +1,8 @@
 import { request } from "@/shared/api/axios.js";
 import type {User} from "@/shared/types/domain.js";
+import type { ChangePasswordData, UpdateUserData } from '@social/shared';
 
-export type UpdateUserData = {
-    name?: string;
-    email?: string;
-    age?: number;
-    bio?: string;
-    avatar_position_x?: number;
-    avatar_position_y?: number;
-    avatar_scale?: number;
-};
-
-export type ChangePasswordData = {
-    current_password: string;
-    new_password: string;
-    encrypted_master_key?: string;
-};
+export type { ChangePasswordData, UpdateUserData } from '@social/shared';
 
 export const normalizeUser = (user: User): User => ({
     ...user,

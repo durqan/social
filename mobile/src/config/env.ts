@@ -1,3 +1,15 @@
+export {
+  CHAT_IMAGE_MAX_BYTES,
+  CHAT_IMAGE_MAX_COUNT,
+  CHAT_IMAGE_MIME_TYPES,
+  CHAT_VOICE_MAX_BYTES,
+  CHAT_VOICE_MAX_DURATION_SECONDS,
+  CHAT_VOICE_MIME_TYPE,
+  CHAT_VIDEO_NOTE_MAX_BYTES,
+  CHAT_VIDEO_NOTE_MAX_DURATION_SECONDS,
+  CHAT_VIDEO_NOTE_MIME_TYPES,
+} from '@social/shared';
+
 declare const process:
   | {
       env: {
@@ -68,20 +80,6 @@ export const TURN_CREDENTIAL =
   typeof process !== 'undefined'
     ? process.env.SOCIAL_TURN_CREDENTIAL
     : undefined;
-
-export const CHAT_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
-export const CHAT_IMAGE_MAX_COUNT = 5;
-export const CHAT_IMAGE_MIME_TYPES = [
-  'image/jpeg',
-  'image/png',
-  'image/webp',
-] as const;
-export const CHAT_VOICE_MAX_BYTES = 12 * 1024 * 1024;
-export const CHAT_VOICE_MAX_DURATION_SECONDS = 5 * 60;
-export const CHAT_VOICE_MIME_TYPE = 'audio/webm';
-export const CHAT_VIDEO_NOTE_MAX_BYTES = 25 * 1024 * 1024;
-export const CHAT_VIDEO_NOTE_MAX_DURATION_SECONDS = 60;
-export const CHAT_VIDEO_NOTE_MIME_TYPES = ['video/webm', 'video/mp4'] as const;
 
 export function apiURL(path: string) {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;

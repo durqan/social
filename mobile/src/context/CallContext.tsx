@@ -26,6 +26,7 @@ import {
   RTCView,
   type MediaStream,
 } from 'react-native-webrtc';
+import { WS_EVENTS } from '@social/shared';
 
 import { userApi } from '../api/users';
 import {
@@ -574,16 +575,16 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const handleSocketEvent = useCallback(
     (event: WsEvent) => {
       if (
-        event.type !== 'call:offer' &&
-        event.type !== 'call:answer' &&
-        event.type !== 'call:ice' &&
-        event.type !== 'call:end' &&
-        event.type !== 'call:reject'
+        event.type !== WS_EVENTS.CALL_OFFER &&
+        event.type !== WS_EVENTS.CALL_ANSWER &&
+        event.type !== WS_EVENTS.CALL_ICE &&
+        event.type !== WS_EVENTS.CALL_END &&
+        event.type !== WS_EVENTS.CALL_REJECT
       ) {
         return;
       }
 
-      if (event.type === 'call:offer') {
+      if (event.type === WS_EVENTS.CALL_OFFER) {
         const payload = event.payload as {
           from_id: number;
           call_id?: string;
@@ -646,7 +647,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      if (event.type === 'call:answer') {
+      if (event.type === WS_EVENTS.CALL_ANSWER) {
         if (!payload.answer) {
           return;
         }
@@ -659,7 +660,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      if (event.type === 'call:ice') {
+      if (event.type === WS_EVENTS.CALL_ICE) {
         const candidate = payload.candidate;
         if (!candidate) {
           return;
@@ -677,7 +678,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      if (event.type === 'call:end' || statusRef.current !== 'active') {
+      if (event.type === WS_EVENTS.CALL_END || statusRef.current !== 'active') {
         finishCall('ended');
       }
     },

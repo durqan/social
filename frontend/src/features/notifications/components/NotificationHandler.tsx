@@ -8,21 +8,22 @@ import { useWebSocket } from "@/app/providers/WebSocketContext.js";
 import { userService } from "@/shared/api/userService.js";
 import type { WsEvent } from "@/shared/types/ws.js";
 import { Avatar } from "@/shared/ui/Avatar.js";
+import { WS_EVENTS } from '@social/shared';
 
 const ignoredEvents: ReadonlySet<WsEvent['type']> = new Set([
-    'typing:start',
-    'typing:stop',
-    'message:delete',
-    'message:update',
-    'message:error',
-    'message:read',
-    'conversation:read',
-    'call:offer',
-    'call:answer',
-    'call:ice',
-    'call:end',
-    'call:reject',
-    'presence:update',
+    WS_EVENTS.TYPING_START,
+    WS_EVENTS.TYPING_STOP,
+    WS_EVENTS.MESSAGE_DELETE,
+    WS_EVENTS.MESSAGE_UPDATE,
+    WS_EVENTS.MESSAGE_ERROR,
+    WS_EVENTS.MESSAGE_READ,
+    WS_EVENTS.CONVERSATION_READ,
+    WS_EVENTS.CALL_OFFER,
+    WS_EVENTS.CALL_ANSWER,
+    WS_EVENTS.CALL_ICE,
+    WS_EVENTS.CALL_END,
+    WS_EVENTS.CALL_REJECT,
+    WS_EVENTS.PRESENCE_UPDATE,
 ]);
 
 type NotificationToast = {
@@ -95,7 +96,7 @@ function NotificationHandler() {
             }
 
             switch (event.type) {
-                case 'friend:request':
+                case WS_EVENTS.FRIEND_REQUEST:
                     showNotificationToast({
                         title: event.payload.from_name || 'Пользователь',
                         message: 'Отправил(а) заявку в друзья',
@@ -106,7 +107,7 @@ function NotificationHandler() {
                     });
                     return;
 
-                case 'friend:accepted':
+                case WS_EVENTS.FRIEND_ACCEPTED:
                     showNotificationToast({
                         title: event.payload.from_name || 'Пользователь',
                         message: 'Принял(а) заявку в друзья',
@@ -117,7 +118,7 @@ function NotificationHandler() {
                     });
                     return;
 
-                case 'message:new': {
+                case WS_EVENTS.MESSAGE_NEW: {
                     const message = event.payload;
                     const currentUserId = currentUser?.id;
 

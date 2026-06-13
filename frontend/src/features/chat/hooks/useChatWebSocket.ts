@@ -4,6 +4,7 @@ import { useWebSocket } from "@/app/providers/WebSocketContext.js";
 
 import type { Message, PinnedMessage } from "@/shared/types/domain.js";
 import type { WsEvent } from "@/shared/types/ws.js";
+import { WS_EVENTS } from '@social/shared';
 
 const belongsToCurrentChat = (
     message: Message,
@@ -65,7 +66,7 @@ export const useChatWebSocket = ({
                 // =========================
                 // TYPING START
                 // =========================
-                case 'typing:start': {
+                case WS_EVENTS.TYPING_START: {
 
                     const payload = event.payload;
 
@@ -79,7 +80,7 @@ export const useChatWebSocket = ({
                 // =========================
                 // TYPING STOP
                 // =========================
-                case 'typing:stop': {
+                case WS_EVENTS.TYPING_STOP: {
 
                     const payload = event.payload;
 
@@ -93,7 +94,7 @@ export const useChatWebSocket = ({
                 // =========================
                 // MESSAGE DELETE
                 // =========================
-                case 'message:delete': {
+                case WS_EVENTS.MESSAGE_DELETE: {
 
                     const payload = event.payload;
 
@@ -105,7 +106,7 @@ export const useChatWebSocket = ({
                 // =========================
                 // READ RECEIPT
                 // =========================
-                case 'message:read': {
+                case WS_EVENTS.MESSAGE_READ: {
 
                     const payload = event.payload;
 
@@ -119,7 +120,7 @@ export const useChatWebSocket = ({
                     break;
                 }
 
-                case 'conversation:read': {
+                case WS_EVENTS.CONVERSATION_READ: {
                     const payload = event.payload;
                     if (
                         payload.reader_id === currentUserId &&
@@ -134,7 +135,7 @@ export const useChatWebSocket = ({
                 // =========================
                 // NEW MESSAGE
                 // =========================
-                case 'message:new': {
+                case WS_EVENTS.MESSAGE_NEW: {
 
                     const payload = event.payload;
 
@@ -151,7 +152,7 @@ export const useChatWebSocket = ({
                 // =========================
                 // MESSAGE UPDATE
                 // =========================
-                case 'message:update': {
+                case WS_EVENTS.MESSAGE_UPDATE: {
 
                     const payload = event.payload;
 
@@ -165,7 +166,7 @@ export const useChatWebSocket = ({
                     break;
                 }
 
-                case 'message_pinned': {
+                case WS_EVENTS.MESSAGE_PINNED: {
 
                     const payload = event.payload.pinned_message;
 
@@ -176,7 +177,7 @@ export const useChatWebSocket = ({
                     break;
                 }
 
-                case 'message_unpinned': {
+                case WS_EVENTS.MESSAGE_UNPINNED: {
 
                     const payload = event.payload;
                     const otherUserId = Number(userId);
@@ -193,15 +194,15 @@ export const useChatWebSocket = ({
                     break;
                 }
 
-                case 'call:offer':
-                case 'call:answer':
-                case 'call:ice':
-                case 'call:end':
-                case 'call:reject':
-                case 'presence:update':
-                case 'friend:request':
-                case 'friend:accepted':
-                case 'message:error':
+                case WS_EVENTS.CALL_OFFER:
+                case WS_EVENTS.CALL_ANSWER:
+                case WS_EVENTS.CALL_ICE:
+                case WS_EVENTS.CALL_END:
+                case WS_EVENTS.CALL_REJECT:
+                case WS_EVENTS.PRESENCE_UPDATE:
+                case WS_EVENTS.FRIEND_REQUEST:
+                case WS_EVENTS.FRIEND_ACCEPTED:
+                case WS_EVENTS.MESSAGE_ERROR:
                     break;
 
                 default:

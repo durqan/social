@@ -1,179 +1,31 @@
 import type { Dispatch, SetStateAction } from 'react';
 
-export interface User {
-    id?: number;
-    email?: string;
-    password?: string;
-    name?: string;
-    bio?: string;
-    avatar?: string | null;
-    avatarPositionX?: number;
-    avatarPositionY?: number;
-    avatarScale?: number;
-    avatar_position_x?: number;
-    avatar_position_y?: number;
-    avatar_scale?: number;
-    createdAt?: string;
-    isEmailVerified?: boolean;
-    is_email_verified?: boolean;
-    created_at?: string;
-    last_seen_at?: string | null;
-}
+import type { User } from '@social/shared';
 
-export interface MessageUser {
-    id: number;
-    name: string;
-    email?: string;
-    age?: number;
-    bio?: string;
-    avatar?: string | null;
-    avatar_position_x?: number;
-    avatar_position_y?: number;
-    avatar_scale?: number;
-    is_email_verified?: boolean;
-    created_at?: string;
-}
-
-export interface Post {
-    id: number;
-    user_id: number;
-    user: {
-        id: number;
-        name: string;
-        avatar?: string | null;
-        avatar_position_x?: number;
-        avatar_position_y?: number;
-        avatar_scale?: number;
-    };
-    content: string;
-    created_at: string;
-    updated_at?: string;
-    likes_count: number;
-    comments_count: number;
-    is_liked?: boolean;
-}
-
-export interface Comment {
-    id: number;
-    post_id: number;
-    user_id: number;
-    user: {
-        id: number;
-        name: string;
-        avatar?: string | null;
-        avatar_position_x?: number;
-        avatar_position_y?: number;
-        avatar_scale?: number;
-    };
-    content: string;
-    created_at: string;
-    likes_count: number;
-    is_liked: boolean;
-}
+export type {
+    AuthResponse,
+    ChangePasswordPayload,
+    Comment,
+    Conversation,
+    Friendship,
+    LoginPayload,
+    Message,
+    MessageAttachment,
+    MessageUser,
+    PaginatedMessages,
+    PasswordChangeData,
+    PinnedMessage,
+    Post,
+    PostUser,
+    RegisterPayload,
+    SocialNotification,
+    UpdateProfilePayload,
+    User,
+} from '@social/shared';
 
 export interface ProfileContextType {
     user: User;
     setUser: Dispatch<SetStateAction<User | null>>;
     isOwner?: boolean;
     currentUser?: User | null;
-}
-
-export interface PasswordChangeData {
-    oldPassword: string;
-    newPassword: string;
-    confirmPassword: string;
-}
-
-export interface MessageAttachment {
-    id?: number;
-    attachment_id?: string;
-    message_id?: number;
-    file_url: string;
-    file_type: 'image' | 'voice' | 'video_note';
-    width?: number;
-    height?: number;
-    duration?: number;
-    duration_seconds?: number;
-    size: number;
-    encryption_version?: number;
-    encrypted_file_key?: string;
-    file_nonce?: string;
-    encrypted_metadata?: string;
-    decrypted_file_url?: string;
-    decryption_error?: boolean;
-    original_mime_type?: string;
-    original_filename?: string;
-    original_size?: number;
-    created_at?: string;
-}
-
-export interface Message {
-    id: number;
-    from_id: number;
-    to_id: number;
-    content: string;
-    encryption_version?: number;
-    ciphertext?: string;
-    nonce?: string;
-    decryption_error?: boolean;
-    created_at: string;
-    updated_at?: string;
-    is_read: boolean;
-    reply_to_message_id?: number | null;
-    forwarded_from_message_id?: number | null;
-    forwarded_from_user_id?: number | null;
-    from?: MessageUser;
-    to?: MessageUser;
-    reply_to_message?: Message | null;
-    forwarded_from_message?: Message | null;
-    forwarded_from_user?: MessageUser | null;
-    attachments?: MessageAttachment[];
-}
-
-export interface PinnedMessage {
-    id: number;
-    conversation_id: number;
-    message_id: number;
-    pinned_by_id: number;
-    created_at: string;
-    message: Message;
-    pinned_by?: MessageUser;
-}
-
-export interface Conversation {
-    user_id: number;
-    name: string;
-    avatar?: string | null;
-    avatar_position_x?: number;
-    avatar_position_y?: number;
-    avatar_scale?: number;
-    last_message: string;
-    last_message_at: string;
-    last_sender_id: number;
-    last_sender_name: string;
-    last_is_mine: boolean;
-    last_read: boolean;
-    unread_count: number;
-    is_pinned: boolean;
-}
-
-export interface SocialNotification {
-    id: number;
-    recipient_id: number;
-    actor_id: number;
-    type: string;
-    entity_id: number;
-    conversation_id?: number;
-    is_read: boolean;
-    created_at: string;
-}
-
-export interface Friendship {
-    id: number;
-    user_id: number;
-    friend_id: number;
-    status: 'pending' | 'accepted' | 'rejected' | 'blocked';
-    created_at: string;
-    user?: User;
-    friend?: User;
 }

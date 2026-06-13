@@ -1,6 +1,11 @@
 {
   "extends": "@react-native/typescript-config",
   "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@social/shared": ["../packages/shared/src/index.ts"],
+      "@social/shared/*": ["../packages/shared/src/*"]
+    },
     "types": ["jest"]
   },
   "include": ["**/*.ts", "**/*.tsx"],

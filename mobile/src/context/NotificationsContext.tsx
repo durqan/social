@@ -8,6 +8,7 @@ import React, {
   useState,
   type ReactNode,
 } from 'react';
+import { WS_EVENTS } from '@social/shared';
 
 import { useAuth } from './AuthContext';
 import { useUnread } from './UnreadContext';
@@ -180,7 +181,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     }
 
     const unsubscribe = chatSocket.onMessage((event: WsEvent) => {
-      if (event.type !== 'conversation:read') {
+      if (event.type !== WS_EVENTS.CONVERSATION_READ) {
         return;
       }
 

@@ -27,6 +27,7 @@ import { useRefState } from "@/shared/hooks/useRefState.js";
 
 import type { CallStatus, CallType } from "@/features/call/types.js";
 import type { WsEvent } from "@/shared/types/ws.js";
+import { WS_EVENTS } from '@social/shared';
 
 type AudioCallContextValue = {
     status: CallStatus;
@@ -449,7 +450,7 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
     useEffect(() => {
         const handleMessage = async (event: WsEvent) => {
             switch (event.type) {
-                case 'call:offer': {
+                case WS_EVENTS.CALL_OFFER: {
                     const {
                         from_id: fromId,
                         call_id: callId,
@@ -477,7 +478,7 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
                     return;
                 }
 
-                case 'call:answer': {
+                case WS_EVENTS.CALL_ANSWER: {
                     const { from_id: fromId, call_id: callId, answer } = event.payload;
 
                     if (!isCallId(callId) || callId !== callIdRef.current) {
@@ -504,7 +505,7 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
                     return;
                 }
 
-                case 'call:ice': {
+                case WS_EVENTS.CALL_ICE: {
                     const { from_id: fromId, call_id: callId, candidate } = event.payload;
 
                     if (
@@ -528,8 +529,8 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
                     return;
                 }
 
-                case 'call:end':
-                case 'call:reject': {
+                case WS_EVENTS.CALL_END:
+                case WS_EVENTS.CALL_REJECT: {
                     const { from_id: fromId, call_id: callId } = event.payload;
 
                     if (!isCallId(callId) || callId !== callIdRef.current) {
@@ -542,7 +543,7 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
                     }
 
                     if (fromId === peerUserIdRef.current) {
-                        if (event.type === 'call:end' || statusRef.current !== 'active') {
+                        if (event.type === WS_EVENTS.CALL_END || statusRef.current !== 'active') {
                             cleanupCall();
                         }
                     }
@@ -550,7 +551,7 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
                     return;
                 }
 
-                case 'message:new': {
+                case WS_EVENTS.MESSAGE_NEW: {
                     const message = event.payload;
 
                     if (

@@ -126,7 +126,7 @@ self.addEventListener('notificationclick', event => {
                     if ('navigate' in focused && focused.url !== notificationURL) {
                         try {
                             await focused.navigate(notificationURL);
-                        } catch (e) {
+                        } catch {
                             // Navigation may be blocked in some cases; fall back to message.
                         }
                     }

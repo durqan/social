@@ -3,6 +3,7 @@ import { useWebSocket } from "@/app/providers/WebSocketContext.js";
 import { presenceService } from "@/shared/api/presenceService.js";
 
 import type { WsEvent } from "@/shared/types/ws.js";
+import { WS_EVENTS } from '@social/shared';
 export const presenceMap = new Map<number, boolean>();
 export const usePresence = (
     userId: number | undefined
@@ -62,7 +63,7 @@ export const usePresence = (
 
             if (
                 event.type !==
-                'presence:update'
+                WS_EVENTS.PRESENCE_UPDATE
             ) {
                 return;
             }

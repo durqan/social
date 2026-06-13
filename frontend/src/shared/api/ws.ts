@@ -3,6 +3,7 @@ import type { MessageAttachment } from "@/shared/types/domain.js";
 import type { CallType } from "@/features/call/types.js";
 import type { WsEvent } from "@/shared/types/ws.js";
 import type { EncryptedMessagePayload } from "@/crypto/encryptMessage.js";
+import { WS_EVENTS } from '@social/shared';
 
 type WsHandler = (event: WsEvent) => void;
 type OutgoingEvent = {
@@ -15,12 +16,12 @@ type QueuedEvent = OutgoingEvent & {
 
 const reconnectDelayMs = 3000;
 const callEventQueueTtlMs = 30000;
-const callEventTypes = new Set([
-    'call:offer',
-    'call:answer',
-    'call:ice',
-    'call:end',
-    'call:reject',
+const callEventTypes: ReadonlySet<string> = new Set([
+    WS_EVENTS.CALL_OFFER,
+    WS_EVENTS.CALL_ANSWER,
+    WS_EVENTS.CALL_ICE,
+    WS_EVENTS.CALL_END,
+    WS_EVENTS.CALL_REJECT,
 ]);
 
 function attachmentForTransport(attachment: MessageAttachment): MessageAttachment {
@@ -122,7 +123,7 @@ export class WebSocketService {
 
     send(toId: number, content: string, attachments: MessageAttachment[] = [], replyToMessageId?: number, encryption?: EncryptedMessagePayload) {
         this.sendEvent({
-            type: 'message:send',
+            type: WS_EVENTS.MESSAGE_SEND,
             payload: {
                 to_id: toId,
                 content,
@@ -134,15 +135,15 @@ export class WebSocketService {
     }
 
     sendTypingStart(toId: number) {
-        this.sendEventToUser('typing:start', toId, {}, false);
+        this.sendEventToUser(WS_EVENTS.TYPING_START, toId, {}, false);
     }
 
     sendTypingStop(toId: number) {
-        this.sendEventToUser('typing:stop', toId, {}, false);
+        this.sendEventToUser(WS_EVENTS.TYPING_STOP, toId, {}, false);
     }
 
     sendReadReceipt(toId: number) {
-        this.sendEventToUser('message:read', toId);
+        this.sendEventToUser(WS_EVENTS.MESSAGE_READ, toId);
     }
 
     setActiveConversation(conversationId: number) {
@@ -153,7 +154,7 @@ export class WebSocketService {
     clearActiveConversation() {
         this.activeConversationId = null;
         this.sendEvent({
-            type: 'conversation:inactive',
+            type: WS_EVENTS.CONVERSATION_INACTIVE,
             payload: {},
         }, false);
     }
@@ -164,7 +165,7 @@ export class WebSocketService {
         callType: CallType,
         callId: string,
     ) {
-        this.sendEventToUser('call:offer', toId, {
+        this.sendEventToUser(WS_EVENTS.CALL_OFFER, toId, {
             call_id: callId,
             call_type: callType,
             offer,
@@ -172,25 +173,25 @@ export class WebSocketService {
     }
 
     sendCallAnswer(toId: number, answer: RTCSessionDescriptionInit, callId: string) {
-        this.sendEventToUser('call:answer', toId, {
+        this.sendEventToUser(WS_EVENTS.CALL_ANSWER, toId, {
             answer,
             call_id: callId,
         });
     }
 
     sendCallIce(toId: number, candidate: RTCIceCandidateInit, callId: string) {
-        this.sendEventToUser('call:ice', toId, {
+        this.sendEventToUser(WS_EVENTS.CALL_ICE, toId, {
             candidate,
             call_id: callId,
         });
     }
 
     sendCallEnd(toId: number, callId: string) {
-        this.sendEventToUser('call:end', toId, { call_id: callId });
+        this.sendEventToUser(WS_EVENTS.CALL_END, toId, { call_id: callId });
     }
 
     sendCallReject(toId: number, callId: string) {
-        this.sendEventToUser('call:reject', toId, { call_id: callId });
+        this.sendEventToUser(WS_EVENTS.CALL_REJECT, toId, { call_id: callId });
     }
 
     discardPendingCallEvents(callId?: string) {
@@ -220,7 +221,7 @@ export class WebSocketService {
         }
 
         this.sendEvent({
-            type: 'conversation:active',
+            type: WS_EVENTS.CONVERSATION_ACTIVE,
             payload: {
                 conversation_id: this.activeConversationId,
             },

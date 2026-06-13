@@ -1,102 +1,19 @@
 import NetInfo from '@react-native-community/netinfo';
+import {
+  WS_EVENTS,
+  type CallIceCandidate,
+  type CallSessionDescription,
+  type CallType,
+  type WsEvent,
+} from '@social/shared';
 
 import { WS_URL } from '../config/env';
 import type { EncryptedMessagePayload } from '../crypto/encryptMessage';
 import { getCookieHeader, refreshSession } from './http';
-import type { Message, MessageAttachment } from './types';
+import type { MessageAttachment } from './types';
 import { logDev } from '../utils/logger';
 
-export type CallType = 'audio' | 'video';
-
-export type CallSessionDescription = {
-  type: string | null;
-  sdp: string;
-};
-
-export type CallIceCandidate = {
-  candidate: string;
-  sdpMLineIndex?: number | null;
-  sdpMid?: string | null;
-};
-
-export type WsEvent =
-  | {
-      type: 'message:new';
-      payload: Message;
-    }
-  | {
-      type: 'message:update';
-      payload: Message;
-    }
-  | {
-      type: 'message:error';
-      payload: {
-        error: string;
-      };
-    }
-  | {
-      type: 'message:read';
-      payload: {
-        from_id: number;
-        to_id: number;
-        conversation_id?: number;
-      };
-    }
-  | {
-      type: 'conversation:read';
-      payload: {
-        reader_id: number;
-        conversation_id: number;
-      };
-    }
-  | {
-      type: 'message:delete';
-      payload: {
-        message_id: number;
-      };
-    }
-  | {
-      type: 'typing:start' | 'typing:stop';
-      payload: {
-        from_id: number;
-      };
-    }
-  | {
-      type: 'call:offer';
-      payload: {
-        from_id: number;
-        call_id: string;
-        call_type?: CallType;
-        offer: CallSessionDescription;
-      };
-    }
-  | {
-      type: 'call:answer';
-      payload: {
-        from_id: number;
-        call_id: string;
-        answer: CallSessionDescription;
-      };
-    }
-  | {
-      type: 'call:ice';
-      payload: {
-        from_id: number;
-        call_id: string;
-        candidate: CallIceCandidate;
-      };
-    }
-  | {
-      type: 'call:end' | 'call:reject';
-      payload: {
-        from_id: number;
-        call_id: string;
-      };
-    }
-  | {
-      type: string;
-      payload: unknown;
-    };
+export type { CallIceCandidate, CallSessionDescription, CallType, WsEvent };
 
 type WsHandler = (event: WsEvent) => void;
 type StatusHandler = (connected: boolean) => void;
@@ -148,12 +65,12 @@ class ChatSocket {
   private pendingEvents: QueuedEvent[] = [];
   private activeConversationId: number | null = null;
   private readonly callEventQueueTtlMs = 30000;
-  private readonly callEventTypes = new Set([
-    'call:offer',
-    'call:answer',
-    'call:ice',
-    'call:end',
-    'call:reject',
+  private readonly callEventTypes: ReadonlySet<string> = new Set([
+    WS_EVENTS.CALL_OFFER,
+    WS_EVENTS.CALL_ANSWER,
+    WS_EVENTS.CALL_ICE,
+    WS_EVENTS.CALL_END,
+    WS_EVENTS.CALL_REJECT,
   ]);
 
   constructor() {
@@ -240,7 +157,7 @@ class ChatSocket {
     encryption?: EncryptedMessagePayload,
   ) {
     this.sendEvent({
-      type: 'message:send',
+      type: WS_EVENTS.MESSAGE_SEND,
       payload: {
         to_id: toId,
         content,
@@ -252,15 +169,15 @@ class ChatSocket {
   }
 
   sendTypingStart(toId: number) {
-    this.sendEventToUser('typing:start', toId, {}, false);
+    this.sendEventToUser(WS_EVENTS.TYPING_START, toId, {}, false);
   }
 
   sendTypingStop(toId: number) {
-    this.sendEventToUser('typing:stop', toId, {}, false);
+    this.sendEventToUser(WS_EVENTS.TYPING_STOP, toId, {}, false);
   }
 
   sendReadReceipt(toId: number) {
-    this.sendEventToUser('message:read', toId);
+    this.sendEventToUser(WS_EVENTS.MESSAGE_READ, toId);
   }
 
   setActiveConversation(conversationId: number) {
@@ -272,7 +189,7 @@ class ChatSocket {
     this.activeConversationId = null;
     this.sendEvent(
       {
-        type: 'conversation:inactive',
+        type: WS_EVENTS.CONVERSATION_INACTIVE,
         payload: {},
       },
       false,
@@ -286,7 +203,7 @@ class ChatSocket {
     callId: string,
   ) {
     this.sendEvent({
-      type: 'call:offer',
+      type: WS_EVENTS.CALL_OFFER,
       payload: {
         to_id: toId,
         offer,
@@ -298,7 +215,7 @@ class ChatSocket {
 
   sendCallAnswer(toId: number, answer: CallSessionDescription, callId: string) {
     this.sendEvent({
-      type: 'call:answer',
+      type: WS_EVENTS.CALL_ANSWER,
       payload: {
         to_id: toId,
         answer,
@@ -309,7 +226,7 @@ class ChatSocket {
 
   sendCallIce(toId: number, candidate: CallIceCandidate, callId: string) {
     this.sendEvent({
-      type: 'call:ice',
+      type: WS_EVENTS.CALL_ICE,
       payload: {
         to_id: toId,
         candidate,
@@ -320,7 +237,7 @@ class ChatSocket {
 
   sendCallEnd(toId: number, callId: string) {
     this.sendEvent({
-      type: 'call:end',
+      type: WS_EVENTS.CALL_END,
       payload: {
         to_id: toId,
         call_id: callId,
@@ -330,7 +247,7 @@ class ChatSocket {
 
   sendCallReject(toId: number, callId: string) {
     this.sendEvent({
-      type: 'call:reject',
+      type: WS_EVENTS.CALL_REJECT,
       payload: {
         to_id: toId,
         call_id: callId,
@@ -431,7 +348,7 @@ class ChatSocket {
 
     this.sendEvent(
       {
-        type: 'conversation:active',
+        type: WS_EVENTS.CONVERSATION_ACTIVE,
         payload: {
           conversation_id: this.activeConversationId,
         },

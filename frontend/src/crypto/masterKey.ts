@@ -1,4 +1,4 @@
-import { base64ToBytes, bytesToBase64 } from "@/crypto/encoding.js";
+import { base64ToBytes, bytesToArrayBuffer, bytesToBase64 } from "@/crypto/encoding.js";
 
 const dbName = 'social-e2ee';
 const dbVersion = 1;
@@ -48,13 +48,15 @@ export async function generateMasterKey(): Promise<CryptoKey> {
 }
 
 export async function generateMessageKeyPair(): Promise<CryptoKeyPair> {
+    const algorithm: RsaHashedKeyGenParams = {
+        name: 'RSA-OAEP',
+        modulusLength: 3072,
+        publicExponent: new Uint8Array([1, 0, 1]) as Uint8Array<ArrayBuffer>,
+        hash: 'SHA-256',
+    };
+
     return crypto.subtle.generateKey(
-        {
-            name: 'RSA-OAEP',
-            modulusLength: 3072,
-            publicExponent: new Uint8Array([1, 0, 1]),
-            hash: 'SHA-256',
-        },
+        algorithm,
         true,
         ['encrypt', 'decrypt'],
     );
@@ -67,7 +69,7 @@ export async function exportPublicKeyBase64(publicKey: CryptoKey): Promise<strin
 export async function importPublicKey(publicKeyBase64: string): Promise<CryptoKey> {
     return crypto.subtle.importKey(
         'spki',
-        base64ToBytes(publicKeyBase64),
+        bytesToArrayBuffer(base64ToBytes(publicKeyBase64)),
         { name: 'RSA-OAEP', hash: 'SHA-256' },
         true,
         ['encrypt'],

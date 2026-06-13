@@ -1,4 +1,4 @@
-import { bytesToBase64, randomNonce, utf8ToBytes } from "@/crypto/encoding.js";
+import { bytesToArrayBuffer, bytesToBase64, randomNonce, utf8ToBytes } from "@/crypto/encoding.js";
 import { importPublicKey, type LocalE2EEKeyBundle } from "@/crypto/masterKey.js";
 
 export type EncryptedMessageEnvelope = {
@@ -38,9 +38,9 @@ export async function encryptMessage({
     const nonce = randomNonce();
     const additionalData = messageAAD(senderUserId, recipientUserId);
     const data = await crypto.subtle.encrypt(
-        { name: 'AES-GCM', iv: nonce, additionalData },
+        { name: 'AES-GCM', iv: bytesToArrayBuffer(nonce), additionalData: bytesToArrayBuffer(additionalData) },
         messageKey,
-        utf8ToBytes(plaintext),
+        bytesToArrayBuffer(utf8ToBytes(plaintext)),
     );
     const rawMessageKey = await crypto.subtle.exportKey('raw', messageKey);
     const recipientPublicKey = await importPublicKey(recipientPublicKeyBase64);

@@ -1,5 +1,5 @@
 import type { Message, MessageAttachment } from "@/shared/types/domain.js";
-import { base64ToBytes, bytesToBase64, bytesToUtf8, randomNonce, utf8ToBytes } from "@/crypto/encoding.js";
+import { base64ToBytes, bytesToArrayBuffer, bytesToBase64, bytesToUtf8, randomNonce, utf8ToBytes } from "@/crypto/encoding.js";
 import { importPublicKey, type LocalE2EEKeyBundle } from "@/crypto/masterKey.js";
 
 export type AttachmentFileType = MessageAttachment['file_type'];
@@ -83,7 +83,7 @@ export async function encryptAttachmentForUpload({
     const fileAAD = attachmentFileAAD(senderUserId, recipientUserId, fileType);
     const metadataAAD = attachmentMetadataAAD(senderUserId, recipientUserId, fileType);
     const encryptedBytes = await crypto.subtle.encrypt(
-        { name: 'AES-GCM', iv: fileNonce, additionalData: fileAAD },
+        { name: 'AES-GCM', iv: bytesToArrayBuffer(fileNonce), additionalData: bytesToArrayBuffer(fileAAD) },
         fileKey,
         await file.arrayBuffer(),
     );
@@ -97,9 +97,9 @@ export async function encryptAttachmentForUpload({
         durationSeconds,
     };
     const encryptedMetadata = await crypto.subtle.encrypt(
-        { name: 'AES-GCM', iv: metadataNonce, additionalData: metadataAAD },
+        { name: 'AES-GCM', iv: bytesToArrayBuffer(metadataNonce), additionalData: bytesToArrayBuffer(metadataAAD) },
         fileKey,
-        utf8ToBytes(JSON.stringify(metadata)),
+        bytesToArrayBuffer(utf8ToBytes(JSON.stringify(metadata))),
     );
     const rawFileKey = await crypto.subtle.exportKey('raw', fileKey);
     const recipientPublicKey = await importPublicKey(recipientPublicKeyBase64);
@@ -169,8 +169,8 @@ export async function decryptAttachmentForDisplay(
     const plaintextBytes = await crypto.subtle.decrypt(
         {
             name: 'AES-GCM',
-            iv: base64ToBytes(attachment.file_nonce || ''),
-            additionalData: attachmentFileAAD(message.from_id, message.to_id, fileType),
+            iv: bytesToArrayBuffer(base64ToBytes(attachment.file_nonce || '')),
+            additionalData: bytesToArrayBuffer(attachmentFileAAD(message.from_id, message.to_id, fileType)),
         },
         fileKey,
         encryptedBytes,
@@ -224,7 +224,7 @@ async function unwrapAttachmentFileKey(
     const rawFileKey = await crypto.subtle.decrypt(
         { name: 'RSA-OAEP' },
         bundle.privateKey,
-        base64ToBytes(wrappedKey),
+        bytesToArrayBuffer(base64ToBytes(wrappedKey)),
     );
     return crypto.subtle.importKey('raw', rawFileKey, 'AES-GCM', false, ['decrypt']);
 }
@@ -239,11 +239,11 @@ async function decryptAttachmentMetadata(
     const plaintext = await crypto.subtle.decrypt(
         {
             name: 'AES-GCM',
-            iv: base64ToBytes(envelope.nonce),
-            additionalData: attachmentMetadataAAD(message.from_id, message.to_id, fileType),
+            iv: bytesToArrayBuffer(base64ToBytes(envelope.nonce)),
+            additionalData: bytesToArrayBuffer(attachmentMetadataAAD(message.from_id, message.to_id, fileType)),
         },
         fileKey,
-        base64ToBytes(envelope.data),
+        bytesToArrayBuffer(base64ToBytes(envelope.data)),
     );
     const metadata = JSON.parse(bytesToUtf8(plaintext)) as Partial<AttachmentPlainMetadata>;
     if (!metadata.mimeType || !metadata.filename || !metadata.fileType) {

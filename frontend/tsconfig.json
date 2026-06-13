@@ -12,7 +12,9 @@
     "baseUrl": ".",
     "ignoreDeprecations": "6.0",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "@social/shared": ["../packages/shared/src/index.ts"],
+      "@social/shared/*": ["../packages/shared/src/*"]
     },
     "types": [],
     // For nodejs:

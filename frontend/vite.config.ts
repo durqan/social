@@ -10,6 +10,7 @@ export default defineConfig(({ mode }) => {
         resolve: {
             alias: {
                 '@': '/src',
+                '@social/shared': new URL('../packages/shared/src', import.meta.url).pathname,
             },
         },
         plugins: [

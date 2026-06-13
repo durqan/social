@@ -1,6 +1,6 @@
 import { argon2id } from 'hash-wasm';
 
-import { base64ToBytes, bytesToBase64, randomBytes } from "@/crypto/encoding.js";
+import { base64ToBytes, bytesToArrayBuffer, bytesToBase64, randomBytes } from "@/crypto/encoding.js";
 
 export type Argon2idParams = {
     memorySize: number;
@@ -27,7 +27,7 @@ export async function deriveBackupKey(password: string, saltBase64: string, para
 
     const rawKey = await argon2id({
         password,
-        salt: base64ToBytes(saltBase64),
+        salt: bytesToArrayBuffer(base64ToBytes(saltBase64)),
         parallelism: params.parallelism,
         iterations: params.iterations,
         memorySize: params.memorySize,
@@ -39,5 +39,5 @@ export async function deriveBackupKey(password: string, saltBase64: string, para
         throw new Error('Argon2id did not return binary output');
     }
 
-    return crypto.subtle.importKey('raw', rawKey, 'AES-GCM', false, ['encrypt', 'decrypt']);
+    return crypto.subtle.importKey('raw', bytesToArrayBuffer(rawKey), 'AES-GCM', false, ['encrypt', 'decrypt']);
 }

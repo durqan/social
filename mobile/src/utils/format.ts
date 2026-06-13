@@ -1,3 +1,5 @@
+export { formatDuration } from '@social/shared';
+
 export function formatDateTime(value?: string) {
   if (!value) {
     return '';
@@ -14,11 +16,4 @@ export function formatDateTime(value?: string) {
     hour: '2-digit',
     minute: '2-digit',
   }).format(date);
-}
-
-export function formatDuration(totalSeconds?: number) {
-  const safeSeconds = Math.max(0, Math.floor(totalSeconds || 0));
-  const minutes = Math.floor(safeSeconds / 60);
-  const seconds = safeSeconds % 60;
-  return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }

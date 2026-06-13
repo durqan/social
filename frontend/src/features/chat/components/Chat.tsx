@@ -322,7 +322,7 @@ function Chat() {
     // Handle deep link from web push for incoming calls (checklist items 8-9).
     // - Reads incomingCall, callId, ts
     // - Cleans query via setSearchParams({replace:true}) — safe even if currentUser not loaded yet
-    // - TTL ~45-60s: if older → "Пропущенный звонок", else do nothing extra (rely on normal WS call:offer + CallOverlay)
+    // - TTL ~45-60s: if older → "Пропущенный звонок", else do nothing extra (rely on the normal call offer event + CallOverlay)
     // - Guard with processedCallRef so a single push click / load is handled only once (avoids re-toast on searchParams update after replace).
     const processedCallRef = useRef<string | null>(null);
 
@@ -372,7 +372,7 @@ function Chat() {
         }
 
         // Fresh enough. Do NOT manually start/accept anything.
-        // The normal WS `call:offer` (if the caller is still offering) will arrive via AudioCallContext
+        // The normal websocket call offer event (if the caller is still offering) will arrive via AudioCallContext
         // (which is mounted at App level) and will show the CallOverlay as usual.
     }, [searchParams, userId, setSearchParams]);
 

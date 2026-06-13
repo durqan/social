@@ -49,6 +49,7 @@ import Sound, {
 import Video from 'react-native-video';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
+import { WS_EVENTS } from '@social/shared';
 
 import {
   assetURL,
@@ -916,14 +917,14 @@ export default function ChatScreen({ route }: Props) {
 
   const handleSocketEvent = useCallback(
     (event: WsEvent) => {
-      if (event.type === 'message:error') {
+      if (event.type === WS_EVENTS.MESSAGE_ERROR) {
         const payload = event.payload as { error: string };
         restoreDraftAfterSendError();
         setError(getApiErrorMessage(new Error(payload.error)));
         return;
       }
 
-      if (event.type === 'message:read') {
+      if (event.type === WS_EVENTS.MESSAGE_READ) {
         const payload = event.payload as { from_id: number; to_id: number };
         refreshUnreadCount().catch(() => undefined);
         setMessages(previous =>
@@ -940,7 +941,7 @@ export default function ChatScreen({ route }: Props) {
         return;
       }
 
-      if (event.type === 'conversation:read') {
+      if (event.type === WS_EVENTS.CONVERSATION_READ) {
         const payload = event.payload as {
           reader_id?: number;
           conversation_id?: number;
@@ -955,7 +956,7 @@ export default function ChatScreen({ route }: Props) {
         return;
       }
 
-      if (event.type === 'message:delete') {
+      if (event.type === WS_EVENTS.MESSAGE_DELETE) {
         const payload = event.payload as { message_id: number };
 
         if (!messagesRef.current.some(item => item.id === payload.message_id)) {
@@ -969,7 +970,7 @@ export default function ChatScreen({ route }: Props) {
         return;
       }
 
-      if (event.type === 'message:update') {
+      if (event.type === WS_EVENTS.MESSAGE_UPDATE) {
         const message = event.payload as Message;
         const belongsToChat =
           (message.from_id === otherUserId && message.to_id === user?.id) ||
@@ -1002,7 +1003,7 @@ export default function ChatScreen({ route }: Props) {
         return;
       }
 
-      if (event.type === 'message_pinned') {
+      if (event.type === WS_EVENTS.MESSAGE_PINNED) {
         const payload = event.payload as {
           conversation_user_id?: number;
           pinned_message?: PinnedMessage | null;
@@ -1027,7 +1028,7 @@ export default function ChatScreen({ route }: Props) {
         return;
       }
 
-      if (event.type === 'message_unpinned') {
+      if (event.type === WS_EVENTS.MESSAGE_UNPINNED) {
         const payload = event.payload as { conversation_user_id?: number };
         if (
           !payload.conversation_user_id ||
@@ -1038,13 +1039,16 @@ export default function ChatScreen({ route }: Props) {
         return;
       }
 
-      if (event.type === 'typing:start' || event.type === 'typing:stop') {
+      if (
+        event.type === WS_EVENTS.TYPING_START ||
+        event.type === WS_EVENTS.TYPING_STOP
+      ) {
         const payload = event.payload as { from_id?: number };
         if (payload.from_id !== otherUserId) {
           return;
         }
 
-        if (event.type === 'typing:start') {
+        if (event.type === WS_EVENTS.TYPING_START) {
           setOtherTyping(true);
           if (otherTypingTimerRef.current) {
             clearTimeout(otherTypingTimerRef.current);
@@ -1064,7 +1068,7 @@ export default function ChatScreen({ route }: Props) {
         return;
       }
 
-      if (event.type !== 'message:new') {
+      if (event.type !== WS_EVENTS.MESSAGE_NEW) {
         return;
       }
 
