@@ -1,4 +1,5 @@
 import React, { type ReactNode } from 'react';
+import { HeaderHeightContext } from '@react-navigation/elements';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -22,6 +23,8 @@ type ScreenProps = {
   contentContainerStyle?: StyleProp<ViewStyle>;
   edges?: Edge[];
   padded?: boolean;
+  avoidKeyboard?: boolean;
+  keyboardVerticalOffset?: number;
   refreshing?: boolean;
   onRefresh?: () => void;
 };
@@ -33,12 +36,17 @@ export function Screen({
   contentContainerStyle,
   edges = ['bottom'],
   padded = true,
+  avoidKeyboard = true,
+  keyboardVerticalOffset,
   refreshing = false,
   onRefresh,
 }: ScreenProps) {
   const colors = useThemeColors();
+  const headerHeight = React.useContext(HeaderHeightContext);
   const styles = createStyles(colors);
   const baseContentStyle = padded ? styles.content : styles.contentFlush;
+  const resolvedKeyboardVerticalOffset =
+    keyboardVerticalOffset ?? (Platform.OS === 'ios' ? headerHeight ?? 72 : 0);
 
   const content = scroll ? (
     <ScrollView
@@ -66,12 +74,16 @@ export function Screen({
 
   return (
     <SafeAreaView style={[styles.safeArea, style]} edges={edges}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 72 : 0}
-        style={styles.keyboard}>
-        {content}
-      </KeyboardAvoidingView>
+      {avoidKeyboard ? (
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={resolvedKeyboardVerticalOffset}
+          style={styles.keyboard}>
+          {content}
+        </KeyboardAvoidingView>
+      ) : (
+        content
+      )}
     </SafeAreaView>
   );
 }
