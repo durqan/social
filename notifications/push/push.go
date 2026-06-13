@@ -102,6 +102,9 @@ func (s *Service) Send(subscription models.PushSubscription, payload Payload) er
 	if !s.WebPushEnabled() {
 		return nil
 	}
+	if payload.Silent {
+		return nil
+	}
 
 	body, err := json.Marshal(payload)
 	if err != nil {
