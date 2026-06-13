@@ -175,7 +175,7 @@ func (s *Service) SendMobile(token models.MobilePushToken, payload Payload) erro
 		},
 	}
 	if !payload.Silent {
-		message.Notification = fcmNotification{
+		message.Notification = &fcmNotification{
 			Title: payload.Title,
 			Body:  payload.Body,
 		}
@@ -262,7 +262,7 @@ type fcmSendRequest struct {
 
 type fcmMessage struct {
 	Token        string            `json:"token"`
-	Notification fcmNotification   `json:"notification,omitempty"`
+	Notification *fcmNotification  `json:"notification,omitempty"`
 	Data         map[string]string `json:"data"`
 	Android      fcmAndroidConfig  `json:"android"`
 }
