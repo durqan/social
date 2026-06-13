@@ -13,7 +13,7 @@ const config = {
   watchFolders: [sharedRoot],
   resolver: {
     extraNodeModules: {
-      '@social/shared': path.join(sharedRoot, 'src'),
+      '@social/shared': sharedRoot,
     },
   },
 };

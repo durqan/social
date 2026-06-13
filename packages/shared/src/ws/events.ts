@@ -1,4 +1,4 @@
-import type { Message, PinnedMessage } from '../types/domain.js';
+import type { Message, PinnedMessage } from '../types/domain';
 
 export const WS_EVENTS = {
   MESSAGE_NEW: 'message:new',

@@ -5,6 +5,6 @@ export type {
   PaginatedMessages,
   RegisterPayload,
   UpdateProfilePayload,
-} from '../types/domain.js';
-export type { E2EEBackupResponse, E2EEStatus } from './e2ee.js';
-export type { ChangePasswordData, UpdateUserData } from './user.js';
+} from '../types/domain';
+export type { E2EEBackupResponse, E2EEStatus } from './e2ee';
+export type { ChangePasswordData, UpdateUserData } from './user';
