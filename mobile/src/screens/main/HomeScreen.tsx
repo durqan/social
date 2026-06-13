@@ -2,6 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import {
   useFocusEffect,
+  useIsFocused,
   useNavigation,
   type CompositeNavigationProp,
 } from '@react-navigation/native';
@@ -16,7 +17,6 @@ import {
 
 import { isEmailVerified } from '../../api/auth';
 import type { PostUser } from '../../api/types';
-import { AppButton } from '../../components/AppButton';
 import { ActionTile, Card, HeroCard, Section } from '../../components/Layout';
 import { EmailVerificationNotice } from '../../components/EmailVerificationNotice';
 import { ErrorBanner } from '../../components/Feedback';
@@ -31,6 +31,7 @@ import type {
   MainStackParamList,
   MainTabParamList,
 } from '../../navigation/types';
+import { useAppResumeEffect } from '../../utils/useAppResumeEffect';
 import { WallFeed } from './WallFeed';
 
 type HomeNavigation = CompositeNavigationProp<
@@ -39,13 +40,14 @@ type HomeNavigation = CompositeNavigationProp<
 >;
 
 export default function HomeScreen() {
+  const isFocused = useIsFocused();
   const navigation = useNavigation<HomeNavigation>();
   const { user, refreshUser } = useAuth();
   const { unreadCount, refreshUnreadCount } = useUnread();
   const colors = useThemeColors();
   const styles = createStyles(colors);
   const emailVerified = isEmailVerified(user);
-  const [manualRefreshing, setManualRefreshing] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -62,20 +64,28 @@ export default function HomeScreen() {
     }
   }, [emailVerified, refreshUnreadCount, refreshUser]);
 
-  async function handleManualRefresh() {
-    setManualRefreshing(true);
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
     try {
       await load();
     } finally {
-      setManualRefreshing(false);
+      setRefreshing(false);
     }
-  }
+  }, [load]);
 
   useFocusEffect(
     useCallback(() => {
       load().catch(() => undefined);
     }, [load]),
   );
+
+  useAppResumeEffect(() => {
+    if (!isFocused) {
+      return;
+    }
+
+    load().catch(() => undefined);
+  });
 
   function openWallUser(target: PostUser) {
     if (!target.id || target.id === user?.id) {
@@ -90,7 +100,13 @@ export default function HomeScreen() {
   }
 
   return (
-    <Screen contentContainerStyle={styles.content} scroll style={styles.screen}>
+    <Screen
+      contentContainerStyle={styles.content}
+      refreshing={refreshing}
+      scroll
+      style={styles.screen}
+      onRefresh={handleRefresh}
+    >
       <HeroCard
         kicker="Главная"
         title={`Привет, ${user?.name || user?.email || 'друг'}`}
@@ -144,15 +160,6 @@ export default function HomeScreen() {
         </View>
       </Section>
 
-      <View style={styles.refreshBox}>
-        <AppButton
-          title="Обновить"
-          variant="ghost"
-          loading={manualRefreshing}
-          onPress={handleManualRefresh}
-        />
-      </View>
-
       <Section title="Лента" subtitle="Публикации и активность">
         <WallFeed
           currentUser={user}
@@ -198,9 +205,5 @@ const createStyles = (colors: ThemeColors) =>
       flexDirection: 'row',
       flexWrap: 'wrap',
       gap: spacing.md,
-    },
-    refreshBox: {
-      alignItems: 'center',
-      marginTop: -spacing.sm,
     },
   });

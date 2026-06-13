@@ -13,6 +13,7 @@ import { messageApi } from '../api/messages';
 import { chatSocket, type WsEvent } from '../api/ws';
 import { useAuth } from './AuthContext';
 import { useAppLifecycle } from './AppLifecycleContext';
+import { useAppResumeEffect } from '../utils/useAppResumeEffect';
 
 type UnreadContextValue = {
   unreadCount: number;
@@ -26,12 +27,13 @@ const UnreadContext = createContext<UnreadContextValue | undefined>(undefined);
 
 export function UnreadProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
-  const { isForeground, networkConnected, resumeCount } = useAppLifecycle();
+  const { networkConnected } = useAppLifecycle();
   const [unreadCount, setUnreadCount] = useState(0);
   const [unreadLoading, setUnreadLoading] = useState(false);
   const [chatRefreshVersion, setChatRefreshVersion] = useState(0);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refreshInFlight = useRef<Promise<void> | null>(null);
+  const previousNetworkConnectedRef = useRef(networkConnected);
 
   const refreshUnreadCount = useCallback(async () => {
     if (!user) {
@@ -84,17 +86,20 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
     refreshUnreadCount().catch(() => undefined);
   }, [refreshUnreadCount, user]);
 
-  useEffect(() => {
-    if (!user || !isForeground) {
+  useAppResumeEffect(() => {
+    if (!user) {
       return;
     }
 
     chatSocket.recover();
     signalChatDataChanged();
-  }, [isForeground, resumeCount, signalChatDataChanged, user]);
+  });
 
   useEffect(() => {
-    if (!user || !networkConnected) {
+    const wasNetworkConnected = previousNetworkConnectedRef.current;
+    previousNetworkConnectedRef.current = networkConnected;
+
+    if (!user || !networkConnected || wasNetworkConnected) {
       return;
     }
 

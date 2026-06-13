@@ -95,6 +95,7 @@ import { colors } from '../../theme/colors';
 import { radius, spacing, typography } from '../../theme/layout';
 import type { ThemeColors } from '../../theme/themes';
 import { formatDateTime, formatDuration } from '../../utils/format';
+import { useAppResumeEffect } from '../../utils/useAppResumeEffect';
 import type { ChatStackParamList } from '../../navigation/types';
 import {
   encryptAttachmentForUpload,
@@ -282,7 +283,7 @@ export default function ChatScreen({ route }: Props) {
   );
   const { startAudioCall, startVideoCall, status: callStatus } = useCall();
   const isFocused = useIsFocused();
-  const { networkConnected, resumeCount } = useAppLifecycle();
+  const { networkConnected } = useAppLifecycle();
   const { refreshUnreadCount, signalChatDataChanged } = useUnread();
   const otherUserId = route.params.userId;
   const listRef = useRef<FlatList<Message>>(null);
@@ -310,6 +311,7 @@ export default function ChatScreen({ route }: Props) {
   const otherTypingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const previousNetworkConnectedRef = useRef(networkConnected);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [inputHeight, setInputHeight] = useState(composerInputMinHeight);
@@ -858,21 +860,26 @@ export default function ChatScreen({ route }: Props) {
     }, [loadMessages, loadPinnedMessage]),
   );
 
-  useEffect(() => {
-    if (!isFocused || resumeCount === 0) {
+  useAppResumeEffect(() => {
+    if (!isFocused) {
       return;
     }
 
     loadMessages('silent').catch(() => undefined);
-  }, [isFocused, loadMessages, resumeCount]);
+    loadPinnedMessage().catch(() => undefined);
+  });
 
   useEffect(() => {
-    if (!isFocused || !networkConnected) {
+    const wasNetworkConnected = previousNetworkConnectedRef.current;
+    previousNetworkConnectedRef.current = networkConnected;
+
+    if (!isFocused || !networkConnected || wasNetworkConnected) {
       return;
     }
 
     loadMessages('silent').catch(() => undefined);
-  }, [isFocused, loadMessages, networkConnected]);
+    loadPinnedMessage().catch(() => undefined);
+  }, [isFocused, loadMessages, loadPinnedMessage, networkConnected]);
 
   const restoreDraftAfterSendError = useCallback(() => {
     if (!draftRef.current) {

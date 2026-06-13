@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { launchImageLibrary } from 'react-native-image-picker';
 import type { Asset } from 'react-native-image-picker';
 
@@ -22,6 +23,7 @@ import type { ThemeColors } from '../../theme/themes';
 import { radius, spacing, typography } from '../../theme/layout';
 import { avatarImageStyle } from '../../utils/avatar';
 import { formatDateTime } from '../../utils/format';
+import { useAppResumeEffect } from '../../utils/useAppResumeEffect';
 
 type ProfileForm = {
   name: string;
@@ -34,6 +36,7 @@ type ProfileForm = {
 };
 
 export default function ProfileScreen() {
+  const isFocused = useIsFocused();
   const { user, refreshUser } = useAuth();
   const colors = useThemeColors();
   const styles = createStyles(colors);
@@ -46,7 +49,7 @@ export default function ProfileScreen() {
     avatarPositionY: '50',
     avatarScale: '1',
   });
-  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
@@ -73,18 +76,38 @@ export default function ProfileScreen() {
     [form.email, user?.email],
   );
 
-  async function handleRefresh() {
-    setLoading(true);
+  const loadProfile = useCallback(async () => {
     setError(null);
-    setSuccess(null);
     try {
       await refreshUser();
     } catch (apiError) {
       setError(getApiErrorMessage(apiError));
-    } finally {
-      setLoading(false);
     }
-  }
+  }, [refreshUser]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    setSuccess(null);
+    try {
+      await loadProfile();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadProfile]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadProfile().catch(() => undefined);
+    }, [loadProfile]),
+  );
+
+  useAppResumeEffect(() => {
+    if (!isFocused) {
+      return;
+    }
+
+    loadProfile().catch(() => undefined);
+  });
 
   async function handleSave() {
     if (!user?.id) {
@@ -212,7 +235,7 @@ export default function ProfileScreen() {
   }
 
   return (
-    <Screen>
+    <Screen refreshing={refreshing} onRefresh={handleRefresh}>
       <View style={styles.card}>
         <Pressable
           accessibilityRole="button"
@@ -329,13 +352,6 @@ export default function ProfileScreen() {
         </View>
         <AppButton title="Сохранить" loading={saving} onPress={handleSave} />
       </View>
-
-      <AppButton
-        title="Обновить профиль"
-        variant="secondary"
-        loading={loading}
-        onPress={handleRefresh}
-      />
     </Screen>
   );
 }

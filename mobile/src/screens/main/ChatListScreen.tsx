@@ -29,6 +29,7 @@ import type { ThemeColors } from '../../theme/themes';
 import { radius, spacing, typography } from '../../theme/layout';
 import { avatarImageStyle } from '../../utils/avatar';
 import { formatDateTime } from '../../utils/format';
+import { useAppResumeEffect } from '../../utils/useAppResumeEffect';
 import type { ChatStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'ChatList'>;
@@ -119,6 +120,14 @@ export default function ChatListScreen({ navigation }: Props) {
 
     scheduleRealtimeRefresh();
   }, [chatRefreshVersion, isFocused, scheduleRealtimeRefresh]);
+
+  useAppResumeEffect(() => {
+    if (!isFocused) {
+      return;
+    }
+
+    load('silent').catch(() => undefined);
+  });
 
   function openConversation(conversation: Conversation) {
     setSelectedConversation(null);

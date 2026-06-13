@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 
 import { e2eeApi } from '../../api/e2ee';
 import { getApiErrorMessage } from '../../api/http';
@@ -20,6 +21,7 @@ import { isWebCryptoAvailable } from '../../crypto/webCrypto';
 import { useTheme, useThemeColors } from '../../theme/ThemeContext';
 import { themeOrder, themes, type ThemeColors } from '../../theme/themes';
 import { radius, spacing, typography } from '../../theme/layout';
+import { useAppResumeEffect } from '../../utils/useAppResumeEffect';
 
 type SecurityBusyAction =
   | 'password'
@@ -29,6 +31,7 @@ type SecurityBusyAction =
   | 'refreshE2EE';
 
 export default function SettingsScreen() {
+  const isFocused = useIsFocused();
   const { logout, user } = useAuth();
   const { themeId, setThemeId } = useTheme();
   const colors = useThemeColors();
@@ -47,17 +50,7 @@ export default function SettingsScreen() {
   const [securityError, setSecurityError] = useState<string | null>(null);
   const [securitySuccess, setSecuritySuccess] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadE2EEStatus().catch(() => undefined);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
-
-  async function handleLogout() {
-    setLoggingOut(true);
-    await logout();
-  }
-
-  async function loadE2EEStatus() {
+  const loadE2EEStatus = useCallback(async () => {
     if (!user?.id) {
       setE2eeEnabled(false);
       setLocalKeyReady(false);
@@ -79,6 +72,25 @@ export default function SettingsScreen() {
         previous === 'refreshE2EE' ? null : previous,
       );
     }
+  }, [user?.id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadE2EEStatus().catch(() => undefined);
+    }, [loadE2EEStatus]),
+  );
+
+  useAppResumeEffect(() => {
+    if (!isFocused) {
+      return;
+    }
+
+    loadE2EEStatus().catch(() => undefined);
+  });
+
+  async function handleLogout() {
+    setLoggingOut(true);
+    await logout();
   }
 
   async function handleChangePassword() {
@@ -229,7 +241,12 @@ export default function SettingsScreen() {
   const securityBusyNow = Boolean(securityBusy);
 
   return (
-    <Screen>
+    <Screen
+      refreshing={securityBusy === 'refreshE2EE'}
+      onRefresh={() => {
+        loadE2EEStatus().catch(() => undefined);
+      }}
+    >
       <View style={styles.card}>
         <Text style={styles.title}>Аккаунт</Text>
         <Text style={styles.text}>
@@ -333,15 +350,6 @@ export default function SettingsScreen() {
               loading={securityBusy === 'restoreE2EE'}
               disabled={securityBusyNow || !e2eeEnabled || !webCryptoAvailable}
               onPress={handleRestoreE2EE}
-            />
-            <AppButton
-              title="Обновить статус"
-              variant="secondary"
-              loading={securityBusy === 'refreshE2EE'}
-              disabled={securityBusyNow}
-              onPress={() => {
-                loadE2EEStatus().catch(() => undefined);
-              }}
             />
             <AppButton
               title="Отключить E2EE"

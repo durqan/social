@@ -4,6 +4,7 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -43,6 +44,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = useState<SocialNotification[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const refreshInFlight = useRef<Promise<void> | null>(null);
 
   const unreadNotificationCount = useMemo(
     () => notifications.filter(notification => !notification.is_read).length,
@@ -55,16 +57,29 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    if (refreshInFlight.current) {
+      return refreshInFlight.current;
+    }
+
     setLoading(true);
     setError(null);
-    try {
-      const nextNotifications = await notificationsApi.getNotifications();
-      setNotifications(Array.isArray(nextNotifications) ? nextNotifications : []);
-    } catch (apiError) {
-      setError(getApiErrorMessage(apiError));
-    } finally {
-      setLoading(false);
-    }
+    const refresh = notificationsApi
+      .getNotifications()
+      .then(nextNotifications => {
+        setNotifications(
+          Array.isArray(nextNotifications) ? nextNotifications : [],
+        );
+      })
+      .catch(apiError => {
+        setError(getApiErrorMessage(apiError));
+      })
+      .finally(() => {
+        refreshInFlight.current = null;
+        setLoading(false);
+      });
+
+    refreshInFlight.current = refresh;
+    return refresh;
   }, [user?.id]);
 
   const markAsRead = useCallback(async (notificationId: number) => {

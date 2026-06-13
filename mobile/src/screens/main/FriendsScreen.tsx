@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   FlatList,
   Image,
@@ -9,12 +9,13 @@ import {
 } from 'react-native';
 import {
   useFocusEffect,
+  useIsFocused,
   useNavigation,
   type CompositeNavigationProp,
 } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RefreshCw, Search } from 'lucide-react-native';
+import { Search } from 'lucide-react-native';
 
 import { friendsApi } from '../../api/friends';
 import { getApiErrorMessage } from '../../api/http';
@@ -32,6 +33,7 @@ import { useThemeColors } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/themes';
 import { radius, spacing, typography } from '../../theme/layout';
 import { avatarImageStyle } from '../../utils/avatar';
+import { useAppResumeEffect } from '../../utils/useAppResumeEffect';
 import type {
   MainStackParamList,
   MainTabParamList,
@@ -41,8 +43,10 @@ type FriendsNavigation = CompositeNavigationProp<
   BottomTabNavigationProp<MainTabParamList, 'Friends'>,
   NativeStackNavigationProp<MainStackParamList>
 >;
+type LoadMode = 'initial' | 'refresh' | 'silent';
 
 export default function FriendsScreen() {
+  const isFocused = useIsFocused();
   const navigation = useNavigation<FriendsNavigation>();
   const { markMatchingAsRead } = useNotifications();
   const colors = useThemeColors();
@@ -50,13 +54,21 @@ export default function FriendsScreen() {
   const [friends, setFriends] = useState<User[]>([]);
   const [requests, setRequests] = useState<Friendship[]>([]);
   const [loading, setLoading] = useState(false);
-  const [manualRefreshing, setManualRefreshing] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
+  const hasLoadedRef = useRef(false);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (mode: LoadMode = 'initial') => {
+    const showInitialLoading = mode === 'initial' && !hasLoadedRef.current;
+
+    if (showInitialLoading) {
+      setLoading(true);
+    }
+    if (mode === 'refresh') {
+      setRefreshing(true);
+    }
     setError(null);
     try {
       const [nextFriends, nextRequests] = await Promise.all([
@@ -68,28 +80,33 @@ export default function FriendsScreen() {
     } catch (apiError) {
       setError(getApiErrorMessage(apiError));
     } finally {
+      hasLoadedRef.current = true;
       setHasLoaded(true);
-      setLoading(false);
+      if (showInitialLoading) {
+        setLoading(false);
+      }
+      if (mode === 'refresh') {
+        setRefreshing(false);
+      }
     }
   }, []);
 
-  async function handleManualRefresh() {
-    setManualRefreshing(true);
-    try {
-      await load();
-    } finally {
-      setManualRefreshing(false);
-    }
-  }
-
   useFocusEffect(
     useCallback(() => {
-      load().catch(() => undefined);
+      load(hasLoadedRef.current ? 'silent' : 'initial').catch(() => undefined);
       markMatchingAsRead({
         types: ['friend_accepted'],
       }).catch(() => undefined);
     }, [load, markMatchingAsRead]),
   );
+
+  useAppResumeEffect(() => {
+    if (!isFocused) {
+      return;
+    }
+
+    load('silent').catch(() => undefined);
+  });
 
   async function acceptRequest(request: Friendship) {
     setBusyId(request.id);
@@ -164,7 +181,7 @@ export default function FriendsScreen() {
   }
 
   return (
-    <Screen>
+    <Screen refreshing={refreshing} onRefresh={() => load('refresh')}>
       <ErrorBanner message={error} />
 
       <View style={styles.sectionHeader}>
@@ -175,13 +192,6 @@ export default function FriendsScreen() {
             variant="secondary"
             icon={Search}
             onPress={() => navigation.navigate('UserSearch')}
-          />
-          <AppButton
-            title="Обновить"
-            variant="ghost"
-            icon={RefreshCw}
-            loading={manualRefreshing}
-            onPress={handleManualRefresh}
           />
         </View>
       </View>

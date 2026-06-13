@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   FlatList,
   Image,
@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 
 import { friendsApi } from '../../api/friends';
 import { getApiErrorMessage } from '../../api/http';
@@ -28,12 +29,14 @@ import { useThemeColors } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/themes';
 import { radius, spacing, typography } from '../../theme/layout';
 import { avatarImageStyle } from '../../utils/avatar';
+import { useAppResumeEffect } from '../../utils/useAppResumeEffect';
 import type { MainStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'UserSearch'>;
 type FriendshipStatus = Friendship['status'] | 'none';
 
 export default function UserSearchScreen({ navigation }: Props) {
+  const isFocused = useIsFocused();
   const { user: currentUser } = useAuth();
   const colors = useThemeColors();
   const styles = createStyles(colors);
@@ -44,8 +47,27 @@ export default function UserSearchScreen({ navigation }: Props) {
   );
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [refreshVersion, setRefreshVersion] = useState(0);
   const [success, setSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const refreshSearch = useCallback(() => {
+    setRefreshVersion(value => value + 1);
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshSearch();
+    }, [refreshSearch]),
+  );
+
+  useAppResumeEffect(() => {
+    if (!isFocused) {
+      return;
+    }
+
+    refreshSearch();
+  });
 
   useEffect(() => {
     const trimmed = query.trim();
@@ -99,7 +121,7 @@ export default function UserSearchScreen({ navigation }: Props) {
       active = false;
       clearTimeout(timer);
     };
-  }, [currentUser?.id, query]);
+  }, [currentUser?.id, query, refreshVersion]);
 
   async function sendRequest(target: User) {
     if (!target.id) {
@@ -175,6 +197,8 @@ export default function UserSearchScreen({ navigation }: Props) {
         data={results}
         keyExtractor={item => String(item.id)}
         keyboardShouldPersistTaps="handled"
+        refreshing={loading && results.length > 0}
+        onRefresh={refreshSearch}
         contentContainerStyle={[
           styles.listContent,
           results.length === 0 && styles.emptyListContent,

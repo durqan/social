@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   Alert,
   Image,
@@ -8,6 +8,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 
 import { getApiErrorMessage } from '../../api/http';
 import { postApi } from '../../api/posts';
@@ -25,8 +26,10 @@ import type { ThemeColors } from '../../theme/themes';
 import { elevation, radius, spacing, typography } from '../../theme/layout';
 import { avatarImageStyle } from '../../utils/avatar';
 import { formatDateTime } from '../../utils/format';
+import { useAppResumeEffect } from '../../utils/useAppResumeEffect';
 
 const maxPostLength = 500;
+type LoadMode = 'initial' | 'silent';
 
 type WallFeedProps = {
   currentUser: User | null;
@@ -43,13 +46,14 @@ export function WallFeed({
   emailVerified,
   onOpenUser,
 }: WallFeedProps) {
+  const isFocused = useIsFocused();
   const colors = useThemeColors();
   const styles = createStyles(colors);
   const { markMatchingAsRead } = useNotifications();
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(false);
-  const [manualRefreshing, setManualRefreshing] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
+  const hasLoadedRef = useRef(false);
   const [submitting, setSubmitting] = useState(false);
   const [draft, setDraft] = useState('');
   const [editingPostId, setEditingPostId] = useState<number | null>(null);
@@ -64,37 +68,50 @@ export function WallFeed({
   const [busyCommentId, setBusyCommentId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const loadPosts = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const nextPosts = await postApi.getPosts(userId);
-      setPosts(nextPosts);
-      if (isOwner) {
-        markMatchingAsRead({
-          types: ['post_liked', 'comment_created'],
-        }).catch(() => undefined);
+  const loadPosts = useCallback(
+    async (mode: LoadMode = 'initial') => {
+      const showInitialLoading = mode === 'initial' && !hasLoadedRef.current;
+
+      if (showInitialLoading) {
+        setLoading(true);
       }
-    } catch (apiError) {
-      setError(getApiErrorMessage(apiError));
-    } finally {
-      setHasLoaded(true);
-      setLoading(false);
-    }
-  }, [isOwner, markMatchingAsRead, userId]);
+      setError(null);
+      try {
+        const nextPosts = await postApi.getPosts(userId);
+        setPosts(nextPosts);
+        if (isOwner) {
+          markMatchingAsRead({
+            types: ['post_liked', 'comment_created'],
+          }).catch(() => undefined);
+        }
+      } catch (apiError) {
+        setError(getApiErrorMessage(apiError));
+      } finally {
+        hasLoadedRef.current = true;
+        setHasLoaded(true);
+        if (showInitialLoading) {
+          setLoading(false);
+        }
+      }
+    },
+    [isOwner, markMatchingAsRead, userId],
+  );
 
-  useEffect(() => {
-    loadPosts().catch(() => undefined);
-  }, [loadPosts]);
+  useFocusEffect(
+    useCallback(() => {
+      loadPosts(hasLoadedRef.current ? 'silent' : 'initial').catch(
+        () => undefined,
+      );
+    }, [loadPosts]),
+  );
 
-  async function handleManualRefresh() {
-    setManualRefreshing(true);
-    try {
-      await loadPosts();
-    } finally {
-      setManualRefreshing(false);
+  useAppResumeEffect(() => {
+    if (!isFocused) {
+      return;
     }
-  }
+
+    loadPosts('silent').catch(() => undefined);
+  });
 
   async function loadComments(postId: number) {
     setCommentsLoading(previous => ({ ...previous, [postId]: true }));
@@ -125,6 +142,7 @@ export function WallFeed({
       const post = await postApi.createPost(content);
       setPosts(previous => [post, ...previous]);
       setDraft('');
+      loadPosts('silent').catch(() => undefined);
     } catch (apiError) {
       setError(getApiErrorMessage(apiError));
     } finally {
@@ -147,6 +165,7 @@ export function WallFeed({
       );
       setEditingPostId(null);
       setEditDraft('');
+      loadPosts('silent').catch(() => undefined);
     } catch (apiError) {
       setError(getApiErrorMessage(apiError));
     } finally {
@@ -178,6 +197,7 @@ export function WallFeed({
         delete next[postId];
         return next;
       });
+      loadPosts('silent').catch(() => undefined);
     } catch (apiError) {
       setError(getApiErrorMessage(apiError));
     } finally {
@@ -283,6 +303,7 @@ export function WallFeed({
         ),
       );
       setCommentDraft(previous => ({ ...previous, [postId]: '' }));
+      loadPosts('silent').catch(() => undefined);
     } catch (apiError) {
       setError(getApiErrorMessage(apiError));
     } finally {
@@ -329,15 +350,7 @@ export function WallFeed({
         </View>
       ) : null}
 
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Стена</Text>
-        <AppButton
-          title="Обновить"
-          variant="ghost"
-          loading={manualRefreshing}
-          onPress={handleManualRefresh}
-        />
-      </View>
+      <Text style={styles.sectionTitle}>Стена</Text>
 
       {posts.length === 0 ? (
         <EmptyState
@@ -623,12 +636,6 @@ const createStyles = (colors: ThemeColors) =>
     submitButton: {
       minHeight: 42,
       paddingHorizontal: 12,
-    },
-    sectionHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      gap: spacing.md,
     },
     sectionTitle: {
       ...typography.h2,

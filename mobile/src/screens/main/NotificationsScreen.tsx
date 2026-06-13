@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import {
   useFocusEffect,
+  useIsFocused,
   useNavigation,
   type CompositeNavigationProp,
 } from '@react-navigation/native';
@@ -33,6 +34,7 @@ import { useThemeColors } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/themes';
 import { radius, spacing, typography } from '../../theme/layout';
 import { formatDateTime } from '../../utils/format';
+import { useAppResumeEffect } from '../../utils/useAppResumeEffect';
 
 type NotificationsNavigation = CompositeNavigationProp<
   BottomTabNavigationProp<MainTabParamList, 'Notifications'>,
@@ -86,6 +88,7 @@ function notificationIcon(type: string) {
 }
 
 export default function NotificationsScreen() {
+  const isFocused = useIsFocused();
   const navigation = useNavigation<NotificationsNavigation>();
   const { user } = useAuth();
   const colors = useThemeColors();
@@ -93,12 +96,29 @@ export default function NotificationsScreen() {
   const { notifications, loading, error, refreshNotifications, markAsRead } =
     useNotifications();
   const [actors, setActors] = useState<Record<number, User>>({});
+  const [hasLoaded, setHasLoaded] = useState(false);
+
+  const loadNotifications = useCallback(async () => {
+    try {
+      await refreshNotifications();
+    } finally {
+      setHasLoaded(true);
+    }
+  }, [refreshNotifications]);
 
   useFocusEffect(
     useCallback(() => {
-      refreshNotifications().catch(() => undefined);
-    }, [refreshNotifications]),
+      loadNotifications().catch(() => undefined);
+    }, [loadNotifications]),
   );
+
+  useAppResumeEffect(() => {
+    if (!isFocused) {
+      return;
+    }
+
+    loadNotifications().catch(() => undefined);
+  });
 
   useEffect(() => {
     const missingActorIds = Array.from(
@@ -190,14 +210,14 @@ export default function NotificationsScreen() {
       <FlatList
         data={notifications}
         keyExtractor={item => String(item.id)}
-        refreshing={loading && notifications.length > 0}
-        onRefresh={refreshNotifications}
+        refreshing={loading && hasLoaded}
+        onRefresh={loadNotifications}
         contentContainerStyle={[
           styles.listContent,
           notifications.length === 0 && styles.emptyListContent,
         ]}
         ListEmptyComponent={
-          loading ? (
+          loading && !hasLoaded ? (
             <LoadingState text="Загружаем уведомления" />
           ) : (
             <EmptyState
