@@ -18,9 +18,11 @@ type websocketRegistry struct {
 }
 
 type websocketClient struct {
-	userID  uint
-	conn    *websocket.Conn
-	writeMu sync.Mutex
+	userID               uint
+	conn                 *websocket.Conn
+	writeMu              sync.Mutex
+	stateMu              sync.RWMutex
+	activeConversationID uint
 }
 
 func (c *websocketClient) write(ctx context.Context, data []byte) error {
@@ -146,6 +148,37 @@ func (r *websocketRegistry) remove(userID uint, client *websocketClient) (bool, 
 	}
 
 	return false, false
+}
+
+func (r *websocketRegistry) setActiveConversation(userID uint, client *websocketClient, conversationID uint) bool {
+	r.mu.RLock()
+	_, ok := r.clients[userID][client]
+	r.mu.RUnlock()
+	if !ok {
+		return false
+	}
+
+	client.stateMu.Lock()
+	client.activeConversationID = conversationID
+	client.stateMu.Unlock()
+	return true
+}
+
+func (r *websocketRegistry) hasActiveConversation(userID uint, conversationID uint) bool {
+	if conversationID == 0 {
+		return false
+	}
+
+	for _, client := range r.getAll(userID) {
+		client.stateMu.RLock()
+		activeConversationID := client.activeConversationID
+		client.stateMu.RUnlock()
+		if activeConversationID == conversationID {
+			return true
+		}
+	}
+
+	return false
 }
 
 func isClosedWebSocketError(err error) bool {

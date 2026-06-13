@@ -21,6 +21,11 @@ const notificationsDLQ = "notifications.dlq"
 const retryCountHeader = "x-retry-count"
 const maxRetries = 3
 
+const (
+	actionCreate               = "create"
+	actionMarkConversationRead = "mark_conversation_read"
+)
+
 func NewRabbit() (*amqp.Connection, *amqp.Channel, error) {
 	rabbitURL := os.Getenv("RABBIT_URL")
 	if rabbitURL == "" {
@@ -67,7 +72,7 @@ func StartConsumer(ch *amqp.Channel, svc *services.Service) error {
 			continue
 		}
 
-		if err := svc.CreateNotification(&req); err != nil {
+		if err := handleNotificationReq(svc, &req); err != nil {
 			retryOrDeadLetter(ch, msg, err)
 			continue
 		}
@@ -77,7 +82,30 @@ func StartConsumer(ch *amqp.Channel, svc *services.Service) error {
 	return nil
 }
 
+func handleNotificationReq(svc *services.Service, req *dto.CreateNotificationReq) error {
+	switch notificationAction(req.Action) {
+	case actionMarkConversationRead:
+		return svc.MarkMessageConversationRead(req.RecipientID, req.ConversationID)
+	default:
+		return svc.CreateNotification(req)
+	}
+}
+
 func validateNotificationReq(req dto.CreateNotificationReq) error {
+	switch notificationAction(req.Action) {
+	case actionMarkConversationRead:
+		if req.RecipientID == 0 {
+			return errors.New("recipient_id is required")
+		}
+		if req.ConversationID == 0 {
+			return errors.New("conversation_id is required")
+		}
+		return nil
+	case actionCreate:
+	default:
+		return fmt.Errorf("unsupported notification action %q", req.Action)
+	}
+
 	if req.RecipientID == 0 {
 		return errors.New("recipient_id is required")
 	}
@@ -96,6 +124,14 @@ func validateNotificationReq(req dto.CreateNotificationReq) error {
 	default:
 		return fmt.Errorf("unsupported notification type %q", req.Type)
 	}
+}
+
+func notificationAction(action string) string {
+	action = strings.TrimSpace(action)
+	if action == "" {
+		return actionCreate
+	}
+	return action
 }
 
 func retryOrDeadLetter(ch *amqp.Channel, msg amqp.Delivery, cause error) {

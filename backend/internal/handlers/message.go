@@ -77,7 +77,7 @@ func SendMessage(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		publishNotification(toID, userID, dto.NotificationTypeMessage, message.ID)
+		publishMessageNotification(toID, userID, message.ID)
 		broadcastNewMessage(c.Request.Context(), message)
 
 		c.JSON(201, services.WithPrivateAttachmentURLs(message))
@@ -177,7 +177,7 @@ func ForwardMessage(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		for _, message := range messages {
-			publishNotification(message.ToID, userID, dto.NotificationTypeMessage, message.ID)
+			publishMessageNotification(message.ToID, userID, message.ID)
 			broadcastNewMessage(c.Request.Context(), message)
 		}
 
@@ -650,6 +650,8 @@ func MarkMessagesAsRead(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 		sendMessageReadReceipt(c.Request.Context(), userID, fromID)
+		sendConversationReadSync(c.Request.Context(), userID, fromID)
+		publishMessageReadSync(userID, fromID)
 
 		c.JSON(200, gin.H{"message": "marked as read"})
 	}

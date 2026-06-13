@@ -39,6 +39,14 @@ export type WsEvent =
       payload: {
         from_id: number;
         to_id: number;
+        conversation_id?: number;
+      };
+    }
+  | {
+      type: 'conversation:read';
+      payload: {
+        reader_id: number;
+        conversation_id: number;
       };
     }
   | {
@@ -138,6 +146,7 @@ class ChatSocket {
   private connected = false;
   private networkOnline = true;
   private pendingEvents: QueuedEvent[] = [];
+  private activeConversationId: number | null = null;
   private readonly callEventQueueTtlMs = 30000;
   private readonly callEventTypes = new Set([
     'call:offer',
@@ -171,13 +180,17 @@ class ChatSocket {
 
   onMessage(handler: WsHandler) {
     this.handlers.add(handler);
-    return () => this.handlers.delete(handler);
+    return () => {
+      this.handlers.delete(handler);
+    };
   }
 
   onStatus(handler: StatusHandler) {
     this.statusHandlers.add(handler);
     handler(this.connected);
-    return () => this.statusHandlers.delete(handler);
+    return () => {
+      this.statusHandlers.delete(handler);
+    };
   }
 
   isConnected() {
@@ -207,6 +220,9 @@ class ChatSocket {
   }
 
   disconnect() {
+    if (this.activeConversationId !== null) {
+      this.clearActiveConversation();
+    }
     this.shouldReconnect = false;
     this.clearReconnectTimer();
     this.reconnectAttempts = 0;
@@ -245,6 +261,22 @@ class ChatSocket {
 
   sendReadReceipt(toId: number) {
     this.sendEventToUser('message:read', toId);
+  }
+
+  setActiveConversation(conversationId: number) {
+    this.activeConversationId = conversationId;
+    this.syncActiveConversation();
+  }
+
+  clearActiveConversation() {
+    this.activeConversationId = null;
+    this.sendEvent(
+      {
+        type: 'conversation:inactive',
+        payload: {},
+      },
+      false,
+    );
   }
 
   sendCallOffer(
@@ -354,6 +386,7 @@ class ChatSocket {
         this.opening = false;
         this.reconnectAttempts = 0;
         this.setConnected(true);
+        this.syncActiveConversation();
         this.flushPendingEvents();
       };
       this.ws.onmessage = event => this.handleRawMessage(event.data);
@@ -389,6 +422,22 @@ class ChatSocket {
     }
 
     this.ws?.send(JSON.stringify(event));
+  }
+
+  private syncActiveConversation() {
+    if (!this.activeConversationId) {
+      return;
+    }
+
+    this.sendEvent(
+      {
+        type: 'conversation:active',
+        payload: {
+          conversation_id: this.activeConversationId,
+        },
+      },
+      false,
+    );
   }
 
   private flushPendingEvents() {

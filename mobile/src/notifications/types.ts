@@ -2,12 +2,15 @@ export type MobileNotificationType =
   | 'message_received'
   | 'friend_request'
   | 'friend_accepted'
+  | 'notification_sync'
   | 'system';
 
 export type MobileNotificationData = {
   type: MobileNotificationType | string;
   actorId?: number;
   entityId?: number;
+  conversationId?: number;
+  syncAction?: string;
   url?: string;
 };
 
@@ -40,6 +43,13 @@ export function normalizeNotificationData(
     type,
     actorId: numberFromValue(data.actor_id ?? data.actorId),
     entityId: numberFromValue(data.entity_id ?? data.entityId),
+    conversationId: numberFromValue(data.conversation_id ?? data.conversationId),
+    syncAction:
+      typeof data.sync_action === 'string'
+        ? data.sync_action
+        : typeof data.syncAction === 'string'
+          ? data.syncAction
+          : undefined,
     url,
   };
 }

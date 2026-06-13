@@ -55,6 +55,7 @@ export class WebSocketService {
     private reconnectTimer: number | null = null;
     private pendingEvents: QueuedEvent[] = [];
     private opening = false;
+    private activeConversationId: number | null = null;
 
     connect() {
         this.shouldReconnect = true;
@@ -90,6 +91,7 @@ export class WebSocketService {
         this.ws.onopen = () => {
             this.opening = false;
             this.shouldReconnect = true;
+            this.syncActiveConversation();
             this.flushPendingEvents();
         };
         this.ws.onmessage = event => {
@@ -143,6 +145,19 @@ export class WebSocketService {
         this.sendEventToUser('message:read', toId);
     }
 
+    setActiveConversation(conversationId: number) {
+        this.activeConversationId = conversationId;
+        this.syncActiveConversation();
+    }
+
+    clearActiveConversation() {
+        this.activeConversationId = null;
+        this.sendEvent({
+            type: 'conversation:inactive',
+            payload: {},
+        }, false);
+    }
+
     sendCallOffer(
         toId: number,
         offer: RTCSessionDescriptionInit,
@@ -189,11 +204,27 @@ export class WebSocketService {
     }
 
     disconnect() {
+        if (this.activeConversationId !== null) {
+            this.clearActiveConversation();
+        }
         this.shouldReconnect = false;
         this.clearReconnectTimer();
         this.pendingEvents = [];
         this.ws?.close();
         this.ws = null;
+    }
+
+    private syncActiveConversation() {
+        if (!this.activeConversationId) {
+            return;
+        }
+
+        this.sendEvent({
+            type: 'conversation:active',
+            payload: {
+                conversation_id: this.activeConversationId,
+            },
+        }, false);
     }
 
     private parseMessage(raw: string): WsEvent | null {

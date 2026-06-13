@@ -16,6 +16,7 @@ import {
   type MarkNotificationsReadPayload,
 } from '../api/notifications';
 import { getApiErrorMessage } from '../api/http';
+import { chatSocket, type WsEvent } from '../api/ws';
 import type { SocialNotification } from '../api/types';
 import { initializePushNotifications } from '../notifications/pushNotifications';
 import type { MobileNotificationData } from '../notifications/types';
@@ -36,6 +37,17 @@ const NotificationsContext = createContext<NotificationsContextValue | undefined
 
 function isChatNotification(notification: MobileNotificationData) {
   return notification.type === 'message_received';
+}
+
+function notificationMatchesConversation(
+  notification: SocialNotification,
+  conversationId: number,
+) {
+  return (
+    notification.type === 'message_received' &&
+    (notification.conversation_id === conversationId ||
+      notification.actor_id === conversationId)
+  );
 }
 
 export function NotificationsProvider({ children }: { children: ReactNode }) {
@@ -117,8 +129,36 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const markConversationNotificationsRead = useCallback(
+    (conversationId?: number) => {
+      if (!conversationId) {
+        return;
+      }
+
+      setNotifications(previous =>
+        previous.map(notification =>
+          notificationMatchesConversation(notification, conversationId)
+            ? { ...notification, is_read: true }
+            : notification,
+        ),
+      );
+    },
+    [],
+  );
+
   const handleNotification = useCallback(
     (notification: MobileNotificationData) => {
+      if (
+        notification.type === 'notification_sync' &&
+        notification.syncAction === 'message_read'
+      ) {
+        markConversationNotificationsRead(notification.conversationId);
+        refreshUnreadCount().catch(() => undefined);
+        signalChatDataChanged();
+        refreshNotifications().catch(() => undefined);
+        return;
+      }
+
       if (isChatNotification(notification)) {
         signalChatDataChanged();
       }
@@ -126,8 +166,38 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       refreshUnreadCount().catch(() => undefined);
       refreshNotifications().catch(() => undefined);
     },
-    [refreshNotifications, refreshUnreadCount, signalChatDataChanged],
+    [
+      markConversationNotificationsRead,
+      refreshNotifications,
+      refreshUnreadCount,
+      signalChatDataChanged,
+    ],
   );
+
+  useEffect(() => {
+    if (!user?.id) {
+      return undefined;
+    }
+
+    const unsubscribe = chatSocket.onMessage((event: WsEvent) => {
+      if (event.type !== 'conversation:read') {
+        return;
+      }
+
+      const payload = event.payload as {
+        reader_id?: number;
+        conversation_id?: number;
+      };
+      if (payload.reader_id !== user.id) {
+        return;
+      }
+
+      markConversationNotificationsRead(payload.conversation_id);
+      refreshNotifications().catch(() => undefined);
+    });
+
+    return unsubscribe;
+  }, [markConversationNotificationsRead, refreshNotifications, user?.id]);
 
   useEffect(() => {
     refreshNotifications().catch(() => undefined);

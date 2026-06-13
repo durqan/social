@@ -117,7 +117,8 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
         event.type === 'message:new' ||
         event.type === 'message:update' ||
         event.type === 'message:delete' ||
-        event.type === 'message:read'
+        event.type === 'message:read' ||
+        event.type === 'conversation:read'
       ) {
         signalChatDataChanged();
       }

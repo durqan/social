@@ -70,6 +70,26 @@ func (r *Repository) MarkMatchingAsRead(userID uint, types []string, actorID *ui
 	return query.Update("is_read", true).Error
 }
 
+func (r *Repository) MarkMessageConversationRead(userID uint, conversationID uint) error {
+	return r.db.Model(&models.Notification{}).
+		Where("recipient_id = ? AND is_read = false AND type = ? AND (conversation_id = ? OR actor_id = ?)",
+			userID,
+			"message_received",
+			conversationID,
+			conversationID,
+		).
+		Update("is_read", true).Error
+}
+
+func (r *Repository) IsNotificationRead(id uint) (bool, error) {
+	var notification models.Notification
+	err := r.db.Select("is_read").First(&notification, id).Error
+	if err != nil {
+		return false, err
+	}
+	return notification.IsRead, nil
+}
+
 func (r *Repository) UpsertPushSubscription(subscription *models.PushSubscription) error {
 	return r.db.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "endpoint"}},

@@ -10,6 +10,7 @@ const (
 )
 
 type CreateNotificationReq struct {
+	Action      string `json:"action,omitempty"`
 	RecipientID uint   `json:"recipient_id"`
 	ActorID     uint   `json:"actor_id"`
 	Type        string `json:"type"`

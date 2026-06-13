@@ -16,6 +16,22 @@ const dispatchNotificationsRead = (payload: MarkNotificationsReadPayload) => {
     }));
 };
 
+const closeBrowserMessageNotifications = (conversationId: number) => {
+    if (!('serviceWorker' in navigator)) {
+        return;
+    }
+
+    navigator.serviceWorker.ready
+        .then(registration => {
+            registration.active?.postMessage({
+                type: 'notification_sync',
+                sync_action: 'message_read',
+                conversation_id: conversationId,
+            });
+        })
+        .catch(() => undefined);
+};
+
 const messageUpdateTime = (message: Message): number | null => {
     if (!message.updated_at) {
         return null;
@@ -186,6 +202,7 @@ export const useChatMessages = (userId: string | undefined, currentUserId: numbe
         if (!currentUserId || fromId === currentUserId) {
             return;
         }
+        closeBrowserMessageNotifications(fromId);
 
         void notificationService.markMatchingAsRead({
             types: ['message_received'],

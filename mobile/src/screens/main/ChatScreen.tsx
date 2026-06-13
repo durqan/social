@@ -283,7 +283,7 @@ export default function ChatScreen({ route }: Props) {
   );
   const { startAudioCall, startVideoCall, status: callStatus } = useCall();
   const isFocused = useIsFocused();
-  const { networkConnected } = useAppLifecycle();
+  const { isForeground, networkConnected } = useAppLifecycle();
   const { refreshUnreadCount, signalChatDataChanged } = useUnread();
   const otherUserId = route.params.userId;
   const listRef = useRef<FlatList<Message>>(null);
@@ -860,6 +860,28 @@ export default function ChatScreen({ route }: Props) {
     }, [loadMessages, loadPinnedMessage]),
   );
 
+  useEffect(() => {
+    if (isFocused && isForeground) {
+      chatSocket.setActiveConversation(otherUserId);
+      return () => {
+        chatSocket.clearActiveConversation();
+      };
+    }
+
+    chatSocket.clearActiveConversation();
+    return undefined;
+  }, [isFocused, isForeground, otherUserId]);
+
+  useEffect(() => {
+    const unsubscribe = chatSocket.onStatus(connected => {
+      if (connected && isFocused && isForeground) {
+        chatSocket.setActiveConversation(otherUserId);
+      }
+    });
+
+    return unsubscribe;
+  }, [isFocused, isForeground, otherUserId]);
+
   useAppResumeEffect(() => {
     if (!isFocused) {
       return;
@@ -915,6 +937,21 @@ export default function ChatScreen({ route }: Props) {
               : message,
           ),
         );
+        return;
+      }
+
+      if (event.type === 'conversation:read') {
+        const payload = event.payload as {
+          reader_id?: number;
+          conversation_id?: number;
+        };
+        if (
+          payload.reader_id === user?.id &&
+          payload.conversation_id === otherUserId
+        ) {
+          refreshUnreadCount().catch(() => undefined);
+          signalChatDataChanged();
+        }
         return;
       }
 

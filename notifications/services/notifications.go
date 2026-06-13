@@ -35,11 +35,20 @@ func (s *Service) CreateNotification(req *dto.CreateNotificationReq) error {
 		DedupeKey:      DedupeKey(*req),
 	}
 
+	if req.Type == dto.NotificationTypeMessage {
+		if message, err := s.repo.FindMessageByID(req.EntityID); err == nil && message.IsRead {
+			note.IsRead = true
+		}
+	}
+
 	created, err := s.repo.CreateOnce(note)
 	if err != nil {
 		return err
 	}
 	if !created {
+		return nil
+	}
+	if note.IsRead {
 		return nil
 	}
 
@@ -110,15 +119,64 @@ func (s *Service) MarkMatchingAsRead(userID uint, req dto.MarkNotificationsReadR
 	return s.repo.MarkMatchingAsRead(userID, req.Types, req.ActorID, req.EntityID)
 }
 
+func (s *Service) MarkMessageConversationRead(userID uint, conversationID uint) error {
+	if err := s.repo.MarkMessageConversationRead(userID, conversationID); err != nil {
+		return err
+	}
+	go s.sendNotificationSync(userID, conversationID)
+	return nil
+}
+
 func (s *Service) sendPushNotifications(notification models.Notification) {
 	if s.push == nil || !s.push.Enabled() {
 		return
 	}
 
-	payload := s.buildPushPayload(notification)
+	if !s.shouldSendPush(notification) {
+		return
+	}
 
+	payload := s.buildPushPayload(notification)
+	s.sendPushPayload(notification.RecipientID, payload)
+}
+
+func (s *Service) sendNotificationSync(userID uint, conversationID uint) {
+	if s.push == nil || !s.push.Enabled() || userID == 0 || conversationID == 0 {
+		return
+	}
+
+	s.sendPushPayload(userID, pushsvc.Payload{
+		Title:          "",
+		Body:           "",
+		URL:            "",
+		Tag:            buildMessageTag(conversationID),
+		Type:           "notification_sync",
+		ConversationID: conversationID,
+		SyncAction:     "message_read",
+		Silent:         true,
+	})
+}
+
+func (s *Service) shouldSendPush(notification models.Notification) bool {
+	isRead, err := s.repo.IsNotificationRead(notification.ID)
+	if err == nil && isRead {
+		return false
+	}
+
+	if notification.Type != dto.NotificationTypeMessage {
+		return true
+	}
+
+	message, err := s.repo.FindMessageByID(notification.EntityID)
+	if err != nil {
+		return true
+	}
+	return !message.IsRead
+}
+
+func (s *Service) sendPushPayload(userID uint, payload pushsvc.Payload) {
 	if s.push.WebPushEnabled() {
-		subscriptions, err := s.repo.FindPushSubscriptionsByUserID(notification.RecipientID)
+		subscriptions, err := s.repo.FindPushSubscriptionsByUserID(userID)
 		if err != nil {
 			log.Printf("failed to load push subscriptions: %v", err)
 		} else {
@@ -137,7 +195,7 @@ func (s *Service) sendPushNotifications(notification models.Notification) {
 	}
 
 	if s.push.FCMEnabled() {
-		tokens, err := s.repo.FindMobilePushTokensByUserID(notification.RecipientID)
+		tokens, err := s.repo.FindMobilePushTokensByUserID(userID)
 		if err != nil {
 			log.Printf("failed to load mobile push tokens: %v", err)
 			return
@@ -198,21 +256,36 @@ func buildMessagePushPayload(
 ) pushsvc.Payload {
 	if dataSource == nil {
 		fb := fallback
-		fb.Tag = "messages"
+		convID := notification.ConversationID
+		if convID == 0 {
+			convID = notification.ActorID
+		}
+		fb.ConversationID = convID
+		fb.Tag = buildMessageTag(convID)
 		return fb
 	}
 
 	message, err := dataSource.FindMessageByID(notification.EntityID)
 	if err != nil {
 		fb := fallback
-		fb.Tag = "messages"
+		convID := notification.ConversationID
+		if convID == 0 {
+			convID = notification.ActorID
+		}
+		fb.ConversationID = convID
+		fb.Tag = buildMessageTag(convID)
 		return fb
 	}
 
 	actor, err := dataSource.FindUserByID(notification.ActorID)
 	if err != nil {
 		fb := fallback
-		fb.Tag = "messages"
+		convID := notification.ConversationID
+		if convID == 0 {
+			convID = notification.ActorID
+		}
+		fb.ConversationID = convID
+		fb.Tag = buildMessageTag(convID)
 		return fb
 	}
 
@@ -224,8 +297,11 @@ func buildMessagePushPayload(
 		payload.Body = body
 	}
 	convID := notification.ActorID
+	if notification.ConversationID != 0 {
+		convID = notification.ConversationID
+	}
 	payload.ConversationID = convID
-	payload.Tag = buildTag(notification, convID)
+	payload.Tag = buildMessageTag(convID)
 	return payload
 }
 
@@ -356,7 +432,7 @@ func pushURL(notification models.Notification) string {
 func buildTag(notification models.Notification, conversationID uint) string {
 	if notification.Type == dto.NotificationTypeMessage {
 		if conversationID != 0 {
-			return fmt.Sprintf("conversation:%d", conversationID)
+			return buildMessageTag(conversationID)
 		}
 		return "messages"
 	}
@@ -377,4 +453,11 @@ func buildTag(notification models.Notification, conversationID uint) string {
 	default:
 		return fmt.Sprintf("notification-%d", notification.ID)
 	}
+}
+
+func buildMessageTag(conversationID uint) string {
+	if conversationID == 0 {
+		return "messages"
+	}
+	return fmt.Sprintf("message:%d", conversationID)
 }

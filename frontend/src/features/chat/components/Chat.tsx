@@ -542,6 +542,7 @@ function Chat() {
         onTyping: setOtherTyping,
         onMessageDeleted: handleSocketMessageDeleted,
         onReadReceipt: markAsRead,
+        onConversationRead: markAsRead,
         onNewMessage: useCallback((msg) => {
             void decryptIncomingMessage(msg).then(displayMessage => {
                 setMessages(prev => {
@@ -639,6 +640,33 @@ function Chat() {
             userService.getUser(userId).then(setRecipient).catch(console.error);
         }
     }, [loadInitial, userId]);
+
+    useEffect(() => {
+        const conversationId = Number(userId);
+        if (!conversationId) {
+            return;
+        }
+
+        const syncActiveConversation = () => {
+            if (document.visibilityState === 'visible' && document.hasFocus()) {
+                wsService.setActiveConversation(conversationId);
+            } else {
+                wsService.clearActiveConversation();
+            }
+        };
+
+        syncActiveConversation();
+        document.addEventListener('visibilitychange', syncActiveConversation);
+        window.addEventListener('focus', syncActiveConversation);
+        window.addEventListener('blur', syncActiveConversation);
+
+        return () => {
+            document.removeEventListener('visibilitychange', syncActiveConversation);
+            window.removeEventListener('focus', syncActiveConversation);
+            window.removeEventListener('blur', syncActiveConversation);
+            wsService.clearActiveConversation();
+        };
+    }, [userId, wsService]);
 
     useEffect(() => {
         if (!userId) return;

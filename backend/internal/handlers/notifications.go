@@ -13,6 +13,7 @@ func publishNotification(recipientID, actorID uint, notificationType string, ent
 	}
 
 	req := dto.CreateNotificationReq{
+		Action:      "create",
 		RecipientID: recipientID,
 		ActorID:     actorID,
 		Type:        notificationType,
@@ -26,6 +27,58 @@ func publishNotification(recipientID, actorID uint, notificationType string, ent
 			req.ActorID,
 			req.Type,
 			req.EntityID,
+			err,
+		)
+	}
+}
+
+func publishMessageNotification(recipientID, actorID uint, messageID uint) {
+	if recipientID == actorID {
+		return
+	}
+	if clients.hasActiveConversation(recipientID, actorID) {
+		return
+	}
+
+	req := dto.CreateNotificationReq{
+		Action:         "create",
+		RecipientID:    recipientID,
+		ActorID:        actorID,
+		Type:           dto.NotificationTypeMessage,
+		EntityID:       messageID,
+		ConversationID: actorID,
+	}
+
+	if err := rabbit.PublishNotification(req); err != nil {
+		log.Printf(
+			"failed to publish message notification: recipient_id=%d actor_id=%d message_id=%d conversation_id=%d error=%v",
+			req.RecipientID,
+			req.ActorID,
+			req.EntityID,
+			req.ConversationID,
+			err,
+		)
+	}
+}
+
+func publishMessageReadSync(readerID uint, conversationID uint) {
+	if readerID == 0 || conversationID == 0 {
+		return
+	}
+
+	req := dto.CreateNotificationReq{
+		Action:         "mark_conversation_read",
+		RecipientID:    readerID,
+		ActorID:        conversationID,
+		Type:           dto.NotificationTypeMessage,
+		ConversationID: conversationID,
+	}
+
+	if err := rabbit.PublishNotification(req); err != nil {
+		log.Printf(
+			"failed to publish message read sync: reader_id=%d conversation_id=%d error=%v",
+			readerID,
+			conversationID,
 			err,
 		)
 	}
@@ -49,6 +102,7 @@ func publishIncomingCallNotification(recipientID, actorID uint, callID string, c
 	}
 
 	req := dto.CreateNotificationReq{
+		Action:         "create",
 		RecipientID:    recipientID,
 		ActorID:        actorID,
 		Type:           dto.NotificationTypeIncomingCall,

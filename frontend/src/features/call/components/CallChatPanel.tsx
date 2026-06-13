@@ -58,6 +58,28 @@ export function CallChatPanel({
         onSeen();
     }, [loadInitial, markAsRead, onSeen, peerUserId, wsService]);
 
+    useEffect(() => {
+        const syncActiveConversation = () => {
+            if (document.visibilityState === 'visible' && document.hasFocus()) {
+                wsService.setActiveConversation(peerUserId);
+            } else {
+                wsService.clearActiveConversation();
+            }
+        };
+
+        syncActiveConversation();
+        document.addEventListener('visibilitychange', syncActiveConversation);
+        window.addEventListener('focus', syncActiveConversation);
+        window.addEventListener('blur', syncActiveConversation);
+
+        return () => {
+            document.removeEventListener('visibilitychange', syncActiveConversation);
+            window.removeEventListener('focus', syncActiveConversation);
+            window.removeEventListener('blur', syncActiveConversation);
+            wsService.clearActiveConversation();
+        };
+    }, [peerUserId, wsService]);
+
     useChatWebSocket({
         userId: String(peerUserId),
         currentUserId: currentUser.id,
@@ -66,6 +88,7 @@ export function CallChatPanel({
             setMessages(prev => prev.filter(message => message.id !== messageId));
         },
         onReadReceipt: markAsRead,
+        onConversationRead: markAsRead,
         onNewMessage: useCallback((message) => {
             setMessages(prev => {
                 if (prev.some(item => item.id === message.id)) {

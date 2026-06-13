@@ -76,6 +76,12 @@ function Conversations() {
                     }
                     return;
 
+                case 'conversation:read':
+                    if (event.payload.reader_id === currentUser.id) {
+                        void fetchConversations();
+                    }
+                    return;
+
                 case 'message:delete':
                     void fetchConversations();
                     return;

@@ -380,7 +380,9 @@ export function NotificationBell({ userId, compact = false }: NotificationBellPr
                         const browserNotification = new Notification(getNotificationTitle(notification), {
                             body: getNotificationDetails(notification),
                             icon: '/favicon.svg',
-                            tag: `notification-${notification.id}`,
+                            tag: notification.type === 'message_received'
+                                ? `message:${notification.conversation_id || notification.actor_id}`
+                                : `notification-${notification.id}`,
                         });
 
                         browserNotification.onclick = () => {

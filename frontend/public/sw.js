@@ -17,7 +17,7 @@ self.addEventListener('push', event => {
     if (!tag) {
         switch (payload.type) {
             case 'message_received':
-                tag = 'messages';
+                tag = payload.conversation_id ? `message:${payload.conversation_id}` : 'messages';
                 break;
             case 'friend_request':
             case 'friend_accepted':
@@ -33,6 +33,12 @@ self.addEventListener('push', event => {
             default:
                 tag = `notification-${payload.notification_id || Date.now()}`;
         }
+    }
+
+    if (payload.type === 'notification_sync' && payload.sync_action === 'message_read') {
+        const syncTag = payload.conversation_id ? `message:${payload.conversation_id}` : tag;
+        event.waitUntil(closeNotificationsByTag(syncTag));
+        return;
     }
 
     const isCall = payload.type === 'incoming_call' || payload.kind === 'call';
@@ -64,6 +70,24 @@ self.addEventListener('push', event => {
     }
 
     event.waitUntil(self.registration.showNotification(payload.title, notificationOptions));
+});
+
+function closeNotificationsByTag(tag) {
+    if (!tag || !self.registration.getNotifications) {
+        return Promise.resolve();
+    }
+
+    return self.registration.getNotifications({ tag }).then(notifications => {
+        notifications.forEach(notification => notification.close());
+    });
+}
+
+self.addEventListener('message', event => {
+    const data = event.data || {};
+    if (data.type === 'notification_sync' && data.sync_action === 'message_read') {
+        const tag = data.conversation_id ? `message:${data.conversation_id}` : data.tag;
+        event.waitUntil(closeNotificationsByTag(tag));
+    }
 });
 
 self.addEventListener('notificationclick', event => {

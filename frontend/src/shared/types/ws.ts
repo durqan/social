@@ -41,6 +41,15 @@ export type ReadReceiptEvent = BaseWsEvent<
     {
         from_id: number;
         to_id: number;
+        conversation_id?: number;
+    }
+>;
+
+export type ConversationReadEvent = BaseWsEvent<
+    'conversation:read',
+    {
+        reader_id: number;
+        conversation_id: number;
     }
 >;
 
@@ -145,6 +154,7 @@ export type WsEvent =
     | TypingStartEvent
     | TypingStopEvent
     | ReadReceiptEvent
+    | ConversationReadEvent
     | MessageDeletedEvent
     | MessagePinnedEvent
     | MessageUnpinnedEvent

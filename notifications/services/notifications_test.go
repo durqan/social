@@ -1,6 +1,7 @@
 package services
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -55,6 +56,49 @@ func TestCreateNotificationDedupesDuplicateDelivery(t *testing.T) {
 	}
 }
 
+func TestCreateMessageNotificationAlreadyReadSkipsHubDelivery(t *testing.T) {
+	db := newNotificationTestDB(t)
+	notificationHub := hub.NewHub()
+	service := NewService(repository.NewRepository(db), notificationHub, nil)
+	client, cleanup := notificationHub.AddClient(10)
+	defer cleanup()
+
+	if err := db.Create(&models.Message{
+		ID:     30,
+		FromID: 20,
+		ToID:   10,
+		IsRead: true,
+	}).Error; err != nil {
+		t.Fatalf("seed read message: %v", err)
+	}
+
+	req := &dto.CreateNotificationReq{
+		RecipientID:    10,
+		ActorID:        20,
+		Type:           dto.NotificationTypeMessage,
+		EntityID:       30,
+		ConversationID: 20,
+	}
+
+	if err := service.CreateNotification(req); err != nil {
+		t.Fatalf("CreateNotification failed: %v", err)
+	}
+
+	var note models.Notification
+	if err := db.First(&note, "recipient_id = ? AND entity_id = ?", 10, 30).Error; err != nil {
+		t.Fatalf("load notification: %v", err)
+	}
+	if !note.IsRead {
+		t.Fatal("expected stale message notification to be created as read")
+	}
+
+	select {
+	case delivered := <-client:
+		t.Fatalf("stale notification reached hub: %+v", delivered)
+	default:
+	}
+}
+
 func TestDedupeKeyIsDeterministic(t *testing.T) {
 	req := dto.CreateNotificationReq{
 		RecipientID:    10,
@@ -80,14 +124,82 @@ func TestDedupeKeyIsDeterministic(t *testing.T) {
 	}
 }
 
+func TestMarkMessageConversationReadMarksMatchingNotifications(t *testing.T) {
+	db := newNotificationTestDB(t)
+	service := NewService(repository.NewRepository(db), hub.NewHub(), nil)
+
+	unreadMatch := models.Notification{
+		RecipientID:    10,
+		ActorID:        20,
+		Type:           dto.NotificationTypeMessage,
+		EntityID:       1,
+		ConversationID: 20,
+		DedupeKey:      "match",
+	}
+	unreadOtherConversation := models.Notification{
+		RecipientID:    10,
+		ActorID:        30,
+		Type:           dto.NotificationTypeMessage,
+		EntityID:       2,
+		ConversationID: 30,
+		DedupeKey:      "other-conversation",
+	}
+	unreadOtherUser := models.Notification{
+		RecipientID:    11,
+		ActorID:        20,
+		Type:           dto.NotificationTypeMessage,
+		EntityID:       3,
+		ConversationID: 20,
+		DedupeKey:      "other-user",
+	}
+	if err := db.Create(&[]models.Notification{
+		unreadMatch,
+		unreadOtherConversation,
+		unreadOtherUser,
+	}).Error; err != nil {
+		t.Fatalf("seed notifications: %v", err)
+	}
+
+	if err := service.MarkMessageConversationRead(10, 20); err != nil {
+		t.Fatalf("MarkMessageConversationRead failed: %v", err)
+	}
+
+	var notes []models.Notification
+	if err := db.Order("entity_id").Find(&notes).Error; err != nil {
+		t.Fatalf("load notifications: %v", err)
+	}
+	if !notes[0].IsRead {
+		t.Fatal("expected matching conversation notification to be read")
+	}
+	if notes[1].IsRead {
+		t.Fatal("expected other conversation notification to stay unread")
+	}
+	if notes[2].IsRead {
+		t.Fatal("expected other recipient notification to stay unread")
+	}
+}
+
+func TestMessagePushTagUsesStableConversationTag(t *testing.T) {
+	notification := models.Notification{
+		Type:           dto.NotificationTypeMessage,
+		ActorID:        20,
+		ConversationID: 20,
+	}
+
+	payload := buildPushPayload(notification, nil)
+	if payload.Tag != "message:20" {
+		t.Fatalf("payload tag = %q, want message:20", payload.Tag)
+	}
+}
+
 func newNotificationTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&models.Notification{}); err != nil {
+	if err := db.AutoMigrate(&models.Notification{}, &models.Message{}, &models.MessageAttachment{}); err != nil {
 		t.Fatalf("migrate notification: %v", err)
 	}
 	return db

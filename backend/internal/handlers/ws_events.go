@@ -8,7 +8,6 @@ import (
 	"log"
 	"time"
 
-	"tester/internal/dto"
 	"tester/internal/middleware"
 	"tester/internal/models"
 	"tester/internal/repository"
@@ -23,7 +22,7 @@ type WSMessage struct {
 	Payload json.RawMessage `json:"payload"`
 }
 
-func handleWebSocketMessage(ctx context.Context, userID uint, wsMsg WSMessage) {
+func handleWebSocketMessage(ctx context.Context, userID uint, client *websocketClient, wsMsg WSMessage) {
 	switch wsMsg.Type {
 	case "message:send":
 		handleWebSocketSendMessage(ctx, userID, wsMsg.Payload)
@@ -31,6 +30,12 @@ func handleWebSocketMessage(ctx context.Context, userID uint, wsMsg WSMessage) {
 		handleWebSocketTyping(ctx, userID, wsMsg.Type, wsMsg.Payload)
 	case "message:read":
 		handleWebSocketReadReceipt(ctx, userID, wsMsg.Payload)
+	case "conversation:active":
+		handleActiveConversation(userID, client, wsMsg.Payload)
+	case "conversation:inactive":
+		if client != nil {
+			clients.setActiveConversation(userID, client, 0)
+		}
 	case "call:offer", "call:answer", "call:ice", "call:end", "call:reject":
 		if _, ok := authorizeRealtimePeerEvent(userID, wsMsg.Payload, wsMsg.Type); !ok {
 			return
@@ -39,6 +44,22 @@ func handleWebSocketMessage(ctx context.Context, userID uint, wsMsg WSMessage) {
 	default:
 		log.Println("Unknown websocket event:", wsMsg.Type)
 	}
+}
+
+func handleActiveConversation(userID uint, client *websocketClient, rawPayload json.RawMessage) {
+	if client == nil {
+		return
+	}
+
+	var payload struct {
+		ConversationID uint `json:"conversation_id"`
+	}
+	if err := json.Unmarshal(rawPayload, &payload); err != nil {
+		log.Println("Invalid active conversation payload:", err)
+		return
+	}
+
+	clients.setActiveConversation(userID, client, payload.ConversationID)
 }
 
 func handleWebSocketSendMessage(ctx context.Context, userID uint, rawPayload json.RawMessage) {
@@ -105,7 +126,7 @@ func handleWebSocketSendMessage(ctx context.Context, userID uint, rawPayload jso
 		return
 	}
 
-	publishNotification(payload.ToID, userID, dto.NotificationTypeMessage, fullMessage.ID)
+	publishMessageNotification(payload.ToID, userID, fullMessage.ID)
 
 	broadcastNewMessage(ctx, fullMessage)
 }
@@ -216,6 +237,8 @@ func handleWebSocketReadReceipt(ctx context.Context, userID uint, rawPayload jso
 	}
 
 	sendMessageReadReceipt(ctx, userID, payload.ToID)
+	sendConversationReadSync(ctx, userID, payload.ToID)
+	publishMessageReadSync(userID, payload.ToID)
 }
 
 func sendMessageReadReceipt(ctx context.Context, readerID uint, senderID uint) {
@@ -226,8 +249,9 @@ func sendMessageReadReceipt(ctx context.Context, readerID uint, senderID uint) {
 	receiptBytes, _ := json.Marshal(gin.H{
 		"type": "message:read",
 		"payload": gin.H{
-			"from_id": readerID,
-			"to_id":   senderID,
+			"from_id":         readerID,
+			"to_id":           senderID,
+			"conversation_id": senderID,
 		},
 	})
 
@@ -236,6 +260,26 @@ func sendMessageReadReceipt(ctx context.Context, readerID uint, senderID uint) {
 			if err := toConn.write(ctx, receiptBytes); err != nil {
 				log.Println("Failed to send read receipt:", err)
 			}
+		}
+	}
+}
+
+func sendConversationReadSync(ctx context.Context, readerID uint, conversationID uint) {
+	if readerID == 0 || conversationID == 0 {
+		return
+	}
+
+	syncBytes, _ := json.Marshal(gin.H{
+		"type": "conversation:read",
+		"payload": gin.H{
+			"reader_id":       readerID,
+			"conversation_id": conversationID,
+		},
+	})
+
+	for _, toConn := range clients.getAll(readerID) {
+		if err := toConn.write(ctx, syncBytes); err != nil {
+			log.Println("Failed to send conversation read sync:", err)
 		}
 	}
 }

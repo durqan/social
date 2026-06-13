@@ -86,7 +86,7 @@ func WebSocketHandler(c *gin.Context) {
 			continue
 		}
 
-		handleWebSocketMessage(ctx, userID, wsMsg)
+		handleWebSocketMessage(ctx, userID, client, wsMsg)
 	}
 }
 

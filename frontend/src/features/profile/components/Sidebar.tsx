@@ -133,6 +133,12 @@ function Sidebar({
                     }
                     return;
 
+                case 'conversation:read':
+                    if (event.payload.reader_id === userId) {
+                        refreshUnreadCount();
+                    }
+                    return;
+
                 default:
                     return;
             }

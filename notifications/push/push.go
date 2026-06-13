@@ -36,6 +36,8 @@ type Payload struct {
 	EntityID       uint   `json:"entity_id"`
 	ActorID        uint   `json:"actor_id"`
 	ConversationID uint   `json:"conversation_id"`
+	SyncAction     string `json:"sync_action,omitempty"`
+	Silent         bool   `json:"silent,omitempty"`
 	// CallID is the ephemeral call identifier from the offer. Clients use it for
 	// matching against active call state and for stale call detection.
 	CallID string `json:"call_id,omitempty"`
@@ -153,32 +155,38 @@ func (s *Service) SendMobile(token models.MobilePushToken, payload Payload) erro
 		return nil
 	}
 
-	body, err := json.Marshal(fcmSendRequest{
-		Message: fcmMessage{
-			Token: token.Token,
-			Notification: fcmNotification{
-				Title: payload.Title,
-				Body:  payload.Body,
-			},
-			Data: map[string]string{
-				"type":            payload.Type,
-				"url":             payload.URL,
-				"tag":             payload.Tag,
-				"notification_id": fmt.Sprintf("%d", payload.NotificationID),
-				"entity_id":       fmt.Sprintf("%d", payload.EntityID),
-				"actor_id":        fmt.Sprintf("%d", payload.ActorID),
-				"caller_id":       fmt.Sprintf("%d", payload.ActorID), // explicit alias for call flows
-				"conversation_id": fmt.Sprintf("%d", payload.ConversationID),
-				"call_id":         payload.CallID,
-				"ts":              "", // best effort; web deep link carries authoritative ts in the URL query
-			},
-			Android: fcmAndroidConfig{
-				Priority: "HIGH",
-				Notification: fcmAndroidNotification{
-					ChannelID: "social_notifications",
-				},
-			},
+	message := fcmMessage{
+		Token: token.Token,
+		Data: map[string]string{
+			"type":            payload.Type,
+			"url":             payload.URL,
+			"tag":             payload.Tag,
+			"notification_id": fmt.Sprintf("%d", payload.NotificationID),
+			"entity_id":       fmt.Sprintf("%d", payload.EntityID),
+			"actor_id":        fmt.Sprintf("%d", payload.ActorID),
+			"caller_id":       fmt.Sprintf("%d", payload.ActorID), // explicit alias for call flows
+			"conversation_id": fmt.Sprintf("%d", payload.ConversationID),
+			"sync_action":     payload.SyncAction,
+			"call_id":         payload.CallID,
+			"ts":              "", // best effort; web deep link carries authoritative ts in the URL query
 		},
+		Android: fcmAndroidConfig{
+			Priority: "HIGH",
+		},
+	}
+	if !payload.Silent {
+		message.Notification = fcmNotification{
+			Title: payload.Title,
+			Body:  payload.Body,
+		}
+		message.Android.Notification = &fcmAndroidNotification{
+			ChannelID: "social_notifications",
+			Tag:       payload.Tag,
+		}
+	}
+
+	body, err := json.Marshal(fcmSendRequest{
+		Message: message,
 	})
 	if err != nil {
 		return err
@@ -254,7 +262,7 @@ type fcmSendRequest struct {
 
 type fcmMessage struct {
 	Token        string            `json:"token"`
-	Notification fcmNotification   `json:"notification"`
+	Notification fcmNotification   `json:"notification,omitempty"`
 	Data         map[string]string `json:"data"`
 	Android      fcmAndroidConfig  `json:"android"`
 }
@@ -265,12 +273,13 @@ type fcmNotification struct {
 }
 
 type fcmAndroidConfig struct {
-	Priority     string                 `json:"priority"`
-	Notification fcmAndroidNotification `json:"notification"`
+	Priority     string                  `json:"priority"`
+	Notification *fcmAndroidNotification `json:"notification,omitempty"`
 }
 
 type fcmAndroidNotification struct {
 	ChannelID string `json:"channel_id"`
+	Tag       string `json:"tag,omitempty"`
 }
 
 func newFCMClientFromEnv() (string, *http.Client) {

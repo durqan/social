@@ -32,6 +32,8 @@ interface UseChatWebSocketProps {
 
     onReadReceipt: (fromId: number) => void;
 
+    onConversationRead: (conversationId: number) => void;
+
     onNewMessage: (msg: Message) => void;
 
     onMessageUpdated: (msg: Message) => void;
@@ -47,6 +49,7 @@ export const useChatWebSocket = ({
     onTyping,
     onMessageDeleted,
     onReadReceipt,
+    onConversationRead,
     onNewMessage,
     onMessageUpdated,
     onMessagePinned,
@@ -111,6 +114,18 @@ export const useChatWebSocket = ({
                         payload.from_id === Number(userId)
                     ) {
                         onReadReceipt(currentUserId);
+                    }
+
+                    break;
+                }
+
+                case 'conversation:read': {
+                    const payload = event.payload;
+                    if (
+                        payload.reader_id === currentUserId &&
+                        payload.conversation_id === Number(userId)
+                    ) {
+                        onConversationRead(payload.conversation_id);
                     }
 
                     break;
@@ -210,6 +225,7 @@ export const useChatWebSocket = ({
         onTyping,
         onMessageDeleted,
         onReadReceipt,
+        onConversationRead,
         onNewMessage,
         onMessageUpdated,
         onMessagePinned,
