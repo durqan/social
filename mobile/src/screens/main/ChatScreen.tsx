@@ -30,16 +30,17 @@ import type { Asset } from 'react-native-image-picker';
 import {
   Copy,
   Forward,
-  ImagePlus,
   Link,
   Mic,
   Pause,
+  Paperclip,
   Pencil,
   Phone,
   Pin,
   Play,
   Reply,
   Send,
+  Smile,
   Trash2,
   Video as VideoIcon,
 } from 'lucide-react-native';
@@ -124,6 +125,7 @@ import {
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'Chat'>;
 type LoadMode = 'initial' | 'refresh' | 'silent';
+type ComposerMediaMode = 'voice' | 'video_note';
 type ChatE2EEState = {
   loading: boolean;
   selfEnabled: boolean;
@@ -355,6 +357,8 @@ export default function ChatScreen({ route }: Props) {
   );
   const [pendingVideoNote, setPendingVideoNote] =
     useState<LocalVideoNoteMessage | null>(null);
+  const [composerMediaMode, setComposerMediaMode] =
+    useState<ComposerMediaMode>('voice');
   const [previewPlaying, setPreviewPlaying] = useState(false);
   const [previewPosition, setPreviewPosition] = useState(0);
   const [otherTyping, setOtherTyping] = useState(false);
@@ -376,6 +380,8 @@ export default function ChatScreen({ route }: Props) {
   );
 
   const pendingImagesRef = useRef<LocalChatImage[]>([]);
+  const pendingVideoNoteRef = useRef<LocalVideoNoteMessage | null>(null);
+  const composerMediaHoldActiveRef = useRef(false);
   const sendingRef = useRef<
     'uploading' | 'uploadingVoice' | 'uploadingVideoNote' | 'sending' | null
   >(null);
@@ -409,6 +415,10 @@ export default function ChatScreen({ route }: Props) {
   useEffect(() => {
     pendingVoiceRef.current = pendingVoice;
   }, [pendingVoice]);
+
+  useEffect(() => {
+    pendingVideoNoteRef.current = pendingVideoNote;
+  }, [pendingVideoNote]);
 
   useEffect(() => {
     previewPlayingRef.current = previewPlaying;
@@ -1227,8 +1237,12 @@ export default function ChatScreen({ route }: Props) {
       setPreviewPlaying(false);
       previewPlayingRef.current = false;
     }
-    if (pendingImagesRef.current.length > 0) {
-      setError('Сначала отправьте или удалите выбранные изображения');
+    if (
+      pendingImagesRef.current.length > 0 ||
+      pendingVoiceRef.current ||
+      pendingVideoNoteRef.current
+    ) {
+      setError('Сначала отправьте или удалите текущие вложения');
       return;
     }
 
@@ -1501,8 +1515,8 @@ export default function ChatScreen({ route }: Props) {
       editingMessageRef.current ||
       recordingActiveRef.current ||
       pendingImagesRef.current.length > 0 ||
-      pendingVoice ||
-      pendingVideoNote
+      pendingVoiceRef.current ||
+      pendingVideoNoteRef.current
     ) {
       setError('Сначала отправьте или удалите текущие вложения');
       return;
@@ -1905,6 +1919,68 @@ export default function ChatScreen({ route }: Props) {
     setInputHeight(nextHeight);
   }
 
+  async function openComposerAttachments() {
+    if (pendingVoiceRef.current || pendingVideoNoteRef.current) {
+      setError('Сначала отправьте или удалите текущие вложения');
+      return;
+    }
+
+    // TODO: add generic file upload when backend supports chat files
+    await pickImages();
+  }
+
+  function showComposerStickerNotice() {
+    setError(null);
+    setCopyNotice('Стикеры пока не реализованы');
+  }
+
+  function toggleComposerMediaMode() {
+    if (
+      recordingActiveRef.current ||
+      recordingBusyRef.current ||
+      sendingRef.current ||
+      editingMessageRef.current
+    ) {
+      return;
+    }
+
+    setComposerMediaMode(previous =>
+      previous === 'voice' ? 'video_note' : 'voice',
+    );
+  }
+
+  async function startComposerMediaRecording() {
+    if (
+      sendingRef.current ||
+      editingMessageRef.current ||
+      recordingBusyRef.current
+    ) {
+      return;
+    }
+
+    composerMediaHoldActiveRef.current = true;
+    if (composerMediaMode === 'voice') {
+      await startVoiceRecording();
+      if (!composerMediaHoldActiveRef.current && recordingActiveRef.current) {
+        await stopVoiceRecording(true);
+      }
+      return;
+    }
+
+    // TODO: full hold-to-record video notes need a custom camera/recorder.
+    await recordVideoNote();
+  }
+
+  function stopComposerMediaRecording() {
+    const shouldStopVoice =
+      composerMediaHoldActiveRef.current && composerMediaMode === 'voice';
+
+    composerMediaHoldActiveRef.current = false;
+    if (shouldStopVoice) {
+      stopVoiceRecording(true).catch(() => undefined);
+    }
+  }
+
   function copyValue(value: string, notice: string) {
     Clipboard.setString(value);
     setSelectedMessage(null);
@@ -2152,6 +2228,17 @@ export default function ChatScreen({ route }: Props) {
   function openMessageActions(message: Message) {
     setSelectedMessage(message);
   }
+
+  const trimmedInput = input.trim();
+  const showComposerSendButton =
+    Boolean(trimmedInput) || Boolean(editingMessage) || pendingImages.length > 0;
+  const composerMediaIcon =
+    composerMediaMode === 'voice' ? Mic : VideoIcon;
+  const composerMediaLabel =
+    composerMediaMode === 'voice'
+      ? 'Микрофон. Нажмите, чтобы выбрать видео-сообщение, удерживайте для записи'
+      : 'Видео-сообщение. Нажмите, чтобы выбрать микрофон, удерживайте для записи';
+  const composerMediaDisabled = Boolean(sending) || Boolean(editingMessage);
 
   return (
     <Screen
@@ -2513,58 +2600,16 @@ export default function ChatScreen({ route }: Props) {
       ) : null}
 
       <View style={[styles.composer, themed.surfaceBar]}>
-        <View style={styles.composerTools}>
-          <IconButton
-            label="Прикрепить фото"
-            variant="secondary"
-            icon={ImagePlus}
-            disabled={Boolean(sending) || Boolean(editingMessage) || recording}
-            onPress={pickImages}
-            style={styles.composerToolButton}
-          />
-          <IconButton
-            label={recording ? 'Завершить запись' : 'Записать голосовое'}
-            variant={recording ? 'danger' : 'secondary'}
-            icon={Mic}
-            disabled={
-              Boolean(sending) ||
-              Boolean(editingMessage) ||
-              pendingImages.length > 0 ||
-              recordingBusy ||
-              Boolean(pendingVoice) ||
-              Boolean(pendingVideoNote)
-            }
-            onPress={() => {
-              if (recordingActiveRef.current) {
-                stopVoiceRecording(true).catch(() => undefined);
-                return;
-              }
-              startVoiceRecording().catch(() => undefined);
-            }}
-            style={[
-              styles.composerToolButton,
-              recording ? styles.voiceButtonRecording : undefined,
-            ]}
-          />
-          <IconButton
-            label="Записать видео-сообщение"
-            variant="secondary"
-            icon={VideoIcon}
-            disabled={
-              Boolean(sending) ||
-              Boolean(editingMessage) ||
-              pendingImages.length > 0 ||
-              recording ||
-              Boolean(pendingVoice) ||
-              Boolean(pendingVideoNote)
-            }
-            onPress={() => {
-              recordVideoNote().catch(() => undefined);
-            }}
-            style={styles.composerToolButton}
-          />
-        </View>
-        <View style={styles.composerInputRow}>
+        <IconButton
+          label="Прикрепить"
+          variant="ghost"
+          icon={Paperclip}
+          disabled={Boolean(sending) || Boolean(editingMessage) || recording}
+          onPress={openComposerAttachments}
+          style={styles.composerSideButton}
+        />
+
+        <View style={[styles.composerInputContainer, themed.input]}>
           <TextInput
             value={input}
             onChangeText={handleComposerTextChange}
@@ -2580,8 +2625,26 @@ export default function ChatScreen({ route }: Props) {
             maxLength={1000}
             editable={!sending && !recording}
             textAlignVertical="top"
-            style={[styles.input, themed.input, { height: inputHeight }]}
+            style={[styles.input, themed.text, { height: inputHeight }]}
           />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Стикеры"
+            accessibilityState={{ disabled: Boolean(sending) || recording }}
+            disabled={Boolean(sending) || recording}
+            hitSlop={6}
+            onPress={showComposerStickerNotice}
+            style={({ pressed }) => [
+              styles.composerEmojiButton,
+              pressed && styles.composerButtonPressed,
+              (Boolean(sending) || recording) && styles.composerButtonDisabled,
+            ]}
+          >
+            <Smile color={themeColors.muted} size={21} strokeWidth={2.35} />
+          </Pressable>
+        </View>
+
+        {showComposerSendButton ? (
           <IconButton
             label={editingMessage ? 'Сохранить сообщение' : 'Отправить'}
             icon={editingMessage ? Pencil : Send}
@@ -2589,19 +2652,34 @@ export default function ChatScreen({ route }: Props) {
             disabled={
               Boolean(sending) ||
               recording ||
-              (!input.trim() &&
+              (!trimmedInput &&
                 !editingMessage &&
-                pendingImages.length === 0 &&
-                !pendingVoice &&
-                !pendingVideoNote) ||
+                pendingImages.length === 0) ||
               Boolean(pendingVoice) ||
               Boolean(pendingVideoNote)
             }
             loading={Boolean(sending)}
             onPress={sendMessage}
-            style={styles.composerSendButton}
+            style={styles.composerActionButton}
           />
-        </View>
+        ) : (
+          <IconButton
+            label={composerMediaLabel}
+            variant="primary"
+            icon={composerMediaIcon}
+            disabled={composerMediaDisabled}
+            delayLongPress={260}
+            onPress={toggleComposerMediaMode}
+            onLongPress={() => {
+              startComposerMediaRecording().catch(() => undefined);
+            }}
+            onPressOut={stopComposerMediaRecording}
+            style={[
+              styles.composerActionButton,
+              recording ? styles.composerActionRecording : undefined,
+            ]}
+          />
+        )}
       </View>
 
       <Modal
@@ -3983,10 +4061,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
   },
-  voiceButtonRecording: {
-    backgroundColor: colors.danger,
-    opacity: 1,
-  },
   recordingCancel: {
     borderRadius: radius.md,
     paddingHorizontal: spacing.sm,
@@ -4113,49 +4187,70 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   composer: {
-    gap: spacing.sm,
-    marginHorizontal: spacing.sm,
-    marginBottom: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.lg,
-    padding: spacing.sm,
-    backgroundColor: colors.surface,
-    shadowColor: colors.shadow,
-    shadowOpacity: 0.16,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 6,
-  },
-  composerTools: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    alignItems: 'center',
-  },
-  composerToolButton: {
-    width: 42,
-    height: 42,
-  },
-  composerInputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    paddingHorizontal: spacing.sm,
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.sm,
+    backgroundColor: colors.surface,
   },
-  composerSendButton: {
-    width: 48,
-    height: 48,
+  composerSideButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 0,
+    marginBottom: 2,
+    backgroundColor: 'transparent',
+  },
+  composerInputContainer: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    paddingLeft: spacing.md,
+    paddingRight: 4,
+    backgroundColor: colors.input,
+  },
+  composerEmojiButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 5,
+  },
+  composerButtonPressed: {
+    opacity: 0.72,
+  },
+  composerButtonDisabled: {
+    opacity: 0.42,
+  },
+  composerActionButton: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    marginBottom: 1,
+  },
+  composerActionRecording: {
+    backgroundColor: colors.danger,
+    borderColor: colors.danger,
+    opacity: 1,
   },
   input: {
     flex: 1,
     minWidth: 0,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: 0,
     paddingVertical: spacing.sm,
-    backgroundColor: colors.input,
     color: colors.text,
     fontSize: 15,
+    lineHeight: 20,
   },
   lightbox: {
     flex: 1,
