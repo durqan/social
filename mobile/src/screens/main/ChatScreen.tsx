@@ -2157,7 +2157,7 @@ export default function ChatScreen({ route }: Props) {
     <Screen
       scroll={false}
       padded={false}
-      avoidKeyboard={Platform.OS === 'ios'}
+      avoidKeyboard
       contentContainerStyle={styles.container}
     >
       <ErrorBanner message={error} />
