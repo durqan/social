@@ -41,6 +41,8 @@ function attachmentForTransport(
     duration: attachment.duration,
     duration_seconds: attachment.duration_seconds,
     size: attachment.size,
+    original_filename: attachment.original_filename,
+    content_type: attachment.content_type,
     encryption_version: attachment.encryption_version,
     encrypted_file_key: attachment.encrypted_file_key,
     file_nonce: attachment.file_nonce,

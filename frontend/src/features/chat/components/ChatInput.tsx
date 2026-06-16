@@ -4,11 +4,14 @@ import EmojiPickerModule, { EmojiStyle, type EmojiClickData, type Props as Emoji
 import {
     chatVideoNoteMaxDurationSeconds,
     chatVoiceMaxDurationSeconds,
+    chatAttachmentAccept,
+    chatAttachmentKindForFile,
     formatFileSize,
     formatDuration,
-    imageFilesFromClipboard,
+    filesFromDataTransfer,
     validateVideoNoteFile,
-    validateChatImages,
+    validateChatAttachments,
+    type ChatAttachmentKind,
 } from "@/shared/utils/uploadValidation.js";
 import { PreviewVoiceMessage } from "@/features/chat/components/PreviewVoiceMessage.js";
 import { PreviewVideoNoteMessage } from "@/features/chat/components/PreviewVideoNoteMessage.js";
@@ -60,6 +63,32 @@ function videoNoteFileType(mimeType: string) {
 
 function videoNoteFileExtension(mimeType: string) {
     return videoNoteFileType(mimeType) === 'video/mp4' ? 'mp4' : 'webm';
+}
+
+function attachmentKindTitle(kind: ChatAttachmentKind | null) {
+    switch (kind) {
+        case 'image':
+            return 'Изображение';
+        case 'video':
+            return 'Видео';
+        case 'audio':
+            return 'Аудио';
+        default:
+            return 'Файл';
+    }
+}
+
+function attachmentKindIcon(kind: ChatAttachmentKind | null): 'image' | 'video' | 'audio' | 'file' {
+    switch (kind) {
+        case 'image':
+            return 'image';
+        case 'video':
+            return 'video';
+        case 'audio':
+            return 'audio';
+        default:
+            return 'file';
+    }
 }
 
 interface ChatInputProps {
@@ -184,11 +213,11 @@ export const ChatInput = ({
 
         setSelectedFiles(prev => {
             const nextFiles = replace ? files : [...prev, ...files];
-            const validationError = validateChatImages(nextFiles);
+            const validationError = validateChatAttachments(nextFiles);
 
             if (validationError) {
                 onErrorMessageChange?.(validationError);
-                return replace ? [] : prev;
+                return prev;
             }
 
             onErrorMessageChange?.('');
@@ -731,7 +760,7 @@ export const ChatInput = ({
     }, [clearRecordingTimers, clearVideoNoteTimers, stopVideoNoteStream, stopVoiceStream]);
 
     const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
-        const files = imageFilesFromClipboard(event.clipboardData);
+        const files = filesFromDataTransfer(event.clipboardData);
 
         if (!files.length) {
             return;
@@ -743,17 +772,19 @@ export const ChatInput = ({
     };
 
     return (
-        <div className="border-t border-gray-200/80 bg-white/95 p-3 backdrop-blur sm:p-4">
+        <div className="chat-composer-shell">
             {replyPreview && (
-                <div className="mb-3 flex items-start gap-3 rounded-xl border border-sky-100 bg-sky-50 px-3 py-2">
-                    <div className="min-w-0 flex-1 border-l-2 border-sky-400 pl-3">
-                        <p className="text-xs font-medium text-sky-700">Ответ на: {replyPreview.author}</p>
-                        <p className="truncate text-sm text-gray-700">{replyPreview.text}</p>
+                <div className="chat-composer-context-bar">
+                    <div className="chat-composer-context-bar__content">
+                        <p className="chat-composer-context-bar__title">
+                            Ответ <span className="chat-composer-context-bar__meta">{replyPreview.author}</span>
+                        </p>
+                        <p className="chat-composer-context-bar__text">{replyPreview.text}</p>
                     </div>
                     <button
                         type="button"
                         onClick={onCancelReply}
-                        className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-gray-500 transition hover:bg-white hover:text-gray-800"
+                        className="chat-composer-context-bar__cancel"
                         aria-label="Отменить ответ"
                         title="Отменить ответ"
                     >
@@ -762,37 +793,100 @@ export const ChatInput = ({
                 </div>
             )}
             {selectedFiles.length > 0 && (
-                <div className="mb-3 rounded-xl border border-gray-200 bg-gray-50 p-2 shadow-sm">
-                    <div className="mb-2 flex items-center justify-between gap-3">
-                        <span className="text-xs font-medium text-gray-600">
-                            {selectedFiles.length === 1 ? '1 изображение' : `${selectedFiles.length} изображений`}
+                <div className="chat-attachment-tray">
+                    <div className="chat-attachment-tray__header">
+                        <span>
+                            {selectedFiles.length === 1 ? '1 вложение' : `${selectedFiles.length} вложений`}
                         </span>
                     </div>
 
-                    <div className="flex gap-2 overflow-x-auto pb-1">
-                        {selectedFiles.map((file, index) => (
-                            <div key={`${file.name}-${file.lastModified}-${index}`} className="relative h-20 w-20 flex-shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-gray-100">
-                                <img
-                                    src={previews[index]}
-                                    alt={file.name || 'Изображение'}
-                                    className="h-full w-full object-cover"
-                                />
+                    <div className="chat-attachment-tray__list">
+                        {selectedFiles.map((file, index) => {
+                            const kind = chatAttachmentKindForFile(file);
+                            const key = `${file.name}-${file.lastModified}-${index}`;
 
-                                <div className="absolute inset-x-0 bottom-0 bg-black/60 px-1.5 py-1 text-[10px] font-medium leading-none text-white">
-                                    {formatFileSize(file.size)}
+                            if (kind === 'image') {
+                                return (
+                                    <div key={key} className="chat-attachment-media-card">
+                                        <img
+                                            src={previews[index]}
+                                            alt={file.name || 'Изображение'}
+                                            className="chat-attachment-media-card__media"
+                                        />
+
+                                        <div className="chat-attachment-media-card__meta">
+                                            {formatFileSize(file.size)}
+                                        </div>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => removeFile(index)}
+                                            className="chat-attachment-remove"
+                                            aria-label="Убрать вложение"
+                                            title="Убрать вложение"
+                                        >
+                                            <Icon name="close" className="h-3 w-3" />
+                                        </button>
+                                    </div>
+                                );
+                            }
+
+                            if (kind === 'video') {
+                                return (
+                                    <div key={key} className="chat-attachment-media-card chat-attachment-media-card--video">
+                                        <video
+                                            src={previews[index]}
+                                            className="chat-attachment-media-card__media"
+                                            muted
+                                            playsInline
+                                            preload="metadata"
+                                        />
+
+                                        <div className="chat-attachment-media-card__meta">
+                                            <span className="chat-attachment-media-card__type">
+                                                <Icon name="video" className="h-3 w-3" />
+                                                {formatFileSize(file.size)}
+                                            </span>
+                                        </div>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => removeFile(index)}
+                                            className="chat-attachment-remove"
+                                            aria-label="Убрать вложение"
+                                            title="Убрать вложение"
+                                        >
+                                            <Icon name="close" className="h-3 w-3" />
+                                        </button>
+                                    </div>
+                                );
+                            }
+
+                            return (
+                                <div key={key} className="chat-attachment-file-card">
+                                    <span className="chat-attachment-file-card__icon">
+                                        <Icon name={attachmentKindIcon(kind)} className="h-5 w-5" />
+                                    </span>
+                                    <span className="chat-attachment-file-card__body">
+                                        <span className="chat-attachment-file-card__name">
+                                            {file.name || attachmentKindTitle(kind)}
+                                        </span>
+                                        <span className="chat-attachment-file-card__meta">
+                                            {attachmentKindTitle(kind)} · {formatFileSize(file.size)}
+                                        </span>
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => removeFile(index)}
+                                        className="chat-attachment-remove"
+                                        aria-label="Убрать вложение"
+                                        title="Убрать вложение"
+                                    >
+                                        <Icon name="close" className="h-3 w-3" />
+                                    </button>
                                 </div>
-
-                                <button
-                                    type="button"
-                                    onClick={() => removeFile(index)}
-                                    className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/65 text-white"
-                                    aria-label="Убрать картинку"
-                                    title="Убрать картинку"
-                                >
-                                    <Icon name="close" className="h-3 w-3" />
-                                </button>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
             )}
@@ -892,11 +986,11 @@ export const ChatInput = ({
                 />
             )}
 
-            <div className="relative flex gap-1.5 sm:gap-2 items-end">
+            <div className="chat-composer-pill">
                 <input
                     ref={fileInputRef}
                     type="file"
-                    accept="image/jpeg,image/png,image/webp"
+                    accept={chatAttachmentAccept}
                     multiple
                     className="hidden"
                     onChange={e => {
@@ -910,10 +1004,16 @@ export const ChatInput = ({
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     disabled={isRecording || isVideoNoteRecording || sending || !!pendingVoice || !!pendingVideoNote}
-                    className="composer-button cursor-pointer"
-                    title="Прикрепить картинку"
+                    className={`chat-composer-icon-button ${selectedFiles.length > 0 ? 'chat-composer-icon-button--active' : ''}`}
+                    title="Прикрепить файл"
+                    aria-label="Прикрепить файл"
                 >
-                    <Icon name="image" className="w-4 h-4" />
+                    <Icon name="paperclip" className="h-5 w-5" />
+                    {selectedFiles.length > 0 && (
+                        <span className="chat-composer-badge" aria-hidden="true">
+                            {selectedFiles.length}
+                        </span>
+                    )}
                 </button>
 
                 <textarea
@@ -930,22 +1030,80 @@ export const ChatInput = ({
                             void handleSend();
                         }
                     }}
-                    placeholder="Сообщение..."
+                    placeholder="Сообщение…"
                     rows={1}
-                    className="app-input flex-1 px-3 py-2 text-sm leading-5 resize-none sm:px-4 sm:text-base sm:leading-6"
-                    style={{
-                        minHeight: '40px',
-                        maxHeight: `${textareaMaxHeight}px`,
-                    }}
+                    className="chat-composer-textarea"
                 />
-                <button
-                    type="button"
-                    onClick={() => setShowEmojiPicker(prev => !prev)}
-                    disabled={isRecording || isVideoNoteRecording}
-                    className="composer-button text-base leading-none cursor-pointer"
-                    title="Эмодзи">
-                    😊
-                </button>
+                <div className="chat-composer-actions">
+                    <button
+                        type="button"
+                        onClick={() => setShowEmojiPicker(prev => !prev)}
+                        disabled={isRecording || isVideoNoteRecording}
+                        className={`chat-composer-icon-button ${showEmojiPicker ? 'chat-composer-icon-button--active' : ''}`}
+                        title="Эмодзи"
+                        aria-label="Эмодзи"
+                    >
+                        <Icon name="smile" className="h-5 w-5" />
+                    </button>
+                    {!canSend && (
+                        <>
+                            <button
+                                type="button"
+                                onPointerDown={handleMicPointerDown}
+                                onPointerMove={handleMicPointerMove}
+                                onPointerUp={handleMicPointerEnd}
+                                onPointerCancel={e => handleMicPointerEnd(e, true)}
+                                onPointerLeave={handleMicPointerLeave}
+                                disabled={selectedFiles.length > 0 || sending || recordingStopping || !!pendingVoice || isVideoNoteRecording || videoNoteStopping || !!pendingVideoNote}
+                                className={`chat-composer-icon-button ${isRecording ? 'recording' : pendingVoice ? 'text-gray-400' : ''}`}
+                                title={
+                                    isRecording
+                                        ? 'Удерживайте для записи, отпустите чтобы завершить, сдвиньте влево для отмены'
+                                        : pendingVoice
+                                          ? 'Сначала отправьте или удалите записанное голосовое'
+                                          : pendingVideoNote
+                                            ? 'Сначала отправьте или удалите кружок'
+                                            : 'Записать голосовое (удерживайте)'
+                                }
+                                aria-label="Записать голосовое сообщение"
+                            >
+                                {isRecording ? (
+                                    <Icon name="mic" className="h-5 w-5 animate-pulse" />
+                                ) : pendingVoice ? (
+                                    <Icon name="micOff" className="h-5 w-5" />
+                                ) : (
+                                    <Icon name="mic" className="h-5 w-5" />
+                                )}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => void startVideoNoteRecording()}
+                                disabled={selectedFiles.length > 0 || sending || isRecording || recordingStopping || isVideoNoteRecording || videoNoteStopping || !!pendingVoice || !!pendingVideoNote}
+                                className={`chat-composer-icon-button ${isVideoNoteRecording ? 'video-recording' : pendingVideoNote ? 'text-gray-400' : ''}`}
+                                title={pendingVideoNote ? 'Сначала отправьте или удалите кружок' : 'Кружок'}
+                                aria-label="Кружок"
+                            >
+                                <Icon name={pendingVideoNote ? 'videoOff' : 'video'} className="h-5 w-5" />
+                            </button>
+                        </>
+                    )}
+                    {canSend && (
+                        <button
+                            type="button"
+                            onClick={() => void handleSend()}
+                            disabled={sending || isRecording || isVideoNoteRecording || !!pendingVoice || !!pendingVideoNote}
+                            className="chat-composer-send-button"
+                            aria-label={sending ? 'Отправляем сообщение' : 'Отправить сообщение'}
+                            title="Отправить"
+                        >
+                            {sending ? (
+                                <span className="chat-composer-spinner" aria-hidden="true" />
+                            ) : (
+                                <Icon name="send" className="h-5 w-5" />
+                            )}
+                        </button>
+                    )}
+                </div>
                 {showEmojiPicker && (
                     <div className="absolute bottom-16 right-4 z-50">
                         <EmojiPicker
@@ -968,60 +1126,15 @@ export const ChatInput = ({
                         />
                     </div>
                 )}
-                <button
-                    type="button"
-                    onPointerDown={handleMicPointerDown}
-                    onPointerMove={handleMicPointerMove}
-                    onPointerUp={handleMicPointerEnd}
-                    onPointerCancel={e => handleMicPointerEnd(e, true)}
-                    onPointerLeave={handleMicPointerLeave}
-                    disabled={selectedFiles.length > 0 || sending || recordingStopping || !!pendingVoice || isVideoNoteRecording || videoNoteStopping || !!pendingVideoNote}
-                    className={`cursor-pointer composer-button ${isRecording ? 'recording' : pendingVoice ? 'text-gray-400' : ''}`}
-                    title={
-                        isRecording
-                            ? 'Удерживайте для записи, отпустите чтобы завершить, сдвиньте влево для отмены'
-                            : pendingVoice
-                              ? 'Сначала отправьте или удалите записанное голосовое'
-                              : pendingVideoNote
-                                ? 'Сначала отправьте или удалите кружок'
-                              : 'Записать голосовое (удерживайте)'
-                    }
-                    aria-label="Записать голосовое сообщение"
-                >
-                    {isRecording ? (
-                        <Icon name="mic" className="w-4 h-4 animate-pulse" />
-                    ) : pendingVoice ? (
-                        <Icon name="micOff" className="w-4 h-4" />
-                    ) : (
-                        <Icon name="mic" className="w-4 h-4" />
-                    )}
-                </button>
-                <button
-                    type="button"
-                    onClick={() => void startVideoNoteRecording()}
-                    disabled={selectedFiles.length > 0 || sending || isRecording || recordingStopping || isVideoNoteRecording || videoNoteStopping || !!pendingVoice || !!pendingVideoNote}
-                    className={`cursor-pointer composer-button ${isVideoNoteRecording ? 'video-recording' : pendingVideoNote ? 'text-gray-400' : ''}`}
-                    title={pendingVideoNote ? 'Сначала отправьте или удалите кружок' : 'Кружок'}
-                    aria-label="Кружок"
-                >
-                    <Icon name={pendingVideoNote ? 'videoOff' : 'video'} className="w-4 h-4" />
-                </button>
-                <button
-                    onClick={() => void handleSend()}
-                    disabled={!canSend || sending || isRecording || isVideoNoteRecording || !!pendingVoice || !!pendingVideoNote}
-                    className="composer-send"
-                >
-                    <Icon name="send" className="w-4 h-4" />
-                </button>
             </div>
             {errorMessage && (
-                <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                <div className="chat-composer-feedback chat-composer-feedback--error">
                     {errorMessage}
                 </div>
             )}
             {sendStatus && !errorMessage && (
-                <div className="mt-2 flex items-center gap-2 rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-sm text-sky-700">
-                    <span className="h-3 w-3 animate-spin rounded-full border-2 border-sky-200 border-t-sky-600" />
+                <div className="chat-composer-feedback chat-composer-feedback--status">
+                    <span className="chat-composer-spinner" aria-hidden="true" />
                     {sendStatus}
                 </div>
             )}

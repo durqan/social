@@ -37,10 +37,10 @@ import { getLocalE2EEKeyBundle, type LocalE2EEKeyBundle } from "@/crypto/masterK
 import { decryptMessageForDisplay, decryptMessagesForDisplay } from "@/features/chat/lib/e2eeMessageTransform.js";
 import {
     dataTransferHasFiles,
-    dataTransferHasImages,
     filesFromDataTransfer,
-    imageFilesFromClipboard,
     compressChatImage,
+    chatAttachmentKindForFile,
+    validateChatAttachments,
     validateVoiceFile,
     validateVideoNoteFile,
 } from "@/shared/utils/uploadValidation.js";
@@ -68,6 +68,10 @@ function attachmentsMatchOptimistic(pending: Message, received: Message) {
                 attachment.size === receivedAttachment.size;
         }
 
+        if (attachment.file_type === 'video' || attachment.file_type === 'audio' || attachment.file_type === 'file') {
+            return attachment.size === receivedAttachment.size;
+        }
+
         return attachment.width === receivedAttachment.width &&
             attachment.height === receivedAttachment.height &&
             attachment.size === receivedAttachment.size;
@@ -92,19 +96,136 @@ function pinnedMessageText(message: Message) {
     if (message.attachments?.some(attachment => attachment.file_type === 'image')) {
         return 'Изображение';
     }
+    if (message.attachments?.some(attachment => attachment.file_type === 'video')) {
+        return 'Видео';
+    }
+    if (message.attachments?.some(attachment => attachment.file_type === 'audio')) {
+        return 'Аудио';
+    }
+    if (message.attachments?.some(attachment => attachment.file_type === 'file')) {
+        return 'Файл';
+    }
 
     return messagePreviewText(message);
 }
 
 async function imageDimensions(file: File): Promise<{ width: number; height: number }> {
-    const bitmap = await createImageBitmap(file);
+    if (typeof createImageBitmap === 'function') {
+        const bitmap = await createImageBitmap(file);
+        try {
+            return {
+                width: bitmap.width,
+                height: bitmap.height,
+            };
+        } finally {
+            bitmap.close();
+        }
+    }
+
+    return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const image = new Image();
+        image.onload = () => {
+            URL.revokeObjectURL(url);
+            resolve({
+                width: image.naturalWidth,
+                height: image.naturalHeight,
+            });
+        };
+        image.onerror = () => {
+            URL.revokeObjectURL(url);
+            reject(new Error('invalid image'));
+        };
+        image.src = url;
+    });
+}
+
+function attachmentDisplayFallback(fileType: AttachmentFileType) {
+    switch (fileType) {
+        case 'voice':
+            return 'voice-message.webm';
+        case 'video_note':
+            return 'video-note.webm';
+        case 'video':
+            return 'video.mp4';
+        case 'audio':
+            return 'audio.mp3';
+        case 'file':
+            return 'file.bin';
+        default:
+            return 'image.jpg';
+    }
+}
+
+function fallbackMimeType(fileType: AttachmentFileType) {
+    switch (fileType) {
+        case 'voice':
+            return 'audio/webm';
+        case 'video_note':
+            return 'video/webm';
+        case 'video':
+            return 'video/mp4';
+        case 'audio':
+            return 'audio/mpeg';
+        case 'file':
+            return 'application/octet-stream';
+        default:
+            return 'image/jpeg';
+    }
+}
+
+function fallbackAttachmentFilename(fileType: AttachmentFileType) {
+    return attachmentDisplayFallback(fileType);
+}
+
+async function fileFromRemoteAttachment(attachment: MessageAttachment): Promise<File> {
+    if (attachment.decrypted_file_url && !attachment.decryption_error) {
+        return fileFromDecryptedAttachment(attachment);
+    }
+
+    if (attachment.decryption_error) {
+        throw new Error('Attachment is not decrypted');
+    }
+
+    const response = await fetch(attachment.file_url, {
+        credentials: 'include',
+    });
+    if (!response.ok) {
+        throw new Error('Failed to load attachment');
+    }
+    const blob = await response.blob();
+    const type = attachment.original_mime_type || attachment.content_type || blob.type || fallbackMimeType(attachment.file_type);
+    return new File([blob], attachment.original_filename || fallbackAttachmentFilename(attachment.file_type), {
+        type,
+        lastModified: Date.now(),
+    });
+}
+
+function attachmentKindFromFile(file: File): AttachmentFileType {
+    const kind = chatAttachmentKindForFile(file);
+    if (!kind) {
+        throw new Error('Этот тип вложения не поддерживается');
+    }
+    return kind;
+}
+
+function prepareFileForUpload(file: File, fileType: AttachmentFileType) {
+    if (fileType === 'image') {
+        return compressChatImage(file);
+    }
+    return Promise.resolve(file);
+}
+
+async function dimensionsForUpload(file: File, fileType: AttachmentFileType) {
+    if (fileType !== 'image') {
+        return {};
+    }
     try {
         return {
-            width: bitmap.width,
-            height: bitmap.height,
+            ...(await imageDimensions(file)),
         };
-    } finally {
-        bitmap.close();
+    } catch {
+        throw new Error('Изображение повреждено или не поддерживается.');
     }
 }
 
@@ -141,55 +262,14 @@ function attachmentForTransport(attachment: MessageAttachment): MessageAttachmen
         duration: attachment.duration,
         duration_seconds: attachment.duration_seconds,
         size: attachment.size,
+        original_filename: attachment.original_filename,
+        content_type: attachment.content_type,
         encryption_version: attachment.encryption_version,
         encrypted_file_key: attachment.encrypted_file_key,
         file_nonce: attachment.file_nonce,
         encrypted_metadata: attachment.encrypted_metadata,
         created_at: attachment.created_at,
     };
-}
-
-async function fileForForwardAttachment(attachment: MessageAttachment): Promise<File> {
-    if (attachment.decrypted_file_url && !attachment.decryption_error) {
-        return fileFromDecryptedAttachment(attachment);
-    }
-
-    if (attachment.decryption_error) {
-        throw new Error('Attachment is not decrypted');
-    }
-
-    const response = await fetch(attachment.file_url, {
-        credentials: 'include',
-    });
-    if (!response.ok) {
-        throw new Error('Failed to load attachment');
-    }
-    const blob = await response.blob();
-    const type = attachment.original_mime_type || blob.type || fallbackMimeType(attachment.file_type);
-    return new File([blob], attachment.original_filename || fallbackAttachmentFilename(attachment.file_type), {
-        type,
-        lastModified: Date.now(),
-    });
-}
-
-function fallbackMimeType(fileType: AttachmentFileType) {
-    if (fileType === 'voice') {
-        return 'audio/webm';
-    }
-    if (fileType === 'video_note') {
-        return 'video/webm';
-    }
-    return 'image/jpeg';
-}
-
-function fallbackAttachmentFilename(fileType: AttachmentFileType) {
-    if (fileType === 'voice') {
-        return 'voice-message.webm';
-    }
-    if (fileType === 'video_note') {
-        return 'video-note.webm';
-    }
-    return 'image.jpg';
 }
 
 function PinnedMessageBanner({
@@ -271,7 +351,7 @@ function Chat() {
     const [newMessage, setNewMessage] = useState('');
     const [uploadError, setUploadError] = useState('');
     const [sendStatus, setSendStatus] = useState('');
-    const [draggingImage, setDraggingImage] = useState(false);
+    const [draggingFile, setDraggingFile] = useState(false);
     const [incomingFiles, setIncomingFiles] = useState<{ id: number; files: File[] } | null>(null);
     const [replyToMessage, setReplyToMessage] = useState<Message | null>(null);
     const [forwardMessage, setForwardMessage] = useState<Message | null>(null);
@@ -485,6 +565,10 @@ function Chat() {
             const attachment = await messageService.uploadVideoNote(encrypted.encryptedFile, options.durationSeconds || 0, encrypted.fields);
             return withDecryptedAttachmentPreview(attachment, file, encrypted.metadata, encrypted.fields);
         }
+        if (fileType === 'video' || fileType === 'audio' || fileType === 'file') {
+            const attachment = await messageService.uploadAttachment(encrypted.encryptedFile, fileType, encrypted.fields);
+            return withDecryptedAttachmentPreview(attachment, file, encrypted.metadata, encrypted.fields);
+        }
 
         const attachment = await messageService.uploadImage(encrypted.encryptedFile, {
             ...encrypted.fields,
@@ -500,7 +584,7 @@ function Chat() {
     ): Promise<MessageAttachment[]> => {
         const uploaded: MessageAttachment[] = [];
         for (const attachment of attachments) {
-            const file = await fileForForwardAttachment(attachment);
+            const file = await fileFromRemoteAttachment(attachment);
             uploaded.push(await encryptAndUploadAttachment(file, attachment.file_type, recipientId, {
                 width: attachment.width,
                 height: attachment.height,
@@ -708,8 +792,9 @@ function Chat() {
     const uploadAttachments = useCallback(async (files: File[]): Promise<MessageAttachment[]> => {
         if (!files.length) return [];
 
-        if (files.length > 5) {
-            throw new Error('Можно отправить максимум 5 картинок за раз');
+        const validationError = validateChatAttachments(files);
+        if (validationError) {
+            throw new Error(validationError);
         }
         if (e2eeState.selfEnabled && !e2eeReady) {
             throw new Error('E2EE is not ready for this conversation');
@@ -718,14 +803,15 @@ function Chat() {
         const attachments: MessageAttachment[] = [];
 
         for (const [index, file] of files.entries()) {
-            setSendStatus(`Подготавливаем изображение ${index + 1} из ${files.length}`);
-            const compressedFile = await compressChatImage(file);
-            const dimensions = await imageDimensions(compressedFile);
-            setSendStatus(`Загружаем изображение ${index + 1} из ${files.length}`);
+            const fileType = attachmentKindFromFile(file);
+            setSendStatus(`Подготавливаем вложение ${index + 1} из ${files.length}`);
+            const uploadFile = await prepareFileForUpload(file, fileType);
+            const dimensions = await dimensionsForUpload(uploadFile, fileType);
+            setSendStatus(`Загружаем вложение ${index + 1} из ${files.length}`);
             if (e2eeReady) {
-                attachments.push(await encryptAndUploadAttachment(compressedFile, 'image', Number(userId), dimensions));
+                attachments.push(await encryptAndUploadAttachment(uploadFile, fileType, Number(userId), dimensions));
             } else {
-                attachments.push(await messageService.uploadImage(compressedFile));
+                attachments.push(await messageService.uploadAttachment(uploadFile, fileType));
             }
         }
 
@@ -794,7 +880,7 @@ function Chat() {
 
         try {
             setUploadError('');
-            setSendStatus(files.length ? 'Подготавливаем изображения' : 'Отправляем сообщение');
+            setSendStatus(files.length ? 'Подготавливаем вложения' : 'Отправляем сообщение');
             const encryption = await encryptCurrentChatContent(content);
             const attachments = await uploadAttachments(files);
             setSendStatus('Отправляем сообщение');
@@ -1220,7 +1306,7 @@ function Chat() {
 
     const resetDragState = () => {
         dragDepthRef.current = 0;
-        setDraggingImage(false);
+        setDraggingFile(false);
     };
 
     const handleDragEnter = (event: DragEvent<HTMLDivElement>) => {
@@ -1231,9 +1317,7 @@ function Chat() {
         event.preventDefault();
         dragDepthRef.current += 1;
 
-        if (dataTransferHasImages(event.dataTransfer)) {
-            setDraggingImage(true);
-        }
+        setDraggingFile(true);
     };
 
     const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
@@ -1244,9 +1328,7 @@ function Chat() {
         event.preventDefault();
         event.dataTransfer.dropEffect = 'copy';
 
-        if (dataTransferHasImages(event.dataTransfer)) {
-            setDraggingImage(true);
-        }
+        setDraggingFile(true);
     };
 
     const handleDragLeave = (event: DragEvent<HTMLDivElement>) => {
@@ -1257,7 +1339,7 @@ function Chat() {
         dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
 
         if (dragDepthRef.current === 0) {
-            setDraggingImage(false);
+            setDraggingFile(false);
         }
     };
 
@@ -1272,7 +1354,7 @@ function Chat() {
     };
 
     const handlePaste = (event: ClipboardEvent<HTMLDivElement>) => {
-        const files = imageFilesFromClipboard(event.clipboardData);
+        const files = filesFromDataTransfer(event.clipboardData);
 
         if (!files.length) {
             return;
@@ -1293,15 +1375,20 @@ function Chat() {
             onDrop={handleDrop}
             onPaste={handlePaste}
         >
-            {draggingImage && (
-                <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-slate-950/35 p-4 backdrop-blur-[1px]">
-                    <div className="rounded-2xl border-2 border-dashed border-white/80 bg-white/90 px-6 py-5 text-center shadow-xl">
-                        <p className="text-sm font-semibold text-gray-900 sm:text-base">
-                            Отпустите изображение для отправки
-                        </p>
-                        <p className="mt-1 text-xs text-gray-500">
-                            Перед отправкой появится предпросмотр
-                        </p>
+            {draggingFile && (
+                <div className="chat-drop-overlay">
+                    <div className="chat-drop-overlay__card">
+                        <span className="chat-drop-overlay__icon" aria-hidden="true">
+                            <Icon name="paperclip" className="h-5 w-5" />
+                        </span>
+                        <div className="min-w-0">
+                            <p className="chat-drop-overlay__title">
+                                Отпустите файлы для отправки
+                            </p>
+                            <p className="chat-drop-overlay__text">
+                                Перед отправкой появится предпросмотр
+                            </p>
+                        </div>
                     </div>
                 </div>
             )}

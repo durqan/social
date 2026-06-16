@@ -341,6 +341,15 @@ function defaultAttachmentFilename(fileType: AttachmentFileType) {
   if (fileType === 'video_note') {
     return 'video-note.webm';
   }
+  if (fileType === 'video') {
+    return 'video.mp4';
+  }
+  if (fileType === 'audio') {
+    return 'audio.mp3';
+  }
+  if (fileType === 'file') {
+    return 'file.bin';
+  }
   return 'image.jpg';
 }
 
@@ -350,6 +359,15 @@ function fallbackMimeType(fileType: AttachmentFileType) {
   }
   if (fileType === 'video_note') {
     return 'video/webm';
+  }
+  if (fileType === 'video') {
+    return 'video/mp4';
+  }
+  if (fileType === 'audio') {
+    return 'audio/mpeg';
+  }
+  if (fileType === 'file') {
+    return 'application/octet-stream';
   }
   return 'image/jpeg';
 }

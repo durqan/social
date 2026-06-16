@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image"
 	"io"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"tester/internal/models"
 	"tester/internal/repository"
 	"tester/internal/services"
 	"tester/internal/storage"
@@ -27,17 +29,17 @@ func UploadMessageImage(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, services.ChatImageMaxRequestSize)
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, services.ChatAttachmentMaxRequestSize)
 
-		file, err := c.FormFile("image")
+		file, fieldName, err := messageUploadFileFromForm(c)
 		if err != nil {
 			var maxBytesError *http.MaxBytesError
 			if errors.As(err, &maxBytesError) {
-				c.JSON(413, gin.H{"error": "image is too large"})
+				c.JSON(413, gin.H{"error": "file is too large"})
 				return
 			}
 
-			c.JSON(400, gin.H{"error": "image is required"})
+			c.JSON(400, gin.H{"error": "file is required"})
 			return
 		}
 
@@ -47,30 +49,43 @@ func UploadMessageImage(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		maxSize := int64(services.ChatImageMaxSize)
-		if encrypted {
-			maxSize += services.MaxEncryptedAttachmentField
-		}
-		if file.Size > maxSize {
-			c.JSON(413, gin.H{"error": "image is too large"})
-			return
+		requestedFileType := strings.TrimSpace(c.PostForm("file_type"))
+		if requestedFileType == "" && fieldName == "image" {
+			requestedFileType = "image"
 		}
 		if encrypted {
 			if file.Size <= 0 {
-				c.JSON(400, gin.H{"error": "image is required"})
+				c.JSON(400, gin.H{"error": "file is required"})
 				return
 			}
-			width, height, err := imageDimensionsFromForm(c)
-			if err != nil {
-				c.JSON(400, gin.H{"error": err.Error()})
+			fileType, ok := services.NormalizeChatAttachmentFileType(requestedFileType)
+			if !ok {
+				c.JSON(400, gin.H{"error": "unsupported attachment type"})
 				return
 			}
-			attachment, ok := saveEncryptedMessageUpload(c, userID, file, "image", "image")
+			maxSize, _ := services.ChatAttachmentMaxSizeForType(fileType)
+			if file.Size > maxSize+services.MaxEncryptedAttachmentField {
+				c.JSON(413, gin.H{"error": services.ChatAttachmentLabel(fileType) + " is too large"})
+				return
+			}
+
+			var width, height int
+			if fileType == "image" {
+				width, height, err = imageDimensionsFromForm(c)
+				if err != nil {
+					c.JSON(400, gin.H{"error": err.Error()})
+					return
+				}
+			}
+
+			attachment, ok := saveEncryptedMessageUpload(c, userID, file, services.ChatAttachmentLabel(fileType), fileType)
 			if !ok {
 				return
 			}
-			attachment.Width = width
-			attachment.Height = height
+			if fileType == "image" {
+				attachment.Width = width
+				attachment.Height = height
+			}
 			attachment.Size = file.Size
 			attachment.EncryptionVersion = encryptedInput.EncryptionVersion
 			attachment.EncryptedFileKey = encryptedInput.EncryptedFileKey
@@ -82,44 +97,41 @@ func UploadMessageImage(db *gorm.DB) gin.HandlerFunc {
 
 		src, err := file.Open()
 		if err != nil {
-			c.JSON(400, gin.H{"error": "failed to read image"})
+			c.JSON(400, gin.H{"error": "failed to read file"})
 			return
 		}
 		defer src.Close()
 
-		buf := make([]byte, 512)
-		n, err := src.Read(buf)
-		if err != nil && n == 0 {
-			c.JSON(400, gin.H{"error": "failed to read image"})
+		info, err := services.ValidateChatAttachmentUpload(src, file.Filename, file.Header.Get("Content-Type"), requestedFileType, file.Size)
+		if err != nil {
+			c.JSON(messageUploadValidationStatus(err), gin.H{"error": err.Error()})
 			return
 		}
 
-		contentType := http.DetectContentType(buf[:n])
-		ext, ok := services.ChatImageExtension(contentType)
-		if !ok {
-			c.JSON(415, gin.H{"error": "image must be jpeg, png or webp"})
-			return
+		var width, height int
+
+		if info.FileType == "image" {
+			if _, err := src.Seek(0, 0); err != nil {
+				c.JSON(400, gin.H{"error": "failed to read image"})
+				return
+			}
+			cfg, _, err := image.DecodeConfig(src)
+			if err != nil {
+				c.JSON(415, gin.H{"error": "invalid image"})
+				return
+			}
+			width = cfg.Width
+			height = cfg.Height
 		}
 
 		if _, err := src.Seek(0, 0); err != nil {
-			c.JSON(400, gin.H{"error": "failed to read image"})
+			c.JSON(400, gin.H{"error": "failed to read file"})
 			return
 		}
 
-		cfg, _, err := image.DecodeConfig(src)
+		key, err := storage.NewObjectKey(fmt.Sprintf("messages/user_%d", userID), info.Extension)
 		if err != nil {
-			c.JSON(415, gin.H{"error": "invalid image"})
-			return
-		}
-
-		if _, err := src.Seek(0, 0); err != nil {
-			c.JSON(400, gin.H{"error": "failed to read image"})
-			return
-		}
-
-		key, err := storage.NewObjectKey(fmt.Sprintf("messages/user_%d", userID), ext)
-		if err != nil {
-			c.JSON(500, gin.H{"error": "failed to create image filename"})
+			c.JSON(500, gin.H{"error": "failed to create file filename"})
 			return
 		}
 		filename := filepath.Base(key)
@@ -130,18 +142,20 @@ func UploadMessageImage(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		if err := store.Upload(c.Request.Context(), key, src, contentType); err != nil {
-			c.JSON(500, gin.H{"error": "failed to save image"})
+		if err := store.Upload(c.Request.Context(), key, src, info.ContentType); err != nil {
+			c.JSON(500, gin.H{"error": "failed to save file"})
 			return
 		}
 		services.RememberChatUploadOwner(filename, userID)
 
 		c.JSON(201, services.MessageAttachmentInput{
-			FileURL:  services.PrivateUploadURL(filename),
-			FileType: "image",
-			Width:    cfg.Width,
-			Height:   cfg.Height,
-			Size:     file.Size,
+			FileURL:          services.PrivateUploadURL(filename),
+			FileType:         info.FileType,
+			Width:            width,
+			Height:           height,
+			Size:             file.Size,
+			OriginalFilename: info.OriginalFilename,
+			ContentType:      info.ContentType,
 		})
 	}
 }
@@ -422,6 +436,31 @@ func readUploadHeader(src multipart.File) ([]byte, error) {
 	return header[:n], nil
 }
 
+func messageUploadFileFromForm(c *gin.Context) (*multipart.FileHeader, string, error) {
+	for _, fieldName := range []string{"attachment", "image"} {
+		file, err := c.FormFile(fieldName)
+		if err == nil {
+			return file, fieldName, nil
+		}
+		var maxBytesError *http.MaxBytesError
+		if errors.As(err, &maxBytesError) {
+			return nil, "", err
+		}
+	}
+	return nil, "", http.ErrMissingFile
+}
+
+func messageUploadValidationStatus(err error) int {
+	message := err.Error()
+	if strings.Contains(message, "too large") {
+		return http.StatusRequestEntityTooLarge
+	}
+	if strings.Contains(message, "empty") || strings.Contains(message, "required") || strings.Contains(message, "failed to read") {
+		return http.StatusBadRequest
+	}
+	return http.StatusUnsupportedMediaType
+}
+
 func voiceDurationSecondsFromForm(c *gin.Context) (int, bool) {
 	for _, key := range []string{"duration", "duration_seconds"} {
 		if duration, ok := services.ParseChatVoiceDurationSeconds(c.PostForm(key)); ok {
@@ -584,15 +623,33 @@ func GetMessageAttachment(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		serveStoredObject(c, store, key)
+		serveMessageAttachmentObject(c, store, key, attachment)
 	}
 }
 
 func serveStoredObject(c *gin.Context, store storage.Storage, key string) {
 	contentType := services.ContentTypeForKey(key)
+	serveStoredObjectWithHeaders(c, store, key, contentType, "inline")
+}
 
+func serveMessageAttachmentObject(c *gin.Context, store storage.Storage, key string, attachment *models.MessageAttachment) {
+	contentType := strings.TrimSpace(attachment.ContentType)
+	if contentType == "" {
+		contentType = services.ContentTypeForKey(key)
+	}
+
+	disposition := "inline"
+	if attachment.FileType == "file" {
+		filename := services.SanitizeAttachmentFilename(attachment.OriginalFilename, filepath.Ext(key))
+		disposition = mime.FormatMediaType("attachment", map[string]string{"filename": filename})
+	}
+
+	serveStoredObjectWithHeaders(c, store, key, contentType, disposition)
+}
+
+func serveStoredObjectWithHeaders(c *gin.Context, store storage.Storage, key string, contentType string, disposition string) {
 	if filePath, ok := storage.LocalPath(store, key); ok {
-		setStoredObjectHeaders(c, contentType)
+		setStoredObjectHeaders(c, contentType, disposition)
 		c.File(filePath)
 		return
 	}
@@ -602,15 +659,18 @@ func serveStoredObject(c *gin.Context, store storage.Storage, key string) {
 		c.JSON(404, gin.H{"error": "attachment file not found"})
 		return
 	}
-	setStoredObjectHeaders(c, contentType)
+	setStoredObjectHeaders(c, contentType, disposition)
 	proxyStoredObject(c, signedURL)
 }
 
-func setStoredObjectHeaders(c *gin.Context, contentType string) {
+func setStoredObjectHeaders(c *gin.Context, contentType string, disposition string) {
 	if contentType != "" {
 		c.Header("Content-Type", contentType)
 	}
-	c.Header("Content-Disposition", "inline")
+	if disposition == "" {
+		disposition = "inline"
+	}
+	c.Header("Content-Disposition", disposition)
 	c.Header("Accept-Ranges", "bytes")
 }
 

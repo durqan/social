@@ -22,6 +22,8 @@ type AttachmentUploadEncryption = EncryptedAttachmentFields & {
     height?: number;
 };
 
+type UploadAttachmentType = 'image' | 'video' | 'audio' | 'file';
+
 function appendAttachmentEncryption(formData: FormData, encryption?: AttachmentUploadEncryption) {
     if (!encryption) {
         return;
@@ -50,6 +52,8 @@ function attachmentForApi(attachment: MessageAttachment): MessageAttachment {
         duration: attachment.duration,
         duration_seconds: attachment.duration_seconds,
         size: attachment.size,
+        original_filename: attachment.original_filename,
+        content_type: attachment.content_type,
         encryption_version: attachment.encryption_version,
         encrypted_file_key: attachment.encrypted_file_key,
         file_nonce: attachment.file_nonce,
@@ -58,14 +62,22 @@ function attachmentForApi(attachment: MessageAttachment): MessageAttachment {
     };
 }
 
+async function uploadChatAttachment(file: File, fileType: UploadAttachmentType, encryption?: AttachmentUploadEncryption): Promise<MessageAttachment> {
+    const formData = new FormData();
+    formData.append('attachment', file);
+    formData.append('file_type', fileType);
+    appendAttachmentEncryption(formData, encryption);
+    return request.post<MessageAttachment>('/messages/upload', formData, {
+        timeout: 300000,
+    });
+}
+
 export const messageService = {
+    async uploadAttachment(file: File, fileType: UploadAttachmentType, encryption?: AttachmentUploadEncryption): Promise<MessageAttachment> {
+        return uploadChatAttachment(file, fileType, encryption);
+    },
     async uploadImage(file: File, encryption?: AttachmentUploadEncryption): Promise<MessageAttachment> {
-        const formData = new FormData();
-        formData.append('image', file);
-        appendAttachmentEncryption(formData, encryption);
-        return request.post<MessageAttachment>('/messages/upload', formData, {
-            timeout: 300000,
-        });
+        return uploadChatAttachment(file, 'image', encryption);
     },
     async uploadVoice(file: File, durationSeconds: number, encryption?: EncryptedAttachmentFields): Promise<MessageAttachment> {
         const formData = new FormData();

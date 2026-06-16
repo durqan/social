@@ -293,5 +293,14 @@ function defaultAttachmentFilename(fileType: AttachmentFileType): string {
     if (fileType === 'video_note') {
         return 'video-note.webm';
     }
+    if (fileType === 'video') {
+        return 'video.mp4';
+    }
+    if (fileType === 'audio') {
+        return 'audio.mp3';
+    }
+    if (fileType === 'file') {
+        return 'file.bin';
+    }
     return 'image.jpg';
 }

@@ -28,6 +28,18 @@ export function messagePreviewText(message?: Message | null) {
         if (message.attachments.some(attachment => attachment.file_type === 'voice')) {
             return 'Голосовое сообщение';
         }
+        if (message.attachments.some(attachment => attachment.file_type === 'video')) {
+            return 'Видео';
+        }
+        if (message.attachments.some(attachment => attachment.file_type === 'audio')) {
+            return 'Аудио';
+        }
+        if (message.attachments.some(attachment => attachment.file_type === 'file')) {
+            return 'Файл';
+        }
+        if (message.attachments.some(attachment => attachment.file_type === 'image')) {
+            return 'Изображение';
+        }
         return 'Вложение';
     }
 

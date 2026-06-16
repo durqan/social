@@ -1,4 +1,4 @@
-export type IconName = 'arrowLeft' | 'close' | 'delete' | 'edit' | 'send' | 'search' | 'logout' | 'menu' | 'home' | 'wall' | 'friends' | 'messages' | 'heart' | 'bell' | 'phone' | 'phoneOff' | 'mic' | 'micOff' | 'video' | 'videoOff' | 'switchCamera' | 'maximize' | 'minimize' | 'image' | 'play' | 'pause' | 'pin' | 'info' | 'checkCircle' | 'warning';
+export type IconName = 'arrowLeft' | 'close' | 'delete' | 'edit' | 'send' | 'search' | 'logout' | 'menu' | 'home' | 'wall' | 'friends' | 'messages' | 'heart' | 'bell' | 'phone' | 'phoneOff' | 'mic' | 'micOff' | 'video' | 'videoOff' | 'switchCamera' | 'maximize' | 'minimize' | 'image' | 'paperclip' | 'file' | 'audio' | 'download' | 'play' | 'pause' | 'pin' | 'info' | 'checkCircle' | 'warning' | 'smile';
 
 interface IconProps {
     name: IconName;
@@ -31,12 +31,17 @@ const paths: Record<IconName, string> = {
     maximize: 'M8 3H5a2 2 0 00-2 2v3m0 8v3a2 2 0 002 2h3m8-18h3a2 2 0 012 2v3m0 8v3a2 2 0 01-2 2h-3',
     minimize: 'M8 3v3a2 2 0 01-2 2H3m18 0h-3a2 2 0 01-2-2V3M3 16h3a2 2 0 012 2v3m8 0v-3a2 2 0 012-2h3',
     image: 'M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z',
+    paperclip: 'M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48',
+    file: 'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M8 13h8M8 17h5',
+    audio: 'M9 18V5l12-2v13M9 18a3 3 0 11-6 0 3 3 0 016 0zm12-2a3 3 0 11-6 0 3 3 0 016 0z',
+    download: 'M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3',
     play: 'M8 5v14l11-7z',
     pause: 'M6 4h4v16H6V4zm8 0h4v16h-4V4z',
     pin: 'M14 4l6 6-3 3 2 2-2 2-2-2-4 4v3H9v-3l4-4-4-4-4 4H3l6-6-2-2 2-2 2 2 3-3z',
     info: 'M13 16h-1v-4h-1m1-4h.01M12 22a10 10 0 110-20 10 10 0 010 20z',
     checkCircle: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
     warning: 'M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z',
+    smile: 'M9 10h.01M15 10h.01M9.5 15a4 4 0 005 0M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
 };
 
 export const Icon = ({ name, className = 'w-5 h-5', filled = false }: IconProps) => (

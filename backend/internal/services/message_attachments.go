@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
@@ -26,23 +27,29 @@ import (
 )
 
 const (
-	ChatImageMaxSize            = 10 << 20 // 10 MB
-	ChatImageMaxRequestSize     = ChatImageMaxSize + 1<<20
-	chatImageMaxCount           = 5
-	ChatVoiceMaxSize            = 12 << 20 // 12 MB
-	ChatVoiceMaxRequestSize     = ChatVoiceMaxSize + 1<<20
-	ChatVoiceMaxDuration        = 5 * 60
-	chatVoiceMaxCount           = 1
-	ChatVideoNoteMaxSize        = 25 << 20 // 25 MB
-	ChatVideoNoteMaxRequestSize = ChatVideoNoteMaxSize + 1<<20
-	ChatVideoNoteMaxDuration    = 60
-	chatVideoNoteMaxCount       = 1
-	encryptedAttachmentOverhead = 64 << 10
-	MaxEncryptedAttachmentField = 64 << 10
-	chatUploadURLPrefix         = "/api/messages/uploads/"
-	chatAttachmentURLPrefix     = "/api/messages/attachments/"
-	legacyChatUploadPrefix      = "/uploads/chat/"
-	chatUploadOwnerTTL          = 24 * time.Hour
+	ChatImageMaxSize             = 10 << 20 // 10 MB
+	ChatImageMaxRequestSize      = ChatImageMaxSize + 1<<20
+	ChatAttachmentMaxCount       = 5
+	ChatAttachmentMaxTotalSize   = 75 << 20 // 75 MB
+	ChatVideoMaxSize             = 50 << 20 // 50 MB
+	ChatAudioMaxSize             = 25 << 20 // 25 MB
+	ChatFileMaxSize              = 25 << 20 // 25 MB
+	encryptedAttachmentOverhead  = 64 << 10
+	MaxEncryptedAttachmentField  = 64 << 10
+	ChatAttachmentMaxRequestSize = ChatVideoMaxSize + 1<<20 + MaxEncryptedAttachmentField
+	chatImageMaxCount            = ChatAttachmentMaxCount
+	ChatVoiceMaxSize             = 12 << 20 // 12 MB
+	ChatVoiceMaxRequestSize      = ChatVoiceMaxSize + 1<<20
+	ChatVoiceMaxDuration         = 5 * 60
+	chatVoiceMaxCount            = 1
+	ChatVideoNoteMaxSize         = 25 << 20 // 25 MB
+	ChatVideoNoteMaxRequestSize  = ChatVideoNoteMaxSize + 1<<20
+	ChatVideoNoteMaxDuration     = 60
+	chatVideoNoteMaxCount        = 1
+	chatUploadURLPrefix          = "/api/messages/uploads/"
+	chatAttachmentURLPrefix      = "/api/messages/attachments/"
+	legacyChatUploadPrefix       = "/uploads/chat/"
+	chatUploadOwnerTTL           = 24 * time.Hour
 )
 
 type MessageAttachmentInput struct {
@@ -56,6 +63,8 @@ type MessageAttachmentInput struct {
 	Duration          int    `json:"duration,omitempty"`
 	DurationSeconds   int    `json:"duration_seconds,omitempty"`
 	Size              int64  `json:"size"`
+	OriginalFilename  string `json:"original_filename,omitempty"`
+	ContentType       string `json:"content_type,omitempty"`
 	EncryptionVersion int    `json:"encryption_version,omitempty"`
 	EncryptedFileKey  string `json:"encrypted_file_key,omitempty"`
 	FileNonce         string `json:"file_nonce,omitempty"`
@@ -66,6 +75,7 @@ var allowedChatImageTypes = map[string]string{
 	"image/jpeg": ".jpg",
 	"image/png":  ".png",
 	"image/webp": ".webp",
+	"image/gif":  ".gif",
 }
 
 var allowedChatVoiceTypes = map[string]struct {
@@ -85,7 +95,7 @@ var allowedChatVideoNoteTypes = map[string]struct {
 	"video/mp4":  {extension: ".mp4", contentType: "video/mp4"},
 }
 
-var generatedUploadFilenamePattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(jpg|png|webp|webm|ogg|mp4|bin)$`)
+var generatedUploadFilenamePattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(jpg|jpeg|png|webp|gif|webm|ogg|mp4|mov|mp3|m4a|wav|pdf|txt|doc|docx|xls|xlsx|zip|json|csv|bin)$`)
 
 func ChatImageExtension(contentType string) (string, bool) {
 	ext, ok := allowedChatImageTypes[contentType]
@@ -199,13 +209,21 @@ func ValidateChatVideoNoteDurationSeconds(duration int) (int, error) {
 }
 
 func NormalizeMessageAttachments(input []MessageAttachmentInput, userID uint) ([]models.MessageAttachment, error) {
+	if len(input) > ChatAttachmentMaxCount {
+		return nil, errors.New("too many attachments")
+	}
+
 	imageCount := 0
 	voiceCount := 0
 	videoNoteCount := 0
+	genericCount := 0
 	for _, item := range input {
 		switch item.FileType {
 		case "image":
 			imageCount++
+			genericCount++
+		case "video", "audio", "file":
+			genericCount++
 		case "voice":
 			voiceCount++
 		case "video_note":
@@ -223,36 +241,41 @@ func NormalizeMessageAttachments(input []MessageAttachmentInput, userID uint) ([
 	if videoNoteCount > chatVideoNoteMaxCount {
 		return nil, errors.New("only one video note attachment is supported")
 	}
-	if imageCount > 0 && voiceCount > 0 {
-		return nil, errors.New("cannot mix image and voice attachments")
+	if genericCount > 0 && voiceCount > 0 {
+		return nil, errors.New("cannot mix attachments and voice attachments")
 	}
-	if videoNoteCount > 0 && (imageCount > 0 || voiceCount > 0) {
+	if videoNoteCount > 0 && (genericCount > 0 || voiceCount > 0) {
 		return nil, errors.New("cannot mix video note with other attachments")
 	}
 
 	attachments := make([]models.MessageAttachment, 0, len(input))
+	var totalSize int64
 
 	for _, item := range input {
+		var attachment models.MessageAttachment
+		var err error
 		switch item.FileType {
 		case "image":
-			attachment, err := normalizeImageAttachment(item, userID)
-			if err != nil {
-				return nil, err
-			}
-			attachments = append(attachments, attachment)
+			attachment, err = normalizeImageAttachment(item, userID)
+		case "video":
+			attachment, err = normalizeGenericMessageAttachment(item, userID, "video")
+		case "audio":
+			attachment, err = normalizeGenericMessageAttachment(item, userID, "audio")
+		case "file":
+			attachment, err = normalizeGenericMessageAttachment(item, userID, "file")
 		case "voice":
-			attachment, err := normalizeVoiceAttachment(item, userID)
-			if err != nil {
-				return nil, err
-			}
-			attachments = append(attachments, attachment)
+			attachment, err = normalizeVoiceAttachment(item, userID)
 		case "video_note":
-			attachment, err := normalizeVideoNoteAttachment(item, userID)
-			if err != nil {
-				return nil, err
-			}
-			attachments = append(attachments, attachment)
+			attachment, err = normalizeVideoNoteAttachment(item, userID)
 		}
+		if err != nil {
+			return nil, err
+		}
+		totalSize += attachment.Size
+		if totalSize > ChatAttachmentMaxTotalSize {
+			return nil, errors.New("message attachments are too large")
+		}
+		attachments = append(attachments, attachment)
 	}
 
 	return attachments, nil
@@ -293,17 +316,67 @@ func normalizeImageAttachment(item MessageAttachmentInput, userID uint) (models.
 		}, nil
 	}
 
-	storedKey, width, height, size, err := attachmentStorageMetadata(key, item)
+	storedKey, width, height, size, originalFilename, contentType, err := attachmentStorageMetadata(key, item)
 	if err != nil {
 		return models.MessageAttachment{}, err
 	}
 
 	return models.MessageAttachment{
-		FileURL:  storedKey,
-		FileType: "image",
-		Width:    &width,
-		Height:   &height,
-		Size:     size,
+		FileURL:          storedKey,
+		FileType:         "image",
+		OriginalFilename: originalFilename,
+		ContentType:      contentType,
+		Width:            &width,
+		Height:           &height,
+		Size:             size,
+	}, nil
+}
+
+func normalizeGenericMessageAttachment(item MessageAttachmentInput, userID uint, expectedType string) (models.MessageAttachment, error) {
+	if !strings.HasPrefix(item.FileURL, chatUploadURLPrefix) {
+		return models.MessageAttachment{}, errors.New("invalid attachment url")
+	}
+
+	fileURL := filepath.ToSlash(filepath.Clean(item.FileURL))
+	if !strings.HasPrefix(fileURL, chatUploadURLPrefix) {
+		return models.MessageAttachment{}, errors.New("invalid attachment url")
+	}
+
+	filename := filepath.Base(fileURL)
+	if !ChatUploadOwnedBy(filename, userID) {
+		return models.MessageAttachment{}, errors.New("invalid attachment owner")
+	}
+
+	key := ChatUploadKey(filename, userID)
+	if item.encryptionEnabled() {
+		maxSize, _ := ChatAttachmentMaxSizeForType(expectedType)
+		storedKey, size, err := encryptedAttachmentStorageMetadata(key, item, maxSize+encryptedAttachmentOverhead, ChatAttachmentLabel(expectedType))
+		if err != nil {
+			return models.MessageAttachment{}, err
+		}
+
+		return models.MessageAttachment{
+			FileURL:           storedKey,
+			FileType:          expectedType,
+			Size:              size,
+			EncryptionVersion: item.EncryptionVersion,
+			EncryptedFileKey:  strings.TrimSpace(item.EncryptedFileKey),
+			FileNonce:         strings.TrimSpace(item.FileNonce),
+			EncryptedMetadata: strings.TrimSpace(item.EncryptedMetadata),
+		}, nil
+	}
+
+	storedKey, size, originalFilename, contentType, err := genericAttachmentStorageMetadata(key, item, expectedType)
+	if err != nil {
+		return models.MessageAttachment{}, err
+	}
+
+	return models.MessageAttachment{
+		FileURL:          storedKey,
+		FileType:         expectedType,
+		OriginalFilename: originalFilename,
+		ContentType:      contentType,
+		Size:             size,
 	}, nil
 }
 
@@ -598,42 +671,112 @@ func encryptedAttachmentStorageMetadata(key string, item MessageAttachmentInput,
 	return cleanKey, item.Size, nil
 }
 
-func attachmentStorageMetadata(key string, item MessageAttachmentInput) (string, int, int, int64, error) {
+func attachmentStorageMetadata(key string, item MessageAttachmentInput) (string, int, int, int64, string, string, error) {
 	store, err := storage.Default()
 	if err != nil {
-		return "", 0, 0, 0, errors.New("failed to load storage")
+		return "", 0, 0, 0, "", "", errors.New("failed to load storage")
 	}
 
 	cleanKey, err := storage.CleanKey(key)
 	if err != nil {
-		return "", 0, 0, 0, errors.New("invalid image url")
+		return "", 0, 0, 0, "", "", errors.New("invalid image url")
 	}
 
 	if filePath, ok := storage.LocalPath(store, cleanKey); ok {
 		info, err := os.Stat(filePath)
 		if err != nil || info.IsDir() {
-			return "", 0, 0, 0, errors.New("image not found")
+			return "", 0, 0, 0, "", "", errors.New("image not found")
 		}
 
 		file, err := os.Open(filePath)
 		if err != nil {
-			return "", 0, 0, 0, errors.New("failed to read image")
+			return "", 0, 0, 0, "", "", errors.New("failed to read image")
 		}
 
 		cfg, _, err := image.DecodeConfig(file)
 		_ = file.Close()
 		if err != nil {
-			return "", 0, 0, 0, errors.New("invalid image")
+			return "", 0, 0, 0, "", "", errors.New("invalid image")
 		}
 
-		return cleanKey, cfg.Width, cfg.Height, info.Size(), nil
+		contentType := normalizeMediaType(item.ContentType)
+		if !ChatAttachmentContentTypeMatchesFileType("image", contentType) {
+			contentType = ContentTypeForKey(cleanKey)
+		}
+		if !ChatAttachmentContentTypeMatchesFileType("image", contentType) {
+			return "", 0, 0, 0, "", "", errors.New("invalid image")
+		}
+
+		return cleanKey, cfg.Width, cfg.Height, info.Size(), SanitizeAttachmentFilename(item.OriginalFilename, filepath.Ext(cleanKey)), contentType, nil
 	}
 
 	if item.Width <= 0 || item.Height <= 0 || item.Size <= 0 || item.Size > ChatImageMaxSize {
-		return "", 0, 0, 0, errors.New("invalid image")
+		return "", 0, 0, 0, "", "", errors.New("invalid image")
+	}
+	contentType := normalizeMediaType(item.ContentType)
+	if !ChatAttachmentContentTypeMatchesFileType("image", contentType) {
+		contentType = ContentTypeForKey(cleanKey)
+	}
+	if !ChatAttachmentContentTypeMatchesFileType("image", contentType) {
+		return "", 0, 0, 0, "", "", errors.New("invalid image")
+	}
+	if !ChatAttachmentExtensionMatchesFileType("image", cleanKey) {
+		return "", 0, 0, 0, "", "", errors.New("invalid image")
 	}
 
-	return cleanKey, item.Width, item.Height, item.Size, nil
+	return cleanKey, item.Width, item.Height, item.Size, SanitizeAttachmentFilename(item.OriginalFilename, filepath.Ext(cleanKey)), contentType, nil
+}
+
+func genericAttachmentStorageMetadata(key string, item MessageAttachmentInput, expectedType string) (string, int64, string, string, error) {
+	store, err := storage.Default()
+	if err != nil {
+		return "", 0, "", "", errors.New("failed to load storage")
+	}
+
+	cleanKey, err := storage.CleanKey(key)
+	if err != nil {
+		return "", 0, "", "", errors.New("invalid attachment url")
+	}
+	if !ChatAttachmentExtensionMatchesFileType(expectedType, cleanKey) {
+		return "", 0, "", "", errors.New("file content does not match extension")
+	}
+
+	maxSize, _ := ChatAttachmentMaxSizeForType(expectedType)
+	contentType := normalizeMediaType(item.ContentType)
+	if !ChatAttachmentContentTypeMatchesFileType(expectedType, contentType) {
+		contentType = ContentTypeForKey(cleanKey)
+	}
+
+	if filePath, ok := storage.LocalPath(store, cleanKey); ok {
+		info, err := os.Stat(filePath)
+		if err != nil || info.IsDir() {
+			return "", 0, "", "", errors.New("attachment not found")
+		}
+		if info.Size() <= 0 || info.Size() > maxSize {
+			return "", 0, "", "", errors.New(ChatAttachmentLabel(expectedType) + " is too large")
+		}
+
+		file, err := os.Open(filePath)
+		if err != nil {
+			return "", 0, "", "", errors.New("failed to read attachment")
+		}
+		defer file.Close()
+
+		uploadInfo, err := ValidateChatAttachmentUpload(file, item.OriginalFilename, contentType, expectedType, info.Size())
+		if err != nil {
+			return "", 0, "", "", err
+		}
+		return cleanKey, info.Size(), uploadInfo.OriginalFilename, uploadInfo.ContentType, nil
+	}
+
+	if item.Size <= 0 || item.Size > maxSize {
+		return "", 0, "", "", errors.New(ChatAttachmentLabel(expectedType) + " is too large")
+	}
+	if !ChatAttachmentContentTypeMatchesFileType(expectedType, contentType) {
+		return "", 0, "", "", errors.New("file content does not match content type")
+	}
+
+	return cleanKey, item.Size, SanitizeAttachmentFilename(item.OriginalFilename, filepath.Ext(cleanKey)), contentType, nil
 }
 
 func voiceAttachmentStorageMetadata(key string, item MessageAttachmentInput) (string, int64, int, error) {
@@ -838,15 +981,43 @@ func ContentTypeForKey(key string) string {
 		return "image/png"
 	case ".webp":
 		return "image/webp"
+	case ".gif":
+		return "image/gif"
 	case ".ogg":
 		return "audio/ogg"
+	case ".mp3":
+		return "audio/mpeg"
+	case ".m4a":
+		return "audio/mp4"
+	case ".wav":
+		return "audio/wav"
 	case ".mp4":
 		return "video/mp4"
+	case ".mov":
+		return "video/quicktime"
 	case ".webm":
 		if strings.HasPrefix(cleanKey, "voice/") {
 			return "audio/webm"
 		}
 		return "video/webm"
+	case ".pdf":
+		return "application/pdf"
+	case ".txt":
+		return "text/plain"
+	case ".doc":
+		return "application/msword"
+	case ".docx":
+		return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+	case ".xls":
+		return "application/vnd.ms-excel"
+	case ".xlsx":
+		return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+	case ".zip":
+		return "application/zip"
+	case ".json":
+		return "application/json"
+	case ".csv":
+		return "text/csv"
 	case ".bin":
 		return "application/octet-stream"
 	default:

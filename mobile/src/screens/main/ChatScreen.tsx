@@ -16,6 +16,7 @@ import {
   PermissionsAndroid,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -166,6 +167,19 @@ function firstUrl(value: string) {
   return match ? normalizeUrl(cleanUrl(match)) : '';
 }
 
+function formatBytes(bytes?: number) {
+  const safeBytes = Math.max(0, bytes || 0);
+  if (safeBytes >= 1024 * 1024) {
+    return `${(safeBytes / (1024 * 1024)).toFixed(
+      safeBytes % (1024 * 1024) === 0 ? 0 : 1,
+    )} МБ`;
+  }
+  if (safeBytes >= 1024) {
+    return `${Math.ceil(safeBytes / 1024)} КБ`;
+  }
+  return `${safeBytes} Б`;
+}
+
 function estimateComposerInputHeight(value: string) {
   if (!value) {
     return composerInputMinHeight;
@@ -233,6 +247,15 @@ function messagePreviewText(message?: Message | null) {
   }
   if (attachment.file_type === 'video_note') {
     return 'Видео-сообщение';
+  }
+  if (attachment.file_type === 'video') {
+    return 'Видео';
+  }
+  if (attachment.file_type === 'audio') {
+    return 'Аудио';
+  }
+  if (attachment.file_type === 'file') {
+    return 'Файл';
   }
   return 'Вложение';
 }
@@ -2057,7 +2080,7 @@ export default function ChatScreen({ route }: Props) {
       return;
     }
 
-    // TODO: add generic file upload when backend supports chat files
+    // TODO: add a document/media picker for generic chat attachments without pulling a heavy dependency into the current image-only composer flow.
     await pickImages();
   }
 
@@ -2493,6 +2516,7 @@ export default function ChatScreen({ route }: Props) {
       <View
         style={[
           styles.composerDock,
+          themed.composerDock,
           androidKeyboardInset > 0
             ? { marginBottom: androidKeyboardInset }
             : null,
@@ -2500,18 +2524,25 @@ export default function ChatScreen({ route }: Props) {
       >
         {pendingImages.length > 0 ? (
           <View style={[styles.previewStrip, themed.surfaceBar]}>
-            {pendingImages.map(image => (
-              <View key={image.id} style={styles.previewItem}>
-                <Image source={{ uri: image.uri }} style={styles.previewImage} />
-                <Pressable
-                  accessibilityRole="button"
-                  style={styles.previewRemove}
-                  onPress={() => removePendingImage(image.id)}
-                >
-                  <Text style={styles.previewRemoveText}>×</Text>
-                </Pressable>
-              </View>
-            ))}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.previewStripContent}
+            >
+              {pendingImages.map(image => (
+                <View key={image.id} style={styles.previewItem}>
+                  <Image source={{ uri: image.uri }} style={styles.previewImage} />
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Убрать вложение"
+                    style={styles.previewRemove}
+                    onPress={() => removePendingImage(image.id)}
+                  >
+                    <Text style={styles.previewRemoveText}>×</Text>
+                  </Pressable>
+                </View>
+              ))}
+            </ScrollView>
           </View>
         ) : null}
 
@@ -2741,7 +2772,7 @@ export default function ChatScreen({ route }: Props) {
           </View>
         ) : null}
 
-        <View style={[styles.composer, themed.surfaceBar]}>
+        <View style={[styles.composer, themed.composerSurface]}>
           <IconButton
             label="Прикрепить"
             variant="ghost"
@@ -2751,7 +2782,7 @@ export default function ChatScreen({ route }: Props) {
             style={styles.composerSideButton}
           />
 
-          <View style={[styles.composerInputContainer, themed.input]}>
+          <View style={styles.composerInputContainer}>
             <TextInput
               value={input}
               onChangeText={handleComposerTextChange}
@@ -2761,7 +2792,7 @@ export default function ChatScreen({ route }: Props) {
                   event.nativeEvent.contentSize.height,
                 )
               }
-              placeholder="Сообщение"
+              placeholder="Сообщение…"
               placeholderTextColor={themeColors.soft}
               multiline
               scrollEnabled={inputHeight >= composerInputMaxHeight}
@@ -3131,6 +3162,121 @@ function MessageBubble({
                 onLongPress={onLongPress}
                 themeColors={themeColors}
               />
+            );
+          }
+
+          if (attachment.file_type === 'video') {
+            return (
+              <View
+                key={attachment.id ?? attachment.file_url}
+                style={styles.genericVideoAttachment}
+              >
+                <Video
+                  source={{ uri: attachmentUrl }}
+                  style={styles.genericVideo}
+                  controls
+                  paused
+                  resizeMode="contain"
+                />
+                <Text
+                  style={[
+                    styles.genericAttachmentMeta,
+                    outgoing ? themed.outgoingSoftText : themed.mutedText,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {attachment.original_filename || 'Видео'}
+                </Text>
+              </View>
+            );
+          }
+
+          if (attachment.file_type === 'audio') {
+            const isPlaying = playingVoiceUrl === attachmentUrl;
+            return (
+              <Pressable
+                key={attachment.id ?? attachment.file_url}
+                accessibilityRole="button"
+                style={[
+                  styles.genericFileAttachment,
+                  themed.voiceAttachment,
+                  outgoing && styles.voiceAttachmentOutgoing,
+                ]}
+                onPress={() => onVoicePress(attachmentUrl)}
+                onLongPress={onLongPress}
+              >
+                <View
+                  style={[
+                    styles.voicePlayButton,
+                    themed.accentBg,
+                    isPlaying && styles.voicePlayButtonActive,
+                  ]}
+                >
+                  <Text style={styles.voicePlayText}>
+                    {isPlaying ? 'Ⅱ' : '▶'}
+                  </Text>
+                </View>
+                <View style={styles.voiceInfo}>
+                  <Text
+                    style={[
+                      styles.voiceTitle,
+                      outgoing ? themed.outgoingMessageText : themed.text,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {attachment.original_filename || 'Аудио'}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.voiceDuration,
+                      outgoing ? themed.outgoingSoftText : themed.mutedText,
+                    ]}
+                  >
+                    {formatBytes(attachment.original_size || attachment.size)}
+                  </Text>
+                </View>
+              </Pressable>
+            );
+          }
+
+          if (attachment.file_type === 'file') {
+            return (
+              <Pressable
+                key={attachment.id ?? attachment.file_url}
+                accessibilityRole="button"
+                style={[
+                  styles.genericFileAttachment,
+                  themed.voiceAttachment,
+                  outgoing && styles.voiceAttachmentOutgoing,
+                ]}
+                onPress={() =>
+                  Linking.openURL(attachmentUrl).catch(() => undefined)
+                }
+                onLongPress={onLongPress}
+              >
+                <View style={[styles.genericFileIcon, themed.accentBg]}>
+                  <Text style={styles.genericFileIconText}>↓</Text>
+                </View>
+                <View style={styles.voiceInfo}>
+                  <Text
+                    style={[
+                      styles.voiceTitle,
+                      outgoing ? themed.outgoingMessageText : themed.text,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {attachment.original_filename || 'Файл'}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.voiceDuration,
+                      outgoing ? themed.outgoingSoftText : themed.mutedText,
+                    ]}
+                  >
+                    {formatBytes(attachment.original_size || attachment.size)}
+                  </Text>
+                </View>
+              </Pressable>
             );
           }
 
@@ -3603,6 +3749,17 @@ const createChatThemeStyles = (theme: ThemeColors) =>
       borderColor: theme.border,
       borderTopColor: theme.border,
     },
+    composerDock: {
+      backgroundColor: theme.surface,
+      borderTopColor: theme.border,
+    },
+    composerSurface: {
+      backgroundColor: theme.card,
+      borderColor: theme.border,
+      shadowColor: theme.shadow,
+      shadowOpacity: theme.isDark ? 0.12 : 0.18,
+      elevation: theme.isDark ? 2 : 8,
+    },
     surfaceMutedBar: {
       backgroundColor: theme.surfaceMuted,
       borderTopColor: theme.border,
@@ -3856,6 +4013,45 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     backgroundColor: colors.surfaceMuted,
   },
+  genericVideoAttachment: {
+    width: 230,
+    borderRadius: radius.md,
+    overflow: 'hidden',
+    backgroundColor: colors.surfaceMuted,
+  },
+  genericVideo: {
+    width: 230,
+    height: 150,
+    backgroundColor: '#000',
+  },
+  genericAttachmentMeta: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    fontSize: 12,
+  },
+  genericFileAttachment: {
+    minWidth: 220,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.surfaceMuted,
+  },
+  genericFileIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent,
+  },
+  genericFileIconText: {
+    color: colors.white,
+    fontSize: 18,
+    fontWeight: '800',
+  },
   attachmentDecryptError: {
     borderRadius: radius.md,
     paddingHorizontal: spacing.md,
@@ -4008,34 +4204,41 @@ const styles = StyleSheet.create({
     color: colors.white,
   },
   previewStrip: {
-    flexDirection: 'row',
-    gap: spacing.sm,
     marginHorizontal: spacing.md,
     marginBottom: spacing.sm,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
+    borderRadius: 22,
+    paddingHorizontal: spacing.sm,
     paddingVertical: spacing.sm,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
+    borderWidth: 1,
+    borderColor: colors.border,
     backgroundColor: colors.surface,
+    shadowColor: colors.shadow,
+    shadowOpacity: colors.isDark ? 0.08 : 0.12,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: colors.isDark ? 1 : 3,
+  },
+  previewStripContent: {
+    gap: spacing.sm,
+    paddingRight: spacing.xs,
   },
   previewItem: {
-    width: 64,
-    height: 64,
+    width: 72,
+    height: 72,
   },
   previewImage: {
-    width: 64,
-    height: 64,
-    borderRadius: radius.md,
+    width: 72,
+    height: 72,
+    borderRadius: 16,
     backgroundColor: colors.surfaceMuted,
   },
   previewRemove: {
     position: 'absolute',
-    right: -6,
-    top: -6,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    right: 4,
+    top: 4,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.danger,
@@ -4115,11 +4318,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+    borderRadius: 18,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
+    borderWidth: 1,
+    borderColor: colors.border,
     backgroundColor: colors.surface,
+    shadowColor: colors.shadow,
+    shadowOpacity: colors.isDark ? 0.06 : 0.1,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 7 },
+    elevation: colors.isDark ? 1 : 2,
   },
   replyInfo: {
     flex: 1,
@@ -4142,11 +4353,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+    borderRadius: 18,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
+    borderWidth: 1,
+    borderColor: colors.border,
     backgroundColor: colors.surface,
+    shadowColor: colors.shadow,
+    shadowOpacity: colors.isDark ? 0.06 : 0.1,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 7 },
+    elevation: colors.isDark ? 1 : 2,
   },
   editingInfo: {
     flex: 1,
@@ -4335,11 +4554,6 @@ const styles = StyleSheet.create({
   },
   composerDock: {
     flexShrink: 0,
-  },
-  composer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: spacing.sm,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
     paddingHorizontal: spacing.sm,
@@ -4347,34 +4561,50 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.sm,
     backgroundColor: colors.surface,
   },
+  composer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: spacing.xs,
+    minHeight: 56,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 28,
+    paddingHorizontal: 5,
+    paddingVertical: 5,
+    backgroundColor: colors.card,
+    shadowColor: colors.shadow,
+    shadowOpacity: colors.isDark ? 0.12 : 0.18,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: colors.isDark ? 2 : 8,
+  },
   composerSideButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     borderWidth: 0,
-    marginBottom: 2,
+    marginBottom: 1,
     backgroundColor: 'transparent',
   },
   composerInputContainer: {
     flex: 1,
     minWidth: 0,
-    minHeight: 48,
+    minHeight: 44,
     flexDirection: 'row',
     alignItems: 'flex-end',
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.pill,
-    paddingLeft: spacing.md,
-    paddingRight: 4,
-    backgroundColor: colors.input,
+    borderWidth: 0,
+    borderRadius: 0,
+    paddingLeft: spacing.xs,
+    paddingRight: 0,
+    backgroundColor: 'transparent',
   },
   composerEmojiButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 5,
+    marginBottom: 2,
   },
   composerButtonPressed: {
     opacity: 0.72,
@@ -4383,10 +4613,10 @@ const styles = StyleSheet.create({
     opacity: 0.42,
   },
   composerActionButton: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    marginBottom: 1,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    marginBottom: 0,
   },
   composerActionRecording: {
     backgroundColor: colors.danger,

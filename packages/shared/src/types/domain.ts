@@ -91,7 +91,8 @@ export interface MessageAttachment {
   attachment_id?: string;
   message_id?: number;
   file_url: string;
-  file_type: 'image' | 'voice' | 'video_note';
+  file_type: 'image' | 'voice' | 'video_note' | 'video' | 'audio' | 'file';
+  content_type?: string;
   width?: number;
   height?: number;
   duration?: number;

@@ -318,8 +318,32 @@ export function getApiErrorMessage(error: unknown) {
     'message content must be 1000 characters or less':
       'Сообщение должно быть не длиннее 1000 символов',
     'image is too large': 'Изображение должно быть не больше 10 МБ',
-    'image must be jpeg, png or webp': 'Поддерживаются только JPEG, PNG и WebP',
+    'image must be jpeg, png or webp':
+      'Поддерживаются только JPEG, PNG, WebP и GIF',
+    'file is required': 'Выберите файл',
+    'file is empty': 'Файл пустой. Выберите другой файл.',
+    'file type is not allowed': 'Этот тип файла нельзя отправлять в чат',
+    'file content does not match attachment type':
+      'Файл не соответствует выбранному типу вложения',
+    'file content does not match content type':
+      'Файл поврежден или имеет неверный MIME-тип',
+    'file content does not match extension':
+      'Содержимое файла не соответствует расширению',
+    'file content does not match supported document type':
+      'Документ поврежден или имеет неподдерживаемый формат',
+    'message attachments are too large':
+      'Общий размер вложений не должен превышать 75 МБ',
+    'too many attachments': 'Можно прикрепить максимум 5 файлов за раз',
+    'video is too large': 'Видео должно быть не больше 50 МБ',
+    'audio is too large': 'Аудио должно быть не больше 25 МБ',
+    'file is too large': 'Файл должен быть не больше 25 МБ',
+    'invalid json file': 'JSON-файл поврежден или имеет неверный формат',
+    'invalid zip file': 'ZIP-файл поврежден или имеет неверный формат',
+    'failed to read file': 'Не удалось прочитать файл. Попробуйте снова.',
+    'failed to save file': 'Не удалось сохранить файл. Попробуйте позже.',
     'unsupported attachment type': 'Этот тип вложения не поддерживается',
+    'cannot mix attachments and voice attachments':
+      'Голосовое сообщение нельзя отправить вместе с другими вложениями',
     'cannot mix image and voice attachments':
       'Голосовое сообщение нельзя отправить вместе с изображениями',
     'only one voice attachment is supported':
