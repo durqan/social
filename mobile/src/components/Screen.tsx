@@ -78,18 +78,19 @@ export function Screen({
   );
 
   return (
-    <SafeAreaView style={[styles.safeArea, style]} edges={edges}>
-      {avoidKeyboard ? (
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={resolvedKeyboardVerticalOffset}
-          style={styles.keyboard}>
-          {content}
-        </KeyboardAvoidingView>
-      ) : (
-        content
-      )}
-    </SafeAreaView>
+      <SafeAreaView style={[styles.safeArea, style]} edges={edges}>
+        {avoidKeyboard && Platform.OS === 'ios' ? (
+            <KeyboardAvoidingView
+                behavior="padding"
+                keyboardVerticalOffset={resolvedKeyboardVerticalOffset}
+                style={styles.keyboard}
+            >
+              {content}
+            </KeyboardAvoidingView>
+        ) : (
+            content
+        )}
+      </SafeAreaView>
   );
 }
 
