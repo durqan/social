@@ -10,6 +10,7 @@ import {
   Clipboard,
   FlatList,
   Image,
+  Keyboard,
   Linking,
   Modal,
   PermissionsAndroid,
@@ -19,6 +20,7 @@ import {
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import type {
   GestureResponderEvent,
@@ -52,6 +54,7 @@ import Sound, {
 import Video from 'react-native-video';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WS_EVENTS } from '@social/shared';
 
 import {
@@ -282,6 +285,8 @@ function linkParts(value: string) {
 export default function ChatScreen({ route }: Props) {
   const { user } = useAuth();
   const themeColors = useThemeColors();
+  const safeAreaInsets = useSafeAreaInsets();
+  const windowDimensions = useWindowDimensions();
   const themed = useMemo(
     () => createChatThemeStyles(themeColors),
     [themeColors],
@@ -317,9 +322,12 @@ export default function ChatScreen({ route }: Props) {
     null,
   );
   const previousNetworkConnectedRef = useRef(networkConnected);
+  const baselineWindowHeightRef = useRef(windowDimensions.height);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [inputHeight, setInputHeight] = useState(composerInputMinHeight);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [pendingImages, setPendingImages] = useState<LocalChatImage[]>([]);
   const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
@@ -394,6 +402,41 @@ export default function ChatScreen({ route }: Props) {
   const stopVoiceRecordingRef = useRef<(send: boolean) => Promise<void> | void>(
     null as any,
   );
+
+  useEffect(() => {
+    if (Platform.OS !== 'android' || keyboardVisible) {
+      return;
+    }
+
+    baselineWindowHeightRef.current = Math.max(
+      baselineWindowHeightRef.current,
+      windowDimensions.height,
+    );
+  }, [keyboardVisible, windowDimensions.height]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') {
+      return undefined;
+    }
+
+    const showSubscription = Keyboard.addListener('keyboardDidShow', event => {
+      setKeyboardVisible(true);
+      setKeyboardHeight(event.endCoordinates.height);
+    });
+    const hideSubscription = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardVisible(false);
+      setKeyboardHeight(0);
+      baselineWindowHeightRef.current = Math.max(
+        baselineWindowHeightRef.current,
+        windowDimensions.height,
+      );
+    });
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, [windowDimensions.height]);
 
   useEffect(() => {
     if (!copyNotice) {
@@ -1919,6 +1962,16 @@ export default function ChatScreen({ route }: Props) {
     setInputHeight(nextHeight);
   }
 
+  function handleComposerFocus() {
+    if (Platform.OS !== 'android') {
+      return;
+    }
+
+    setTimeout(() => {
+      listRef.current?.scrollToEnd({ animated: true });
+    }, 80);
+  }
+
   async function openComposerAttachments() {
     if (pendingVoiceRef.current || pendingVideoNoteRef.current) {
       setError('Сначала отправьте или удалите текущие вложения');
@@ -2239,13 +2292,32 @@ export default function ChatScreen({ route }: Props) {
       ? 'Микрофон. Нажмите, чтобы выбрать видео-сообщение, удерживайте для записи'
       : 'Видео-сообщение. Нажмите, чтобы выбрать микрофон, удерживайте для записи';
   const composerMediaDisabled = Boolean(sending) || Boolean(editingMessage);
+  const windowHeightDelta =
+    baselineWindowHeightRef.current - windowDimensions.height;
+  const androidNativeKeyboardResizeActive =
+    Platform.OS === 'android' &&
+    keyboardVisible &&
+    keyboardHeight > 0 &&
+    windowHeightDelta > Math.max(80, keyboardHeight * 0.3);
+  const androidKeyboardBottomInset =
+    Platform.OS === 'android' &&
+    keyboardVisible &&
+    keyboardHeight > 0 &&
+    !androidNativeKeyboardResizeActive
+      ? Math.max(0, keyboardHeight - safeAreaInsets.bottom)
+      : 0;
 
   return (
     <Screen
       scroll={false}
       padded={false}
-      avoidKeyboard
-      contentContainerStyle={styles.container}
+      avoidKeyboard={Platform.OS !== 'android'}
+      contentContainerStyle={[
+        styles.container,
+        androidKeyboardBottomInset > 0 && {
+          paddingBottom: androidKeyboardBottomInset,
+        },
+      ]}
     >
       <ErrorBanner message={error} />
       <SuccessBanner message={copyNotice} />
@@ -2613,6 +2685,7 @@ export default function ChatScreen({ route }: Props) {
           <TextInput
             value={input}
             onChangeText={handleComposerTextChange}
+            onFocus={handleComposerFocus}
             onContentSizeChange={event =>
               handleComposerContentSizeChange(
                 event.nativeEvent.contentSize.height,
