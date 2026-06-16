@@ -355,7 +355,9 @@ function ConversationItem({
             onTouchEnd={handleTouchEnd}
             onTouchCancel={handleTouchEnd}
             onTouchMove={handleTouchMove}
-            className={`flex select-none items-center gap-3 border-b border-gray-100 p-3 transition last:border-b-0 [-webkit-touch-callout:none] [-webkit-user-select:none] hover:bg-gray-50 sm:p-4 ${active ? 'relative z-[60] bg-white shadow-2xl ring-2 ring-white/80' : ''}`}
+            className={`flex select-none items-center gap-3 cursor-pointer border-b border-gray-100 p-3 transition 
+            last:border-b-0 [-webkit-touch-callout:none] [-webkit-user-select:none] 
+            hover:bg-gray-50 sm:p-4 ${active ? 'relative z-[60] bg-white shadow-2xl ring-2 ring-white/80' : ''}`}
             style={{ touchAction: 'manipulation' }}
         >
             <Avatar
