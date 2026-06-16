@@ -12,6 +12,7 @@ import {
   Bell,
   Heart,
   MessageCircle,
+  Phone,
   UserCheck,
   UserPlus,
 } from 'lucide-react-native';
@@ -47,6 +48,7 @@ const notificationText: Record<string, (actorName: string) => string> = {
   friend_request: actorName => `${actorName} отправил(а) заявку в друзья`,
   friend_accepted: actorName => `${actorName} принял(а) вашу заявку`,
   message_received: actorName => `${actorName} написал(а) вам`,
+  incoming_call: actorName => `${actorName} звонил(а) вам`,
 };
 
 function notificationTitle(notification: SocialNotification, actor?: User) {
@@ -59,6 +61,8 @@ function notificationTitle(notification: SocialNotification, actor?: User) {
 function notificationAction(notification: SocialNotification) {
   switch (notification.type) {
     case 'message_received':
+      return 'Открыть чат';
+    case 'incoming_call':
       return 'Открыть чат';
     case 'friend_request':
       return 'Открыть заявки';
@@ -76,6 +80,8 @@ function notificationIcon(type: string) {
   switch (type) {
     case 'message_received':
       return MessageCircle;
+    case 'incoming_call':
+      return Phone;
     case 'friend_request':
       return UserPlus;
     case 'friend_accepted':
@@ -172,10 +178,11 @@ export default function NotificationsScreen() {
 
     switch (notification.type) {
       case 'message_received':
+      case 'incoming_call':
         navigation.navigate('Chats', {
           screen: 'Chat',
           params: {
-            userId: notification.actor_id,
+            userId: notification.conversation_id || notification.actor_id,
             name: actor?.name || 'Пользователь',
           },
         });

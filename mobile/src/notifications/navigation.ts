@@ -23,17 +23,20 @@ function actorFromChatURL(url?: string) {
 
 function navigateNow(notification: MobileNotificationData) {
   const actorId = notification.actorId ?? actorFromChatURL(notification.url);
+  const conversationId = notification.conversationId ?? actorId;
 
   switch (notification.type) {
     case 'message_received':
-      if (actorId) {
+    case 'incoming_call':
+      if (conversationId) {
         navigationRef.navigate('MainTabs', {
           screen: 'Chats',
           params: {
             screen: 'Chat',
             params: {
-              userId: actorId,
-              name: 'Чат',
+              userId: conversationId,
+              name:
+                notification.type === 'incoming_call' ? 'Входящий звонок' : 'Чат',
             },
           },
         });

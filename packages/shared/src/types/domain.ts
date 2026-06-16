@@ -179,6 +179,7 @@ export interface SocialNotification {
   actor_id: number;
   type: string;
   entity_id: number;
+  call_id?: string;
   conversation_id?: number;
   is_read: boolean;
   created_at: string;

@@ -74,12 +74,15 @@ func CreateComment(db *gorm.DB) gin.HandlerFunc {
 			Content: content,
 		}
 
-		if err := repository.CreateComment(db, &comment); err != nil {
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			if err := repository.CreateComment(tx, &comment); err != nil {
+				return err
+			}
+			return enqueueNotification(tx, post.UserID, userID, dto.NotificationTypeCommentCreated, comment.ID)
+		}); err != nil {
 			c.JSON(500, gin.H{"error": "failed to create comment"})
 			return
 		}
-
-		publishNotification(post.UserID, userID, dto.NotificationTypeCommentCreated, comment.ID)
 
 		db.Preload("User").First(&comment, comment.ID)
 		c.JSON(201, buildCommentResponse(db, comment, userID))

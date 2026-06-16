@@ -21,6 +21,7 @@ export type PushNotificationData = {
   actorId?: number;
   entityId?: number;
   conversationId?: number;
+  callId?: string;
   syncAction?: string;
   url?: string;
 };
@@ -57,12 +58,19 @@ export function normalizeNotificationData(
   const type =
     typeof data.type === 'string' ? data.type : NOTIFICATION_TYPES.SYSTEM;
   const url = typeof data.url === 'string' ? data.url : undefined;
+  const callId =
+    typeof data.call_id === 'string'
+      ? data.call_id
+      : typeof data.callId === 'string'
+        ? data.callId
+        : undefined;
 
   return {
     type,
     actorId: numberFromValue(data.actor_id ?? data.actorId),
     entityId: numberFromValue(data.entity_id ?? data.entityId),
     conversationId: numberFromValue(data.conversation_id ?? data.conversationId),
+    callId,
     syncAction:
       typeof data.sync_action === 'string'
         ? data.sync_action

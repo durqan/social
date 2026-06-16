@@ -270,6 +270,12 @@ func deleteNotificationRows(tx *gorm.DB, userID uint) error {
 		}
 	}
 
+	if tx.Migrator().HasTable("notification_outboxes") {
+		if err := tx.Exec("DELETE FROM notification_outboxes WHERE recipient_id = ? OR actor_id = ?", userID, userID).Error; err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 

@@ -56,7 +56,7 @@ func TestCreateNotificationDedupesDuplicateDelivery(t *testing.T) {
 	}
 }
 
-func TestCreateMessageNotificationAlreadyReadSkipsHubDelivery(t *testing.T) {
+func TestCreateMessageNotificationAlreadyReadStillDeliversEvent(t *testing.T) {
 	db := newNotificationTestDB(t)
 	notificationHub := hub.NewHub()
 	service := NewService(repository.NewRepository(db), notificationHub, nil)
@@ -88,14 +88,14 @@ func TestCreateMessageNotificationAlreadyReadSkipsHubDelivery(t *testing.T) {
 	if err := db.First(&note, "recipient_id = ? AND entity_id = ?", 10, 30).Error; err != nil {
 		t.Fatalf("load notification: %v", err)
 	}
-	if !note.IsRead {
-		t.Fatal("expected stale message notification to be created as read")
+	if note.IsRead {
+		t.Fatal("expected message notification to stay unread until read sync")
 	}
 
 	select {
-	case delivered := <-client:
-		t.Fatalf("stale notification reached hub: %+v", delivered)
-	default:
+	case <-client:
+	case <-time.After(time.Second):
+		t.Fatal("expected message notification to be delivered even if message row is already read")
 	}
 }
 

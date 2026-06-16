@@ -41,6 +41,7 @@ func main() {
 		log.Fatal("failed to migrate database:", err)
 	}
 
+	services.StartNotificationOutboxPublisher(database)
 	services.StartUnverifiedUserCleanup(database)
 	services.StartAbandonedUploadCleanup(database)
 

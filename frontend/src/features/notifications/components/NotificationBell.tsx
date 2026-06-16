@@ -30,6 +30,7 @@ const notificationText: Record<string, (actorName: string) => string> = {
     friend_request: actorName => `${actorName} отправил(а) заявку в друзья`,
     friend_accepted: actorName => `${actorName} принял(а) вашу заявку`,
     message_received: actorName => `${actorName} написал(а) вам`,
+    incoming_call: actorName => `${actorName} звонил(а) вам`,
 };
 
 let notificationAudioContext: AudioContext | null = null;
@@ -88,6 +89,8 @@ function getNotificationDetails(notification: SocialNotification) {
     switch (notification.type) {
         case 'message_received':
             return 'Открыть чат';
+        case 'incoming_call':
+            return 'Открыть чат';
         case 'friend_request':
             return 'Открыть заявки в друзья';
         case 'friend_accepted':
@@ -104,6 +107,8 @@ function getNotificationURL(notification: SocialNotification, userId: number) {
     switch (notification.type) {
         case 'message_received':
             return `/users/${userId}/chat/${notification.actor_id}`;
+        case 'incoming_call':
+            return `/users/${userId}/chat/${notification.conversation_id || notification.actor_id}`;
         case 'friend_request':
             return `/users/${userId}/friends`;
         case 'friend_accepted':
@@ -382,7 +387,9 @@ export function NotificationBell({ userId, compact = false }: NotificationBellPr
                             icon: '/favicon.svg',
                             tag: notification.type === 'message_received'
                                 ? `message:${notification.conversation_id || notification.actor_id}`
-                                : `notification-${notification.id}`,
+                                : notification.type === 'incoming_call'
+                                    ? `call-${notification.call_id || notification.conversation_id || notification.actor_id || notification.id}`
+                                    : `notification-${notification.id}`,
                         });
 
                         browserNotification.onclick = () => {

@@ -38,13 +38,17 @@ func SendFriendRequest(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		if err := repository.SendFriendRequest(db, currentUserID, friendID); err != nil {
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			if err := repository.SendFriendRequest(tx, currentUserID, friendID); err != nil {
+				return err
+			}
+			return enqueueNotification(tx, friendID, currentUserID, dto.NotificationTypeFriendRequest, currentUserID)
+		}); err != nil {
 			c.JSON(500, gin.H{"error": "failed to send friend request"})
 			return
 		}
 
 		notifyFriendEvent(db, friendID, currentUserID, "friend:request", "sent you a friend request")
-		publishNotification(friendID, currentUserID, dto.NotificationTypeFriendRequest, currentUserID)
 
 		c.JSON(201, gin.H{"message": "friend request sent"})
 	}
@@ -123,7 +127,16 @@ func AcceptFriendRequest(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		if err := repository.AcceptFriendRequest(db, friendshipID, currentUserID); err != nil {
+		var friendship models.Friendship
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			if err := repository.AcceptFriendRequest(tx, friendshipID, currentUserID); err != nil {
+				return err
+			}
+			if err := tx.First(&friendship, friendshipID).Error; err != nil {
+				return err
+			}
+			return enqueueNotification(tx, friendship.UserID, currentUserID, dto.NotificationTypeFriendAccepted, friendship.ID)
+		}); err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				c.JSON(404, gin.H{"error": "friend request not found"})
 				return
@@ -132,14 +145,7 @@ func AcceptFriendRequest(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		var friendship models.Friendship
-		if err := db.First(&friendship, friendshipID).Error; err != nil {
-			c.JSON(500, gin.H{"error": "failed to load friend request"})
-			return
-		}
-
 		notifyFriendEvent(db, friendship.UserID, currentUserID, "friend:accepted", "accepted your friend request")
-		publishNotification(friendship.UserID, currentUserID, dto.NotificationTypeFriendAccepted, friendship.ID)
 
 		c.JSON(200, gin.H{"message": "friend request accepted"})
 	}

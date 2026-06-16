@@ -35,12 +35,6 @@ func (s *Service) CreateNotification(req *dto.CreateNotificationReq) error {
 		DedupeKey:      DedupeKey(*req),
 	}
 
-	if req.Type == dto.NotificationTypeMessage {
-		if message, err := s.repo.FindMessageByID(req.EntityID); err == nil && message.IsRead {
-			note.IsRead = true
-		}
-	}
-
 	created, err := s.repo.CreateOnce(note)
 	if err != nil {
 		return err
@@ -163,15 +157,7 @@ func (s *Service) shouldSendPush(notification models.Notification) bool {
 		return false
 	}
 
-	if notification.Type != dto.NotificationTypeMessage {
-		return true
-	}
-
-	message, err := s.repo.FindMessageByID(notification.EntityID)
-	if err != nil {
-		return true
-	}
-	return !message.IsRead
+	return true
 }
 
 func (s *Service) sendPushPayload(userID uint, payload pushsvc.Payload) {

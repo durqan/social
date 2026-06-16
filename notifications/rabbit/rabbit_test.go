@@ -1,6 +1,7 @@
 package rabbit
 
 import (
+	"errors"
 	"testing"
 
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -35,5 +36,37 @@ func TestCloneHeadersDoesNotMutateOriginal(t *testing.T) {
 
 	if _, ok := original[retryCountHeader]; ok {
 		t.Fatal("cloneHeaders mutated original headers")
+	}
+}
+
+func TestConsumeDeliveriesReturnsStoppedWhenChannelCloses(t *testing.T) {
+	deliveries := make(chan amqp.Delivery)
+	close(deliveries)
+
+	err := consumeDeliveries(nil, deliveries, nil, nil)
+	if !errors.Is(err, ErrConsumerStopped) {
+		t.Fatalf("consumeDeliveries() error = %v, want %v", err, ErrConsumerStopped)
+	}
+}
+
+func TestConsumerStatusReflectsLiveness(t *testing.T) {
+	consumer := NewConsumerWithURL("amqp://example", nil)
+	if status := consumer.Status(); status.Healthy {
+		t.Fatal("new consumer should not be healthy before connection")
+	}
+
+	consumer.setConnected()
+	status := consumer.Status()
+	if !status.Healthy || !status.Connected || !status.Consuming {
+		t.Fatalf("connected consumer status = %+v, want healthy connected consuming", status)
+	}
+
+	consumer.setDisconnected(ErrConsumerStopped)
+	status = consumer.Status()
+	if status.Healthy || status.Connected || status.Consuming {
+		t.Fatalf("disconnected consumer status = %+v, want unhealthy disconnected", status)
+	}
+	if status.LastError == "" {
+		t.Fatal("expected last error after disconnected consumer")
 	}
 }

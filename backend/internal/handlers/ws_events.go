@@ -126,8 +126,6 @@ func handleWebSocketSendMessage(ctx context.Context, userID uint, rawPayload jso
 		return
 	}
 
-	publishMessageNotification(payload.ToID, userID, fullMessage.ID)
-
 	broadcastNewMessage(ctx, fullMessage)
 }
 
@@ -238,7 +236,7 @@ func handleWebSocketReadReceipt(ctx context.Context, userID uint, rawPayload jso
 
 	sendMessageReadReceipt(ctx, userID, payload.ToID)
 	sendConversationReadSync(ctx, userID, payload.ToID)
-	publishMessageReadSync(userID, payload.ToID)
+	enqueueMessageReadSync(dbInstance, userID, payload.ToID)
 }
 
 func sendMessageReadReceipt(ctx context.Context, readerID uint, senderID uint) {
@@ -467,7 +465,7 @@ func forwardCallEvent(ctx context.Context, eventType string, fromID uint, payloa
 		// Publish is intentionally decoupled (goroutine) so that any Rabbit / notifications-service
 		// unavailability or slowness CANNOT break or delay the WebSocket call signalling path.
 		// Errors inside publish are logged (as warning/error) but execution continues to WS forward.
-		go publishIncomingCallNotification(toID, fromID, callID, fromID)
+		go enqueueIncomingCallNotification(dbInstance, toID, fromID, callID, fromID)
 	}
 
 	// Why we send push even if the user has active WS connections:

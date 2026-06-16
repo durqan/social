@@ -91,6 +91,14 @@ func TestSendMessagePersistsMessageAndAttachmentsAtomically(t *testing.T) {
 	if attachmentCount != 1 {
 		t.Fatalf("attachments count = %d, want 1", attachmentCount)
 	}
+
+	var outbox models.NotificationOutbox
+	if err := db.First(&outbox).Error; err != nil {
+		t.Fatalf("expected notification outbox row: %v", err)
+	}
+	if outbox.RecipientID != 2 || outbox.ActorID != 1 || outbox.Type != "message_received" || outbox.EntityID != message.ID {
+		t.Fatalf("unexpected notification outbox row: %+v", outbox)
+	}
 }
 
 func TestSendMessageRejectsPlaintextWhenRecipientE2EEEnabled(t *testing.T) {
@@ -205,6 +213,7 @@ func newMessageServiceTestDB(t *testing.T) *gorm.DB {
 		&models.Message{},
 		&models.MessageAttachment{},
 		&models.EncryptedKeyBackup{},
+		&models.NotificationOutbox{},
 	); err != nil {
 		t.Fatal(err)
 	}

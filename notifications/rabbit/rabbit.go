@@ -10,6 +10,7 @@ import (
 	"notifications/services"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -26,12 +27,187 @@ const (
 	actionMarkConversationRead = "mark_conversation_read"
 )
 
+var ErrConsumerStopped = errors.New("rabbit consumer delivery channel closed")
+
+type ConsumerStatus struct {
+	Connected           bool       `json:"connected"`
+	Consuming           bool       `json:"consuming"`
+	Healthy             bool       `json:"healthy"`
+	Reconnects          uint64     `json:"reconnects"`
+	Processed           uint64     `json:"processed"`
+	Retried             uint64     `json:"retried"`
+	DeadLettered        uint64     `json:"dead_lettered"`
+	LastError           string     `json:"last_error,omitempty"`
+	LastDeadLetterCause string     `json:"last_dead_letter_cause,omitempty"`
+	LastConnectedAt     *time.Time `json:"last_connected_at,omitempty"`
+	LastDisconnectedAt  *time.Time `json:"last_disconnected_at,omitempty"`
+	LastMessageAt       *time.Time `json:"last_message_at,omitempty"`
+}
+
+type Consumer struct {
+	url           string
+	svc           *services.Service
+	retryMinDelay time.Duration
+	retryMaxDelay time.Duration
+
+	mu                  sync.RWMutex
+	connected           bool
+	consuming           bool
+	reconnects          uint64
+	processed           uint64
+	retried             uint64
+	deadLettered        uint64
+	lastError           string
+	lastDeadLetterCause string
+	lastConnectedAt     *time.Time
+	lastDisconnectedAt  *time.Time
+	lastMessageAt       *time.Time
+}
+
+func NewConsumer(svc *services.Service) *Consumer {
+	rabbitURL := os.Getenv("RABBIT_URL")
+	if rabbitURL == "" {
+		rabbitURL = defaultRabbitURL
+	}
+	return NewConsumerWithURL(rabbitURL, svc)
+}
+
+func NewConsumerWithURL(rabbitURL string, svc *services.Service) *Consumer {
+	if rabbitURL == "" {
+		rabbitURL = defaultRabbitURL
+	}
+	return &Consumer{
+		url:           rabbitURL,
+		svc:           svc,
+		retryMinDelay: time.Second,
+		retryMaxDelay: 30 * time.Second,
+	}
+}
+
+func (c *Consumer) Start(ctx context.Context) {
+	delay := c.retryMinDelay
+
+	for {
+		if ctx.Err() != nil {
+			c.setDisconnected(ctx.Err())
+			return
+		}
+
+		conn, ch, err := newRabbit(c.url)
+		if err != nil {
+			c.setDisconnected(err)
+			log.Printf("rabbit consumer connect failed: error=%v retry_in=%s", err, delay)
+			if !sleepWithContext(ctx, delay) {
+				return
+			}
+			delay = nextDelay(delay, c.retryMaxDelay)
+			continue
+		}
+
+		c.setConnected()
+		log.Println("rabbit consumer connected and starting")
+		delay = c.retryMinDelay
+
+		err = startConsumer(ch, c.svc, c)
+		_ = ch.Close()
+		_ = conn.Close()
+
+		if ctx.Err() != nil {
+			c.setDisconnected(ctx.Err())
+			return
+		}
+
+		if err == nil {
+			err = ErrConsumerStopped
+		}
+		c.setDisconnected(err)
+		log.Printf("rabbit consumer stopped: error=%v retry_in=%s", err, delay)
+		if !sleepWithContext(ctx, delay) {
+			return
+		}
+		delay = nextDelay(delay, c.retryMaxDelay)
+	}
+}
+
+func (c *Consumer) Status() ConsumerStatus {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	return ConsumerStatus{
+		Connected:           c.connected,
+		Consuming:           c.consuming,
+		Healthy:             c.connected && c.consuming,
+		Reconnects:          c.reconnects,
+		Processed:           c.processed,
+		Retried:             c.retried,
+		DeadLettered:        c.deadLettered,
+		LastError:           c.lastError,
+		LastDeadLetterCause: c.lastDeadLetterCause,
+		LastConnectedAt:     cloneTimePtr(c.lastConnectedAt),
+		LastDisconnectedAt:  cloneTimePtr(c.lastDisconnectedAt),
+		LastMessageAt:       cloneTimePtr(c.lastMessageAt),
+	}
+}
+
+func (c *Consumer) setConnected() {
+	now := time.Now()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.connected = true
+	c.consuming = true
+	c.reconnects++
+	c.lastError = ""
+	c.lastConnectedAt = &now
+}
+
+func (c *Consumer) setDisconnected(err error) {
+	now := time.Now()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.connected = false
+	c.consuming = false
+	c.lastDisconnectedAt = &now
+	if err != nil && !errors.Is(err, context.Canceled) {
+		c.lastError = err.Error()
+	}
+}
+
+func (c *Consumer) recordProcessed() {
+	now := time.Now()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.processed++
+	c.lastMessageAt = &now
+}
+
+func (c *Consumer) recordRetry(cause error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.retried++
+	if cause != nil {
+		c.lastError = cause.Error()
+	}
+}
+
+func (c *Consumer) recordDeadLetter(reason string, cause error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.deadLettered++
+	c.lastDeadLetterCause = reason
+	if cause != nil {
+		c.lastError = cause.Error()
+	}
+}
+
 func NewRabbit() (*amqp.Connection, *amqp.Channel, error) {
 	rabbitURL := os.Getenv("RABBIT_URL")
 	if rabbitURL == "" {
 		rabbitURL = defaultRabbitURL
 	}
+	return newRabbit(rabbitURL)
+}
 
+func newRabbit(rabbitURL string) (*amqp.Connection, *amqp.Channel, error) {
 	conn, err := amqp.Dial(rabbitURL)
 	if err != nil {
 		return nil, nil, err
@@ -53,33 +229,75 @@ func NewRabbit() (*amqp.Connection, *amqp.Channel, error) {
 }
 
 func StartConsumer(ch *amqp.Channel, svc *services.Service) error {
+	return startConsumer(ch, svc, nil)
+}
+
+func startConsumer(ch *amqp.Channel, svc *services.Service, recorder *Consumer) error {
 	consume, err := ch.Consume(notificationsQueue, "", false,
 		false, false, false, nil)
 	if err != nil {
 		return err
 	}
 
-	for msg := range consume {
+	return consumeDeliveries(ch, consume, svc, recorder)
+}
+
+func consumeDeliveries(ch *amqp.Channel, deliveries <-chan amqp.Delivery, svc *services.Service, recorder *Consumer) error {
+	for msg := range deliveries {
 		var req dto.CreateNotificationReq
 
 		if err := json.Unmarshal(msg.Body, &req); err != nil {
-			deadLetter(ch, msg, "invalid_json", err)
+			deadLetter(ch, msg, "invalid_json", err, recorder)
 			continue
 		}
 
 		if err := validateNotificationReq(req); err != nil {
-			deadLetter(ch, msg, "invalid_payload", err)
+			deadLetter(ch, msg, "invalid_payload", err, recorder)
 			continue
 		}
 
 		if err := handleNotificationReq(svc, &req); err != nil {
-			retryOrDeadLetter(ch, msg, err)
+			retryOrDeadLetter(ch, msg, err, recorder)
 			continue
 		}
 
 		msg.Ack(false)
+		if recorder != nil {
+			recorder.recordProcessed()
+		}
 	}
-	return nil
+	return ErrConsumerStopped
+}
+
+func sleepWithContext(ctx context.Context, delay time.Duration) bool {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
+}
+
+func nextDelay(current time.Duration, maxDelay time.Duration) time.Duration {
+	if current <= 0 {
+		current = time.Second
+	}
+	next := current * 2
+	if next > maxDelay {
+		return maxDelay
+	}
+	return next
+}
+
+func cloneTimePtr(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
 }
 
 func handleNotificationReq(svc *services.Service, req *dto.CreateNotificationReq) error {
@@ -134,10 +352,10 @@ func notificationAction(action string) string {
 	return action
 }
 
-func retryOrDeadLetter(ch *amqp.Channel, msg amqp.Delivery, cause error) {
+func retryOrDeadLetter(ch *amqp.Channel, msg amqp.Delivery, cause error, recorder *Consumer) {
 	retries := retryCount(msg.Headers)
 	if retries >= maxRetries {
-		deadLetter(ch, msg, "max_retries_exceeded", cause)
+		deadLetter(ch, msg, "max_retries_exceeded", cause, recorder)
 		return
 	}
 
@@ -151,10 +369,14 @@ func retryOrDeadLetter(ch *amqp.Channel, msg amqp.Delivery, cause error) {
 		return
 	}
 
+	if recorder != nil {
+		recorder.recordRetry(cause)
+	}
+	log.Printf("notification event retry scheduled: retries=%d error=%v", retries+1, cause)
 	_ = msg.Ack(false)
 }
 
-func deadLetter(ch *amqp.Channel, msg amqp.Delivery, reason string, cause error) {
+func deadLetter(ch *amqp.Channel, msg amqp.Delivery, reason string, cause error, recorder *Consumer) {
 	headers := cloneHeaders(msg.Headers)
 	headers["x-death-reason"] = reason
 	if cause != nil {
@@ -167,6 +389,10 @@ func deadLetter(ch *amqp.Channel, msg amqp.Delivery, reason string, cause error)
 		return
 	}
 
+	if recorder != nil {
+		recorder.recordDeadLetter(reason, cause)
+	}
+	log.Printf("notification event sent to DLQ: reason=%s error=%v", reason, cause)
 	_ = msg.Ack(false)
 }
 

@@ -25,17 +25,23 @@ func TogglePostLike(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		isLiked, err := repository.TogglePostLike(db, postID, userID)
-		if err != nil {
+		var isLiked bool
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			var txErr error
+			isLiked, txErr = repository.TogglePostLike(tx, postID, userID)
+			if txErr != nil {
+				return txErr
+			}
+			if isLiked {
+				return enqueueNotification(tx, post.UserID, userID, dto.NotificationTypePostLiked, postID)
+			}
+			return nil
+		}); err != nil {
 			c.JSON(500, gin.H{"error": "failed to toggle like"})
 			return
 		}
 
 		likesCount, _ := repository.GetPostLikeCount(db, postID)
-
-		if isLiked {
-			publishNotification(post.UserID, userID, dto.NotificationTypePostLiked, postID)
-		}
 
 		c.JSON(200, gin.H{
 			"is_liked":    isLiked,

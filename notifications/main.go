@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
@@ -48,12 +49,10 @@ func main() {
 	}
 	log.Println("Redis connected successfully")
 
-	conn, ch, err := rabbit.NewRabbit()
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer conn.Close()
-	defer ch.Close()
+	consumer := rabbit.NewConsumer(svc)
+	consumerCtx, stopConsumer := context.WithCancel(context.Background())
+	defer stopConsumer()
+	go consumer.Start(consumerCtx)
 
 	r := gin.Default()
 	r.Use(func(c *gin.Context) {
@@ -73,7 +72,17 @@ func main() {
 	})
 
 	r.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok"})
+		rabbitStatus := consumer.Status()
+		statusCode := http.StatusOK
+		status := "ok"
+		if !rabbitStatus.Healthy {
+			statusCode = http.StatusServiceUnavailable
+			status = "degraded"
+		}
+		c.JSON(statusCode, gin.H{
+			"status":          status,
+			"rabbit_consumer": rabbitStatus,
+		})
 	})
 
 	r.POST("/notifications", middleware.RateLimit(30, time.Minute), auth.InternalMiddleware(), h.CreateNotification)
@@ -88,12 +97,6 @@ func main() {
 	protected.POST("/push/subscribe", h.SubscribePush)
 	protected.POST("/push/mobile-token", middleware.RateLimit(20, time.Hour), h.RegisterMobilePushToken)
 	protected.DELETE("/push/mobile-token", middleware.RateLimit(20, time.Hour), h.RevokeMobilePushToken)
-
-	go func() {
-		if err := rabbit.StartConsumer(ch, svc); err != nil {
-			log.Fatal(err)
-		}
-	}()
 
 	if err = r.Run(":8085"); err != nil {
 		log.Fatal(err)

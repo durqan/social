@@ -73,6 +73,10 @@ func (p *Publisher) PublishNotification(req dto.CreateNotificationReq) error {
 	if _, err := ch.QueueDeclare(notificationsQueue, true, false, false, false, nil); err != nil {
 		return err
 	}
+	if err := ch.Confirm(false); err != nil {
+		return err
+	}
+	confirms := ch.NotifyPublish(make(chan amqp.Confirmation, 1))
 
 	body, err := json.Marshal(req)
 	if err != nil {
@@ -82,11 +86,23 @@ func (p *Publisher) PublishNotification(req dto.CreateNotificationReq) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	return ch.PublishWithContext(ctx, "", notificationsQueue, false, false, amqp.Publishing{
+	if err := ch.PublishWithContext(ctx, "", notificationsQueue, false, false, amqp.Publishing{
 		ContentType:  "application/json",
 		DeliveryMode: amqp.Persistent,
 		Body:         body,
-	})
+	}); err != nil {
+		return err
+	}
+
+	select {
+	case confirmation := <-confirms:
+		if !confirmation.Ack {
+			return errors.New("rabbitmq did not confirm notification publish")
+		}
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (p *Publisher) Close() error {
