@@ -7,6 +7,7 @@ import {
   ScrollView,
   StyleSheet,
   View,
+  type LayoutChangeEvent,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
@@ -27,6 +28,7 @@ type ScreenProps = {
   keyboardVerticalOffset?: number;
   refreshing?: boolean;
   onRefresh?: () => void;
+  onLayout?: (event: LayoutChangeEvent) => void;
 };
 
 export function Screen({
@@ -40,6 +42,7 @@ export function Screen({
   keyboardVerticalOffset,
   refreshing = false,
   onRefresh,
+  onLayout,
 }: ScreenProps) {
   const colors = useThemeColors();
   const headerHeight = React.useContext(HeaderHeightContext);
@@ -67,7 +70,9 @@ export function Screen({
       {children}
     </ScrollView>
   ) : (
-    <View style={[baseContentStyle, styles.fixed, contentContainerStyle]}>
+    <View
+      style={[baseContentStyle, styles.fixed, contentContainerStyle]}
+      onLayout={onLayout}>
       {children}
     </View>
   );
