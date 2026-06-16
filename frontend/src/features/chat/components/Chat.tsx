@@ -389,7 +389,7 @@ function Chat() {
 
     const { otherTyping, setOtherTyping, handleTyping } = useChatTyping(Number(userId));
     const { selectionMode, selectedMessages, toggleSelect, enterSelectionMode, exitSelectionMode } = useChatSelection();
-    const { messagesEndRef, handleScroll } = useChatScroll([messages]);
+    const { messagesEndRef, handleScroll, forceScrollToBottom, scrollToBottomIfNeeded } = useChatScroll(userId);
     const { online } = usePresence(recipient?.id);
     const e2eeReady = Boolean(
         currentUser?.id &&
@@ -907,6 +907,7 @@ function Chat() {
 
             sendMessageToStore(content, tempMessage);
             wsService.send(Number(userId), encryption ? '' : content, attachments.map(attachmentForTransport), replyToMessage?.id, encryption);
+            forceScrollToBottom();
             setNewMessage('');
             setReplyToMessage(null);
             return true;
@@ -919,7 +920,7 @@ function Chat() {
         } finally {
             setSendStatus('');
         }
-    }, [currentUser, encryptCurrentChatContent, newMessage, replyToMessage, sendMessageToStore, uploadAttachments, userId, wsService]);
+    }, [currentUser, encryptCurrentChatContent, forceScrollToBottom, newMessage, replyToMessage, sendMessageToStore, uploadAttachments, userId, wsService]);
 
     const sendVoiceMessage = useCallback(async (file: File, durationSeconds: number, text?: string) => {
         if (!(currentUser?.isEmailVerified ?? currentUser?.is_email_verified ?? false)) {
@@ -969,6 +970,7 @@ function Chat() {
 
             sendMessageToStore(content, tempMessage);
             wsService.send(Number(userId), encryption ? '' : content, attachments.map(attachmentForTransport), replyToMessage?.id, encryption);
+            forceScrollToBottom();
             if (content) {
                 setNewMessage('');
             }
@@ -983,7 +985,7 @@ function Chat() {
         } finally {
             setSendStatus('');
         }
-    }, [currentUser, e2eeReady, e2eeState.selfEnabled, encryptAndUploadAttachment, encryptCurrentChatContent, replyToMessage, sendMessageToStore, userId, wsService]);
+    }, [currentUser, e2eeReady, e2eeState.selfEnabled, encryptAndUploadAttachment, encryptCurrentChatContent, forceScrollToBottom, replyToMessage, sendMessageToStore, userId, wsService]);
 
     const sendVideoNoteMessage = useCallback(async (file: File, durationSeconds: number, text?: string) => {
         if (!(currentUser?.isEmailVerified ?? currentUser?.is_email_verified ?? false)) {
@@ -1033,6 +1035,7 @@ function Chat() {
 
             sendMessageToStore(content, tempMessage);
             wsService.send(Number(userId), encryption ? '' : content, attachments.map(attachmentForTransport), replyToMessage?.id, encryption);
+            forceScrollToBottom();
             if (content) {
                 setNewMessage('');
             }
@@ -1047,7 +1050,7 @@ function Chat() {
         } finally {
             setSendStatus('');
         }
-    }, [currentUser, e2eeReady, e2eeState.selfEnabled, encryptAndUploadAttachment, encryptCurrentChatContent, replyToMessage, sendMessageToStore, userId, wsService]);
+    }, [currentUser, e2eeReady, e2eeState.selfEnabled, encryptAndUploadAttachment, encryptCurrentChatContent, forceScrollToBottom, replyToMessage, sendMessageToStore, userId, wsService]);
 
     const openForwardDialog = useCallback((message: Message) => {
         setForwardMessage(message);
@@ -1258,6 +1261,9 @@ function Chat() {
                 const forwardedRaw = await messageService.forwardEncryptedMessage(forwardMessage.id, encryptedMessages);
                 const forwarded = await Promise.all(forwardedRaw.map(message => decryptIncomingMessage(message)));
 
+                const hasForwardedForCurrentChat = forwarded.some(message =>
+                    message.from_id === Number(userId) || message.to_id === Number(userId)
+                );
                 setMessages(prev => {
                     const existingIds = new Set(prev.map(message => message.id));
                     const currentChatMessages = forwarded.filter(message =>
@@ -1267,12 +1273,18 @@ function Chat() {
 
                     return currentChatMessages.length ? [...prev, ...currentChatMessages] : prev;
                 });
+                if (hasForwardedForCurrentChat) {
+                    forceScrollToBottom();
+                }
                 setForwardMessage(null);
                 setForwardSelectedIds(new Set());
                 return;
             }
 
             const forwarded = await messageService.forwardMessage(forwardMessage.id, Array.from(forwardSelectedIds));
+            const hasForwardedForCurrentChat = forwarded.some(message =>
+                message.from_id === Number(userId) || message.to_id === Number(userId)
+            );
             setMessages(prev => {
                 const existingIds = new Set(prev.map(message => message.id));
                 const currentChatMessages = forwarded.filter(message =>
@@ -1282,6 +1294,9 @@ function Chat() {
 
                 return currentChatMessages.length ? [...prev, ...currentChatMessages] : prev;
             });
+            if (hasForwardedForCurrentChat) {
+                forceScrollToBottom();
+            }
             setForwardMessage(null);
             setForwardSelectedIds(new Set());
         } catch (error) {
@@ -1304,10 +1319,35 @@ function Chat() {
         });
     }, []);
 
-    const resetDragState = () => {
+    const resetDragState = useCallback(() => {
         dragDepthRef.current = 0;
         setDraggingFile(false);
-    };
+    }, []);
+
+    useEffect(() => {
+        if (!draggingFile) {
+            return;
+        }
+
+        const handleCancel = () => resetDragState();
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                resetDragState();
+            }
+        };
+
+        window.addEventListener('dragend', handleCancel);
+        window.addEventListener('drop', handleCancel);
+        window.addEventListener('blur', handleCancel);
+        window.addEventListener('keydown', handleKeyDown);
+
+        return () => {
+            window.removeEventListener('dragend', handleCancel);
+            window.removeEventListener('drop', handleCancel);
+            window.removeEventListener('blur', handleCancel);
+            window.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [draggingFile, resetDragState]);
 
     const handleDragEnter = (event: DragEvent<HTMLDivElement>) => {
         if (!dataTransferHasFiles(event.dataTransfer)) {
@@ -1489,6 +1529,7 @@ function Chat() {
                 sendStatus={sendStatus}
                 replyPreview={replyPreview}
                 onCancelReply={() => setReplyToMessage(null)}
+                onComposerLayoutChange={scrollToBottomIfNeeded}
             />
             {forwardMessage && (
                 <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 px-4">

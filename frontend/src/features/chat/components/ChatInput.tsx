@@ -110,6 +110,7 @@ interface ChatInputProps {
         text: string;
     } | null;
     onCancelReply?: () => void;
+    onComposerLayoutChange?: () => void;
 }
 
 export const ChatInput = ({
@@ -125,9 +126,11 @@ export const ChatInput = ({
     sendStatus,
     replyPreview,
     onCancelReply,
+    onComposerLayoutChange,
 }: ChatInputProps) => {
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+    const sendingRef = useRef(false);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const voiceChunksRef = useRef<Blob[]>([]);
     const voiceStreamRef = useRef<MediaStream | null>(null);
@@ -175,6 +178,7 @@ export const ChatInput = ({
         mimeType: string;
     };
     const [pendingVideoNote, setPendingVideoNote] = useState<PendingVideoNote | null>(null);
+    const showCaptureActions = !canSend && !pendingVoice && !pendingVideoNote;
 
     const resizeTextarea = useCallback(() => {
         const textarea = textareaRef.current;
@@ -192,6 +196,10 @@ export const ChatInput = ({
     useLayoutEffect(() => {
         resizeTextarea();
     }, [resizeTextarea, value]);
+
+    useLayoutEffect(() => {
+        onComposerLayoutChange?.();
+    });
 
     useEffect(() => {
         const urls = selectedFiles.map(file => URL.createObjectURL(file));
@@ -257,25 +265,30 @@ export const ChatInput = ({
     }, []);
 
     const handleSend = async () => {
-        if (!canSend || sending || isRecording || isVideoNoteRecording || pendingVoice || pendingVideoNote) return;
+        if (!canSend || sendingRef.current || isRecording || isVideoNoteRecording || pendingVoice || pendingVideoNote) return;
         onErrorMessageChange?.('');
+        sendingRef.current = true;
         setSending(true);
-        const sent = await onSend(selectedFiles);
-        setSending(false);
+        try {
+            const sent = await onSend(selectedFiles);
 
-        if (!sent) {
-            return;
-        }
+            if (!sent) {
+                return;
+            }
 
-        setSelectedFiles([]);
+            setSelectedFiles([]);
 
-        if (fileInputRef.current) {
-            fileInputRef.current.value = '';
+            if (fileInputRef.current) {
+                fileInputRef.current.value = '';
+            }
+        } finally {
+            sendingRef.current = false;
+            setSending(false);
         }
     };
 
     const handleSendPendingVoice = useCallback(async () => {
-        if (!pendingVoice || sending || !onSendVoice) {
+        if (!pendingVoice || sendingRef.current || !onSendVoice) {
             return;
         }
         onErrorMessageChange?.('');
@@ -284,6 +297,7 @@ export const ChatInput = ({
             lastModified: Date.now(),
         });
 
+        sendingRef.current = true;
         setSending(true);
         try {
             // Pass current text as optional comment; sendVoice handler decides whether to include & clear it
@@ -292,12 +306,13 @@ export const ChatInput = ({
                 clearPendingVoice();
             }
         } finally {
+            sendingRef.current = false;
             setSending(false);
         }
-    }, [pendingVoice, sending, onSendVoice, onErrorMessageChange, value, clearPendingVoice]);
+    }, [pendingVoice, onSendVoice, onErrorMessageChange, value, clearPendingVoice]);
 
     const handleSendPendingVideoNote = useCallback(async () => {
-        if (!pendingVideoNote || sending || !onSendVideoNote) {
+        if (!pendingVideoNote || sendingRef.current || !onSendVideoNote) {
             return;
         }
 
@@ -314,6 +329,7 @@ export const ChatInput = ({
         }
 
         onErrorMessageChange?.('');
+        sendingRef.current = true;
         setSending(true);
         try {
             const sent = await onSendVideoNote(file, pendingVideoNote.durationSeconds, value);
@@ -321,9 +337,10 @@ export const ChatInput = ({
                 clearPendingVideoNote();
             }
         } finally {
+            sendingRef.current = false;
             setSending(false);
         }
-    }, [pendingVideoNote, sending, onSendVideoNote, onErrorMessageChange, value, clearPendingVideoNote]);
+    }, [pendingVideoNote, onSendVideoNote, onErrorMessageChange, value, clearPendingVideoNote]);
 
     const clearRecordingTimers = useCallback(() => {
         if (recordingTimerRef.current !== null) {
@@ -1045,7 +1062,7 @@ export const ChatInput = ({
                     >
                         <Icon name="smile" className="h-5 w-5" />
                     </button>
-                    {!canSend && (
+                    {showCaptureActions && (
                         <>
                             <button
                                 type="button"

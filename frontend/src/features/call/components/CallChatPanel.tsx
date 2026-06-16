@@ -48,7 +48,7 @@ export function CallChatPanel({
         applyMessageUpdate,
         markAsRead,
     } = useChatMessages(String(peerUserId), currentUser.id);
-    const { messagesEndRef, handleScroll } = useChatScroll([messages]);
+    const { messagesEndRef, handleScroll, forceScrollToBottom, scrollToBottomIfNeeded } = useChatScroll(peerUserId);
     const selectedMessages = useMemo(() => new Set<number>(), []);
 
     useEffect(() => {
@@ -163,6 +163,7 @@ export function CallChatPanel({
 
             sendMessageToStore(content, tempMessage);
             wsService.send(peerUserId, content, attachments);
+            forceScrollToBottom();
             setNewMessage('');
             return true;
         } catch (error) {
@@ -170,7 +171,7 @@ export function CallChatPanel({
             setErrorMessage(getUploadErrorMessage(error, 'Не удалось отправить сообщение'));
             return false;
         }
-    }, [currentUser, newMessage, peerUserId, sendMessageToStore, uploadAttachments, wsService]);
+    }, [currentUser, forceScrollToBottom, newMessage, peerUserId, sendMessageToStore, uploadAttachments, wsService]);
 
     const handleBackdropMouseDown = (event: MouseEvent<HTMLDivElement>) => {
         if (event.target === event.currentTarget) {
@@ -240,6 +241,7 @@ export function CallChatPanel({
                     onSend={sendMessage}
                     errorMessage={errorMessage}
                     onErrorMessageChange={setErrorMessage}
+                    onComposerLayoutChange={scrollToBottomIfNeeded}
                 />
             </section>
         </div>

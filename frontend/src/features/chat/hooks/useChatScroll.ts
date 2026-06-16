@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 
-export const useChatScroll = (_dependency: unknown[]) => {
+export const useChatScroll = (resetKey?: unknown) => {
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const isAutoScroll = useRef(true);
     const animationFrameRef = useRef<number | null>(null);
@@ -26,11 +26,11 @@ export const useChatScroll = (_dependency: unknown[]) => {
         container.scrollTop = container.scrollHeight;
     }, []);
 
-    const scheduleScrollToBottom = useCallback(() => {
+    const scheduleScrollToBottom = useCallback((force = false) => {
         clearScheduledScrolls();
 
         const run = () => {
-            if (isAutoScroll.current) {
+            if (force || isAutoScroll.current) {
                 scrollToBottom();
             }
         };
@@ -39,11 +39,24 @@ export const useChatScroll = (_dependency: unknown[]) => {
         timeoutRefs.current = [50, 150, 350].map(delay => window.setTimeout(run, delay));
     }, [clearScheduledScrolls, scrollToBottom]);
 
+    const forceScrollToBottom = useCallback(() => {
+        isAutoScroll.current = true;
+        scheduleScrollToBottom(true);
+    }, [scheduleScrollToBottom]);
+
+    const scrollToBottomIfNeeded = useCallback(() => {
+        scheduleScrollToBottom(false);
+    }, [scheduleScrollToBottom]);
+
     useLayoutEffect(() => {
         if (isAutoScroll.current) {
             scheduleScrollToBottom();
         }
     });
+
+    useLayoutEffect(() => {
+        forceScrollToBottom();
+    }, [forceScrollToBottom, resetKey]);
 
     useEffect(() => {
         return () => clearScheduledScrolls();
@@ -76,5 +89,5 @@ export const useChatScroll = (_dependency: unknown[]) => {
         isAutoScroll.current = target.scrollHeight - target.scrollTop - target.clientHeight < 100;
     };
 
-    return { messagesEndRef, handleScroll };
+    return { messagesEndRef, handleScroll, forceScrollToBottom, scrollToBottomIfNeeded };
 };
