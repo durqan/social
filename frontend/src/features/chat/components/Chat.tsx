@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
 import { useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router-dom';
 import type { Message, MessageAttachment, PinnedMessage, User } from "@/shared/types/domain.js";
-import { messageService } from "@/features/chat/api/messageService.js";
+import { messageService, type MessageDeleteMode } from "@/features/chat/api/messageService.js";
 import { friendService } from "@/features/friends/api/friendService.js";
 import { userService } from "@/shared/api/userService.js";
 import { useChatMessages } from "@/features/chat/hooks/useChatMessages.js";
@@ -832,7 +832,6 @@ function Chat() {
     const handleBatchDelete = async () => {
         const realIds = messages
             .filter(message => selectedMessages.has(message.id))
-            .filter(message => message.from_id === currentUser?.id)
             .filter(message => message.id > 0 && message.id < 10000000)
             .map(message => message.id);
         if (!realIds.length) {
@@ -846,8 +845,8 @@ function Chat() {
         }
 
         const ok = await dialog.confirm({
-            title: 'Удалить сообщения?',
-            message: 'Выбранные сообщения будут удалены. Это действие нельзя отменить.',
+            title: 'Удалить у себя?',
+            message: 'Выбранные сообщения исчезнут только в вашем чате.',
             confirmText: 'Удалить',
             cancelText: 'Отмена',
             variant: 'danger',
@@ -855,7 +854,7 @@ function Chat() {
         if (!ok) return;
 
         try {
-            await messageService.deleteMessagesBatch(realIds);
+            await messageService.deleteMessagesBatch(realIds, 'for_me');
             setMessages(prev => prev.filter(m => !realIds.includes(m.id)));
             setPinnedMessage(prev => prev && realIds.includes(prev.message_id) ? null : prev);
             exitSelectionMode();
@@ -1133,8 +1132,8 @@ function Chat() {
         userId,
     ]);
 
-    const deleteChatMessage = useCallback(async (messageId: number) => {
-        await deleteMessage(messageId);
+    const deleteChatMessage = useCallback(async (messageId: number, mode: MessageDeleteMode) => {
+        await deleteMessage(messageId, mode);
         setPinnedMessage(prev => prev?.message_id === messageId ? null : prev);
     }, [deleteMessage]);
 

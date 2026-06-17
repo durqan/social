@@ -187,7 +187,7 @@ function Sidebar({
 
     return (
         <>
-            <aside className="fixed left-0 top-0 z-40 hidden h-full w-72 flex-col border-r border-gray-200/80 bg-white/95 px-3 py-4 shadow-sm backdrop-blur lg:flex">
+            <aside className="fixed left-0 top-0 z-40 hidden h-full w-72 flex-col border-r border-gray-200/80 bg-white/95 px-3 py-4 shadow-sm lg:flex">
                 <div className="mb-4 rounded-2xl border border-gray-100 bg-gray-50/80 p-3">
                     <div className="flex min-w-0 items-center gap-3">
                         <Avatar
@@ -218,7 +218,7 @@ function Sidebar({
             </aside>
 
             {!isChatPage && (
-                <nav className="fixed inset-x-3 bottom-3 z-40 flex rounded-2xl border border-gray-200/80 bg-white/95 p-1.5 shadow-lg shadow-gray-900/10 backdrop-blur lg:hidden">
+                <nav className="fixed inset-x-3 bottom-3 z-40 flex rounded-2xl border border-gray-200/80 bg-white/95 p-1.5 shadow-lg shadow-gray-900/10 lg:hidden">
                     {navItems.map(item => (
                         <NavLink key={item.key} to={item.to} end={item.end} className={mobileNavClass}>
                             <span className="relative">

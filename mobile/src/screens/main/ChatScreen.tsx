@@ -78,6 +78,7 @@ import {
   type LocalChatImage,
   type LocalVideoNoteMessage,
   type LocalVoiceMessage,
+  type MessageDeleteMode,
   type UploadFilePart,
 } from '../../api/messages';
 import type {
@@ -2182,14 +2183,20 @@ export default function ChatScreen({ route }: Props) {
     }
   }
 
-  async function deleteSelectedMessage(message: Message) {
+  async function deleteSelectedMessage(
+    message: Message,
+    mode: MessageDeleteMode = 'for_me',
+  ) {
     setSelectedMessage(null);
 
     try {
       if (message.id > 0 && message.id < 10000000) {
-        await messageApi.deleteMessage(message.id);
+        await messageApi.deleteMessage(message.id, mode);
       }
       setMessages(previous => previous.filter(item => item.id !== message.id));
+      setPinnedMessage(previous =>
+        previous?.message_id === message.id ? null : previous,
+      );
       signalChatDataChanged();
     } catch (apiError) {
       setError(getApiErrorMessage(apiError));
@@ -2891,8 +2898,8 @@ export default function ChatScreen({ route }: Props) {
           copyValue(message.content.trim(), 'Текст скопирован')
         }
         onCopyLink={url => copyValue(url, 'Ссылка скопирована')}
-        onDelete={message => {
-          deleteSelectedMessage(message).catch(() => undefined);
+        onDelete={(message, mode) => {
+          deleteSelectedMessage(message, mode).catch(() => undefined);
         }}
         onEdit={startEditingMessage}
         onReply={startReply}
@@ -3422,7 +3429,7 @@ function MessageActionSheet({
   onCopyText: (message: Message) => void;
   onCopyLink: (url: string) => void;
   onEdit: (message: Message) => void;
-  onDelete: (message: Message) => void;
+  onDelete: (message: Message, mode: MessageDeleteMode) => void;
   onReply: (message: Message) => void;
   onForward: (message: Message) => void;
   onPin: (message: Message) => void;
@@ -3434,6 +3441,9 @@ function MessageActionSheet({
   );
   const trimmedText = message?.content.trim() ?? '';
   const messageUrl = message ? firstUrl(message.content) : '';
+  const messageIsReal = Boolean(
+    message && message.id > 0 && message.id < 10000000,
+  );
 
   return (
     <Modal
@@ -3517,11 +3527,11 @@ function MessageActionSheet({
             </Pressable>
           ) : null}
 
-          {message && isOwn ? (
+          {message ? (
             <Pressable
               accessibilityRole="button"
               style={[styles.sheetAction, styles.sheetDangerAction]}
-              onPress={() => onDelete(message)}
+              onPress={() => onDelete(message, 'for_me')}
             >
               <View
                 style={[
@@ -3544,7 +3554,39 @@ function MessageActionSheet({
                   themed.dangerText,
                 ]}
               >
-                Удалить сообщение
+                Удалить у себя
+              </Text>
+            </Pressable>
+          ) : null}
+
+          {message && isOwn && messageIsReal ? (
+            <Pressable
+              accessibilityRole="button"
+              style={[styles.sheetAction, styles.sheetDangerAction]}
+              onPress={() => onDelete(message, 'for_everyone')}
+            >
+              <View
+                style={[
+                  styles.sheetActionIcon,
+                  themed.sheetActionIcon,
+                  styles.sheetDangerIcon,
+                  themed.dangerSoft,
+                ]}
+              >
+                <Trash2
+                  color={themeColors.danger}
+                  size={17}
+                  strokeWidth={2.2}
+                />
+              </View>
+              <Text
+                style={[
+                  styles.sheetActionText,
+                  styles.sheetDangerText,
+                  themed.dangerText,
+                ]}
+              >
+                Удалить у всех
               </Text>
             </Pressable>
           ) : null}

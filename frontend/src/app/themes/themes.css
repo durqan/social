@@ -520,3 +520,117 @@
     --app-glass-bg: #060606;
     --app-glass-border: rgba(255, 255, 255, 0.1);
 }
+
+:root,
+[data-theme="aurora-glass"] {
+    --app-surface: #ffffff;
+    --app-surface-muted: #f1f5f9;
+    --app-card: #ffffff;
+    --app-card-muted: #f8fafc;
+    --app-input-bg: #ffffff;
+    --app-input-focus-bg: #ffffff;
+    --app-chat-bg: radial-gradient(circle at 12% 12%, rgba(216, 180, 254, 0.14), transparent 34%), radial-gradient(circle at 88% 78%, rgba(125, 211, 252, 0.14), transparent 32%), #f8fafc;
+    --app-message-other-bg: #ffffff;
+    --app-glass-bg: #ffffff;
+    --app-glass-border: var(--app-border);
+    --app-card-backdrop: none;
+}
+
+[data-theme="classic-light"] {
+    --app-surface: #ffffff;
+    --app-surface-muted: #f1f5f9;
+    --app-card: #ffffff;
+    --app-card-muted: #f8fafc;
+    --app-input-bg: #ffffff;
+    --app-input-focus-bg: #ffffff;
+    --app-chat-bg: linear-gradient(180deg, #f8fafc, #f1f5f9);
+    --app-message-other-bg: #ffffff;
+    --app-glass-bg: #ffffff;
+    --app-glass-border: var(--app-border);
+    --app-card-backdrop: none;
+}
+
+[data-theme="classic-dark"] {
+    --app-surface: #0f172a;
+    --app-surface-muted: #1e293b;
+    --app-card: #0f172a;
+    --app-card-muted: #1e293b;
+    --app-input-bg: #020617;
+    --app-input-focus-bg: #0f172a;
+    --app-chat-bg: linear-gradient(180deg, #0f172a, #020617);
+    --app-message-other-bg: #1e293b;
+    --app-glass-bg: #0f172a;
+    --app-glass-border: var(--app-border);
+    --app-card-backdrop: none;
+}
+
+[data-theme="midnight-orchid"] {
+    --app-surface: #14162b;
+    --app-surface-muted: #1f223c;
+    --app-card: #121427;
+    --app-card-muted: #1b1e36;
+    --app-input-bg: #090a18;
+    --app-input-focus-bg: #16182d;
+    --app-message-other-bg: #17192d;
+    --app-glass-bg: #121427;
+    --app-glass-border: var(--app-border);
+    --app-card-backdrop: none;
+}
+
+[data-theme="sakura-dream"] {
+    --app-surface: #ffffff;
+    --app-surface-muted: #fff1f5;
+    --app-card: #fffafa;
+    --app-card-muted: #fff7fa;
+    --app-input-bg: #ffffff;
+    --app-input-focus-bg: #ffffff;
+    --app-chat-bg: radial-gradient(circle at 20% 10%, rgba(251, 207, 232, 0.16), transparent 32%), radial-gradient(circle at 90% 78%, rgba(254, 215, 170, 0.14), transparent 34%), #fff7fa;
+    --app-message-other-bg: #ffffff;
+    --app-glass-bg: #ffffff;
+    --app-glass-border: var(--app-border);
+    --app-card-backdrop: none;
+}
+
+[data-theme="neo-tokyo"] {
+    --app-surface: #111827;
+    --app-surface-muted: #1f2937;
+    --app-card: #0f172a;
+    --app-card-muted: #111827;
+    --app-input-bg: #030712;
+    --app-input-focus-bg: #0f172a;
+    --app-message-other-bg: #0f172a;
+    --app-glass-bg: #0f172a;
+    --app-glass-border: var(--app-border);
+    --app-card-backdrop: none;
+}
+
+[data-theme="green-farm"] {
+    --app-surface: #fffcf2;
+    --app-surface-muted: #ebf1de;
+    --app-card: #fffcf2;
+    --app-card-muted: #f4f8ec;
+    --app-input-bg: #fffcf2;
+    --app-input-focus-bg: #fffcf2;
+    --app-chat-bg: radial-gradient(circle at 18% 14%, rgba(187, 247, 208, 0.14), transparent 32%), radial-gradient(circle at 88% 80%, rgba(253, 186, 116, 0.12), transparent 30%), #eef5e4;
+    --app-message-other-bg: #fffcf2;
+    --app-glass-bg: #fffcf2;
+    --app-glass-border: var(--app-border);
+    --app-card-backdrop: none;
+}
+
+[data-theme="ember-wasteland"] {
+    --app-surface: #261a12;
+    --app-surface-muted: #372518;
+    --app-card: #261a12;
+    --app-card-muted: #372518;
+    --app-input-bg: #0f0d0a;
+    --app-input-focus-bg: #261a12;
+    --app-message-other-bg: #261a12;
+    --app-glass-bg: #261a12;
+    --app-glass-border: var(--app-border);
+    --app-card-backdrop: none;
+}
+
+[data-theme="amoled-void"] {
+    --app-card-backdrop: none;
+}

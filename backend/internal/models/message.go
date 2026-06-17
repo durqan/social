@@ -18,6 +18,7 @@ type Message struct {
 	ReplyToMessageID       *uint               `json:"reply_to_message_id" gorm:"index"`
 	ForwardedFromMessageID *uint               `json:"forwarded_from_message_id" gorm:"index"`
 	ForwardedFromUserID    *uint               `json:"forwarded_from_user_id" gorm:"index"`
+	DeletedForEveryoneBy   *uint               `json:"deleted_for_everyone_by,omitempty" gorm:"column:deleted_for_everyone_by;index"`
 	CreatedAt              time.Time           `json:"created_at" gorm:"index:idx_messages_pair_created_id,priority:4,sort:desc;index:idx_messages_from_created_active,priority:3,sort:desc;index:idx_messages_to_created_active,priority:3,sort:desc"`
 	UpdatedAt              time.Time           `json:"updated_at"`
 	DeletedAt              gorm.DeletedAt      `json:"-" gorm:"index;index:idx_messages_pair_created_id,priority:3;index:idx_messages_to_unread_active,priority:3;index:idx_messages_from_created_active,priority:2;index:idx_messages_to_created_active,priority:2"`

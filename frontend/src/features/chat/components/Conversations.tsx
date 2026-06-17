@@ -222,7 +222,7 @@ function Conversations() {
             {menu?.mode === 'mobile' && selectedConversation && (
                 <button
                     type="button"
-                    className="fixed inset-0 z-40 cursor-default bg-slate-950/35 backdrop-blur-[1px]"
+                    className="fixed inset-0 z-40 cursor-default bg-slate-950/35"
                     aria-label="Закрыть меню чата"
                     onClick={() => setMenu(null)}
                     onContextMenu={event => {

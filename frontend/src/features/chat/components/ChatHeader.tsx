@@ -43,7 +43,7 @@ export const ChatHeader = ({
         ? 'в сети'
         : formatLastSeen(recipientLastSeenAt);
     return (
-        <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-gray-200/80 bg-white/95 px-3 py-3 backdrop-blur sm:px-5 sm:py-4">
+        <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-gray-200/80 bg-white/95 px-3 py-3 sm:px-5 sm:py-4">
             {selectionMode ? (
                 <div className="flex items-center justify-between w-full">
                     <div className="flex items-center gap-3">

@@ -4,6 +4,7 @@ import type { Message } from "@/shared/types/domain.js";
 import { Spinner } from "@/shared/ui/Spinner.js";
 import { Icon } from "@/shared/ui/Icon.js";
 import { useAppDialog } from "@/app/providers/AppDialogProvider.js";
+import type { MessageDeleteMode } from "@/features/chat/api/messageService.js";
 
 const urlPattern = /(https?:\/\/[^\s<]+|www\.[^\s<]+)/gi;
 const menuOpenedEventName = 'chat-message-context-menu:open';
@@ -80,7 +81,7 @@ interface ChatMessageListProps {
     onUnpinMessage?: () => void;
     pinnedMessageId?: number | null;
     onEditMessage: (id: number, content: string) => void;
-    onDeleteMessage: (id: number) => void;
+    onDeleteMessage: (id: number, mode: MessageDeleteMode) => void;
     editingMessageId: number | null;
     editContent: string;
     setEditContent: (content: string) => void;
@@ -339,8 +340,8 @@ export const ChatMessageList = ({
             }
         }
 
-        if (contextMessageIsOwn && actionsEnabled) {
-            if (contextMessageCanSelect) {
+        if (actionsEnabled) {
+            if (contextMessageIsOwn && contextMessageCanSelect) {
                 actions.push({
                     key: 'select',
                     label: 'Выбрать',
@@ -349,7 +350,7 @@ export const ChatMessageList = ({
                 });
             }
 
-            if (contextMessageHasText) {
+            if (contextMessageIsOwn && contextMessageHasText) {
                 actions.push({
                     key: 'edit',
                     label: 'Редактировать',
@@ -358,24 +359,45 @@ export const ChatMessageList = ({
                 });
             }
             actions.push({
-                key: 'delete',
-                label: 'Удалить сообщение',
+                key: 'delete-for-me',
+                label: 'Удалить у себя',
                 icon: 'delete',
                 tone: 'danger',
                 onSelect: () => {
                     void dialog.confirm({
-                        title: 'Удалить сообщение?',
-                        message: 'Сообщение будет удалено без возможности восстановления.',
+                        title: 'Удалить у себя?',
+                        message: 'Сообщение исчезнет только в вашем чате.',
                         confirmText: 'Удалить',
                         cancelText: 'Отмена',
                         variant: 'danger',
                     }).then(ok => {
                         if (ok) {
-                            void onDeleteMessage(contextMessage.id);
+                            void onDeleteMessage(contextMessage.id, 'for_me');
                         }
                     });
                 },
             });
+            if (contextMessageIsOwn && contextMessageIsReal) {
+                actions.push({
+                    key: 'delete-for-everyone',
+                    label: 'Удалить у всех',
+                    icon: 'delete',
+                    tone: 'danger',
+                    onSelect: () => {
+                        void dialog.confirm({
+                            title: 'Удалить у всех?',
+                            message: 'Сообщение исчезнет у всех участников диалога.',
+                            confirmText: 'Удалить',
+                            cancelText: 'Отмена',
+                            variant: 'danger',
+                        }).then(ok => {
+                            if (ok) {
+                                void onDeleteMessage(contextMessage.id, 'for_everyone');
+                            }
+                        });
+                    },
+                });
+            }
         }
 
         if (contextMessageHasText) {
@@ -474,7 +496,7 @@ export const ChatMessageList = ({
             {contextMenu && contextMessage && isMobileMenu && (
                 <button
                     type="button"
-                    className="fixed inset-0 z-40 cursor-default bg-slate-950/35 backdrop-blur-[1px]"
+                    className="fixed inset-0 z-40 cursor-default bg-slate-950/35"
                     aria-label="Закрыть меню сообщения"
                     onClick={() => setContextMenu(null)}
                     onContextMenu={event => {

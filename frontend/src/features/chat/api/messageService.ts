@@ -23,6 +23,7 @@ type AttachmentUploadEncryption = EncryptedAttachmentFields & {
 };
 
 type UploadAttachmentType = 'image' | 'video' | 'audio' | 'file';
+export type MessageDeleteMode = 'for_me' | 'for_everyone';
 
 function appendAttachmentEncryption(formData: FormData, encryption?: AttachmentUploadEncryption) {
     if (!encryption) {
@@ -180,12 +181,12 @@ export const messageService = {
         return response.messages || [];
     },
 
-    async deleteMessage(messageId: number): Promise<void> {
-        await request.delete(`/messages/${messageId}`);
+    async deleteMessage(messageId: number, mode: MessageDeleteMode = 'for_me'): Promise<void> {
+        await request.delete(`/messages/${messageId}`, { params: { mode } });
     },
 
-    async deleteMessagesBatch(messageIds: number[]): Promise<void> {
-        await request.delete('/messages/batch', { data: { message_ids: messageIds } });
+    async deleteMessagesBatch(messageIds: number[], mode: MessageDeleteMode = 'for_me'): Promise<void> {
+        await request.delete('/messages/batch', { params: { mode }, data: { message_ids: messageIds } });
     },
 
     async deleteConversationWith(userId: number): Promise<void> {

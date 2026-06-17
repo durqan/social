@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { messageService } from "@/features/chat/api/messageService.js";
+import { messageService, type MessageDeleteMode } from "@/features/chat/api/messageService.js";
 import {
     notificationService,
     type MarkNotificationsReadPayload,
@@ -187,9 +187,9 @@ export const useChatMessages = (userId: string | undefined, currentUserId: numbe
         });
     }, []);
 
-    const deleteMessage = useCallback(async (messageId: number) => {
+    const deleteMessage = useCallback(async (messageId: number, mode: MessageDeleteMode = 'for_me') => {
         if (messageId > 0 && messageId < 10000000) {
-            await messageService.deleteMessage(messageId);
+            await messageService.deleteMessage(messageId, mode);
         }
         setMessages(prev => prev.filter(m => m.id !== messageId));
     }, []);

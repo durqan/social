@@ -528,23 +528,22 @@ func DeleteMessage(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		var message models.Message
-		if err := db.Select("id", "from_id", "to_id").First(&message, messageID).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				c.JSON(404, gin.H{"error": "message not found"})
+		mode, ok := messageDeleteMode(c)
+		if !ok {
+			return
+		}
+
+		var pinnedMessages []models.PinnedMessage
+		if mode == services.MessageDeleteForEveryone {
+			var err error
+			pinnedMessages, err = repository.GetPinnedMessagesByMessageIDs(db, []uint{messageID})
+			if err != nil {
+				c.JSON(500, gin.H{"error": "failed to delete message"})
 				return
 			}
-			c.JSON(500, gin.H{"error": "failed to delete message"})
-			return
 		}
 
-		pinnedMessages, err := repository.GetPinnedMessagesByMessageIDs(db, []uint{messageID})
-		if err != nil {
-			c.JSON(500, gin.H{"error": "failed to delete message"})
-			return
-		}
-
-		err = services.DeleteMessageForUser(db, userID, messageID)
+		message, err := services.DeleteMessageForUser(db, userID, messageID, mode)
 		if errors.Is(err, services.ErrMessageForbidden) {
 			c.JSON(403, gin.H{"error": "you are not a participant in this conversation"})
 			return
@@ -558,12 +557,16 @@ func DeleteMessage(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		broadcastMessageDelete(c.Request.Context(), messageID, message.FromID, message.ToID)
-		for _, pin := range pinnedMessages {
-			broadcastMessageUnpinned(c.Request.Context(), pin.ConversationID, pin.MessageID, pin.Message.FromID, pin.Message.ToID)
+		if mode == services.MessageDeleteForEveryone {
+			broadcastMessageDelete(c.Request.Context(), messageID, message.FromID, message.ToID)
+			for _, pin := range pinnedMessages {
+				broadcastMessageUnpinned(c.Request.Context(), pin.ConversationID, pin.MessageID, pin.Message.FromID, pin.Message.ToID)
+			}
+		} else {
+			broadcastMessageDelete(c.Request.Context(), messageID, userID)
 		}
 
-		c.JSON(200, gin.H{"message": "deleted for both"})
+		c.JSON(200, gin.H{"message": "deleted", "mode": mode})
 	}
 }
 
@@ -588,13 +591,22 @@ func DeleteMessagesBatch(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		pinnedMessages, err := repository.GetPinnedMessagesByMessageIDs(db, req.MessageIDs)
-		if err != nil {
-			c.JSON(500, gin.H{"error": "failed to delete messages"})
+		mode, ok := messageDeleteMode(c)
+		if !ok {
 			return
 		}
 
-		messages, err := services.DeleteMessagesBatchForUser(db, req.MessageIDs, userID)
+		var pinnedMessages []models.PinnedMessage
+		if mode == services.MessageDeleteForEveryone {
+			var err error
+			pinnedMessages, err = repository.GetPinnedMessagesByMessageIDs(db, req.MessageIDs)
+			if err != nil {
+				c.JSON(500, gin.H{"error": "failed to delete messages"})
+				return
+			}
+		}
+
+		messages, err := services.DeleteMessagesBatchForUser(db, req.MessageIDs, userID, mode)
 		if errors.Is(err, services.ErrMessageForbidden) {
 			c.JSON(403, gin.H{"error": "permission denied"})
 			return
@@ -605,14 +617,29 @@ func DeleteMessagesBatch(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		for _, message := range messages {
-			broadcastMessageDelete(c.Request.Context(), message.ID, message.FromID, message.ToID)
+			if mode == services.MessageDeleteForEveryone {
+				broadcastMessageDelete(c.Request.Context(), message.ID, message.FromID, message.ToID)
+			} else {
+				broadcastMessageDelete(c.Request.Context(), message.ID, userID)
+			}
 		}
-		for _, pin := range pinnedMessages {
-			broadcastMessageUnpinned(c.Request.Context(), pin.ConversationID, pin.MessageID, pin.Message.FromID, pin.Message.ToID)
+		if mode == services.MessageDeleteForEveryone {
+			for _, pin := range pinnedMessages {
+				broadcastMessageUnpinned(c.Request.Context(), pin.ConversationID, pin.MessageID, pin.Message.FromID, pin.Message.ToID)
+			}
 		}
 
-		c.JSON(200, gin.H{"message": "deleted"})
+		c.JSON(200, gin.H{"message": "deleted", "mode": mode})
 	}
+}
+
+func messageDeleteMode(c *gin.Context) (services.MessageDeleteMode, bool) {
+	mode, ok := services.ParseMessageDeleteMode(c.Query("mode"))
+	if !ok {
+		c.JSON(400, gin.H{"error": "invalid delete mode"})
+		return "", false
+	}
+	return mode, true
 }
 
 func GetUnreadCount(db *gorm.DB) gin.HandlerFunc {

@@ -231,7 +231,7 @@ function Friends() {
             {menu?.mode === 'mobile' && selectedFriend && (
                 <button
                     type="button"
-                    className="fixed inset-0 z-40 cursor-default bg-slate-950/35 backdrop-blur-[1px]"
+                    className="fixed inset-0 z-40 cursor-default bg-slate-950/35"
                     aria-label="Закрыть меню друга"
                     onClick={() => setMenu(null)}
                     onContextMenu={event => {

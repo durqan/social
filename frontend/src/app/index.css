@@ -36,7 +36,6 @@ button {
         border: 1px solid var(--app-border);
         border-radius: 14px;
         box-shadow: var(--app-card-shadow);
-        backdrop-filter: var(--app-card-backdrop);
     }
 
     .app-input {
@@ -123,9 +122,7 @@ button {
     .chat-composer-shell {
         border-top: 1px solid var(--app-border);
         background: var(--app-surface);
-        background: color-mix(in srgb, var(--app-surface) 82%, transparent);
         padding: 10px 12px 12px;
-        backdrop-filter: var(--app-card-backdrop);
     }
 
     @media (min-width: 640px) {
@@ -145,7 +142,6 @@ button {
         box-shadow: 0 12px 30px var(--app-shadow-color);
         padding: 9px 10px;
         color: var(--app-text-primary);
-        backdrop-filter: var(--app-card-backdrop);
     }
 
     .chat-composer-context-bar__content {
@@ -211,7 +207,6 @@ button {
         box-shadow: 0 14px 36px var(--app-shadow-color);
         padding: 8px;
         color: var(--app-text-primary);
-        backdrop-filter: var(--app-card-backdrop);
     }
 
     .chat-attachment-tray__header {
@@ -355,8 +350,7 @@ button {
         right: 7px;
         width: 26px;
         height: 26px;
-        background: var(--app-glass-bg);
-        backdrop-filter: var(--app-card-backdrop);
+        background: var(--app-surface);
     }
 
     .chat-composer-pill {
@@ -367,13 +361,12 @@ button {
         gap: 3px;
         border: 1px solid var(--app-border);
         border-radius: 28px;
-        background: var(--app-glass-bg);
+        background: var(--app-surface);
         box-shadow:
             0 18px 46px var(--app-shadow-color),
             inset 0 1px 0 var(--app-glass-border);
         padding: 6px;
         color: var(--app-text-primary);
-        backdrop-filter: var(--app-card-backdrop);
         transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
     }
 
@@ -595,9 +588,8 @@ button {
         display: flex;
         align-items: center;
         justify-content: center;
-        background: var(--app-overlay-soft);
+        background: var(--app-overlay);
         padding: 16px;
-        backdrop-filter: blur(5px) saturate(1.08);
     }
 
     .chat-drop-overlay__card {
@@ -607,11 +599,10 @@ button {
         gap: 14px;
         border: 1px dashed var(--app-glass-border);
         border-radius: 24px;
-        background: var(--app-glass-bg);
+        background: var(--app-card);
         box-shadow: var(--app-card-shadow);
         padding: 18px;
         color: var(--app-text-primary);
-        backdrop-filter: var(--app-card-backdrop);
     }
 
     .chat-drop-overlay__icon {
@@ -856,14 +847,13 @@ button {
         justify-content: center;
         border: 1px solid rgba(255, 255, 255, 0.28);
         border-radius: 999px;
-        background: rgba(15, 23, 42, 0.34);
+        background: rgba(15, 23, 42, 0.82);
         box-shadow:
             0 10px 24px rgba(2, 6, 23, 0.22),
             inset 0 1px 0 rgba(255, 255, 255, 0.32);
         color: #ffffff;
         opacity: 0.92;
         text-shadow: 0 1px 8px rgba(0, 0, 0, 0.35);
-        backdrop-filter: blur(16px) saturate(1.35);
         transition: transform 180ms ease, opacity 180ms ease, background 180ms ease;
     }
 
@@ -883,7 +873,7 @@ button {
         overflow: hidden;
         border: 1px solid rgba(255, 255, 255, 0.2);
         border-radius: 999px;
-        background: rgba(2, 6, 23, 0.48);
+        background: rgba(2, 6, 23, 0.78);
         box-shadow: 0 8px 18px rgba(2, 6, 23, 0.18);
         color: #ffffff;
         font-size: 10px;
@@ -895,7 +885,6 @@ button {
         text-overflow: ellipsis;
         text-shadow: 0 1px 5px rgba(0, 0, 0, 0.38);
         white-space: nowrap;
-        backdrop-filter: blur(14px) saturate(1.2);
     }
 
     .video-note-orbit--playing .video-note-orbit__glow {
@@ -946,10 +935,9 @@ button {
     .video-note-recording__panel {
         border: 1px solid var(--app-glass-border);
         border-radius: 14px;
-        background: var(--app-glass-bg);
+        background: var(--app-card);
         box-shadow: 0 14px 38px var(--app-shadow-color);
         padding: 12px;
-        backdrop-filter: var(--app-card-backdrop);
     }
 
     .video-note-recording__dot {
@@ -1101,6 +1089,13 @@ button {
 }
 
 @layer utilities {
+    .backdrop-blur,
+    .backdrop-blur-sm,
+    .backdrop-blur-\[1px\] {
+        -webkit-backdrop-filter: none !important;
+        backdrop-filter: none !important;
+    }
+
     .bg-\[var\(--app-bg\)\] {
         background: var(--app-bg) !important;
     }

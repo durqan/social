@@ -30,6 +30,13 @@ var (
 const MaxMessageContentLength = 1000
 const MaxEncryptedMessagePayloadLength = 128 * 1024
 
+type MessageDeleteMode string
+
+const (
+	MessageDeleteForMe       MessageDeleteMode = "for_me"
+	MessageDeleteForEveryone MessageDeleteMode = "for_everyone"
+)
+
 type MessageEncryptionInput struct {
 	Version    int
 	Ciphertext string
@@ -51,6 +58,17 @@ type ConversationE2EEPolicy struct {
 
 func (input MessageEncryptionInput) Enabled() bool {
 	return input.Version > 0 || strings.TrimSpace(input.Ciphertext) != "" || strings.TrimSpace(input.Nonce) != ""
+}
+
+func ParseMessageDeleteMode(raw string) (MessageDeleteMode, bool) {
+	switch strings.TrimSpace(strings.ToLower(raw)) {
+	case "", "for_me", "delete_for_me", "me":
+		return MessageDeleteForMe, true
+	case "for_everyone", "delete_for_everyone", "everyone":
+		return MessageDeleteForEveryone, true
+	default:
+		return "", false
+	}
 }
 
 func E2EEPolicyForConversation(db *gorm.DB, senderID uint, recipientID uint) (ConversationE2EEPolicy, error) {
@@ -417,7 +435,7 @@ func GetPinnedMessage(db *gorm.DB, userID, conversationUserID uint) (*models.Pin
 		return nil, err
 	}
 
-	pin, err := repository.GetPinnedMessage(db, conversationID)
+	pin, err := repository.GetPinnedMessageForUser(db, conversationID, userID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
@@ -573,78 +591,133 @@ func enforceE2EEMessagePolicy(policy ConversationE2EEPolicy, content string, enc
 	return nil
 }
 
-func DeleteMessageForUser(db *gorm.DB, userID, messageID uint) error {
-	message, err := repository.GetMessageByID(db, messageID)
+func DeleteMessageForUser(db *gorm.DB, userID, messageID uint, mode MessageDeleteMode) (models.Message, error) {
+	message, err := repository.GetMessageByIDForDelete(db, messageID, mode == MessageDeleteForEveryone)
 	if err != nil {
-		return err
+		return models.Message{}, err
 	}
 
 	if message.FromID != userID && message.ToID != userID {
-		return ErrMessageForbidden
+		return models.Message{}, ErrMessageForbidden
 	}
 
-	keys := attachmentKeys(message.Attachments)
-	err = db.Transaction(func(tx *gorm.DB) error {
-		if err := repository.DeleteMessage(tx, messageID); err != nil {
-			return err
+	switch mode {
+	case MessageDeleteForEveryone:
+		if message.FromID != userID {
+			return models.Message{}, ErrMessageForbidden
 		}
-		if err := repository.DeletePinnedMessagesByMessageIDs(tx, []uint{messageID}); err != nil {
-			return err
+		if message.DeletedAt.Valid {
+			return *message, nil
 		}
-		return deleteMessageAttachmentRows(tx, []uint{messageID})
-	})
-	if err != nil {
-		return err
+
+		keys := attachmentKeys(message.Attachments)
+		err = db.Transaction(func(tx *gorm.DB) error {
+			if err := repository.DeleteMessageForEveryone(tx, messageID, userID); err != nil {
+				return err
+			}
+			if err := repository.DeletePinnedMessagesByMessageIDs(tx, []uint{messageID}); err != nil {
+				return err
+			}
+			return deleteMessageAttachmentRows(tx, []uint{messageID})
+		})
+		if err != nil {
+			return models.Message{}, err
+		}
+
+		deleteUnreferencedStorageObjects(context.Background(), db, keys)
+
+	case MessageDeleteForMe:
+		err = db.Transaction(func(tx *gorm.DB) error {
+			return repository.MarkMessageDeletedForUser(tx, messageID, userID)
+		})
+		if err != nil {
+			return models.Message{}, err
+		}
+
+	default:
+		return models.Message{}, ErrMessageForbidden
 	}
 
-	deleteUnreferencedStorageObjects(context.Background(), db, keys)
 	InvalidateMessageCaches()
-	return nil
+	return *message, nil
 }
 
-func DeleteMessagesBatchForUser(db *gorm.DB, ids []uint, userID uint) ([]models.Message, error) {
+func DeleteMessagesBatchForUser(db *gorm.DB, ids []uint, userID uint, mode MessageDeleteMode) ([]models.Message, error) {
+	ids = uniqueMessageIDs(ids)
 	if len(ids) == 0 {
 		return nil, nil
 	}
 
-	var count int64
-	if err := db.Model(&models.Message{}).
-		Where("id IN ? AND (from_id = ? OR to_id = ?)", ids, userID, userID).
-		Count(&count).Error; err != nil {
-		return nil, err
-	}
-	if int(count) != len(ids) {
-		return nil, ErrMessageForbidden
-	}
-
 	var messages []models.Message
-	if err := db.Preload("Attachments").
+	query := db.Preload("Attachments")
+	if mode == MessageDeleteForEveryone {
+		query = query.Unscoped()
+	}
+	if err := query.
 		Where("id IN ? AND (from_id = ? OR to_id = ?)", ids, userID, userID).
 		Find(&messages).Error; err != nil {
 		return nil, err
 	}
-
-	keys := make([]string, 0)
-	for _, message := range messages {
-		keys = append(keys, attachmentKeys(message.Attachments)...)
+	if len(messages) != len(ids) {
+		return nil, ErrMessageForbidden
 	}
 
-	err := db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Delete(&models.Message{}, ids).Error; err != nil {
-			return err
+	switch mode {
+	case MessageDeleteForEveryone:
+		activeIDs := make([]uint, 0, len(messages))
+		keys := make([]string, 0)
+		for _, message := range messages {
+			if message.FromID != userID {
+				return nil, ErrMessageForbidden
+			}
+			if message.DeletedAt.Valid {
+				continue
+			}
+			activeIDs = append(activeIDs, message.ID)
+			keys = append(keys, attachmentKeys(message.Attachments)...)
 		}
-		if err := repository.DeletePinnedMessagesByMessageIDs(tx, ids); err != nil {
-			return err
+
+		err := db.Transaction(func(tx *gorm.DB) error {
+			if err := repository.DeleteMessagesForEveryone(tx, activeIDs, userID); err != nil {
+				return err
+			}
+			if err := repository.DeletePinnedMessagesByMessageIDs(tx, activeIDs); err != nil {
+				return err
+			}
+			return deleteMessageAttachmentRows(tx, activeIDs)
+		})
+		if err != nil {
+			return nil, err
 		}
-		return deleteMessageAttachmentRows(tx, ids)
-	})
-	if err != nil {
-		return nil, err
+		deleteUnreferencedStorageObjects(context.Background(), db, keys)
+
+	case MessageDeleteForMe:
+		err := db.Transaction(func(tx *gorm.DB) error {
+			return repository.MarkMessagesDeletedForUser(tx, ids, userID)
+		})
+		if err != nil {
+			return nil, err
+		}
+
+	default:
+		return nil, ErrMessageForbidden
 	}
 
-	deleteUnreferencedStorageObjects(context.Background(), db, keys)
 	InvalidateMessageCaches()
 	return messages, nil
+}
+
+func uniqueMessageIDs(ids []uint) []uint {
+	seen := make(map[uint]struct{}, len(ids))
+	unique := make([]uint, 0, len(ids))
+	for _, id := range ids {
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		unique = append(unique, id)
+	}
+	return unique
 }
 
 func MarkConversationRead(db *gorm.DB, fromID, toID uint) error {

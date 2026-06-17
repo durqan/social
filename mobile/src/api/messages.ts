@@ -74,6 +74,8 @@ type EncryptedForwardPayload = Partial<EncryptedMessagePayload> & {
   attachments?: MessageAttachment[];
 };
 
+export type MessageDeleteMode = 'for_me' | 'for_everyone';
+
 function appendUploadFile(
   formData: FormData,
   fieldName: string,
@@ -390,17 +392,26 @@ export const messageApi = {
     });
   },
 
-  async deleteMessage(messageId: number) {
-    await apiRequest<{ message: string }>(`/messages/${messageId}`, {
-      method: 'DELETE',
-    });
+  async deleteMessage(messageId: number, mode: MessageDeleteMode = 'for_me') {
+    await apiRequest<{ message: string }>(
+      `/messages/${messageId}${toQueryString({ mode })}`,
+      {
+        method: 'DELETE',
+      },
+    );
   },
 
-  async deleteMessagesBatch(messageIds: number[]) {
-    await apiRequest<{ message: string }>('/messages/batch', {
-      method: 'DELETE',
-      body: { message_ids: messageIds },
-    });
+  async deleteMessagesBatch(
+    messageIds: number[],
+    mode: MessageDeleteMode = 'for_me',
+  ) {
+    await apiRequest<{ message: string }>(
+      `/messages/batch${toQueryString({ mode })}`,
+      {
+        method: 'DELETE',
+        body: { message_ids: messageIds },
+      },
+    );
   },
 
   async deleteConversationWith(userId: number) {

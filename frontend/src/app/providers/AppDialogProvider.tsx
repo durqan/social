@@ -285,7 +285,7 @@ export function AppDialog({ dialog, onCancel, onConfirm }: AppDialogProps) {
 
     return createPortal(
         <div
-            className="fixed inset-0 z-[100] flex items-end justify-center bg-[var(--app-overlay)] px-3 py-4 backdrop-blur-sm sm:items-center sm:px-4"
+            className="fixed inset-0 z-[100] flex items-end justify-center bg-[var(--app-overlay)] px-3 py-4 sm:items-center sm:px-4"
             aria-hidden={false}
         >
             <div

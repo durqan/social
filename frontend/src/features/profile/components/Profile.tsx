@@ -97,7 +97,7 @@ function Profile() {
                 userPresence={userPresence}
             />
             <div className="lg:ml-72">
-                <header className="sticky top-0 z-30 border-b border-gray-200/80 bg-white/90 backdrop-blur">
+                <header className="sticky top-0 z-30 border-b border-gray-200/80 bg-white/90">
                     <div className="relative px-3 py-2.5 sm:px-6 sm:py-3">
                         <div className="flex min-w-0 items-center justify-between gap-2 sm:gap-3">
                             <div className="min-w-0 flex-1">
