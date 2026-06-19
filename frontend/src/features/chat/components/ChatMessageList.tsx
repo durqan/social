@@ -12,8 +12,11 @@ const menuOpenedEventName = 'chat-message-context-menu:open';
 type ContextMenuState = {
     messageId: number;
     mode: 'desktop' | 'mobile';
+    anchorX: number;
+    anchorY: number;
     x: number;
     y: number;
+    positioned: boolean;
 };
 
 type MenuAction = {
@@ -30,6 +33,7 @@ type ScrollToMessageRequest = {
 };
 
 const optimisticMessageFloor = 10000000;
+const contextMenuViewportMargin = 10;
 
 function cleanUrl(value: string) {
     return value.replace(/[),.!?;:]+$/, '');
@@ -136,6 +140,7 @@ export const ChatMessageList = ({
                                 }: ChatMessageListProps) => {
     const dialog = useAppDialog();
     const containerRef = useRef<HTMLDivElement>(null);
+    const contextMenuRef = useRef<HTMLDivElement>(null);
     const paginationAnchorRef = useRef<{ messageId: number; top: number } | null>(null);
     const paginationRequestRef = useRef(false);
     const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -195,6 +200,7 @@ export const ChatMessageList = ({
         window.addEventListener('click', closeMenu);
         window.addEventListener('contextmenu', closeMenu);
         window.addEventListener('scroll', closeMenu, true);
+        window.addEventListener('resize', closeMenu);
         window.addEventListener('keydown', closeOnEscape);
         window.addEventListener(menuOpenedEventName, closeMenu);
 
@@ -202,6 +208,7 @@ export const ChatMessageList = ({
             window.removeEventListener('click', closeMenu);
             window.removeEventListener('contextmenu', closeMenu);
             window.removeEventListener('scroll', closeMenu, true);
+            window.removeEventListener('resize', closeMenu);
             window.removeEventListener('keydown', closeOnEscape);
             window.removeEventListener(menuOpenedEventName, closeMenu);
         };
@@ -232,13 +239,19 @@ export const ChatMessageList = ({
 
         const mode = options.source === 'touch' ? 'mobile' : 'desktop';
         const menuWidth = mode === 'mobile' ? 256 : 224;
-        const menuHeight = Math.max(62, actionCount * (mode === 'mobile' ? 50 : 44) + 10);
+        const initialX = Math.max(
+            contextMenuViewportMargin,
+            Math.min(options.position.x, window.innerWidth - menuWidth - contextMenuViewportMargin),
+        );
 
         setContextMenu({
             messageId: message.id,
             mode,
-            x: Math.max(8, Math.min(options.position.x, window.innerWidth - menuWidth - 8)),
-            y: Math.max(8, Math.min(options.position.y, window.innerHeight - menuHeight - 8)),
+            anchorX: options.position.x,
+            anchorY: options.position.y,
+            x: initialX,
+            y: Math.max(contextMenuViewportMargin, options.position.y),
+            positioned: false,
         });
     };
 
@@ -442,6 +455,34 @@ export const ChatMessageList = ({
         onUnpinMessage,
     ]);
 
+    useLayoutEffect(() => {
+        const menu = contextMenuRef.current;
+        if (!contextMenu || !menu) {
+            return;
+        }
+
+        const { width, height } = menu.getBoundingClientRect();
+        const maxX = Math.max(contextMenuViewportMargin, window.innerWidth - width - contextMenuViewportMargin);
+        const maxY = Math.max(contextMenuViewportMargin, window.innerHeight - height - contextMenuViewportMargin);
+        const x = Math.max(contextMenuViewportMargin, Math.min(contextMenu.anchorX, maxX));
+
+        let y = contextMenu.anchorY;
+        if (contextMenu.anchorY + height > window.innerHeight - contextMenuViewportMargin) {
+            y = contextMenu.anchorY - height;
+        }
+        y = Math.max(contextMenuViewportMargin, Math.min(y, maxY));
+
+        if (contextMenu.x === x && contextMenu.y === y && contextMenu.positioned) {
+            return;
+        }
+
+        setContextMenu(current => (
+            current?.messageId === contextMenu.messageId && current.mode === contextMenu.mode
+                ? { ...current, x, y, positioned: true }
+                : current
+        ));
+    }, [contextMenu, menuActions.length]);
+
     return (
         <div ref={containerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto p-3 space-y-3 sm:p-4 sm:space-y-4">
             {loadingMore && (
@@ -507,8 +548,14 @@ export const ChatMessageList = ({
             )}
             {contextMenu && contextMessage && !isMobileMenu && (
                 <div
-                    className="fixed z-50 w-56 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl shadow-slate-900/10"
-                    style={{ left: contextMenu.x, top: contextMenu.y }}
+                    ref={contextMenuRef}
+                    role="menu"
+                    className="fixed z-50 max-h-[calc(100vh-20px)] w-56 max-w-[calc(100vw-20px)] overflow-y-auto rounded-2xl border border-slate-200/80 bg-white/95 py-1.5 shadow-[0_12px_32px_rgba(15,23,42,0.14)] backdrop-blur-sm"
+                    style={{
+                        left: contextMenu.x,
+                        top: contextMenu.y,
+                        visibility: contextMenu.positioned ? 'visible' : 'hidden',
+                    }}
                     onClick={event => event.stopPropagation()}
                     onContextMenu={event => event.preventDefault()}
                 >
@@ -523,8 +570,14 @@ export const ChatMessageList = ({
             )}
             {contextMenu && contextMessage && isMobileMenu && (
                 <div
-                    className="fixed z-[70] w-64 overflow-hidden rounded-xl border border-gray-100 bg-white py-1 shadow-2xl"
-                    style={{ left: contextMenu.x, top: contextMenu.y }}
+                    ref={contextMenuRef}
+                    role="menu"
+                    className="fixed z-[70] max-h-[calc(100vh-20px)] w-64 max-w-[calc(100vw-20px)] overflow-y-auto rounded-xl border border-gray-100 bg-white py-1 shadow-2xl"
+                    style={{
+                        left: contextMenu.x,
+                        top: contextMenu.y,
+                        visibility: contextMenu.positioned ? 'visible' : 'hidden',
+                    }}
                     onClick={event => event.stopPropagation()}
                     onContextMenu={event => event.preventDefault()}
                 >
@@ -557,19 +610,22 @@ function ContextMenuAction({
     return (
         <button
             type="button"
-            className={`flex w-full items-center gap-3 text-left transition ${mobile ? 'px-4 py-3 text-[15px]' : 'px-3 py-2.5 text-sm'} ${danger ? 'text-red-600 hover:bg-red-50' : 'text-gray-800 hover:bg-gray-50'}`}
+            role="menuitem"
+            className={`flex w-full items-center text-left transition-colors focus-visible:outline-none ${mobile ? 'gap-3 px-4 py-3 text-[15px]' : 'px-3.5 py-2 text-[13.5px] leading-5'} ${danger ? 'text-red-600 hover:bg-red-50/80 focus-visible:bg-red-50/80' : 'text-slate-700 hover:bg-slate-100/70 focus-visible:bg-slate-100/70'}`}
             onClick={onSelect}
         >
-            <span className={`flex h-7 w-7 items-center justify-center rounded-full ${danger ? 'bg-red-50' : action.icon === 'link' ? 'bg-sky-50 text-sky-700' : 'bg-gray-100 text-gray-600'}`}>
-                {action.icon === 'edit' && <Icon name="edit" className="h-3.5 w-3.5" />}
-                {action.icon === 'delete' && <Icon name="delete" className="h-3.5 w-3.5" />}
-                {action.icon === 'text' && <span className="text-xs font-semibold">T</span>}
-                {action.icon === 'link' && <span className="text-xs font-semibold">L</span>}
-                {action.icon === 'select' && <span className="h-3.5 w-3.5 rounded border-2 border-current" />}
-                {action.icon === 'reply' && <span className="text-xs font-semibold">R</span>}
-                {action.icon === 'forward' && <span className="text-xs font-semibold">F</span>}
-                {action.icon === 'pin' && <Icon name="pin" className="h-3.5 w-3.5" />}
-            </span>
+            {mobile && (
+                <span className={`flex h-7 w-7 items-center justify-center rounded-full ${danger ? 'bg-red-50' : action.icon === 'link' ? 'bg-sky-50 text-sky-700' : 'bg-gray-100 text-gray-600'}`}>
+                    {action.icon === 'edit' && <Icon name="edit" className="h-3.5 w-3.5" />}
+                    {action.icon === 'delete' && <Icon name="delete" className="h-3.5 w-3.5" />}
+                    {action.icon === 'text' && <span className="text-xs font-semibold">T</span>}
+                    {action.icon === 'link' && <span className="text-xs font-semibold">L</span>}
+                    {action.icon === 'select' && <span className="h-3.5 w-3.5 rounded border-2 border-current" />}
+                    {action.icon === 'reply' && <span className="text-xs font-semibold">R</span>}
+                    {action.icon === 'forward' && <span className="text-xs font-semibold">F</span>}
+                    {action.icon === 'pin' && <Icon name="pin" className="h-3.5 w-3.5" />}
+                </span>
+            )}
             <span className={mobile ? 'font-medium' : undefined}>{action.label}</span>
         </button>
     );
