@@ -517,6 +517,48 @@ func UpdateMessage(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
+func ToggleMessageReaction(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, ok := authenticatedUserID(c)
+		if !ok {
+			return
+		}
+		messageID, ok := uintParam(c, "messageId", "invalid message id")
+		if !ok {
+			return
+		}
+
+		var req struct {
+			Emoji string `json:"emoji" binding:"required"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(400, gin.H{"error": "emoji is required"})
+			return
+		}
+
+		message, summaries, reactionVersion, err := services.ToggleMessageReaction(db, userID, messageID, req.Emoji)
+		if errors.Is(err, services.ErrMessageInvalidReaction) {
+			c.JSON(400, gin.H{"error": "unsupported reaction"})
+			return
+		}
+		if errors.Is(err, services.ErrMessageForbidden) {
+			c.JSON(403, gin.H{"error": "you do not have access to this message"})
+			return
+		}
+		if err != nil {
+			c.JSON(500, gin.H{"error": "failed to update reaction"})
+			return
+		}
+
+		broadcastMessageReactionUpdate(c.Request.Context(), db, message)
+		c.JSON(200, gin.H{
+			"message_id":       message.ID,
+			"reaction_version": reactionVersion,
+			"reactions":        summaries,
+		})
+	}
+}
+
 func DeleteMessage(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID, ok := authenticatedUserID(c)

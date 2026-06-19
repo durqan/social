@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
 import { useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router-dom';
-import type { Message, MessageAttachment, PinnedMessage, User } from "@/shared/types/domain.js";
+import type { Message, MessageAttachment, PinnedMessage, ReactionSummary, User } from "@/shared/types/domain.js";
 import { messageService, type MessageDeleteMode } from "@/features/chat/api/messageService.js";
 import { friendService } from "@/features/friends/api/friendService.js";
 import { userService } from "@/shared/api/userService.js";
@@ -47,6 +47,31 @@ import {
 } from "@/shared/utils/uploadValidation.js";
 
 const optimisticMessageFloor = 10000000;
+
+function optimisticReactions(reactions: ReactionSummary[] | undefined, emoji: string): ReactionSummary[] {
+    const current = reactions || [];
+    const mine = current.find(reaction => reaction.reacted_by_me);
+    const next = current
+        .map(reaction => ({
+            ...reaction,
+            count: reaction.emoji === mine?.emoji ? reaction.count - 1 : reaction.count,
+            reacted_by_me: false,
+        }))
+        .filter(reaction => reaction.count > 0);
+
+    if (mine?.emoji === emoji) {
+        return next;
+    }
+
+    const target = next.find(reaction => reaction.emoji === emoji);
+    if (target) {
+        target.count += 1;
+        target.reacted_by_me = true;
+        return next;
+    }
+
+    return [...next, { emoji, count: 1, reacted_by_me: true }];
+}
 
 function attachmentsMatchOptimistic(pending: Message, received: Message) {
     const pendingAttachments = pending.attachments || [];
@@ -381,6 +406,7 @@ function Chat() {
         loadInitial,
         loadMore,
         loadUntilMessage,
+        refreshLoadedMessageReactions,
         sendMessage: sendMessageToStore,
         updateMessage,
         applyMessageUpdate,
@@ -611,6 +637,26 @@ function Chat() {
         });
     }, [applyMessageUpdate, decryptIncomingMessage]);
 
+    const handleSocketMessageReaction = useCallback((
+        messageId: number,
+        reactions: ReactionSummary[],
+        reactionVersion: number,
+    ) => {
+        setMessages(prev => prev.map(message => {
+            if (
+                message.id !== messageId
+                || reactionVersion < (message.reaction_version ?? 0)
+            ) {
+                return message;
+            }
+            return {
+                ...message,
+                reaction_version: reactionVersion,
+                reactions,
+            };
+        }));
+    }, [setMessages]);
+
     const handleSocketMessageUnpinned = useCallback(() => {
         setPinnedMessage(null);
     }, []);
@@ -651,9 +697,21 @@ function Chat() {
             });
         }, [decryptIncomingMessage, markAsRead, setMessages, userId, wsService]),
         onMessageUpdated: handleSocketMessageUpdated,
+        onMessageReaction: handleSocketMessageReaction,
         onMessagePinned: handleSocketMessagePinned,
         onMessageUnpinned: handleSocketMessageUnpinned,
     });
+
+    useEffect(() => {
+        const refreshAfterReconnect = (event: Event) => {
+            const detail = (event as CustomEvent<{ reconnected?: boolean }>).detail;
+            if (detail?.reconnected) {
+                void refreshLoadedMessageReactions();
+            }
+        };
+        window.addEventListener('websocket:open', refreshAfterReconnect);
+        return () => window.removeEventListener('websocket:open', refreshAfterReconnect);
+    }, [refreshLoadedMessageReactions]);
 
     useEffect(() => {
         let cancelled = false;
@@ -1138,6 +1196,37 @@ function Chat() {
         setPinnedMessage(prev => prev?.message_id === messageId ? null : prev);
     }, [deleteMessage]);
 
+    const toggleMessageReaction = useCallback((messageId: number, emoji: string) => {
+        const previousMessage = messages.find(message => message.id === messageId);
+        const previousReactions = previousMessage?.reactions || [];
+        const previousVersion = previousMessage?.reaction_version ?? 0;
+        setMessages(prev => prev.map(message => {
+            if (message.id !== messageId) {
+                return message;
+            }
+            return {
+                ...message,
+                reactions: optimisticReactions(message.reactions, emoji),
+            };
+        }));
+
+        void messageService.toggleReaction(messageId, emoji).then(response => {
+            handleSocketMessageReaction(
+                response.message_id,
+                response.reactions,
+                response.reaction_version,
+            );
+        }).catch(error => {
+            console.error(error);
+            setMessages(prev => prev.map(message => (
+                message.id === messageId && (message.reaction_version ?? 0) === previousVersion
+                    ? { ...message, reactions: previousReactions }
+                    : message
+            )));
+            toast.error('Не удалось обновить реакцию');
+        });
+    }, [handleSocketMessageReaction, messages, setMessages]);
+
     const pinChatMessage = useCallback(async (message: Message) => {
         if (!userId) {
             return;
@@ -1496,6 +1585,7 @@ function Chat() {
                     setEditContent(content);
                 }}
                 onDeleteMessage={deleteChatMessage}
+                onToggleReaction={toggleMessageReaction}
                 editingMessageId={editingMessageId}
                 editContent={editContent}
                 setEditContent={setEditContent}

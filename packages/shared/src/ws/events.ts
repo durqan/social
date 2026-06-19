@@ -1,4 +1,4 @@
-import type { Message, PinnedMessage } from '../types/domain';
+import type { Message, PinnedMessage, ReactionSummary } from '../types/domain';
 
 export const WS_EVENTS = {
   MESSAGE_NEW: 'message:new',
@@ -7,6 +7,7 @@ export const WS_EVENTS = {
   MESSAGE_ERROR: 'message:error',
   MESSAGE_READ: 'message:read',
   MESSAGE_DELETE: 'message:delete',
+  MESSAGE_REACTION: 'message:reaction',
   MESSAGE_PINNED: 'message_pinned',
   MESSAGE_UNPINNED: 'message_unpinned',
   TYPING_START: 'typing:start',
@@ -75,6 +76,15 @@ export type MessageDeletedEvent = BaseWsEvent<
     message_id: number;
   }
 >;
+export type MessageReactionEvent = BaseWsEvent<
+  typeof WS_EVENTS.MESSAGE_REACTION,
+  {
+    message_id: number;
+    conversation_id: number;
+    reaction_version: number;
+    reactions: ReactionSummary[];
+  }
+>;
 export type MessagePinnedEvent = BaseWsEvent<
   typeof WS_EVENTS.MESSAGE_PINNED,
   {
@@ -122,6 +132,7 @@ export type NonCallWsEvent =
   | ReadReceiptEvent
   | ConversationReadEvent
   | MessageDeletedEvent
+  | MessageReactionEvent
   | MessagePinnedEvent
   | MessageUnpinnedEvent
   | FriendRequestEvent

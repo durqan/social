@@ -59,6 +59,7 @@ export class WebSocketService {
     private pendingEvents: QueuedEvent[] = [];
     private opening = false;
     private activeConversationId: number | null = null;
+    private hasConnected = false;
 
     connect() {
         this.shouldReconnect = true;
@@ -92,10 +93,15 @@ export class WebSocketService {
 
         this.ws = new WebSocket(websocketURL());
         this.ws.onopen = () => {
+            const reconnected = this.hasConnected;
+            this.hasConnected = true;
             this.opening = false;
             this.shouldReconnect = true;
             this.syncActiveConversation();
             this.flushPendingEvents();
+            window.dispatchEvent(new CustomEvent('websocket:open', {
+                detail: { reconnected },
+            }));
         };
         this.ws.onmessage = event => {
             const parsed = this.parseMessage(event.data);
@@ -213,6 +219,7 @@ export class WebSocketService {
         this.shouldReconnect = false;
         this.clearReconnectTimer();
         this.pendingEvents = [];
+        this.hasConnected = false;
         this.ws?.close();
         this.ws = null;
     }

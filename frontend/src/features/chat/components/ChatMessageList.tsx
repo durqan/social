@@ -5,6 +5,7 @@ import { Spinner } from "@/shared/ui/Spinner.js";
 import { Icon } from "@/shared/ui/Icon.js";
 import { useAppDialog } from "@/app/providers/AppDialogProvider.js";
 import type { MessageDeleteMode } from "@/features/chat/api/messageService.js";
+import { ReactionPicker } from "@/features/chat/components/ReactionPicker.js";
 
 const urlPattern = /(https?:\/\/[^\s<]+|www\.[^\s<]+)/gi;
 const menuOpenedEventName = 'chat-message-context-menu:open';
@@ -23,7 +24,7 @@ type MenuAction = {
     key: string;
     label: string;
     tone?: 'danger';
-    icon: 'edit' | 'delete' | 'text' | 'link' | 'select' | 'reply' | 'forward' | 'pin';
+    icon: 'edit' | 'delete' | 'text' | 'link' | 'select' | 'reply' | 'forward' | 'pin' | 'smile';
     onSelect: () => void;
 };
 
@@ -86,6 +87,7 @@ interface ChatMessageListProps {
     pinnedMessageId?: number | null;
     onEditMessage: (id: number, content: string) => void;
     onDeleteMessage: (id: number, mode: MessageDeleteMode) => void;
+    onToggleReaction?: (messageId: number, emoji: string) => void;
     editingMessageId: number | null;
     editContent: string;
     setEditContent: (content: string) => void;
@@ -122,6 +124,7 @@ export const ChatMessageList = ({
                                     pinnedMessageId,
                                     onEditMessage,
                                     onDeleteMessage,
+                                    onToggleReaction = () => undefined,
                                     editingMessageId,
                                     editContent,
                                     setEditContent,
@@ -143,7 +146,18 @@ export const ChatMessageList = ({
     const contextMenuRef = useRef<HTMLDivElement>(null);
     const paginationAnchorRef = useRef<{ messageId: number; top: number } | null>(null);
     const paginationRequestRef = useRef(false);
+    const reactionEffectTimerRef = useRef<number | null>(null);
+    const reactionEffectKeyRef = useRef(0);
     const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+    const [reactionPicker, setReactionPicker] = useState<{
+        messageId: number;
+        anchorRect: DOMRect;
+    } | null>(null);
+    const [reactionEffect, setReactionEffect] = useState<{
+        messageId: number;
+        emoji: string;
+        key: number;
+    } | null>(null);
     const contextMessage = useMemo(() => (
         contextMenu ? messages.find(message => message.id === contextMenu.messageId) ?? null : null
     ), [contextMenu, messages]);
@@ -159,6 +173,9 @@ export const ChatMessageList = ({
         contextMessage && contextMessageIsOwn && contextMessageIsReal
     );
     const isMobileMenu = contextMenu?.mode === 'mobile';
+    const reactionPickerMessage = reactionPicker
+        ? messages.find(message => message.id === reactionPicker.messageId) ?? null
+        : null;
 
     useLayoutEffect(() => {
         const container = containerRef.current;
@@ -214,6 +231,12 @@ export const ChatMessageList = ({
         };
     }, [contextMenu]);
 
+    useEffect(() => () => {
+        if (reactionEffectTimerRef.current !== null) {
+            window.clearTimeout(reactionEffectTimerRef.current);
+        }
+    }, []);
+
     const openContextMenu = (
         message: Message,
         options: {
@@ -223,10 +246,11 @@ export const ChatMessageList = ({
         isOwn: boolean,
     ) => {
         window.dispatchEvent(new Event(menuOpenedEventName));
+        setReactionPicker(null);
 
         const canSelect = isOwn && actionsEnabled && message.id > 0 && message.id < 10000000;
         const ownActionsCount = isOwn && actionsEnabled ? 2 : 0;
-        const messageActionsCount = actionsEnabled && message.id > 0 && message.id < optimisticMessageFloor ? 3 : 0;
+        const messageActionsCount = actionsEnabled && message.id > 0 && message.id < optimisticMessageFloor ? 4 : 0;
         const copyActionsCount = message.decryption_error
             ? 0
             : Number(Boolean(message.content.trim())) + Number(Boolean(firstUrl(message.content || '')));
@@ -258,6 +282,7 @@ export const ChatMessageList = ({
     const handleScroll = (event: UIEvent<HTMLDivElement>) => {
         const container = event.currentTarget;
         setContextMenu(null);
+        setReactionPicker(null);
         onScroll(event);
 
         if (
@@ -289,6 +314,33 @@ export const ChatMessageList = ({
         setContextMenu(null);
         action();
     };
+
+    const openReactionPicker = useCallback((message: Message, anchorRect?: DOMRect) => {
+        const bubble = containerRef.current?.querySelector<HTMLElement>(`[data-chat-message-bubble-id="${message.id}"]`);
+        const resolvedRect = anchorRect ?? bubble?.getBoundingClientRect();
+        if (!resolvedRect) {
+            return;
+        }
+        setContextMenu(null);
+        setReactionPicker({
+            messageId: message.id,
+            anchorRect: resolvedRect,
+        });
+    }, []);
+
+    const toggleReaction = useCallback((message: Message, emoji: string) => {
+        reactionEffectKeyRef.current += 1;
+        setReactionEffect({
+            messageId: message.id,
+            emoji,
+            key: reactionEffectKeyRef.current,
+        });
+        if (reactionEffectTimerRef.current !== null) {
+            window.clearTimeout(reactionEffectTimerRef.current);
+        }
+        reactionEffectTimerRef.current = window.setTimeout(() => setReactionEffect(null), 820);
+        onToggleReaction(message.id, emoji);
+    }, [onToggleReaction]);
 
     const scrollToMessage = useCallback((messageId: number) => {
         const container = containerRef.current;
@@ -324,6 +376,20 @@ export const ChatMessageList = ({
         const actions: MenuAction[] = [];
 
         if (actionsEnabled && contextMessageIsReal) {
+            actions.push({
+                key: 'reaction',
+                label: 'Реакция',
+                icon: 'smile',
+                onSelect: () => {
+                    if (!contextMenu) {
+                        return;
+                    }
+                    setReactionPicker({
+                        messageId: contextMessage.id,
+                        anchorRect: new DOMRect(contextMenu.anchorX, contextMenu.anchorY, 1, 1),
+                    });
+                },
+            });
             actions.push({
                 key: 'reply',
                 label: 'Ответить',
@@ -439,6 +505,7 @@ export const ChatMessageList = ({
     }, [
         actionsEnabled,
         contextMessage,
+        contextMenu,
         contextMessageCanSelect,
         contextMessageHasText,
         contextMessageIsPinned,
@@ -522,6 +589,10 @@ export const ChatMessageList = ({
                             onSelectMessage={() => onToggleSelect(msg.id)}
                             onReplyPreviewClick={scrollToMessage}
                             onOpenContextMenu={(message, options) => openContextMenu(message, options, isOwn)}
+                            onOpenReactionPicker={openReactionPicker}
+                            onToggleReaction={toggleReaction}
+                            reactionEffect={reactionEffect?.messageId === msg.id ? reactionEffect : undefined}
+                            reactionsEnabled={actionsEnabled}
                             editingMessageId={editingMessageId}
                             editContent={editContent}
                             setEditContent={setEditContent}
@@ -591,6 +662,17 @@ export const ChatMessageList = ({
                     ))}
                 </div>
             )}
+            {reactionPicker && reactionPickerMessage && (
+                <ReactionPicker
+                    anchorRect={reactionPicker.anchorRect}
+                    selectedEmoji={reactionPickerMessage.reactions?.find(reaction => reaction.reacted_by_me)?.emoji}
+                    onSelect={emoji => {
+                        setReactionPicker(null);
+                        toggleReaction(reactionPickerMessage, emoji);
+                    }}
+                    onClose={() => setReactionPicker(null)}
+                />
+            )}
             <div ref={messagesEndRef} />
         </div>
     );
@@ -624,6 +706,7 @@ function ContextMenuAction({
                     {action.icon === 'reply' && <span className="text-xs font-semibold">R</span>}
                     {action.icon === 'forward' && <span className="text-xs font-semibold">F</span>}
                     {action.icon === 'pin' && <Icon name="pin" className="h-3.5 w-3.5" />}
+                    {action.icon === 'smile' && <Icon name="smile" className="h-3.5 w-3.5" />}
                 </span>
             )}
             <span className={mobile ? 'font-medium' : undefined}>{action.label}</span>

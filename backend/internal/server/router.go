@@ -144,6 +144,7 @@ func registerMessageRoutes(router *gin.Engine, database *gorm.DB) {
 	messages.POST("/upload-video-note", middleware.RequireVerifiedEmail(database), middleware.RateLimitMiddleware(60, time.Hour), handlers.UploadMessageVideoNote(database))
 	messages.POST("/send/:toId", middleware.RequireVerifiedEmail(database), middleware.RateLimitMiddleware(30, 10*time.Minute), handlers.SendMessage(database))
 	messages.POST("/:messageId/forward", middleware.RequireVerifiedEmail(database), middleware.RateLimitMiddleware(30, 10*time.Minute), handlers.ForwardMessage(database))
+	messages.POST("/:messageId/reactions", middleware.RateLimitMiddleware(120, time.Minute), handlers.ToggleMessageReaction(database))
 	messages.PATCH("/:messageId", handlers.UpdateMessage(database))
 	messages.DELETE("/:messageId", handlers.DeleteMessage(database))
 	messages.DELETE("/batch", handlers.DeleteMessagesBatch(database))

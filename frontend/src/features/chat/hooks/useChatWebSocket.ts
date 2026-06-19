@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 
 import { useWebSocket } from "@/app/providers/WebSocketContext.js";
 
-import type { Message, PinnedMessage } from "@/shared/types/domain.js";
+import type { Message, PinnedMessage, ReactionSummary } from "@/shared/types/domain.js";
 import type { WsEvent } from "@/shared/types/ws.js";
 import { WS_EVENTS } from '@social/shared';
 
@@ -39,6 +39,8 @@ interface UseChatWebSocketProps {
 
     onMessageUpdated: (msg: Message) => void;
 
+    onMessageReaction?: (messageId: number, reactions: ReactionSummary[], reactionVersion: number) => void;
+
     onMessagePinned: (pinnedMessage: PinnedMessage) => void;
 
     onMessageUnpinned: () => void;
@@ -53,6 +55,7 @@ export const useChatWebSocket = ({
     onConversationRead,
     onNewMessage,
     onMessageUpdated,
+    onMessageReaction,
     onMessagePinned,
     onMessageUnpinned,
 }: UseChatWebSocketProps) => {
@@ -166,6 +169,18 @@ export const useChatWebSocket = ({
                     break;
                 }
 
+                case WS_EVENTS.MESSAGE_REACTION: {
+                    const payload = event.payload;
+                    if (payload.conversation_id === Number(userId)) {
+                        onMessageReaction?.(
+                            payload.message_id,
+                            payload.reactions,
+                            payload.reaction_version,
+                        );
+                    }
+                    break;
+                }
+
                 case WS_EVENTS.MESSAGE_PINNED: {
 
                     const payload = event.payload.pinned_message;
@@ -229,6 +244,7 @@ export const useChatWebSocket = ({
         onConversationRead,
         onNewMessage,
         onMessageUpdated,
+        onMessageReaction,
         onMessagePinned,
         onMessageUnpinned,
         wsService,

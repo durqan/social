@@ -52,6 +52,11 @@ const shouldApplyMessageUpdate = (current: Message, updated: Message) => {
     return updatedTime >= currentTime;
 };
 
+const mergeMessageUpdate = (current: Message, updated: Message): Message => ({
+    ...updated,
+    reactions: updated.reactions ?? current.reactions,
+});
+
 type MessageTransformer = (messages: Message[]) => Promise<Message[]>;
 
 export const useChatMessages = (userId: string | undefined, currentUserId: number | undefined, transformMessages?: MessageTransformer) => {
@@ -157,6 +162,58 @@ export const useChatMessages = (userId: string | undefined, currentUserId: numbe
         }
     }, [hasMore, messages, transformMessages, userId]);
 
+    const refreshLoadedMessageReactions = useCallback(async () => {
+        if (!userId || messages.length === 0) {
+            return;
+        }
+
+        const pendingIds = new Set(
+            messages
+                .filter(message => message.id > 0 && message.id < 10000000)
+                .map(message => message.id),
+        );
+        if (pendingIds.size === 0) {
+            return;
+        }
+
+        const refreshed = new Map<number, Message>();
+        let before: number | undefined;
+        for (let page = 0; page < 20 && pendingIds.size > 0; page += 1) {
+            const response = await messageService.getMessagesWith(userId, {
+                before,
+                limit: 100,
+            });
+            if (!response.messages.length) {
+                break;
+            }
+
+            for (const message of response.messages) {
+                if (pendingIds.delete(message.id)) {
+                    refreshed.set(message.id, message);
+                }
+            }
+
+            before = response.messages[0]?.id;
+            if (!response.has_more || !before) {
+                break;
+            }
+        }
+
+        if (refreshed.size === 0) {
+            return;
+        }
+        setMessages(prev => prev.map(message => {
+            const current = refreshed.get(message.id);
+            return current && (current.reaction_version ?? 0) >= (message.reaction_version ?? 0)
+                ? {
+                    ...message,
+                    reaction_version: current.reaction_version,
+                    reactions: current.reactions,
+                }
+                : message;
+        }));
+    }, [messages, userId]);
+
     const sendMessage = useCallback((content: string, tempMessage: Message) => {
         setMessages(prev => [...prev, tempMessage]);
         return tempMessage;
@@ -165,7 +222,7 @@ export const useChatMessages = (userId: string | undefined, currentUserId: numbe
     const updateMessage = useCallback(async (messageId: number, newContent: string) => {
         const updated = await messageService.updateMessage(messageId, newContent);
         setMessages(prev => prev.map(m =>
-            m.id === messageId && shouldApplyMessageUpdate(m, updated) ? updated : m
+            m.id === messageId && shouldApplyMessageUpdate(m, updated) ? mergeMessageUpdate(m, updated) : m
         ));
     }, []);
 
@@ -180,7 +237,7 @@ export const useChatMessages = (userId: string | undefined, currentUserId: numbe
                     return message;
                 }
                 changed = true;
-                return updated;
+                return mergeMessageUpdate(message, updated);
             });
 
             return changed ? nextMessages : prev;
@@ -230,6 +287,7 @@ export const useChatMessages = (userId: string | undefined, currentUserId: numbe
         loadInitial,
         loadMore,
         loadUntilMessage,
+        refreshLoadedMessageReactions,
         sendMessage,
         updateMessage,
         applyMessageUpdate,

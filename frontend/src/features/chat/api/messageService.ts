@@ -1,5 +1,5 @@
 import { request } from "@/shared/api/axios.js";
-import type { Conversation, Message, MessageAttachment, PinnedMessage } from "@/shared/types/domain.js";
+import type { Conversation, Message, MessageAttachment, PinnedMessage, ReactionSummary } from "@/shared/types/domain.js";
 import type { EncryptedMessagePayload } from "@/crypto/encryptMessage.js";
 import type { EncryptedAttachmentFields } from "@/crypto/attachment.js";
 
@@ -10,6 +10,12 @@ export type PaginatedMessages = {
 
 type PinnedMessageResponse = {
     pinned_message: PinnedMessage | null;
+};
+
+type ReactionResponse = {
+    message_id: number;
+    reaction_version: number;
+    reactions: ReactionSummary[];
 };
 
 type EncryptedForwardPayload = Partial<EncryptedMessagePayload> & {
@@ -161,6 +167,10 @@ export const messageService = {
             content,
             ...(encryption || {}),
         });
+    },
+
+    async toggleReaction(messageId: number, emoji: string): Promise<ReactionResponse> {
+        return request.post<ReactionResponse>(`/messages/${messageId}/reactions`, { emoji });
     },
 
     async forwardMessage(messageId: number, toUserIds: number[]): Promise<Message[]> {

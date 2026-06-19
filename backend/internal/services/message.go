@@ -14,6 +14,7 @@ import (
 	"tester/internal/storage"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var (
@@ -25,10 +26,20 @@ var (
 	ErrMessageInvalidPin                  = errors.New("pin message is outside this conversation or deleted")
 	ErrMessageInvalidEncryption           = errors.New("message encryption payload is invalid")
 	ErrMessageEncryptedForwardUnsupported = errors.New("encrypted messages must be forwarded by the client")
+	ErrMessageInvalidReaction             = errors.New("invalid message reaction")
 )
 
 const MaxMessageContentLength = 1000
 const MaxEncryptedMessagePayloadLength = 128 * 1024
+
+var allowedMessageReactions = map[string]struct{}{
+	"👍":  {},
+	"❤️": {},
+	"😂":  {},
+	"😮":  {},
+	"😢":  {},
+	"🔥":  {},
+}
 
 type MessageDeleteMode string
 
@@ -427,6 +438,47 @@ func LoadMessage(db *gorm.DB, messageID uint) (models.Message, error) {
 		return models.Message{}, err
 	}
 	return *message, nil
+}
+
+func ToggleMessageReaction(db *gorm.DB, userID, messageID uint, emoji string) (models.Message, []models.ReactionSummary, uint64, error) {
+	emoji = strings.TrimSpace(emoji)
+	if _, ok := allowedMessageReactions[emoji]; !ok {
+		return models.Message{}, nil, 0, ErrMessageInvalidReaction
+	}
+
+	message, err := repository.GetMessageByIDForUser(db, messageID, userID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return models.Message{}, nil, 0, ErrMessageForbidden
+	}
+	if err != nil {
+		return models.Message{}, nil, 0, err
+	}
+
+	var reactionVersion uint64
+	var summaries []models.ReactionSummary
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		var lockedMessage models.Message
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedMessage, messageID).Error; err != nil {
+			return err
+		}
+		if err := repository.ToggleMessageReaction(tx, messageID, userID, emoji); err != nil {
+			return err
+		}
+		if err := tx.Model(&models.Message{}).
+			Where("id = ?", messageID).
+			UpdateColumn("reaction_version", gorm.Expr("reaction_version + 1")).Error; err != nil {
+			return err
+		}
+		reactionVersion = lockedMessage.ReactionVersion + 1
+		summaries, err = repository.GetReactionSummaries(tx, messageID, userID)
+		return err
+	}); err != nil {
+		return models.Message{}, nil, 0, err
+	}
+
+	message.ReactionVersion = reactionVersion
+	InvalidateMessageCaches()
+	return *message, summaries, reactionVersion, nil
 }
 
 func GetPinnedMessage(db *gorm.DB, userID, conversationUserID uint) (*models.PinnedMessage, error) {

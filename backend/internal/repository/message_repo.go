@@ -452,12 +452,113 @@ func GetMessagesBetweenPaginated(db *gorm.DB, userID1, userID2 uint, limit int, 
 	if err := hideDeletedMessageRelationsForUser(db, userID1, messagePointers...); err != nil {
 		return nil, err
 	}
+	if err := AttachReactionSummaries(db, messages, userID1); err != nil {
+		return nil, err
+	}
 
 	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
 		messages[i], messages[j] = messages[j], messages[i]
 	}
 
 	return messages, err
+}
+
+func ToggleMessageReaction(db *gorm.DB, messageID, userID uint, emoji string) error {
+	var reaction models.MessageReaction
+	err := db.Where("message_id = ? AND user_id = ?", messageID, userID).First(&reaction).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return db.Create(&models.MessageReaction{
+			MessageID: messageID,
+			UserID:    userID,
+			Emoji:     emoji,
+		}).Error
+	}
+	if err != nil {
+		return err
+	}
+	if reaction.Emoji == emoji {
+		return db.Delete(&reaction).Error
+	}
+	return db.Model(&reaction).Update("emoji", emoji).Error
+}
+
+func GetReactionSummaries(db *gorm.DB, messageID, currentUserID uint) ([]models.ReactionSummary, error) {
+	var reactions []models.MessageReaction
+	if err := db.
+		Select("user_id", "emoji").
+		Where("message_id = ?", messageID).
+		Order("created_at ASC, id ASC").
+		Find(&reactions).Error; err != nil {
+		return nil, err
+	}
+
+	summaries := make([]models.ReactionSummary, 0, len(reactions))
+	indexByEmoji := make(map[string]int, len(reactions))
+	for _, reaction := range reactions {
+		if index, ok := indexByEmoji[reaction.Emoji]; ok {
+			summaries[index].Count++
+			if reaction.UserID == currentUserID {
+				summaries[index].ReactedByMe = true
+			}
+			continue
+		}
+		indexByEmoji[reaction.Emoji] = len(summaries)
+		summaries = append(summaries, models.ReactionSummary{
+			Emoji:       reaction.Emoji,
+			Count:       1,
+			ReactedByMe: reaction.UserID == currentUserID,
+		})
+	}
+	return summaries, nil
+}
+
+func AttachReactionSummaries(db *gorm.DB, messages []models.Message, currentUserID uint) error {
+	if len(messages) == 0 {
+		return nil
+	}
+
+	messageIDs := make([]uint, 0, len(messages))
+	messageIndex := make(map[uint]int, len(messages))
+	for i := range messages {
+		messageIDs = append(messageIDs, messages[i].ID)
+		messageIndex[messages[i].ID] = i
+		messages[i].Reactions = []models.ReactionSummary{}
+	}
+
+	var reactions []models.MessageReaction
+	if err := db.
+		Select("message_id", "user_id", "emoji").
+		Where("message_id IN ?", messageIDs).
+		Order("created_at ASC, id ASC").
+		Find(&reactions).Error; err != nil {
+		return err
+	}
+
+	summaryIndexes := make(map[uint]map[string]int, len(messages))
+	for _, reaction := range reactions {
+		messagePosition, ok := messageIndex[reaction.MessageID]
+		if !ok {
+			continue
+		}
+		if summaryIndexes[reaction.MessageID] == nil {
+			summaryIndexes[reaction.MessageID] = make(map[string]int)
+		}
+		if summaryPosition, ok := summaryIndexes[reaction.MessageID][reaction.Emoji]; ok {
+			summary := &messages[messagePosition].Reactions[summaryPosition]
+			summary.Count++
+			if reaction.UserID == currentUserID {
+				summary.ReactedByMe = true
+			}
+			continue
+		}
+		summaryIndexes[reaction.MessageID][reaction.Emoji] = len(messages[messagePosition].Reactions)
+		messages[messagePosition].Reactions = append(messages[messagePosition].Reactions, models.ReactionSummary{
+			Emoji:       reaction.Emoji,
+			Count:       1,
+			ReactedByMe: reaction.UserID == currentUserID,
+		})
+	}
+	return nil
 }
 
 func hideDeletedMessageRelationsForUser(db *gorm.DB, userID uint, messages ...*models.Message) error {

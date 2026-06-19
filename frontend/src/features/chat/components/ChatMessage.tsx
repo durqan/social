@@ -8,6 +8,8 @@ import { VoiceMessage } from "@/features/chat/components/VoiceMessage.js";
 import { VideoNoteMessage } from "@/features/chat/components/VideoNoteMessage.js";
 import { Icon } from "@/shared/ui/Icon.js";
 import { formatFileSize } from "@/shared/utils/uploadValidation.js";
+import { MessageReactions } from "@/features/chat/components/MessageReactions.js";
+import { ReactionBurst } from "@/features/chat/components/ReactionBurst.js";
 
 const urlPattern = /(https?:\/\/[^\s<]+|www\.[^\s<]+)/gi;
 
@@ -99,6 +101,10 @@ interface ChatMessageProps {
         position: { x: number; y: number };
         source: 'mouse' | 'touch';
     }) => void;
+    onOpenReactionPicker: (message: Message, anchorRect: DOMRect) => void;
+    onToggleReaction: (message: Message, emoji: string) => void;
+    reactionEffect?: { emoji: string; key: number };
+    reactionsEnabled: boolean;
     editingMessageId: number | null;
     editContent: string;
     setEditContent: (content: string) => void;
@@ -127,6 +133,10 @@ const ChatMessageComponent = ({
                                 onSelectMessage,
                                 onReplyPreviewClick,
                                 onOpenContextMenu,
+                                onOpenReactionPicker,
+                                onToggleReaction,
+                                reactionEffect,
+                                reactionsEnabled,
                                 editingMessageId,
                                 editContent,
                                 setEditContent,
@@ -297,6 +307,20 @@ const ChatMessageComponent = ({
                     />
                 )}
                 <div className="relative max-w-[82%] sm:max-w-[70%]">
+                    {reactionsEnabled && !selectionMode && editingMessageId !== message.id && message.id > 0 && message.id < 10000000 && (
+                        <button
+                            type="button"
+                            className={`message-reaction-trigger ${isOwn ? 'message-reaction-trigger--own' : 'message-reaction-trigger--other'}`}
+                            aria-label="Поставить реакцию"
+                            title="Реакция"
+                            onClick={event => {
+                                event.stopPropagation();
+                                onOpenReactionPicker(message, event.currentTarget.getBoundingClientRect());
+                            }}
+                        >
+                            <Icon name="smile" className="h-4 w-4" />
+                        </button>
+                    )}
                     {editingMessageId === message.id ? (
                         <div className="rounded-2xl border border-[var(--app-border)] bg-[var(--app-card)] px-4 py-2">
                             <textarea
@@ -530,7 +554,17 @@ const ChatMessageComponent = ({
                             )}
                         </div>
                     )}
-
+                    {editingMessageId !== message.id && (
+                        <MessageReactions
+                            reactions={message.reactions}
+                            isOwn={isOwn}
+                            disabled={selectionMode || !reactionsEnabled}
+                            onToggle={emoji => onToggleReaction(message, emoji)}
+                        />
+                    )}
+                    {reactionEffect && (
+                        <ReactionBurst emoji={reactionEffect.emoji} effectKey={reactionEffect.key} />
+                    )}
                 </div>
             </div>
             {previewUrl && (

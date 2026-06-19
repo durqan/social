@@ -344,6 +344,58 @@ func broadcastMessageUpdate(ctx context.Context, message models.Message) {
 	}
 }
 
+func broadcastMessageReactionUpdate(ctx context.Context, db *gorm.DB, message models.Message) {
+	for _, userID := range []uint{message.FromID, message.ToID} {
+		eventBytes, visible, err := messageReactionUpdateEvent(db, message, userID)
+		if err != nil {
+			log.Println("Failed to build message reaction event:", err)
+			continue
+		}
+		if !visible {
+			continue
+		}
+		for _, conn := range clients.getAll(userID) {
+			if err := conn.write(ctx, eventBytes); err != nil {
+				log.Println("Failed to send message reaction:", err)
+			}
+		}
+	}
+}
+
+func messageReactionUpdateEvent(db *gorm.DB, message models.Message, userID uint) ([]byte, bool, error) {
+	visibleMessage, err := repository.GetMessageByIDForUser(db, message.ID, userID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	summaries, err := repository.GetReactionSummaries(db, message.ID, userID)
+	if err != nil {
+		return nil, false, err
+	}
+	eventBytes, err := json.Marshal(gin.H{
+		"type": "message:reaction",
+		"payload": gin.H{
+			"message_id":       message.ID,
+			"conversation_id":  participantIDForMessage(message, userID),
+			"reaction_version": visibleMessage.ReactionVersion,
+			"reactions":        summaries,
+		},
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	return eventBytes, true, nil
+}
+
+func participantIDForMessage(message models.Message, userID uint) uint {
+	if message.FromID == userID {
+		return message.ToID
+	}
+	return message.FromID
+}
+
 func broadcastMessagePinned(ctx context.Context, pin *models.PinnedMessage) {
 	if pin == nil {
 		return

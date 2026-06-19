@@ -16,6 +16,7 @@ export type {
   MessageUser,
   PaginatedMessages,
   PinnedMessage,
+  ReactionSummary,
   Post,
   PostUser,
   RegisterPayload,

@@ -672,6 +672,211 @@ button {
         transform-origin: center;
     }
 
+    .message-reaction-trigger {
+        position: absolute;
+        top: 6px;
+        z-index: 4;
+        display: flex;
+        width: 30px;
+        height: 30px;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid rgba(148, 163, 184, 0.22);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.9);
+        color: #64748b;
+        box-shadow: 0 7px 20px rgba(15, 23, 42, 0.11);
+        opacity: 0;
+        transform: translateY(2px) scale(0.92);
+        transition: opacity 150ms ease, transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), background 150ms ease, color 150ms ease;
+        backdrop-filter: blur(12px);
+    }
+
+    .message-reaction-trigger--own {
+        left: -38px;
+    }
+
+    .message-reaction-trigger--other {
+        right: -38px;
+    }
+
+    .group:hover .message-reaction-trigger,
+    .message-reaction-trigger:focus-visible {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+
+    .message-reaction-trigger:hover {
+        background: #ffffff;
+        color: var(--app-accent);
+        transform: translateY(-1px) scale(1.04);
+    }
+
+    @media (max-width: 639px) {
+        .message-reaction-trigger {
+            display: none;
+        }
+    }
+
+    .message-reactions {
+        display: flex;
+        max-width: 100%;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-top: 4px;
+        padding-left: 3px;
+    }
+
+    .message-reactions--own {
+        justify-content: flex-end;
+        padding-right: 3px;
+        padding-left: 0;
+    }
+
+    .message-reaction {
+        display: inline-flex;
+        min-width: 30px;
+        height: 26px;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        padding: 0 8px;
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.74);
+        color: var(--app-text-secondary);
+        box-shadow: 0 3px 10px rgba(15, 23, 42, 0.055);
+        font-size: 13px;
+        line-height: 1;
+        opacity: 0;
+        transform: scale(0.82) translateY(3px);
+        animation: message-reaction-enter 260ms calc(var(--reaction-index, 0) * 28ms) cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        transition: border-color 150ms ease, background 150ms ease, color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+        backdrop-filter: blur(10px);
+    }
+
+    .message-reaction:hover:not(:disabled) {
+        border-color: var(--app-accent-border);
+        background: rgba(255, 255, 255, 0.94);
+        transform: translateY(-1px);
+        box-shadow: 0 5px 14px rgba(15, 23, 42, 0.09);
+    }
+
+    .message-reaction--selected {
+        border-color: var(--app-accent-border);
+        background: var(--app-accent-soft);
+        color: var(--app-accent);
+        box-shadow: 0 4px 14px var(--app-focus-ring);
+    }
+
+    .message-reaction--pulse {
+        animation: message-reaction-pulse 320ms cubic-bezier(0.2, 0.9, 0.2, 1);
+        opacity: 1;
+        transform: none;
+    }
+
+    .message-reaction--exit {
+        pointer-events: none;
+        animation: message-reaction-exit 170ms ease-in forwards;
+    }
+
+    .message-reaction__emoji {
+        font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+        font-size: 15px;
+        filter: saturate(1.04);
+    }
+
+    .message-reaction__count {
+        min-width: 7px;
+        font-size: 11px;
+        font-weight: 650;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .reaction-picker {
+        position: fixed;
+        z-index: 90;
+        display: flex;
+        align-items: center;
+        gap: 3px;
+        padding: 7px;
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.94);
+        box-shadow:
+            0 18px 48px rgba(15, 23, 42, 0.16),
+            0 2px 8px rgba(15, 23, 42, 0.06),
+            inset 0 1px 0 rgba(255, 255, 255, 0.9);
+        transform-origin: center bottom;
+        animation: reaction-picker-in 280ms cubic-bezier(0.16, 1.12, 0.3, 1) both;
+        backdrop-filter: blur(18px) saturate(1.16);
+    }
+
+    .reaction-picker__emoji {
+        display: grid;
+        width: 39px;
+        height: 39px;
+        place-items: center;
+        border: 0;
+        border-radius: 13px;
+        background: transparent;
+        font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+        font-size: 23px;
+        line-height: 1;
+        cursor: pointer;
+        transform: translateY(0) scale(1);
+        transition: transform 170ms cubic-bezier(0.2, 0.8, 0.2, 1), background 150ms ease, box-shadow 150ms ease;
+    }
+
+    .reaction-picker__emoji:hover,
+    .reaction-picker__emoji:focus-visible {
+        outline: none;
+        background: rgba(99, 102, 241, 0.09);
+        box-shadow: 0 7px 18px rgba(99, 102, 241, 0.12);
+        transform: translateY(-3px) scale(1.16);
+    }
+
+    .reaction-picker__emoji--selected {
+        background: var(--app-accent-soft);
+        box-shadow: inset 0 0 0 1px var(--app-accent-border);
+    }
+
+    .reaction-picker__emoji--pop {
+        animation: reaction-emoji-pop 360ms cubic-bezier(0.2, 0.9, 0.2, 1);
+    }
+
+    .reaction-burst {
+        position: absolute;
+        bottom: 8px;
+        left: 50%;
+        z-index: 8;
+        width: 1px;
+        height: 1px;
+        pointer-events: none;
+    }
+
+    .reaction-burst__core,
+    .reaction-burst__particle {
+        position: absolute;
+        font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+        line-height: 1;
+        will-change: transform, opacity;
+    }
+
+    .reaction-burst__core {
+        left: -13px;
+        top: -13px;
+        font-size: 25px;
+        animation: reaction-burst-core 540ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+
+    .reaction-burst__particle {
+        left: -7px;
+        top: -7px;
+        font-size: 13px;
+        animation: reaction-burst-particle 680ms var(--burst-delay, 0ms) cubic-bezier(0.16, 0.84, 0.32, 1) both;
+    }
+
     .video-note-message-bubble {
         border: 0;
         background: transparent;
@@ -1006,6 +1211,85 @@ button {
     }
 }
 
+@keyframes reaction-picker-in {
+    0% {
+        opacity: 0;
+        transform: translateY(5px) scale(0.92);
+    }
+    68% {
+        opacity: 1;
+        transform: translateY(-1px) scale(1.018);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes reaction-emoji-pop {
+    0% { transform: translateY(-3px) scale(1.12); }
+    45% { transform: translateY(-7px) scale(1.34); }
+    75% { transform: translateY(0) scale(0.94); }
+    100% { transform: translateY(-2px) scale(1.08); }
+}
+
+@keyframes message-reaction-enter {
+    72% {
+        opacity: 1;
+        transform: scale(1.055) translateY(-1px);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+@keyframes message-reaction-pulse {
+    0%, 100% { transform: scale(1); }
+    45% { transform: scale(1.1); }
+    72% { transform: scale(0.98); }
+}
+
+@keyframes message-reaction-exit {
+    to {
+        opacity: 0;
+        transform: scale(0.82) translateY(2px);
+    }
+}
+
+@keyframes reaction-burst-core {
+    0% {
+        opacity: 0;
+        transform: translateY(6px) scale(0.38) rotate(-8deg);
+    }
+    35% {
+        opacity: 1;
+        transform: translateY(-8px) scale(1.22) rotate(5deg);
+    }
+    68% {
+        opacity: 0.94;
+        transform: translateY(-17px) scale(0.96) rotate(0);
+    }
+    100% {
+        opacity: 0;
+        transform: translateY(-26px) scale(0.72);
+    }
+}
+
+@keyframes reaction-burst-particle {
+    0% {
+        opacity: 0;
+        transform: translate(0, 0) scale(0.45) rotate(0);
+    }
+    24% {
+        opacity: 1;
+    }
+    100% {
+        opacity: 0;
+        transform: translate(var(--burst-x), var(--burst-y)) scale(0.75) rotate(var(--burst-rotate));
+    }
+}
+
 @keyframes video-note-orbit-spin {
     to {
         transform: rotate(360deg);
@@ -1047,6 +1331,26 @@ button {
 }
 
 @media (prefers-reduced-motion: reduce) {
+    .reaction-picker,
+    .reaction-picker__emoji--pop,
+    .message-reaction,
+    .message-reaction--pulse,
+    .message-reaction--exit {
+        animation: none;
+        opacity: 1;
+        transform: none;
+    }
+
+    .reaction-burst {
+        display: none;
+    }
+
+    .reaction-picker__emoji,
+    .message-reaction-trigger,
+    .message-reaction {
+        transition-duration: 1ms;
+    }
+
     .video-note-orbit,
     .video-note-orbit__media,
     .video-note-orbit__control,

@@ -14,6 +14,7 @@ export {
     type MessageErrorEvent,
     type MessageEvent,
     type MessagePinnedEvent,
+    type MessageReactionEvent,
     type MessageUnpinnedEvent,
     type MessageUpdatedEvent,
     type PresenceUpdateEvent,

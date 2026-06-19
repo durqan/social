@@ -15,6 +15,7 @@ func Migrate(database *gorm.DB) error {
 		&models.CommentLike{},
 		&models.Comment{},
 		&models.Message{},
+		&models.MessageReaction{},
 		&models.MessageUserDeletion{},
 		&models.MessageAttachment{},
 		&models.EncryptedKeyBackup{},

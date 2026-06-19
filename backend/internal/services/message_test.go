@@ -250,6 +250,164 @@ func TestDeleteMessageForEveryoneAllowsOnlySender(t *testing.T) {
 	assertVisibleMessageIDs(t, db, 2, 1, nil)
 }
 
+func TestToggleMessageReactionCreatesReplacesAndRemovesReaction(t *testing.T) {
+	db := newMessageServiceTestDB(t)
+	seedAcceptedFriendship(t, db, 1, 2)
+
+	message, err := SendMessage(db, 1, 2, "hello", nil, nil, MessageEncryptionInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, summaries, _, err := ToggleMessageReaction(db, 1, message.ID, "👍")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 1 || summaries[0].Emoji != "👍" || summaries[0].Count != 1 || !summaries[0].ReactedByMe {
+		t.Fatalf("unexpected created reaction summaries: %+v", summaries)
+	}
+
+	_, summaries, _, err = ToggleMessageReaction(db, 1, message.ID, "🔥")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 1 || summaries[0].Emoji != "🔥" || summaries[0].Count != 1 || !summaries[0].ReactedByMe {
+		t.Fatalf("unexpected replaced reaction summaries: %+v", summaries)
+	}
+
+	_, summaries, _, err = ToggleMessageReaction(db, 1, message.ID, "🔥")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 0 {
+		t.Fatalf("reaction was not removed: %+v", summaries)
+	}
+}
+
+func TestToggleMessageReactionRejectsOutsiderAndUnsupportedEmoji(t *testing.T) {
+	db := newMessageServiceTestDB(t)
+	seedAcceptedFriendship(t, db, 1, 2)
+	seedUser(t, db, 3)
+
+	message, err := SendMessage(db, 1, 2, "hello", nil, nil, MessageEncryptionInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, _, err := ToggleMessageReaction(db, 3, message.ID, "👍"); !errors.Is(err, ErrMessageForbidden) {
+		t.Fatalf("outsider reaction error = %v, want %v", err, ErrMessageForbidden)
+	}
+	if _, _, _, err := ToggleMessageReaction(db, 1, message.ID, "💣"); !errors.Is(err, ErrMessageInvalidReaction) {
+		t.Fatalf("unsupported reaction error = %v, want %v", err, ErrMessageInvalidReaction)
+	}
+
+	if _, err := DeleteMessageForUser(db, 2, message.ID, MessageDeleteForMe); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := ToggleMessageReaction(db, 2, message.ID, "👍"); !errors.Is(err, ErrMessageForbidden) {
+		t.Fatalf("hidden message reaction error = %v, want %v", err, ErrMessageForbidden)
+	}
+}
+
+func TestMessageReactionSummariesArePersonalizedForEachParticipant(t *testing.T) {
+	db := newMessageServiceTestDB(t)
+	seedAcceptedFriendship(t, db, 1, 2)
+
+	message, err := SendMessage(db, 1, 2, "hello", nil, nil, MessageEncryptionInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, version, err := ToggleMessageReaction(db, 1, message.ID, "❤️")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if version != 1 {
+		t.Fatalf("reaction version after user A add = %d, want 1", version)
+	}
+	assertReactionSummary(t, db, message.ID, 1, "❤️", 1, true)
+	assertReactionSummary(t, db, message.ID, 2, "❤️", 1, false)
+
+	_, _, version, err = ToggleMessageReaction(db, 2, message.ID, "❤️")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if version != 2 {
+		t.Fatalf("reaction version after user B add = %d, want 2", version)
+	}
+	assertReactionSummary(t, db, message.ID, 1, "❤️", 2, true)
+	assertReactionSummary(t, db, message.ID, 2, "❤️", 2, true)
+
+	_, _, version, err = ToggleMessageReaction(db, 1, message.ID, "❤️")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if version != 3 {
+		t.Fatalf("reaction version after user A remove = %d, want 3", version)
+	}
+	assertReactionSummary(t, db, message.ID, 1, "❤️", 1, false)
+	assertReactionSummary(t, db, message.ID, 2, "❤️", 1, true)
+
+	_, _, version, err = ToggleMessageReaction(db, 2, message.ID, "😂")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if version != 4 {
+		t.Fatalf("reaction version after user B switch = %d, want 4", version)
+	}
+	assertReactionSummary(t, db, message.ID, 1, "😂", 1, false)
+	assertReactionSummary(t, db, message.ID, 2, "😂", 1, true)
+
+	userAMessages, err := repository.GetMessagesBetweenPaginated(db, 1, 2, 20, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	userBMessages, err := repository.GetMessagesBetweenPaginated(db, 2, 1, 20, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(userAMessages) != 1 || len(userBMessages) != 1 {
+		t.Fatalf("history lengths = A:%d B:%d, want 1 each", len(userAMessages), len(userBMessages))
+	}
+	assertSingleReaction(t, userAMessages[0].Reactions, "😂", 1, false)
+	assertSingleReaction(t, userBMessages[0].Reactions, "😂", 1, true)
+	if userAMessages[0].ReactionVersion != 4 || userBMessages[0].ReactionVersion != 4 {
+		t.Fatalf(
+			"history reaction versions = A:%d B:%d, want 4",
+			userAMessages[0].ReactionVersion,
+			userBMessages[0].ReactionVersion,
+		)
+	}
+}
+
+func assertReactionSummary(t *testing.T, db *gorm.DB, messageID, userID uint, emoji string, count int, reactedByMe bool) {
+	t.Helper()
+
+	summaries, err := repository.GetReactionSummaries(db, messageID, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertSingleReaction(t, summaries, emoji, count, reactedByMe)
+}
+
+func assertSingleReaction(t *testing.T, summaries []models.ReactionSummary, emoji string, count int, reactedByMe bool) {
+	t.Helper()
+
+	if len(summaries) != 1 {
+		t.Fatalf("reaction summaries = %+v, want one summary", summaries)
+	}
+	summary := summaries[0]
+	if summary.Emoji != emoji || summary.Count != count || summary.ReactedByMe != reactedByMe {
+		t.Fatalf(
+			"reaction summary = %+v, want emoji=%s count=%d reactedByMe=%v",
+			summary,
+			emoji,
+			count,
+			reactedByMe,
+		)
+	}
+}
+
 func TestDeleteMessageForMeHidesOnlyCurrentUser(t *testing.T) {
 	db := newMessageServiceTestDB(t)
 	seedAcceptedFriendship(t, db, 1, 2)
@@ -412,6 +570,7 @@ func newMessageServiceTestDB(t *testing.T) *gorm.DB {
 		&models.User{},
 		&models.Friendship{},
 		&models.Message{},
+		&models.MessageReaction{},
 		&models.MessageUserDeletion{},
 		&models.MessageAttachment{},
 		&models.ConversationPin{},

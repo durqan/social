@@ -15,6 +15,7 @@ export type {
     PaginatedMessages,
     PasswordChangeData,
     PinnedMessage,
+    ReactionSummary,
     Post,
     PostUser,
     RegisterPayload,

@@ -15,6 +15,7 @@ type Message struct {
 	Ciphertext             string              `json:"ciphertext,omitempty" gorm:"type:text"`
 	Nonce                  string              `json:"nonce,omitempty" gorm:"type:text"`
 	IsRead                 bool                `json:"is_read" gorm:"default:false;index:idx_messages_from_to_unread,priority:3;index:idx_messages_to_unread_active,priority:2"`
+	ReactionVersion        uint64              `json:"reaction_version" gorm:"not null;default:0"`
 	ReplyToMessageID       *uint               `json:"reply_to_message_id" gorm:"index"`
 	ForwardedFromMessageID *uint               `json:"forwarded_from_message_id" gorm:"index"`
 	ForwardedFromUserID    *uint               `json:"forwarded_from_user_id" gorm:"index"`
@@ -28,4 +29,5 @@ type Message struct {
 	ForwardedFromMessage   *Message            `json:"forwarded_from_message" gorm:"foreignKey:ForwardedFromMessageID;references:ID"`
 	ForwardedFromUser      *User               `json:"forwarded_from_user" gorm:"foreignKey:ForwardedFromUserID;references:ID"`
 	Attachments            []MessageAttachment `json:"attachments,omitempty" gorm:"foreignKey:MessageID;constraint:OnDelete:CASCADE;"`
+	Reactions              []ReactionSummary   `json:"reactions,omitempty" gorm:"-"`
 }

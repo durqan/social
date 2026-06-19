@@ -124,6 +124,12 @@ export interface MessageUser {
   created_at?: string;
 }
 
+export interface ReactionSummary {
+  emoji: string;
+  count: number;
+  reacted_by_me: boolean;
+}
+
 export interface Message {
   id: number;
   from_id: number;
@@ -136,6 +142,7 @@ export interface Message {
   created_at: string;
   updated_at?: string;
   is_read: boolean;
+  reaction_version?: number;
   reply_to_message_id?: number | null;
   forwarded_from_message_id?: number | null;
   forwarded_from_user_id?: number | null;
@@ -145,6 +152,7 @@ export interface Message {
   forwarded_from_message?: Message | null;
   forwarded_from_user?: MessageUser | null;
   attachments?: MessageAttachment[];
+  reactions?: ReactionSummary[];
 }
 
 export interface PinnedMessage {
