@@ -3,6 +3,7 @@ import { StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AppLifecycleProvider } from './src/context/AppLifecycleContext';
+import { PostAuthBootstrapManager } from './src/components/PostAuthBootstrapManager';
 import { AuthProvider } from './src/context/AuthContext';
 import { CallProvider } from './src/context/CallContext';
 import { NotificationsProvider } from './src/context/NotificationsContext';
@@ -21,6 +22,7 @@ function AppContent() {
       />
       <AuthProvider>
         <AppLifecycleProvider>
+          <PostAuthBootstrapManager />
           <UnreadProvider>
             <NotificationsProvider>
               <CallProvider>

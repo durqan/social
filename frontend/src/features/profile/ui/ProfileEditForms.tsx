@@ -55,7 +55,7 @@ export function ProfileEditTabs({ activeTab, onChange }: TabsProps) {
                     Оформление
                 </button>
                 <button onClick={() => onChange('e2ee')} className={tabClass('e2ee')}>
-                    Шифрование
+                    Безопасность
                 </button>
             </div>
         </div>

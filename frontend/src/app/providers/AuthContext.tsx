@@ -3,9 +3,11 @@ import { authService, type LoginData, type RegisterData } from "@/features/auth/
 import { userService } from "@/shared/api/userService.js";
 import type { User } from "@/shared/types/domain.js";
 import { useWebSocket } from "@/app/providers/WebSocketContext.js";
-import { e2eeService } from "@/shared/api/e2eeService.js";
-import { restoreE2EEFromBackup } from "@/crypto/keyBackup.js";
-import { getLocalE2EEKeyBundle } from "@/crypto/masterKey.js";
+import {
+    resetPostAuthBootstrapState,
+    runPostAuthBootstrap,
+} from "@/features/bootstrap/postAuthBootstrap.js";
+import { detachCurrentPushSubscription } from "@/features/notifications/api/pushNotifications.js";
 
 type AuthContextValue = {
     currentUser: User | null;
@@ -28,6 +30,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             const user = await userService.getProfile();
             setCurrentUser(user);
             wsService.connect();
+            if (user.id) {
+                void runPostAuthBootstrap(user.id);
+            }
             return user;
         } catch {
             wsService.disconnect();
@@ -44,7 +49,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         const response = await authService.login(data);
         setCurrentUser(response.user);
         if (response.user.id) {
-            void restoreLocalE2EEKey(response.user.id, data.password);
+            void runPostAuthBootstrap(response.user.id, { e2eeSecret: data.password });
         }
         wsService.connect();
         return response.user;
@@ -53,12 +58,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const register = useCallback(async (data: RegisterData) => {
         const response = await authService.register(data);
         setCurrentUser(response.user);
+        if (response.user.id) {
+            void runPostAuthBootstrap(response.user.id, { e2eeSecret: data.password });
+        }
         wsService.connect();
         return response.user;
     }, [wsService]);
 
     const logout = useCallback(async () => {
+        await resetPostAuthBootstrapState();
         try {
+            await detachCurrentPushSubscription().catch(error => {
+                console.warn('Push subscription detach failed', error);
+            });
             await authService.logout();
         } finally {
             wsService.disconnect();
@@ -77,21 +89,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
-
-async function restoreLocalE2EEKey(userId: number, password: string) {
-    try {
-        if (await getLocalE2EEKeyBundle(userId)) {
-            return;
-        }
-
-        const backup = await e2eeService.getBackup();
-        if (backup.enabled && backup.encrypted_master_key) {
-            await restoreE2EEFromBackup(userId, password, backup.encrypted_master_key);
-        }
-    } catch {
-        console.warn('E2EE key restore failed');
-    }
-}
 
 export const useAuth = () => {
     const context = useContext(AuthContext);

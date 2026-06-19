@@ -91,9 +91,15 @@ func (r *Repository) IsNotificationRead(id uint) (bool, error) {
 }
 
 func (r *Repository) UpsertPushSubscription(subscription *models.PushSubscription) error {
+	now := time.Now()
 	return r.db.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "endpoint"}},
-		DoUpdates: clause.AssignmentColumns([]string{"user_id", "p256dh", "auth"}),
+		Columns: []clause.Column{{Name: "endpoint"}},
+		DoUpdates: clause.Assignments(map[string]interface{}{
+			"user_id":    subscription.UserID,
+			"p256dh":     subscription.P256DH,
+			"auth":       subscription.Auth,
+			"updated_at": now,
+		}),
 	}).Create(subscription).Error
 }
 
@@ -112,6 +118,12 @@ func (r *Repository) FindPushSubscriptionsByUserID(userID uint) ([]models.PushSu
 
 func (r *Repository) DeletePushSubscription(id uint) error {
 	return r.db.Delete(&models.PushSubscription{}, id).Error
+}
+
+func (r *Repository) DeletePushSubscriptionForUser(userID uint, endpoint string) error {
+	return r.db.
+		Where("user_id = ? AND endpoint = ?", userID, endpoint).
+		Delete(&models.PushSubscription{}).Error
 }
 
 func (r *Repository) UpsertMobilePushToken(token *models.MobilePushToken) error {

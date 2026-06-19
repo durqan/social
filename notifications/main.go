@@ -14,7 +14,6 @@ import (
 	"notifications/handlers"
 	"notifications/hub"
 	"notifications/middleware"
-	"notifications/models"
 	pushsvc "notifications/push"
 	"notifications/rabbit"
 	"notifications/repository"
@@ -33,8 +32,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	err = newDB.AutoMigrate(&models.Notification{}, &models.PushSubscription{}, &models.MobilePushToken{})
-	if err != nil {
+	if err = db.Migrate(newDB); err != nil {
 		log.Fatal(err)
 	}
 
@@ -95,6 +93,7 @@ func main() {
 	protected.PATCH("/notifications/read-matching", h.MarkMatchingAsRead)
 	protected.PATCH("/notifications/:id/read", h.MarkAsRead)
 	protected.POST("/push/subscribe", h.SubscribePush)
+	protected.DELETE("/push/subscribe", h.UnsubscribePush)
 	protected.POST("/push/mobile-token", middleware.RateLimit(20, time.Hour), h.RegisterMobilePushToken)
 	protected.DELETE("/push/mobile-token", middleware.RateLimit(20, time.Hour), h.RevokeMobilePushToken)
 

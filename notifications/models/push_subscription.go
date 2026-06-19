@@ -9,4 +9,5 @@ type PushSubscription struct {
 	P256DH    string    `json:"p256dh" gorm:"column:p256dh;not null"`
 	Auth      string    `json:"auth" gorm:"not null"`
 	CreatedAt time.Time `json:"created_at" gorm:"index"`
+	UpdatedAt time.Time `json:"updated_at"`
 }

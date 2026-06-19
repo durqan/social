@@ -18,7 +18,6 @@ func Migrate(database *gorm.DB) error {
 		&models.MessageReaction{},
 		&models.MessageUserDeletion{},
 		&models.MessageAttachment{},
-		&models.EncryptedKeyBackup{},
 		&models.ConversationPin{},
 		&models.PinnedMessage{},
 		&models.CallLog{},
@@ -29,7 +28,42 @@ func Migrate(database *gorm.DB) error {
 		return err
 	}
 
+	if err := migrateEncryptedKeyBackups(database); err != nil {
+		return err
+	}
+
 	return normalizeStoredUploadKeys(database)
+}
+
+func migrateEncryptedKeyBackups(database *gorm.DB) error {
+	if !database.Migrator().HasTable(&models.EncryptedKeyBackup{}) {
+		return database.AutoMigrate(&models.EncryptedKeyBackup{})
+	}
+
+	var backups []models.EncryptedKeyBackup
+	if err := database.Select("id", "user_id").Order("user_id, id desc").Find(&backups).Error; err != nil {
+		return err
+	}
+
+	seenUsers := make(map[uint]struct{}, len(backups))
+	duplicateIDs := make([]uint, 0)
+	for _, backup := range backups {
+		if _, exists := seenUsers[backup.UserID]; exists {
+			duplicateIDs = append(duplicateIDs, backup.ID)
+			continue
+		}
+		seenUsers[backup.UserID] = struct{}{}
+	}
+	if len(duplicateIDs) > 0 {
+		if err := database.Where("id IN ?", duplicateIDs).Delete(&models.EncryptedKeyBackup{}).Error; err != nil {
+			return err
+		}
+	}
+
+	if database.Migrator().HasIndex(&models.EncryptedKeyBackup{}, "ux_e2ee_backup_user") {
+		return nil
+	}
+	return database.Migrator().CreateIndex(&models.EncryptedKeyBackup{}, "ux_e2ee_backup_user")
 }
 
 func normalizeStoredUploadKeys(database *gorm.DB) error {

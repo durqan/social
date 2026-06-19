@@ -66,6 +66,13 @@ func DedupeKey(req dto.CreateNotificationReq) string {
 }
 
 func (s *Service) SavePushSubscription(req *dto.PushSubscriptionReq) error {
+	req.Endpoint = strings.TrimSpace(req.Endpoint)
+	req.Keys.P256DH = strings.TrimSpace(req.Keys.P256DH)
+	req.Keys.Auth = strings.TrimSpace(req.Keys.Auth)
+	if req.UserID == 0 || req.Endpoint == "" || req.Keys.P256DH == "" || req.Keys.Auth == "" {
+		return errors.New("invalid push subscription")
+	}
+
 	subscription := &models.PushSubscription{
 		UserID:   req.UserID,
 		Endpoint: req.Endpoint,
@@ -74,6 +81,14 @@ func (s *Service) SavePushSubscription(req *dto.PushSubscriptionReq) error {
 	}
 
 	return s.repo.UpsertPushSubscription(subscription)
+}
+
+func (s *Service) DeletePushSubscription(userID uint, endpoint string) error {
+	endpoint = strings.TrimSpace(endpoint)
+	if userID == 0 || endpoint == "" {
+		return errors.New("invalid push subscription")
+	}
+	return s.repo.DeletePushSubscriptionForUser(userID, endpoint)
 }
 
 func (s *Service) SaveMobilePushToken(req *dto.MobilePushTokenReq) error {

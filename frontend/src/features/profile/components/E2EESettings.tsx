@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } fr
 
 import { e2eeService } from "@/shared/api/e2eeService.js";
 import { clearLocalE2EEKeyBundle, getLocalE2EEKeyBundle } from "@/crypto/masterKey.js";
-import { enableE2EEForUser, restoreE2EEFromBackup } from "@/crypto/keyBackup.js";
 import { useAppDialog } from "@/app/providers/AppDialogProvider.js";
+import { ensureE2EEReady } from "@/features/bootstrap/postAuthBootstrap.js";
+import { usePostAuthBootstrap } from "@/features/bootstrap/usePostAuthBootstrap.js";
 
 type E2EESettingsProps = {
     userId?: number;
@@ -16,6 +17,7 @@ type E2EEMessage = {
 
 export function E2EESettings({ userId }: E2EESettingsProps) {
     const dialog = useAppDialog();
+    const bootstrap = usePostAuthBootstrap();
     const [enabled, setEnabled] = useState(false);
     const [localKeyReady, setLocalKeyReady] = useState(false);
     const [password, setPassword] = useState('');
@@ -61,8 +63,10 @@ export function E2EESettings({ userId }: E2EESettingsProps) {
         setSubmitting(true);
         setMessage(null);
         try {
-            const encryptedBackup = await enableE2EEForUser(userId, password);
-            await e2eeService.enable(encryptedBackup);
+            const status = await ensureE2EEReady(userId, password);
+            if (status !== 'ready') {
+                throw new Error('E2EE bootstrap requires a secret');
+            }
             setPassword('');
             setMessage({ type: 'success', text: 'Сквозное шифрование включено' });
             await refreshStatus();
@@ -83,11 +87,10 @@ export function E2EESettings({ userId }: E2EESettingsProps) {
         setSubmitting(true);
         setMessage(null);
         try {
-            const backup = await e2eeService.getBackup();
-            if (!backup.enabled || !backup.encrypted_master_key) {
-                throw new Error('E2EE backup is missing');
+            const status = await ensureE2EEReady(userId, password);
+            if (status !== 'ready') {
+                throw new Error('E2EE bootstrap requires a secret');
             }
-            await restoreE2EEFromBackup(userId, password, backup.encrypted_master_key);
             setPassword('');
             setMessage({ type: 'success', text: 'E2EE-ключ восстановлен на этом устройстве' });
             await refreshStatus();
@@ -131,6 +134,7 @@ export function E2EESettings({ userId }: E2EESettingsProps) {
 
     const action = enabled && !localKeyReady ? handleRestore : handleEnable;
     const buttonText = enabled && !localKeyReady ? 'Восстановить ключ' : 'Включить E2EE';
+    const bootstrapStatus = bootstrap.userId === userId ? bootstrap.e2ee.status : 'idle';
 
     return (
         <div className="space-y-4">
@@ -139,6 +143,19 @@ export function E2EESettings({ userId }: E2EESettingsProps) {
                 <p className={enabled ? 'mt-1 text-sm text-emerald-700' : 'mt-1 text-sm text-gray-500'}>
                     Статус: {loading ? 'Загрузка...' : enabled ? 'Включено' : 'Выключено'}
                 </p>
+                {bootstrapStatus === 'checking' && (
+                    <p className="mt-1 text-xs text-gray-500">Автоматическая настройка выполняется...</p>
+                )}
+                {bootstrapStatus === 'error' && (
+                    <p className="mt-1 text-xs text-red-600">
+                        Автоматическая настройка завершилась ошибкой. Повторите попытку ниже.
+                    </p>
+                )}
+                {bootstrapStatus === 'needs-secret' && (
+                    <p className="mt-1 text-xs text-amber-600">
+                        Для безопасного завершения нужен пароль аккаунта. Ключи не будут заменены автоматически.
+                    </p>
+                )}
                 {enabled && (
                     <p className={localKeyReady ? 'mt-1 text-xs text-emerald-600' : 'mt-1 text-xs text-amber-600'}>
                         {localKeyReady ? 'Локальный ключ доступен на этом устройстве.' : 'Для чтения E2EE-сообщений восстановите ключ паролем аккаунта.'}
@@ -180,6 +197,28 @@ export function E2EESettings({ userId }: E2EESettingsProps) {
                         {submitting ? 'Обработка...' : buttonText}
                     </button>
                 </form>
+            )}
+
+            {(bootstrapStatus === 'error' || bootstrapStatus === 'needs-secret') && (
+                <button
+                    type="button"
+                    onClick={() => {
+                        if (userId) {
+                            void ensureE2EEReady(userId)
+                                .then(refreshStatus)
+                                .catch(() => {
+                                    setMessage({
+                                        type: 'error',
+                                        text: 'Не удалось подготовить шифрование. Повторите попытку позже.',
+                                    });
+                                });
+                        }
+                    }}
+                    disabled={submitting || loading}
+                    className="app-button-secondary rounded-xl px-6 py-2 text-sm font-semibold disabled:opacity-50"
+                >
+                    Повторить настройку
+                </button>
             )}
 
             {enabled && (

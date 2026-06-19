@@ -11,6 +11,10 @@ type PushSubscriptionReq struct {
 	Keys     PushSubscriptionKeys `json:"keys" binding:"required"`
 }
 
+type DeletePushSubscriptionReq struct {
+	Endpoint string `json:"endpoint" binding:"required"`
+}
+
 type MobilePushTokenReq struct {
 	UserID   uint   `json:"user_id"`
 	Provider string `json:"provider" binding:"required"`

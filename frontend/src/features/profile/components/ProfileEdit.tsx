@@ -18,6 +18,7 @@ import { ThemeSettings } from "@/app/themes/ThemeSettings.js";
 import { E2EESettings } from "@/features/profile/components/E2EESettings.js";
 import { e2eeService } from "@/shared/api/e2eeService.js";
 import { reencryptBackupWithPassword } from "@/crypto/keyBackup.js";
+import { NotificationSettings } from "@/features/profile/components/NotificationSettings.js";
 
 const initialPasswordData: PasswordChangeData = {
     oldPassword: '',
@@ -203,7 +204,10 @@ function ProfileEdit() {
                     )}
 
                     {activeTab === 'e2ee' && (
-                        <E2EESettings userId={user.id} />
+                        <div className="space-y-5">
+                            <E2EESettings userId={user.id} />
+                            <NotificationSettings />
+                        </div>
                     )}
                 </div>
             </div>

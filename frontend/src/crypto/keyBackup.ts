@@ -109,6 +109,10 @@ export async function reencryptBackupWithPassword(userId: number, newPassword: s
     return createEncryptedMasterKeyBackup(bundle, newPassword);
 }
 
+export function getE2EEBackupPublicKey(value: string): string {
+    return parseEncryptedMasterKeyBackup(value).publicKey;
+}
+
 function parseEncryptedMasterKeyBackup(value: string): EncryptedMasterKeyBackup {
     const parsed = JSON.parse(value) as Partial<EncryptedMasterKeyBackup>;
     if (

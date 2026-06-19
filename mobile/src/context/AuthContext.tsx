@@ -9,15 +9,15 @@ import React, {
 } from 'react';
 
 import { authApi } from '../api/auth';
-import { e2eeApi } from '../api/e2ee';
 import { getApiErrorMessage } from '../api/http';
 import type { LoginPayload, RegisterPayload, User } from '../api/types';
 import { userApi } from '../api/users';
 import { chatSocket } from '../api/ws';
-import { restoreE2EEFromBackup } from '../crypto/keyBackup';
-import { getLocalE2EEKeyBundle } from '../crypto/masterKey';
+import {
+  resetPostAuthBootstrap,
+  runPostAuthBootstrap,
+} from '../bootstrap/postAuthBootstrap';
 import { revokeRegisteredPushToken } from '../notifications/pushNotifications';
-import { warnDev } from '../utils/logger';
 
 type AuthContextValue = {
   user: User | null;
@@ -41,6 +41,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshUser = useCallback(async () => {
     const profile = await userApi.getProfile();
     setUser(profile);
+    if (profile.id) {
+      runPostAuthBootstrap(profile.id).catch(() => undefined);
+    }
   }, []);
 
   useEffect(() => {
@@ -51,6 +54,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .then(profile => {
         if (mounted) {
           setUser(profile);
+          if (profile.id) {
+            runPostAuthBootstrap(profile.id).catch(() => undefined);
+          }
         }
       })
       .catch(() => {
@@ -75,9 +81,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const response = await authApi.login(payload);
       setUser(response.user);
       if (response.user.id) {
-        restoreLocalE2EEKey(response.user.id, payload.password).catch(() =>
-          undefined,
-        );
+        runPostAuthBootstrap(response.user.id, {
+          e2eeSecret: payload.password,
+        }).catch(() => undefined);
       }
     } catch (error) {
       const message = getApiErrorMessage(error);
@@ -91,6 +97,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const response = await authApi.register(payload);
       setUser(response.user);
+      if (response.user.id) {
+        runPostAuthBootstrap(response.user.id, {
+          e2eeSecret: payload.password,
+        }).catch(() => undefined);
+      }
     } catch (error) {
       const message = getApiErrorMessage(error);
       setAuthError(message);
@@ -100,6 +111,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     chatSocket.disconnect();
+    await resetPostAuthBootstrap();
     await revokeRegisteredPushToken().catch(() => undefined);
     try {
       await authApi.logout();
@@ -148,23 +160,4 @@ export function useAuth() {
     throw new Error('useAuth must be used inside AuthProvider');
   }
   return value;
-}
-
-async function restoreLocalE2EEKey(userId: number, password: string) {
-  try {
-    if (await getLocalE2EEKeyBundle(userId)) {
-      return;
-    }
-
-    const backup = await e2eeApi.getBackup();
-    if (backup.enabled && backup.encrypted_master_key) {
-      await restoreE2EEFromBackup(
-        userId,
-        password,
-        backup.encrypted_master_key,
-      );
-    }
-  } catch (error) {
-    warnDev('[SocialMobile] E2EE key restore failed', error);
-  }
 }

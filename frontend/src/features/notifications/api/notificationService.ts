@@ -76,4 +76,14 @@ export const notificationService = {
             body: JSON.stringify(subscription),
         });
     },
+
+    async unsubscribePush(endpoint: string): Promise<void> {
+        await requestNotifications<{ status: string }>('/push/subscribe', {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ endpoint }),
+        });
+    },
 };

@@ -192,6 +192,119 @@ func TestMessagePushTagUsesStableConversationTag(t *testing.T) {
 	}
 }
 
+func TestSavePushSubscriptionUpsertsByEndpoint(t *testing.T) {
+	db := newNotificationTestDB(t)
+	service := NewService(repository.NewRepository(db), hub.NewHub(), nil)
+
+	first := &dto.PushSubscriptionReq{
+		UserID:   10,
+		Endpoint: "https://push.example/subscription",
+		Keys: dto.PushSubscriptionKeys{
+			P256DH: "first-key",
+			Auth:   "first-auth",
+		},
+	}
+	if err := service.SavePushSubscription(first); err != nil {
+		t.Fatalf("first SavePushSubscription failed: %v", err)
+	}
+
+	second := &dto.PushSubscriptionReq{
+		UserID:   11,
+		Endpoint: first.Endpoint,
+		Keys: dto.PushSubscriptionKeys{
+			P256DH: "updated-key",
+			Auth:   "updated-auth",
+		},
+	}
+	if err := service.SavePushSubscription(second); err != nil {
+		t.Fatalf("second SavePushSubscription failed: %v", err)
+	}
+
+	var subscriptions []models.PushSubscription
+	if err := db.Find(&subscriptions).Error; err != nil {
+		t.Fatalf("load subscriptions: %v", err)
+	}
+	if len(subscriptions) != 1 {
+		t.Fatalf("subscriptions count = %d, want 1", len(subscriptions))
+	}
+	if subscriptions[0].UserID != 11 || subscriptions[0].P256DH != "updated-key" || subscriptions[0].Auth != "updated-auth" {
+		t.Fatalf("subscription was not updated: %+v", subscriptions[0])
+	}
+}
+
+func TestDeletePushSubscriptionOnlyDeletesCurrentUsersEndpoint(t *testing.T) {
+	db := newNotificationTestDB(t)
+	service := NewService(repository.NewRepository(db), hub.NewHub(), nil)
+	req := &dto.PushSubscriptionReq{
+		UserID:   10,
+		Endpoint: "https://push.example/subscription",
+		Keys: dto.PushSubscriptionKeys{
+			P256DH: "key",
+			Auth:   "auth",
+		},
+	}
+	if err := service.SavePushSubscription(req); err != nil {
+		t.Fatalf("SavePushSubscription failed: %v", err)
+	}
+
+	if err := service.DeletePushSubscription(11, req.Endpoint); err != nil {
+		t.Fatalf("foreign DeletePushSubscription failed: %v", err)
+	}
+	var count int64
+	if err := db.Model(&models.PushSubscription{}).Count(&count).Error; err != nil {
+		t.Fatalf("count subscriptions: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("foreign user deleted subscription, count = %d", count)
+	}
+
+	if err := service.DeletePushSubscription(10, req.Endpoint); err != nil {
+		t.Fatalf("owner DeletePushSubscription failed: %v", err)
+	}
+	if err := db.Model(&models.PushSubscription{}).Count(&count).Error; err != nil {
+		t.Fatalf("count subscriptions after owner delete: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("owner subscription count = %d, want 0", count)
+	}
+}
+
+func TestSaveMobilePushTokenUpsertsAndReactivatesToken(t *testing.T) {
+	db := newNotificationTestDB(t)
+	service := NewService(repository.NewRepository(db), hub.NewHub(), nil)
+
+	first := &dto.MobilePushTokenReq{
+		UserID:   10,
+		Provider: "fcm",
+		Platform: "android",
+		Token:    "same-device-token",
+	}
+	if err := service.SaveMobilePushToken(first); err != nil {
+		t.Fatalf("first SaveMobilePushToken failed: %v", err)
+	}
+	if err := service.RevokeMobilePushToken(10, *first); err != nil {
+		t.Fatalf("RevokeMobilePushToken failed: %v", err)
+	}
+
+	second := &dto.MobilePushTokenReq{
+		UserID:   11,
+		Provider: "fcm",
+		Platform: "android",
+		Token:    first.Token,
+	}
+	if err := service.SaveMobilePushToken(second); err != nil {
+		t.Fatalf("second SaveMobilePushToken failed: %v", err)
+	}
+
+	var tokens []models.MobilePushToken
+	if err := db.Find(&tokens).Error; err != nil {
+		t.Fatalf("load mobile tokens: %v", err)
+	}
+	if len(tokens) != 1 || tokens[0].UserID != 11 || tokens[0].RevokedAt != nil {
+		t.Fatalf("mobile token was not safely upserted: %+v", tokens)
+	}
+}
+
 func newNotificationTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
@@ -199,7 +312,13 @@ func newNotificationTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&models.Notification{}, &models.Message{}, &models.MessageAttachment{}); err != nil {
+	if err := db.AutoMigrate(
+		&models.Notification{},
+		&models.Message{},
+		&models.MessageAttachment{},
+		&models.PushSubscription{},
+		&models.MobilePushToken{},
+	); err != nil {
 		t.Fatalf("migrate notification: %v", err)
 	}
 	return db

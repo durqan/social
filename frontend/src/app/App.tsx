@@ -6,10 +6,11 @@ import { AuthProvider, useAuth } from '@/app/providers/AuthContext.js';
 import { WebSocketProvider } from '@/app/providers/WebSocketContext.js';
 import { AudioCallProvider } from '@/features/call/AudioCallContext.js';
 import { RequireAuth, RequireGuest } from "@/features/auth/components/RequireAuth.js";
-import { PushSubscriptionManager } from "@/features/notifications/components/PushSubscriptionManager.js";
 import { Seo } from "@/shared/ui/Seo.js";
 import { ThemeProvider } from "@/app/themes/ThemeProvider.js";
 import { AppDialogProvider } from "@/app/providers/AppDialogProvider.js";
+import { PostAuthBootstrapManager } from "@/features/bootstrap/PostAuthBootstrapManager.js";
+import { PushPermissionBanner } from "@/features/notifications/components/PushPermissionBanner.js";
 
 const Login = lazy(() => import("@/features/auth/components/Login.js"));
 const Register = lazy(() => import("@/features/auth/components/Register.js"));
@@ -80,7 +81,8 @@ function App() {
                 <WebSocketProvider>
                     <AuthProvider>
                         <AudioCallProvider>
-                            <PushSubscriptionManager />
+                            <PostAuthBootstrapManager />
+                            <PushPermissionBanner />
                             <NotificationHandler />
                             <AppRoutes />
                         </AudioCallProvider>

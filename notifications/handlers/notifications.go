@@ -115,6 +115,25 @@ func (h *Handler) SubscribePush(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "subscribed"})
 }
 
+func (h *Handler) UnsubscribePush(c *gin.Context) {
+	req := dto.DeletePushSubscriptionReq{}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid push subscription"})
+		return
+	}
+	userID, ok := auth.UserID(c)
+	if !ok {
+		return
+	}
+
+	if err := h.service.DeletePushSubscription(userID, req.Endpoint); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid push subscription"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": "unsubscribed"})
+}
+
 func (h *Handler) RegisterMobilePushToken(c *gin.Context) {
 	req := dto.MobilePushTokenReq{}
 	if err := c.ShouldBindJSON(&req); err != nil {

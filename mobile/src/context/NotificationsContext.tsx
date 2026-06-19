@@ -213,6 +213,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     let cleanup: (() => void) | undefined;
 
     initializePushNotifications({
+      userId: user.id,
       onNotification: handleNotification,
       onNotificationOpen: handleNotification,
     }).then(nextCleanup => {
