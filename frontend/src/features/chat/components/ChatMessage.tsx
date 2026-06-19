@@ -19,7 +19,7 @@ function normalizeUrl(value: string) {
     return value.startsWith('www.') ? `https://${value}` : value;
 }
 
-function linkifyText(value: string, isOwn: boolean) {
+function linkifyText(value: string) {
     const parts: Array<{ type: 'text' | 'link'; value: string; href?: string }> = [];
     let lastIndex = 0;
 
@@ -518,7 +518,7 @@ const ChatMessageComponent = ({
 
                             {message.content && (
                                 <p className={`text-sm break-words ${message.decryption_error ? 'italic text-red-600' : ''}`}>
-                                    {linkifyText(message.content, isOwn)}
+                                    {linkifyText(message.content)}
                                 </p>
                             )}
 

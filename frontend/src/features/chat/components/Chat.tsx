@@ -43,6 +43,7 @@ import {
     validateChatAttachments,
     validateVoiceFile,
     validateVideoNoteFile,
+    type ChatAttachmentKind,
 } from "@/shared/utils/uploadValidation.js";
 
 const optimisticMessageFloor = 10000000;
@@ -201,7 +202,7 @@ async function fileFromRemoteAttachment(attachment: MessageAttachment): Promise<
     });
 }
 
-function attachmentKindFromFile(file: File): AttachmentFileType {
+function attachmentKindFromFile(file: File): ChatAttachmentKind {
     const kind = chatAttachmentKindForFile(file);
     if (!kind) {
         throw new Error('Этот тип вложения не поддерживается');

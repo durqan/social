@@ -1,14 +1,5 @@
+import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import Login from "@/features/auth/components/Login.js";
-import Register from "@/features/auth/components/Register.js";
-import Profile from "@/features/profile/components/Profile.js";
-import ProfileMain from "@/features/profile/components/ProfileMain.js";
-import ProfileEdit from "@/features/profile/components/ProfileEdit.js";
-import Wall from "@/features/wall/components/Wall.js";
-import Conversations from "@/features/chat/components/Conversations.js";
-import Chat from "@/features/chat/components/Chat.js";
-import Friends from "@/features/friends/components/Friends.js";
-import VerifyEmail from "@/features/auth/components/VerifyEmail.js";
 import { Toaster } from 'react-hot-toast';
 import NotificationHandler from "@/features/notifications/components/NotificationHandler.js";
 import { AuthProvider, useAuth } from '@/app/providers/AuthContext.js';
@@ -20,28 +11,41 @@ import { Seo } from "@/shared/ui/Seo.js";
 import { ThemeProvider } from "@/app/themes/ThemeProvider.js";
 import { AppDialogProvider } from "@/app/providers/AppDialogProvider.js";
 
+const Login = lazy(() => import("@/features/auth/components/Login.js"));
+const Register = lazy(() => import("@/features/auth/components/Register.js"));
+const Profile = lazy(() => import("@/features/profile/components/Profile.js"));
+const ProfileMain = lazy(() => import("@/features/profile/components/ProfileMain.js"));
+const ProfileEdit = lazy(() => import("@/features/profile/components/ProfileEdit.js"));
+const Wall = lazy(() => import("@/features/wall/components/Wall.js"));
+const Conversations = lazy(() => import("@/features/chat/components/Conversations.js"));
+const Chat = lazy(() => import("@/features/chat/components/Chat.js"));
+const Friends = lazy(() => import("@/features/friends/components/Friends.js"));
+const VerifyEmail = lazy(() => import("@/features/auth/components/VerifyEmail.js"));
+
 function AppRoutes() {
     const { currentUser } = useAuth();
 
     return (
-        <Routes>
-            <Route element={<RequireGuest />}>
-                <Route path="/login" element={<Login />} />
-                <Route path="/register" element={<Register />} />
-            </Route>
-            <Route path="/verify-email/:token" element={<VerifyEmail />} />
-            <Route element={<RequireAuth />}>
-                <Route path="/users/:id" element={<Profile />}>
-                    <Route index element={<ProfileMain />} />
-                    <Route path="edit" element={<ProfileEdit />} />
-                    <Route path="wall" element={<Wall />} />
-                    <Route path="conversations" element={<Conversations />} />
-                    <Route path="chat/:userId" element={<Chat />} />
-                    <Route path="friends" element={<Friends />} />
+        <Suspense fallback={<div className="min-h-screen bg-[var(--app-bg)]" />}>
+            <Routes>
+                <Route element={<RequireGuest />}>
+                    <Route path="/login" element={<Login />} />
+                    <Route path="/register" element={<Register />} />
                 </Route>
-            </Route>
-            <Route path="/" element={<Navigate to={currentUser ? `/users/${currentUser.id}` : '/login'} />} />
-        </Routes>
+                <Route path="/verify-email/:token" element={<VerifyEmail />} />
+                <Route element={<RequireAuth />}>
+                    <Route path="/users/:id" element={<Profile />}>
+                        <Route index element={<ProfileMain />} />
+                        <Route path="edit" element={<ProfileEdit />} />
+                        <Route path="wall" element={<Wall />} />
+                        <Route path="conversations" element={<Conversations />} />
+                        <Route path="chat/:userId" element={<Chat />} />
+                        <Route path="friends" element={<Friends />} />
+                    </Route>
+                </Route>
+                <Route path="/" element={<Navigate to={currentUser ? `/users/${currentUser.id}` : '/login'} />} />
+            </Routes>
+        </Suspense>
     );
 }
 

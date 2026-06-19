@@ -307,7 +307,8 @@ export class WebSocketService {
             !isCallEvent(event) || now - event.queuedAt <= callEventQueueTtlMs
         ));
 
-        events.forEach(({ queuedAt: _queuedAt, ...event }) => {
+        events.forEach(({ queuedAt, ...event }) => {
+            void queuedAt;
             this.ws?.send(JSON.stringify(event));
         });
     }

@@ -1,6 +1,17 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type ReactElement } from 'react';
+import {
+    lazy,
+    Suspense,
+    useCallback,
+    useEffect,
+    useLayoutEffect,
+    useRef,
+    useState,
+    type ChangeEvent,
+    type ClipboardEvent,
+    type ComponentType,
+} from 'react';
 import { Icon } from "@/shared/ui/Icon.js";
-import EmojiPickerModule, { EmojiStyle, type EmojiClickData, type Props as EmojiPickerProps } from 'emoji-picker-react';
+import type { EmojiClickData, EmojiStyle, Props as EmojiPickerProps } from 'emoji-picker-react';
 import {
     chatVideoNoteMaxDurationSeconds,
     chatVoiceMaxDurationSeconds,
@@ -17,7 +28,12 @@ import { PreviewVoiceMessage } from "@/features/chat/components/PreviewVoiceMess
 import { PreviewVideoNoteMessage } from "@/features/chat/components/PreviewVideoNoteMessage.js";
 import { VideoNoteOrbit } from "@/features/chat/components/VideoNoteOrbit.js";
 
-const EmojiPicker = EmojiPickerModule as unknown as (props: EmojiPickerProps) => ReactElement | null;
+const EmojiPicker = lazy(async () => {
+    const module = await import('emoji-picker-react');
+    return {
+        default: module.default as unknown as ComponentType<EmojiPickerProps>,
+    };
+});
 const textareaMaxHeight = 168;
 const voiceMimeCandidates = [
     'audio/webm;codecs=opus',
@@ -672,9 +688,9 @@ export const ChatInput = ({
             setIsCancellingRecord(false);
             startRecording();
             const target = e.currentTarget;
-            if (target && typeof (target as any).setPointerCapture === 'function') {
+            if (typeof target.setPointerCapture === 'function') {
                 try {
-                    (target as any).setPointerCapture(e.pointerId);
+                    target.setPointerCapture(e.pointerId);
                 } catch {
                     // capture not supported, fallback to other events if any
                 }
@@ -706,10 +722,12 @@ export const ChatInput = ({
     const handleMicPointerEnd = useCallback(
         (e: React.PointerEvent<HTMLButtonElement>, forceCancel = false) => {
             const target = e.currentTarget;
-            if (target && typeof (target as any).releasePointerCapture === 'function') {
+            if (typeof target.releasePointerCapture === 'function') {
                 try {
-                    (target as any).releasePointerCapture(e.pointerId);
-                } catch {}
+                    target.releasePointerCapture(e.pointerId);
+                } catch {
+                    // Pointer capture may already be released.
+                }
             }
             const slide = pointerSlideRef.current;
             pointerStartXRef.current = 0;
@@ -725,7 +743,7 @@ export const ChatInput = ({
         [isRecording, stopRecording],
     );
 
-    const handleMicPointerLeave = useCallback((_e: React.PointerEvent<HTMLButtonElement>) => {
+    const handleMicPointerLeave = useCallback(() => {
         // Do not break recording state on leave (capture should deliver up if supported)
     }, []);
 
@@ -1123,24 +1141,26 @@ export const ChatInput = ({
                 </div>
                 {showEmojiPicker && (
                     <div className="absolute bottom-16 right-4 z-50">
-                        <EmojiPicker
-                            width={300}
-                            height={260}
-                            emojiStyle={EmojiStyle.NATIVE}
-                            searchDisabled
-                            previewConfig={{
-                                showPreview: false,
-                            }}
-                            onEmojiClick={(emoji: EmojiClickData) => {
-                                onChange({
-                                    target: {
-                                        value: value + emoji.emoji,
-                                    },
-                                } as ChangeEvent<HTMLTextAreaElement>);
+                        <Suspense fallback={<div className="h-[260px] w-[300px] rounded-xl border border-gray-200 bg-white shadow-lg" />}>
+                            <EmojiPicker
+                                width={300}
+                                height={260}
+                                emojiStyle={'native' as EmojiStyle}
+                                searchDisabled
+                                previewConfig={{
+                                    showPreview: false,
+                                }}
+                                onEmojiClick={(emoji: EmojiClickData) => {
+                                    onChange({
+                                        target: {
+                                            value: value + emoji.emoji,
+                                        },
+                                    } as ChangeEvent<HTMLTextAreaElement>);
 
-                                setShowEmojiPicker(false);
-                            }}
-                        />
+                                    setShowEmojiPicker(false);
+                                }}
+                            />
+                        </Suspense>
                     </div>
                 )}
             </div>

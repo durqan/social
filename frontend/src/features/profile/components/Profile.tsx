@@ -25,7 +25,7 @@ function Profile() {
             if (!id) return;
             try {
                 setUser(await userService.getUser(id));
-            } catch (error) {
+            } catch {
                 navigate('/login');
             } finally {
                 setLoading(false);
