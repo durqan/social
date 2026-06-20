@@ -144,7 +144,7 @@ func ProcessVideoImportJob(ctx context.Context, db *gorm.DB, cfg VideoImportWork
 
 	processedPath := filepath.Join(tempDir, "processed.mp4")
 	thumbPath := filepath.Join(tempDir, "thumb.jpg")
-	if err := runCommand(ctx, cfg.FFmpegLimit, "ffmpeg", "-y", "-i", sourcePath, "-vf", "scale='min(1280,iw)':'min(720,ih)':force_original_aspect_ratio=decrease,fps='min(30,source_fps)'", "-c:v", "libx264", "-preset", "veryfast", "-crf", "28", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", processedPath); err != nil {
+	if err := runCommand(ctx, cfg.FFmpegLimit, "ffmpeg", "-y", "-i", sourcePath, "-vf", "scale=1280:720:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,fps='min(30,source_fps)'", "-c:v", "libx264", "-preset", "veryfast", "-crf", "28", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", processedPath); err != nil {
 		return failVideoImport(ctx, db, job, "Не удалось обработать видео", err)
 	}
 	if err := runCommand(ctx, 2*time.Minute, "ffmpeg", "-y", "-ss", "00:00:01", "-i", processedPath, "-frames:v", "1", "-q:v", "3", thumbPath); err != nil {
