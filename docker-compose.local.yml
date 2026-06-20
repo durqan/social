@@ -151,6 +151,7 @@ services:
     environment:
       DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgres://social:social@postgres:5432/social?sslmode=disable}
       GIN_MODE: ${GIN_MODE:-debug}
+      JWT_SECRET: ${JWT_SECRET:-local-development-secret-change-before-release}
       MESSAGE_ENCRYPTION_KEY: ${MESSAGE_ENCRYPTION_KEY:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}
       REDIS_HOST: ${COMPOSE_REDIS_HOST:-redis}
       REDIS_PORT: ${COMPOSE_REDIS_PORT:-6379}
