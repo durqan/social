@@ -198,6 +198,7 @@ function normalizeConversation(conversation: Conversation): Conversation {
     avatar_position_x: Number(conversation.avatar_position_x) || 50,
     avatar_position_y: Number(conversation.avatar_position_y) || 50,
     avatar_scale: Number(conversation.avatar_scale) || 1,
+    last_seen_at: conversation.last_seen_at ?? null,
     last_message: conversation.last_message || '',
     last_message_at: conversation.last_message_at || '',
     last_sender_id: Number(conversation.last_sender_id) || 0,

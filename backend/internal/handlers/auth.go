@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"log"
 	"tester/internal/auth"
 	"tester/internal/dto"
 	"tester/internal/models"
@@ -44,6 +45,11 @@ func Register(db *gorm.DB) gin.HandlerFunc {
 			c.JSON(500, gin.H{"error": err.Error()})
 			return
 		}
+		if lastSeenAt, err := services.ForceUserActivity(db, user.ID); err != nil {
+			log.Println("failed to update user activity:", err)
+		} else if lastSeenAt != nil {
+			user.LastSeenAt = lastSeenAt
+		}
 
 		c.JSON(201, gin.H{
 			"message": "registration successful",
@@ -76,6 +82,11 @@ func Login(db *gorm.DB) gin.HandlerFunc {
 			c.JSON(500, gin.H{"error": err.Error()})
 			return
 		}
+		if lastSeenAt, err := services.ForceUserActivity(db, user.ID); err != nil {
+			log.Println("failed to update user activity:", err)
+		} else if lastSeenAt != nil {
+			user.LastSeenAt = lastSeenAt
+		}
 
 		c.JSON(200, gin.H{
 			"message": "login successful",
@@ -84,7 +95,7 @@ func Login(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-func Refresh() gin.HandlerFunc {
+func Refresh(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		refreshToken := currentRefreshToken(c)
 		if refreshToken == "" {
@@ -92,11 +103,14 @@ func Refresh() gin.HandlerFunc {
 			return
 		}
 
-		accessToken, _, _, err := auth.RefreshAccessToken(refreshToken)
+		accessToken, userID, _, err := auth.RefreshAccessToken(refreshToken)
 		if err != nil {
 			clearAuthSession(c)
 			c.JSON(401, gin.H{"error": "invalid or expired refresh token"})
 			return
+		}
+		if _, err := services.MarkUserActivity(db, userID); err != nil {
+			log.Println("failed to update user activity:", err)
 		}
 
 		setAuthCookie(c, accessToken, int(auth.AccessTokenTTL.Seconds()))
@@ -109,10 +123,15 @@ func Refresh() gin.HandlerFunc {
 	}
 }
 
-func Logout() gin.HandlerFunc {
+func Logout(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token := currentAuthToken(c)
 		if token != "" {
+			if userID, _, err := auth.ValidateToken(token); err == nil {
+				if _, err := services.ForceUserActivity(db, userID); err != nil {
+					log.Println("failed to update user activity:", err)
+				}
+			}
 			_ = auth.RevokeToken(token)
 		}
 		refreshToken := currentRefreshToken(c)

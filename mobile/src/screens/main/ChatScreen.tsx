@@ -328,6 +328,9 @@ export default function ChatScreen({ route }: Props) {
   const loadingOlderRef = useRef(false);
   const messagesRef = useRef<Message[]>([]);
   const shouldScrollToEndRef = useRef(false);
+  const scrollToEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const draftRef = useRef<{
     input: string;
     pendingImages: LocalChatImage[];
@@ -378,6 +381,8 @@ export default function ChatScreen({ route }: Props) {
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [hasLoaded, setHasLoaded] = useState(false);
+  const [maintainScrollPositionEnabled, setMaintainScrollPositionEnabled] =
+    useState(false);
   const [sending, setSending] = useState<
     'uploading' | 'uploadingVoice' | 'uploadingVideoNote' | 'sending' | null
   >(null);
@@ -584,6 +589,10 @@ export default function ChatScreen({ route }: Props) {
       if (recordingMaxTimerRef.current) {
         clearTimeout(recordingMaxTimerRef.current);
       }
+      if (scrollToEndTimerRef.current) {
+        clearTimeout(scrollToEndTimerRef.current);
+        scrollToEndTimerRef.current = null;
+      }
       Sound.removeRecordBackListener();
       Sound.removePlaybackEndListener();
       Sound.removePlayBackListener();
@@ -602,11 +611,26 @@ export default function ChatScreen({ route }: Props) {
     };
   }, [otherUserId]);
 
-  const scrollToLatestMessage = useCallback(() => {
-    requestAnimationFrame(() => {
-      listRef.current?.scrollToEnd({ animated: hasLoadedRef.current });
+  const scrollToLatestMessage = useCallback((animated = hasLoadedRef.current) => {
+    setMaintainScrollPositionEnabled(false);
+
+    if (scrollToEndTimerRef.current) {
+      clearTimeout(scrollToEndTimerRef.current);
+      scrollToEndTimerRef.current = null;
+    }
+
+    const scroll = () => {
+      listRef.current?.scrollToEnd({ animated });
+    };
+
+    requestAnimationFrame(scroll);
+    scrollToEndTimerRef.current = setTimeout(() => {
+      scroll();
+      requestAnimationFrame(scroll);
       shouldScrollToEndRef.current = false;
-    });
+      scrollToEndTimerRef.current = null;
+      setMaintainScrollPositionEnabled(true);
+    }, 120);
   }, []);
 
   useEffect(() => {
@@ -911,11 +935,20 @@ export default function ChatScreen({ route }: Props) {
         const response = await messageApi.getMessagesWith(otherUserId, {
           limit: messagePageSize,
         });
-        shouldScrollToEndRef.current =
+        const shouldScrollToEnd =
           mode !== 'silent' || messagesRef.current.length === 0;
+        const displayMessages = await decryptChatMessages(response.messages);
+
+        shouldScrollToEndRef.current = shouldScrollToEnd;
+        setMaintainScrollPositionEnabled(!shouldScrollToEnd);
         hasMoreRef.current = response.has_more;
         setHasMore(response.has_more);
-        setMessages(await decryptChatMessages(response.messages));
+        setMessages(displayMessages);
+
+        if (shouldScrollToEnd) {
+          scrollToLatestMessage(false);
+        }
+
         markConversationRead().catch(() => undefined);
       } catch (apiError) {
         setError(getApiErrorMessage(apiError));
@@ -930,7 +963,12 @@ export default function ChatScreen({ route }: Props) {
         }
       }
     },
-    [decryptChatMessages, markConversationRead, otherUserId],
+    [
+      decryptChatMessages,
+      markConversationRead,
+      otherUserId,
+      scrollToLatestMessage,
+    ],
   );
 
   const loadOlderMessages = useCallback(async () => {
@@ -948,6 +986,7 @@ export default function ChatScreen({ route }: Props) {
 
     loadingOlderRef.current = true;
     shouldScrollToEndRef.current = false;
+    setMaintainScrollPositionEnabled(true);
     setLoadingOlder(true);
 
     try {
@@ -995,6 +1034,12 @@ export default function ChatScreen({ route }: Props) {
       scrollToLatestMessage();
     }
   }, [scrollToLatestMessage]);
+
+  useEffect(() => {
+    if (shouldScrollToEndRef.current && messages.length > 0) {
+      scrollToLatestMessage(false);
+    }
+  }, [messages.length, scrollToLatestMessage]);
 
   const loadPinnedMessage = useCallback(async () => {
     try {
@@ -2467,7 +2512,11 @@ export default function ChatScreen({ route }: Props) {
           refreshing={refreshing}
           onRefresh={() => loadMessages('refresh')}
           keyboardShouldPersistTaps="handled"
-          maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+          maintainVisibleContentPosition={
+            maintainScrollPositionEnabled
+              ? { minIndexForVisible: 0 }
+              : undefined
+          }
           onScroll={handleMessagesScroll}
           scrollEventThrottle={80}
           renderItem={({ item }) => (

@@ -2,6 +2,7 @@ import { request } from "@/shared/api/axios.js";
 
 type PresenceResponse = {
     online: boolean;
+    last_seen_at?: string | null;
 };
 
 export const presenceService = {

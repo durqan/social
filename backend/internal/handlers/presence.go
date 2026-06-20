@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"strconv"
+	"tester/internal/models"
 
 	"github.com/gin-gonic/gin"
 )
@@ -26,8 +27,16 @@ func GetPresence(c *gin.Context) {
 	}
 
 	online := IsUserOnline(uint(id))
+	var lastSeenAt interface{}
+	if dbInstance != nil {
+		var user models.User
+		if err := dbInstance.Select("last_seen_at").First(&user, uint(id)).Error; err == nil {
+			lastSeenAt = user.LastSeenAt
+		}
+	}
 
 	c.JSON(200, gin.H{
-		"online": online,
+		"online":       online,
+		"last_seen_at": lastSeenAt,
 	})
 }

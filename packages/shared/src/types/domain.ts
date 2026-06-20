@@ -172,6 +172,7 @@ export interface Conversation {
   avatar_position_x?: number;
   avatar_position_y?: number;
   avatar_scale?: number;
+  last_seen_at?: string | null;
   last_message: string;
   last_message_at: string;
   last_sender_id: number;

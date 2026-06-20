@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"log"
 	"sync"
-	"tester/internal/models"
 	"time"
 
 	"tester/internal/auth"
 	"tester/internal/middleware"
+	"tester/internal/services"
 
 	"github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
@@ -56,6 +56,9 @@ func WebSocketHandler(c *gin.Context) {
 	defer conn.Close(websocket.StatusNormalClosure, "")
 
 	client := clients.set(userID, conn)
+	if _, err := services.MarkUserActivity(dbInstance, userID); err != nil {
+		log.Println("failed to update websocket connect activity:", err)
+	}
 
 	onlineUsers.mu.Lock()
 	wasOnline := onlineUsers.users[userID]
@@ -63,7 +66,7 @@ func WebSocketHandler(c *gin.Context) {
 	onlineUsers.mu.Unlock()
 
 	if !wasOnline {
-		broadcastPresence(userID, true)
+		broadcastPresence(userID, true, nil)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -123,14 +126,10 @@ func removeWebSocketClient(userID uint, client *websocketClient, reason string) 
 	delete(onlineUsers.users, userID)
 	onlineUsers.mu.Unlock()
 
-	if dbInstance != nil {
-		if err := dbInstance.Model(&models.User{}).
-			Where("id = ?", userID).
-			Update("last_seen_at", time.Now()).
-			Error; err != nil {
-			log.Println("failed to update last_seen_at:", err)
-		}
+	lastSeenAt, err := services.ForceUserActivity(dbInstance, userID)
+	if err != nil {
+		log.Println("failed to update last_seen_at:", err)
 	}
 
-	broadcastPresence(userID, false)
+	broadcastPresence(userID, false, lastSeenAt)
 }

@@ -417,7 +417,7 @@ function Chat() {
     const { otherTyping, setOtherTyping, handleTyping } = useChatTyping(Number(userId));
     const { selectionMode, selectedMessages, toggleSelect, enterSelectionMode, exitSelectionMode } = useChatSelection();
     const { messagesEndRef, handleScroll, forceScrollToBottom, scrollToBottomIfNeeded } = useChatScroll(userId);
-    const { online } = usePresence(recipient?.id);
+    const { online, lastSeenAt } = usePresence(recipient?.id);
     const e2eeReady = Boolean(
         currentUser?.id &&
         e2eeState.selfEnabled &&
@@ -1546,7 +1546,7 @@ function Chat() {
                         : undefined
                 }
                 onOpenRecipient={openUserProfile}
-                recipientLastSeenAt={recipient?.last_seen_at}
+                recipientLastSeenAt={lastSeenAt ?? recipient?.last_seen_at}
             />
             <PinnedMessageBanner
                 pinnedMessage={pinnedMessage}

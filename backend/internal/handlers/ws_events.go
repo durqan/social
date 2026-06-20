@@ -23,6 +23,10 @@ type WSMessage struct {
 }
 
 func handleWebSocketMessage(ctx context.Context, userID uint, client *websocketClient, wsMsg WSMessage) {
+	if _, err := services.MarkUserActivity(dbInstance, userID); err != nil {
+		log.Println("failed to update websocket activity:", err)
+	}
+
 	switch wsMsg.Type {
 	case "message:send":
 		handleWebSocketSendMessage(ctx, userID, wsMsg.Payload)

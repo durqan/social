@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"tester/internal/models"
 	"tester/internal/repository"
@@ -100,6 +101,72 @@ func TestSendMessagePersistsMessageAndAttachmentsAtomically(t *testing.T) {
 	}
 	if outbox.RecipientID != 2 || outbox.ActorID != 1 || outbox.Type != "message_received" || outbox.EntityID != message.ID {
 		t.Fatalf("unexpected notification outbox row: %+v", outbox)
+	}
+}
+
+func TestSendMessageUpdatesSenderLastSeen(t *testing.T) {
+	db := newMessageServiceTestDB(t)
+	seedAcceptedFriendship(t, db, 1, 2)
+
+	beforeSend := time.Now().UTC().Add(-time.Second)
+	if _, err := SendMessage(db, 1, 2, "hello", nil, nil, MessageEncryptionInput{}); err != nil {
+		t.Fatal(err)
+	}
+
+	var sender models.User
+	if err := db.First(&sender, 1).Error; err != nil {
+		t.Fatal(err)
+	}
+	if sender.LastSeenAt == nil {
+		t.Fatal("sender last_seen_at was not updated")
+	}
+	if sender.LastSeenAt.Before(beforeSend) {
+		t.Fatalf("sender last_seen_at = %s, want after %s", sender.LastSeenAt, beforeSend)
+	}
+}
+
+func TestMarkConversationReadUpdatesReaderLastSeen(t *testing.T) {
+	db := newMessageServiceTestDB(t)
+	seedAcceptedFriendship(t, db, 1, 2)
+	if _, err := SendMessage(db, 2, 1, "unread", nil, nil, MessageEncryptionInput{}); err != nil {
+		t.Fatal(err)
+	}
+
+	beforeRead := time.Now().UTC().Add(-time.Second)
+	if err := MarkConversationRead(db, 2, 1); err != nil {
+		t.Fatal(err)
+	}
+
+	var reader models.User
+	if err := db.First(&reader, 1).Error; err != nil {
+		t.Fatal(err)
+	}
+	if reader.LastSeenAt == nil {
+		t.Fatal("reader last_seen_at was not updated")
+	}
+	if reader.LastSeenAt.Before(beforeRead) {
+		t.Fatalf("reader last_seen_at = %s, want after %s", reader.LastSeenAt, beforeRead)
+	}
+}
+
+func TestMarkUserActivityIsThrottled(t *testing.T) {
+	db := newMessageServiceTestDB(t)
+	seedUser(t, db, 10)
+
+	first, err := MarkUserActivity(db, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == nil {
+		t.Fatal("first activity update was throttled")
+	}
+
+	second, err := MarkUserActivity(db, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second != nil {
+		t.Fatal("second activity update was not throttled")
 	}
 }
 
@@ -276,6 +343,26 @@ func TestConversationPreviewDecryptsWithoutPlaintextAtRest(t *testing.T) {
 	}
 	if _, exists := conversations[0]["last_ciphertext"]; exists {
 		t.Fatalf("conversation response leaked crypto fields: %+v", conversations[0])
+	}
+}
+
+func TestConversationsIncludeParticipantLastSeen(t *testing.T) {
+	db := newMessageServiceTestDB(t)
+	seedAcceptedFriendship(t, db, 1, 2)
+
+	if _, err := SendMessage(db, 1, 2, "hello", nil, nil, MessageEncryptionInput{}); err != nil {
+		t.Fatal(err)
+	}
+
+	conversations, err := GetConversations(db, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(conversations) != 1 {
+		t.Fatalf("conversations count = %d, want 1", len(conversations))
+	}
+	if conversations[0]["last_seen_at"] == nil {
+		t.Fatalf("conversation missing last_seen_at: %+v", conversations[0])
 	}
 }
 

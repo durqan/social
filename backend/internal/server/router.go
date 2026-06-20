@@ -47,13 +47,14 @@ func registerAuthRoutes(router *gin.Engine, database *gorm.DB) {
 	auth.POST("/register", middleware.RateLimitMiddleware(5, time.Hour), handlers.Register(database))
 	auth.POST("/login", middleware.RateLimitMiddleware(10, 10*time.Minute), handlers.Login(database))
 	auth.GET("/csrf", handlers.GetCSRFToken())
-	auth.POST("/refresh", middleware.CSRFMiddleware(), handlers.Refresh())
-	auth.POST("/logout", middleware.CSRFMiddleware(), handlers.Logout())
+	auth.POST("/refresh", middleware.CSRFMiddleware(), handlers.Refresh(database))
+	auth.POST("/logout", middleware.CSRFMiddleware(), handlers.Logout(database))
 	auth.GET("/verify-email/:token", handlers.VerifyEmailHandler(database))
 
 	auth.POST(
 		"/send-verification",
 		middleware.AuthMiddleware(),
+		middleware.UserActivityMiddleware(database),
 		middleware.CSRFMiddleware(),
 		middleware.RateLimitMiddleware(3, time.Hour),
 		handlers.SendVerificationEmailHandler(database),
@@ -64,6 +65,7 @@ func registerUserRoutes(router *gin.Engine, database *gorm.DB) {
 	users := router.Group(
 		"/users",
 		middleware.AuthMiddleware(),
+		middleware.UserActivityMiddleware(database),
 		middleware.CSRFMiddleware(),
 		middleware.InvalidateCache("cache:/users*", "cache:/friends*"),
 	)
@@ -96,6 +98,7 @@ func registerPostRoutes(router *gin.Engine, database *gorm.DB) {
 	posts := router.Group(
 		"/posts",
 		middleware.AuthMiddleware(),
+		middleware.UserActivityMiddleware(database),
 		middleware.CSRFMiddleware(),
 		middleware.InvalidateCache("cache:/posts*"),
 	)
@@ -115,6 +118,7 @@ func registerE2EERoutes(router *gin.Engine, database *gorm.DB) {
 	e2ee := router.Group(
 		"/e2ee",
 		middleware.AuthMiddleware(),
+		middleware.UserActivityMiddleware(database),
 		middleware.CSRFMiddleware(),
 	)
 
@@ -129,6 +133,7 @@ func registerMessageRoutes(router *gin.Engine, database *gorm.DB) {
 	messages := router.Group(
 		"/messages",
 		middleware.AuthMiddleware(),
+		middleware.UserActivityMiddleware(database),
 		middleware.CSRFMiddleware(),
 		middleware.InvalidateCache("cache:/messages*"),
 	)
@@ -155,6 +160,7 @@ func registerConversationRoutes(router *gin.Engine, database *gorm.DB) {
 	conversations := router.Group(
 		"/conversations",
 		middleware.AuthMiddleware(),
+		middleware.UserActivityMiddleware(database),
 		middleware.CSRFMiddleware(),
 		middleware.InvalidateCache("cache:/conversations*", "cache:/messages/conversations*"),
 	)

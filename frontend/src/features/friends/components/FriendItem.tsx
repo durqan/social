@@ -15,10 +15,10 @@ type FriendItemProps = {
 export function FriendItem({friend, active, onOpenMenu}: FriendItemProps) {
     const navigate = useNavigate();
     const friendID = friend.id;
-    const {online} = usePresence(friendID);
+    const {online, lastSeenAt} = usePresence(friendID);
     const statusText = online
         ? 'в сети'
-        : formatLastSeen(friend.last_seen_at);
+        : formatLastSeen(lastSeenAt ?? friend.last_seen_at);
     const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const touchStartRef = useRef<{ x: number; y: number } | null>(null);
     const suppressClickRef = useRef(false);

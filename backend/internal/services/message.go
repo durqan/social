@@ -186,6 +186,9 @@ func SendMessage(db *gorm.DB, fromID, toID uint, content string, attachments []m
 	if err != nil {
 		return models.Message{}, err
 	}
+	if _, err := ForceUserActivity(db, fromID); err != nil {
+		log.Printf("failed to update sender activity: %v", err)
+	}
 	InvalidateMessageCaches()
 	return message, nil
 }
@@ -904,6 +907,9 @@ func uniqueMessageIDs(ids []uint) []uint {
 func MarkConversationRead(db *gorm.DB, fromID, toID uint) error {
 	if err := repository.MarkMessagesAsRead(db, fromID, toID); err != nil {
 		return err
+	}
+	if _, err := ForceUserActivity(db, toID); err != nil {
+		log.Printf("failed to update reader activity: %v", err)
 	}
 	InvalidateMessageCaches()
 	return nil
