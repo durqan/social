@@ -127,6 +127,7 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       GIN_MODE: ${GIN_MODE:-release}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       MESSAGE_ENCRYPTION_KEY: ${MESSAGE_ENCRYPTION_KEY:?MESSAGE_ENCRYPTION_KEY is required}
       REDIS_HOST: ${REDIS_HOST:-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
