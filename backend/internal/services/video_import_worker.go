@@ -132,8 +132,21 @@ func ProcessVideoImportJob(ctx context.Context, db *gorm.DB, cfg VideoImportWork
 		return failVideoImport(ctx, db, job, "Небезопасная или неподдерживаемая ссылка", err)
 	}
 
+	log.Printf("video import %s: started message_id=%d preview_id=%d provider=%s", job.JobID, job.MessageID, job.LinkPreviewID, job.Provider)
+
 	sourceTemplate := filepath.Join(tempDir, "source.%(ext)s")
-	if err := runCommand(ctx, cfg.DownloadLimit, "yt-dlp", "-f", "bv*+ba/b", "--merge-output-format", "mp4", "--no-playlist", "-o", sourceTemplate, job.OriginalURL); err != nil {
+
+	log.Printf("video import %s: downloading source", job.JobID)
+	if err := runCommand(
+		ctx,
+		cfg.DownloadLimit,
+		"yt-dlp",
+		"-f", "bv*[vcodec^=avc1][height<=1280]+ba[acodec^=mp4a]/bv*[height<=1280]+ba/b[height<=1280]/best[height<=1280]/best",
+		"--merge-output-format", "mp4",
+		"--no-playlist",
+		"-o", sourceTemplate,
+		job.OriginalURL,
+	); err != nil {
 		return failVideoImport(ctx, db, job, "Не удалось скачать видео", err)
 	}
 
@@ -141,16 +154,48 @@ func ProcessVideoImportJob(ctx context.Context, db *gorm.DB, cfg VideoImportWork
 	if err != nil {
 		return failVideoImport(ctx, db, job, "Не удалось скачать видео", err)
 	}
+	log.Printf("video import %s: downloaded source=%s", job.JobID, sourcePath)
 
 	processedPath := filepath.Join(tempDir, "processed.mp4")
 	thumbPath := filepath.Join(tempDir, "thumb.jpg")
-	if err := runCommand(ctx, cfg.FFmpegLimit, "ffmpeg", "-y", "-i", sourcePath, "-vf", "scale=1280:720:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,fps='min(30,source_fps)'", "-c:v", "libx264", "-preset", "veryfast", "-crf", "28", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", processedPath); err != nil {
+
+	log.Printf("video import %s: transcoding video", job.JobID)
+	if err := runCommand(
+		ctx,
+		cfg.FFmpegLimit,
+		"ffmpeg",
+		"-y",
+		"-i", sourcePath,
+		"-vf", "scale=1280:720:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,fps='min(30,source_fps)'",
+		"-c:v", "libx264",
+		"-preset", "veryfast",
+		"-crf", "28",
+		"-pix_fmt", "yuv420p",
+		"-c:a", "aac",
+		"-b:a", "128k",
+		"-movflags", "+faststart",
+		processedPath,
+	); err != nil {
 		return failVideoImport(ctx, db, job, "Не удалось обработать видео", err)
 	}
-	if err := runCommand(ctx, 2*time.Minute, "ffmpeg", "-y", "-ss", "00:00:01", "-i", processedPath, "-frames:v", "1", "-q:v", "3", thumbPath); err != nil {
+	log.Printf("video import %s: transcoded processed=%s", job.JobID, processedPath)
+
+	log.Printf("video import %s: creating thumbnail", job.JobID)
+	if err := runCommand(
+		ctx,
+		2*time.Minute,
+		"ffmpeg",
+		"-y",
+		"-ss", "00:00:01",
+		"-i", processedPath,
+		"-frames:v", "1",
+		"-q:v", "3",
+		thumbPath,
+	); err != nil {
 		return failVideoImport(ctx, db, job, "Не удалось создать обложку", err)
 	}
 
+	log.Printf("video import %s: probing metadata", job.JobID)
 	metadata, err := probeVideoMetadata(ctx, processedPath)
 	if err != nil {
 		return failVideoImport(ctx, db, job, "Не удалось прочитать параметры видео", err)
@@ -198,10 +243,14 @@ func ProcessVideoImportJob(ctx context.Context, db *gorm.DB, cfg VideoImportWork
 
 	videoKey := fmt.Sprintf("chat-videos/%d/%d.mp4", job.MessageID, attachmentID)
 	thumbKey := fmt.Sprintf("chat-video-thumbnails/%d/%d.jpg", job.MessageID, attachmentID)
+
+	log.Printf("video import %s: uploading video key=%s", job.JobID, videoKey)
 	if err := uploadFile(ctx, store, videoKey, processedPath, "video/mp4"); err != nil {
 		_ = db.Delete(&models.MessageAttachment{}, attachmentID).Error
 		return failVideoImport(ctx, db, job, "Не удалось загрузить видео", err)
 	}
+
+	log.Printf("video import %s: uploading thumbnail key=%s", job.JobID, thumbKey)
 	if err := uploadFile(ctx, store, thumbKey, thumbPath, "image/jpeg"); err != nil {
 		_ = db.Delete(&models.MessageAttachment{}, attachmentID).Error
 		return failVideoImport(ctx, db, job, "Не удалось загрузить обложку", err)
@@ -224,6 +273,8 @@ func ProcessVideoImportJob(ctx context.Context, db *gorm.DB, cfg VideoImportWork
 	}); err != nil {
 		return failVideoImport(ctx, db, job, "Не удалось сохранить видео", err)
 	}
+
+	log.Printf("video import %s: completed message_id=%d attachment_id=%d", job.JobID, job.MessageID, attachmentID)
 
 	PublishMessageUpdate(ctx, job.MessageID)
 	return nil
