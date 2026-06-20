@@ -10,7 +10,14 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o main ./cmd/api
 
 FROM alpine:3.20
 
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache \
+  ca-certificates \
+  tzdata \
+  python3 \
+  py3-pip \
+  ffmpeg \
+  && pip3 install --no-cache-dir --break-system-packages yt-dlp
+
 RUN addgroup -S -g 1000 app && adduser -S -u 1000 -G app app
 
 WORKDIR /app
