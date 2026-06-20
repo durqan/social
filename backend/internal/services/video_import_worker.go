@@ -26,6 +26,10 @@ const (
 	defaultVideoImportTempRoot       = "/tmp/video-imports"
 	defaultVideoImportDownloadTimout = 20 * time.Minute
 	defaultVideoImportFFmpegTimeout  = 30 * time.Minute
+
+	maxFastCopySourceSizeBytes = 150 * 1024 * 1024
+	maxFastCopyLongSide        = 1280
+	maxFastCopyShortSide       = 720
 )
 
 type VideoImportWorkerConfig struct {
@@ -41,6 +45,14 @@ type videoMetadata struct {
 	Width           int
 	Height          int
 	SizeBytes       int64
+}
+
+type sourceVideoInfo struct {
+	VideoCodec string
+	AudioCodec string
+	Width      int
+	Height     int
+	SizeBytes  int64
 }
 
 func RunVideoImportWorker(ctx context.Context, db *gorm.DB, cfg VideoImportWorkerConfig) error {
@@ -141,7 +153,7 @@ func ProcessVideoImportJob(ctx context.Context, db *gorm.DB, cfg VideoImportWork
 		ctx,
 		cfg.DownloadLimit,
 		"yt-dlp",
-		"-f", "bv*[vcodec^=avc1][height<=1280]+ba[acodec^=mp4a]/bv*[height<=1280]+ba/b[height<=1280]/best[height<=1280]/best",
+		"-f", "bv*[ext=mp4][vcodec^=avc1][height<=1280]+ba[ext=m4a][acodec^=mp4a]/b[ext=mp4][vcodec^=avc1][height<=1280]/bv*[vcodec^=avc1][height<=1280]+ba/b[height<=1280]/best[height<=1280]/best",
 		"--merge-output-format", "mp4",
 		"--no-playlist",
 		"-o", sourceTemplate,
@@ -156,29 +168,74 @@ func ProcessVideoImportJob(ctx context.Context, db *gorm.DB, cfg VideoImportWork
 	}
 	log.Printf("video import %s: downloaded source=%s", job.JobID, sourcePath)
 
+	sourceInfo, err := probeSourceVideoInfo(ctx, sourcePath)
+	if err != nil {
+		log.Printf("video import %s: could not probe source, will transcode: %v", job.JobID, err)
+	} else {
+		log.Printf(
+			"video import %s: source info video=%s audio=%s size=%d width=%d height=%d",
+			job.JobID,
+			sourceInfo.VideoCodec,
+			sourceInfo.AudioCodec,
+			sourceInfo.SizeBytes,
+			sourceInfo.Width,
+			sourceInfo.Height,
+		)
+	}
+
 	processedPath := filepath.Join(tempDir, "processed.mp4")
 	thumbPath := filepath.Join(tempDir, "thumb.jpg")
 
-	log.Printf("video import %s: transcoding video", job.JobID)
-	if err := runCommand(
-		ctx,
-		cfg.FFmpegLimit,
-		"ffmpeg",
-		"-y",
-		"-i", sourcePath,
-		"-vf", "scale=1280:720:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,fps='min(30,source_fps)'",
-		"-c:v", "libx264",
-		"-preset", "veryfast",
-		"-crf", "28",
-		"-pix_fmt", "yuv420p",
-		"-c:a", "aac",
-		"-b:a", "128k",
-		"-movflags", "+faststart",
-		processedPath,
-	); err != nil {
-		return failVideoImport(ctx, db, job, "Не удалось обработать видео", err)
+	transcodeVideo := func() error {
+		log.Printf("video import %s: transcoding video", job.JobID)
+		if err := runCommand(
+			ctx,
+			cfg.FFmpegLimit,
+			"ffmpeg",
+			"-y",
+			"-i", sourcePath,
+			"-vf", "scale=1280:720:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,fps='min(30,source_fps)'",
+			"-c:v", "libx264",
+			"-preset", "superfast",
+			"-crf", "30",
+			"-pix_fmt", "yuv420p",
+			"-c:a", "aac",
+			"-b:a", "128k",
+			"-movflags", "+faststart",
+			processedPath,
+		); err != nil {
+			return err
+		}
+		log.Printf("video import %s: transcoded processed=%s", job.JobID, processedPath)
+		return nil
 	}
-	log.Printf("video import %s: transcoded processed=%s", job.JobID, processedPath)
+
+	if sourceInfo.canFastCopy() {
+		log.Printf("video import %s: remuxing video without transcode", job.JobID)
+		if err := runCommand(
+			ctx,
+			5*time.Minute,
+			"ffmpeg",
+			"-y",
+			"-i", sourcePath,
+			"-map", "0:v:0",
+			"-map", "0:a?",
+			"-c", "copy",
+			"-movflags", "+faststart",
+			processedPath,
+		); err != nil {
+			log.Printf("video import %s: remux failed, falling back to transcode: %v", job.JobID, err)
+			if err := transcodeVideo(); err != nil {
+				return failVideoImport(ctx, db, job, "Не удалось обработать видео", err)
+			}
+		} else {
+			log.Printf("video import %s: remuxed processed=%s", job.JobID, processedPath)
+		}
+	} else {
+		if err := transcodeVideo(); err != nil {
+			return failVideoImport(ctx, db, job, "Не удалось обработать видео", err)
+		}
+	}
 
 	log.Printf("video import %s: creating thumbnail", job.JobID)
 	if err := runCommand(
@@ -327,6 +384,87 @@ func findDownloadedSource(tempDir string) (string, error) {
 	return "", errors.New("downloaded source not found")
 }
 
+func probeSourceVideoInfo(ctx context.Context, path string) (sourceVideoInfo, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return sourceVideoInfo{}, err
+	}
+
+	cmdCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(
+		cmdCtx,
+		"ffprobe",
+		"-v", "error",
+		"-show_entries", "stream=index,codec_type,codec_name,width,height",
+		"-of", "json",
+		path,
+	)
+
+	output, err := cmd.Output()
+	if err != nil {
+		return sourceVideoInfo{}, err
+	}
+
+	var parsed struct {
+		Streams []struct {
+			CodecType string `json:"codec_type"`
+			CodecName string `json:"codec_name"`
+			Width     int    `json:"width"`
+			Height    int    `json:"height"`
+		} `json:"streams"`
+	}
+
+	if err := json.Unmarshal(output, &parsed); err != nil {
+		return sourceVideoInfo{}, err
+	}
+
+	var result sourceVideoInfo
+	result.SizeBytes = info.Size()
+
+	for _, stream := range parsed.Streams {
+		switch stream.CodecType {
+		case "video":
+			if result.VideoCodec == "" {
+				result.VideoCodec = strings.ToLower(stream.CodecName)
+				result.Width = stream.Width
+				result.Height = stream.Height
+			}
+		case "audio":
+			if result.AudioCodec == "" {
+				result.AudioCodec = strings.ToLower(stream.CodecName)
+			}
+		}
+	}
+
+	if result.VideoCodec == "" {
+		return sourceVideoInfo{}, errors.New("video stream not found")
+	}
+
+	return result, nil
+}
+
+func (info sourceVideoInfo) canFastCopy() bool {
+	if info.VideoCodec != "h264" {
+		return false
+	}
+	if info.AudioCodec != "" && info.AudioCodec != "aac" {
+		return false
+	}
+	if info.SizeBytes <= 0 || info.SizeBytes > maxFastCopySourceSizeBytes {
+		return false
+	}
+
+	longSide := info.Width
+	shortSide := info.Height
+	if shortSide > longSide {
+		longSide, shortSide = shortSide, longSide
+	}
+
+	return longSide <= maxFastCopyLongSide && shortSide <= maxFastCopyShortSide
+}
+
 func probeVideoMetadata(ctx context.Context, path string) (videoMetadata, error) {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -334,11 +472,13 @@ func probeVideoMetadata(ctx context.Context, path string) (videoMetadata, error)
 	}
 	cmdCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(cmdCtx, "ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,duration", "-of", "json", path)
+	cmd := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,duration", "-of", "json", path)
 	output, err := cmd.Output()
 	if err != nil {
 		return videoMetadata{}, err
 	}
+	_ = cmdCtx
+
 	var parsed struct {
 		Streams []struct {
 			Width    int    `json:"width"`
