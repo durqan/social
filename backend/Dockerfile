@@ -6,7 +6,9 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
+
 RUN CGO_ENABLED=0 GOOS=linux go build -o main ./cmd/api
+RUN CGO_ENABLED=0 GOOS=linux go build -o video-import-worker ./cmd/video-import-worker
 
 FROM alpine:3.20
 
@@ -16,6 +18,7 @@ RUN apk add --no-cache \
   python3 \
   py3-pip \
   ffmpeg \
+  nodejs \
   && pip3 install --no-cache-dir --break-system-packages yt-dlp
 
 RUN addgroup -S -g 1000 app && adduser -S -u 1000 -G app app
@@ -23,8 +26,10 @@ RUN addgroup -S -g 1000 app && adduser -S -u 1000 -G app app
 WORKDIR /app
 
 COPY --from=builder /app/main .
+COPY --from=builder /app/video-import-worker .
 
-RUN mkdir -p /app/uploads/avatars /app/uploads/chat && chown -R app:app /app/uploads
+RUN mkdir -p /app/uploads/avatars /app/uploads/chat /tmp/video-imports \
+  && chown -R app:app /app/uploads /tmp/video-imports
 
 USER app
 
