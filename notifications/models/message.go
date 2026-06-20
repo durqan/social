@@ -3,13 +3,16 @@ package models
 import "gorm.io/gorm"
 
 type Message struct {
-	ID          uint                `json:"id" gorm:"primarykey"`
-	FromID      uint                `json:"from_id"`
-	ToID        uint                `json:"to_id"`
-	Content     string              `json:"content"`
-	IsRead      bool                `json:"is_read"`
-	DeletedAt   gorm.DeletedAt      `json:"-" gorm:"index"`
-	Attachments []MessageAttachment `json:"attachments,omitempty" gorm:"foreignKey:MessageID"`
+	ID                uint                `json:"id" gorm:"primarykey"`
+	FromID            uint                `json:"from_id"`
+	ToID              uint                `json:"to_id"`
+	Content           string              `json:"content"`
+	EncryptionVersion int                 `json:"encryption_version"`
+	Ciphertext        string              `json:"ciphertext,omitempty"`
+	Nonce             string              `json:"nonce,omitempty"`
+	IsRead            bool                `json:"is_read"`
+	DeletedAt         gorm.DeletedAt      `json:"-" gorm:"index"`
+	Attachments       []MessageAttachment `json:"attachments,omitempty" gorm:"foreignKey:MessageID"`
 }
 
 func (Message) TableName() string {

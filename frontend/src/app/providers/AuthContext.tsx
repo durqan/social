@@ -49,7 +49,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         const response = await authService.login(data);
         setCurrentUser(response.user);
         if (response.user.id) {
-            void runPostAuthBootstrap(response.user.id, { e2eeSecret: data.password });
+            void runPostAuthBootstrap(response.user.id);
         }
         wsService.connect();
         return response.user;
@@ -59,7 +59,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         const response = await authService.register(data);
         setCurrentUser(response.user);
         if (response.user.id) {
-            void runPostAuthBootstrap(response.user.id, { e2eeSecret: data.password });
+            void runPostAuthBootstrap(response.user.id);
         }
         wsService.connect();
         return response.user;

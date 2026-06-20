@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"errors"
 	"net/http"
 	"strconv"
 
@@ -68,27 +67,13 @@ func SaveE2EEBackup(db *gorm.DB) gin.HandlerFunc {
 
 func GetE2EEBackup(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		userID, ok := authenticatedUserID(c)
-		if !ok {
-			return
-		}
-
-		backup, err := repository.GetEncryptedKeyBackupByUserID(db, userID)
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusOK, gin.H{
-				"enabled":              false,
-				"encrypted_master_key": nil,
-			})
-			return
-		}
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get e2ee backup"})
+		if _, ok := authenticatedUserID(c); !ok {
 			return
 		}
 
 		c.JSON(http.StatusOK, gin.H{
-			"enabled":              true,
-			"encrypted_master_key": backup.EncryptedMasterKey,
+			"enabled":              false,
+			"encrypted_master_key": nil,
 		})
 	}
 }
@@ -110,28 +95,9 @@ func DisableE2EE(db *gorm.DB) gin.HandlerFunc {
 }
 
 func saveE2EEBackup(c *gin.Context, db *gorm.DB, statusCode int) {
-	userID, ok := authenticatedUserID(c)
-	if !ok {
+	if _, ok := authenticatedUserID(c); !ok {
 		return
 	}
 
-	var req struct {
-		EncryptedMasterKey string `json:"encrypted_master_key" binding:"required"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	err := services.SaveEncryptedKeyBackup(db, userID, req.EncryptedMasterKey)
-	if errors.Is(err, services.ErrEncryptedKeyBackupInvalid) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid encrypted master key backup"})
-		return
-	}
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save e2ee backup"})
-		return
-	}
-
-	c.JSON(statusCode, gin.H{"enabled": true})
+	c.JSON(statusCode, gin.H{"enabled": false})
 }

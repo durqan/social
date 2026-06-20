@@ -81,9 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const response = await authApi.login(payload);
       setUser(response.user);
       if (response.user.id) {
-        runPostAuthBootstrap(response.user.id, {
-          e2eeSecret: payload.password,
-        }).catch(() => undefined);
+        runPostAuthBootstrap(response.user.id).catch(() => undefined);
       }
     } catch (error) {
       const message = getApiErrorMessage(error);
@@ -98,9 +96,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const response = await authApi.register(payload);
       setUser(response.user);
       if (response.user.id) {
-        runPostAuthBootstrap(response.user.id, {
-          e2eeSecret: payload.password,
-        }).catch(() => undefined);
+        runPostAuthBootstrap(response.user.id).catch(() => undefined);
       }
     } catch (error) {
       const message = getApiErrorMessage(error);

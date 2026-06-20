@@ -15,9 +15,6 @@ import {
     type ProfileFormData,
 } from "@/features/profile/ui/ProfileEditForms.js";
 import { ThemeSettings } from "@/app/themes/ThemeSettings.js";
-import { E2EESettings } from "@/features/profile/components/E2EESettings.js";
-import { e2eeService } from "@/shared/api/e2eeService.js";
-import { reencryptBackupWithPassword } from "@/crypto/keyBackup.js";
 import { NotificationSettings } from "@/features/profile/components/NotificationSettings.js";
 
 const initialPasswordData: PasswordChangeData = {
@@ -142,20 +139,9 @@ function ProfileEdit() {
         setMessage(null);
 
         try {
-            const e2eeStatus = await e2eeService.getStatus();
-            const encryptedMasterKey = e2eeStatus.enabled
-                ? await reencryptBackupWithPassword(user.id!, passwordData.newPassword)
-                : null;
-
-            if (e2eeStatus.enabled && !encryptedMasterKey) {
-                setError('Восстановите E2EE-ключ на этом устройстве перед сменой пароля');
-                return;
-            }
-
             await userService.changePassword(user.id!, {
                 current_password: passwordData.oldPassword,
                 new_password: passwordData.newPassword,
-                encrypted_master_key: encryptedMasterKey || undefined,
             });
 
             setSuccess('Пароль успешно изменен!');
@@ -203,11 +189,8 @@ function ProfileEdit() {
                         <ThemeSettings />
                     )}
 
-                    {activeTab === 'e2ee' && (
-                        <div className="space-y-5">
-                            <E2EESettings userId={user.id} />
-                            <NotificationSettings />
-                        </div>
+                    {activeTab === 'notifications' && (
+                        <NotificationSettings />
                     )}
                 </div>
             </div>

@@ -45,18 +45,7 @@ func DeleteEncryptedKeyBackup(db *gorm.DB, userID uint) error {
 }
 
 func E2EEPublicStatusForUser(db *gorm.DB, userID uint) (E2EEPublicStatus, error) {
-	backup, err := repository.GetEncryptedKeyBackupByUserID(db, userID)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return E2EEPublicStatus{Enabled: false}, nil
-	}
-	if err != nil {
-		return E2EEPublicStatus{}, err
-	}
-
-	return E2EEPublicStatus{
-		Enabled:   true,
-		PublicKey: publicKeyFromBackupBundle(backup.EncryptedMasterKey),
-	}, nil
+	return E2EEPublicStatus{Enabled: false}, nil
 }
 
 func publicKeyFromBackupBundle(value string) string {

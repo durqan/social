@@ -121,6 +121,10 @@ func handleWebSocketSendMessage(ctx context.Context, userID uint, rawPayload jso
 		sendWebSocketError(ctx, userID, "invalid encrypted message payload")
 		return
 	}
+	if errors.Is(err, services.ErrMessageEncryptionUnavailable) {
+		sendWebSocketError(ctx, userID, "message encryption is not configured")
+		return
+	}
 	if err != nil {
 		log.Println("Failed to save message:", err)
 		return

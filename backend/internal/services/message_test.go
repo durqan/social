@@ -3,6 +3,7 @@ package services
 import (
 	"errors"
 	"strconv"
+	"strings"
 	"testing"
 
 	"tester/internal/models"
@@ -102,102 +103,179 @@ func TestSendMessagePersistsMessageAndAttachmentsAtomically(t *testing.T) {
 	}
 }
 
-func TestSendMessageRejectsPlaintextWhenRecipientE2EEEnabled(t *testing.T) {
+func TestSendMessageEncryptsTextAtRest(t *testing.T) {
 	db := newMessageServiceTestDB(t)
 	seedAcceptedFriendship(t, db, 1, 2)
-	seedE2EEBackup(t, db, 2)
 
-	_, err := SendMessage(db, 1, 2, "plaintext", nil, nil, MessageEncryptionInput{})
-	if !errors.Is(err, ErrMessageInvalidEncryption) {
-		t.Fatalf("SendMessage error = %v, want %v", err, ErrMessageInvalidEncryption)
-	}
-}
-
-func TestSendMessageRejectsPlaintextAttachmentWhenRecipientE2EEEnabled(t *testing.T) {
-	db := newMessageServiceTestDB(t)
-	seedAcceptedFriendship(t, db, 1, 2)
-	seedE2EEBackup(t, db, 2)
-
-	_, err := SendMessage(db, 1, 2, "", []models.MessageAttachment{
-		{
-			FileURL:  "messages/user_1/file.jpg",
-			FileType: "image",
-			Size:     128,
-		},
-	}, nil, MessageEncryptionInput{})
-	if !errors.Is(err, ErrMessageInvalidEncryption) {
-		t.Fatalf("SendMessage error = %v, want %v", err, ErrMessageInvalidEncryption)
-	}
-}
-
-func TestSendMessageRejectsEncryptedPayloadUntilBothParticipantsE2EEEnabled(t *testing.T) {
-	db := newMessageServiceTestDB(t)
-	seedAcceptedFriendship(t, db, 1, 2)
-	seedE2EEBackup(t, db, 1)
-
-	_, err := SendMessage(db, 1, 2, "plaintext", nil, nil, MessageEncryptionInput{
-		Version:    1,
-		Ciphertext: `{"ciphertext":"abc"}`,
-		Nonce:      "nonce",
-	})
-	if !errors.Is(err, ErrMessageInvalidEncryption) {
-		t.Fatalf("SendMessage error = %v, want %v", err, ErrMessageInvalidEncryption)
-	}
-}
-
-func TestSendMessageAllowsEncryptedPayloadWhenBothParticipantsE2EEEnabled(t *testing.T) {
-	db := newMessageServiceTestDB(t)
-	seedAcceptedFriendship(t, db, 1, 2)
-	seedE2EEBackup(t, db, 1)
-	seedE2EEBackup(t, db, 2)
-
-	message, err := SendMessage(db, 1, 2, "plaintext", nil, nil, MessageEncryptionInput{
-		Version:    1,
-		Ciphertext: `{"ciphertext":"abc"}`,
-		Nonce:      "nonce",
-	})
+	const plaintext = "server-encryption-test-123"
+	message, err := SendMessage(db, 1, 2, plaintext, nil, nil, MessageEncryptionInput{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if message.Content != "" {
-		t.Fatalf("encrypted message content = %q, want empty plaintext", message.Content)
+		t.Fatalf("returned stored content = %q, want empty content at rest", message.Content)
 	}
 	if message.EncryptionVersion != 1 || message.Ciphertext == "" || message.Nonce == "" {
 		t.Fatalf("encrypted message fields were not persisted: %+v", message)
 	}
-}
-
-func TestUpdateMessageRejectsPlaintextWhenRecipientE2EEEnabled(t *testing.T) {
-	db := newMessageServiceTestDB(t)
-	seedAcceptedFriendship(t, db, 1, 2)
-
-	message, err := SendMessage(db, 1, 2, "before e2ee", nil, nil, MessageEncryptionInput{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	seedE2EEBackup(t, db, 2)
-
-	_, err = UpdateMessage(db, 1, message.ID, "plaintext edit", MessageEncryptionInput{})
-	if !errors.Is(err, ErrMessageInvalidEncryption) {
-		t.Fatalf("UpdateMessage error = %v, want %v", err, ErrMessageInvalidEncryption)
+	if strings.Contains(message.Content, plaintext) || strings.Contains(message.Ciphertext, plaintext) {
+		t.Fatalf("plaintext leaked into stored message: %+v", message)
 	}
 }
 
-func TestForwardMessageRejectsPlaintextToE2EEConversation(t *testing.T) {
+func TestSendMessageDoesNotStorePlaintextInMessagesContent(t *testing.T) {
 	db := newMessageServiceTestDB(t)
 	seedAcceptedFriendship(t, db, 1, 2)
-	seedUser(t, db, 3)
-	seedFriendship(t, db, 1, 3)
 
-	message, err := SendMessage(db, 1, 2, "plaintext", nil, nil, MessageEncryptionInput{})
+	const plaintext = "pg-dump-search-test-456"
+	message, err := SendMessage(db, 1, 2, plaintext, nil, nil, MessageEncryptionInput{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	seedE2EEBackup(t, db, 3)
 
-	_, err = ForwardMessage(db, 1, message.ID, []uint{3})
-	if !errors.Is(err, ErrMessageInvalidEncryption) {
-		t.Fatalf("ForwardMessage error = %v, want %v", err, ErrMessageInvalidEncryption)
+	var stored models.Message
+	if err := db.First(&stored, message.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(stored.Content, plaintext) {
+		t.Fatalf("messages.content contains plaintext: %q", stored.Content)
+	}
+	if stored.EncryptionVersion != 1 || stored.Ciphertext == "" || stored.Nonce == "" {
+		t.Fatalf("stored encrypted fields = %+v, want version/ciphertext/nonce", stored)
+	}
+}
+
+func TestReadMessagesReturnsDecryptedContent(t *testing.T) {
+	db := newMessageServiceTestDB(t)
+	seedAcceptedFriendship(t, db, 1, 2)
+
+	const plaintext = "read-decrypted-test-789"
+	if _, err := SendMessage(db, 1, 2, plaintext, nil, nil, MessageEncryptionInput{}); err != nil {
+		t.Fatal(err)
+	}
+
+	messages, err := repository.GetMessagesBetweenPaginated(db, 1, 2, 20, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := WithPrivateAttachmentURLsForMessages(messages)
+	if len(response) != 1 {
+		t.Fatalf("messages count = %d, want 1", len(response))
+	}
+	if response[0].Content != plaintext {
+		t.Fatalf("response content = %q, want %q", response[0].Content, plaintext)
+	}
+	if response[0].EncryptionVersion != 0 || response[0].Ciphertext != "" || response[0].Nonce != "" {
+		t.Fatalf("response leaked encryption fields: %+v", response[0])
+	}
+}
+
+func TestReplyPreviewReturnsDecryptedContent(t *testing.T) {
+	db := newMessageServiceTestDB(t)
+	seedAcceptedFriendship(t, db, 1, 2)
+
+	original, err := SendMessage(db, 1, 2, "reply-preview-secret", nil, nil, MessageEncryptionInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SendMessage(db, 2, 1, "reply body", nil, &original.ID, MessageEncryptionInput{}); err != nil {
+		t.Fatal(err)
+	}
+
+	messages, err := repository.GetMessagesBetweenPaginated(db, 2, 1, 20, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := WithPrivateAttachmentURLsForMessages(messages)
+	if len(response) != 2 {
+		t.Fatalf("messages count = %d, want 2", len(response))
+	}
+	if response[1].ReplyToMessage == nil {
+		t.Fatal("reply preview is missing")
+	}
+	if response[1].ReplyToMessage.Content != "reply-preview-secret" {
+		t.Fatalf("reply preview content = %q", response[1].ReplyToMessage.Content)
+	}
+}
+
+func TestPinnedMessageReturnsDecryptedContent(t *testing.T) {
+	db := newMessageServiceTestDB(t)
+	seedAcceptedFriendship(t, db, 1, 2)
+
+	message, err := SendMessage(db, 1, 2, "pinned-preview-secret", nil, nil, MessageEncryptionInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pin, err := PinMessage(db, 1, 2, message.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	response := WithPrivateAttachmentURLs(pin.Message)
+	if response.Content != "pinned-preview-secret" {
+		t.Fatalf("pinned message content = %q", response.Content)
+	}
+}
+
+func TestLegacyPlaintextMessageReadsAsBefore(t *testing.T) {
+	db := newMessageServiceTestDB(t)
+	seedAcceptedFriendship(t, db, 1, 2)
+
+	legacy := models.Message{FromID: 1, ToID: 2, Content: "legacy plaintext", EncryptionVersion: 0}
+	if err := db.Create(&legacy).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	messages, err := repository.GetMessagesBetweenPaginated(db, 1, 2, 20, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := WithPrivateAttachmentURLsForMessages(messages)
+	if len(response) != 1 || response[0].Content != "legacy plaintext" {
+		t.Fatalf("legacy response = %+v, want plaintext", response)
+	}
+}
+
+func TestSendMessageFailsWithoutEncryptionKey(t *testing.T) {
+	db := newMessageServiceTestDB(t)
+	seedAcceptedFriendship(t, db, 1, 2)
+	t.Setenv("MESSAGE_ENCRYPTION_KEY", "")
+
+	_, err := SendMessage(db, 1, 2, "must not be stored", nil, nil, MessageEncryptionInput{})
+	if !errors.Is(err, ErrMessageEncryptionUnavailable) {
+		t.Fatalf("SendMessage error = %v, want %v", err, ErrMessageEncryptionUnavailable)
+	}
+}
+
+func TestConversationPreviewDecryptsWithoutPlaintextAtRest(t *testing.T) {
+	db := newMessageServiceTestDB(t)
+	seedAcceptedFriendship(t, db, 1, 2)
+
+	const plaintext = "conversation-preview-secret"
+	message, err := SendMessage(db, 1, 2, plaintext, nil, nil, MessageEncryptionInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored models.Message
+	if err := db.First(&stored, message.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(stored.Content, plaintext) {
+		t.Fatalf("stored preview source contains plaintext: %q", stored.Content)
+	}
+
+	conversations, err := GetConversations(db, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(conversations) != 1 {
+		t.Fatalf("conversations count = %d, want 1", len(conversations))
+	}
+	if conversations[0]["last_message"] != plaintext {
+		t.Fatalf("last_message = %v, want %q", conversations[0]["last_message"], plaintext)
+	}
+	if _, exists := conversations[0]["last_ciphertext"]; exists {
+		t.Fatalf("conversation response leaked crypto fields: %+v", conversations[0])
 	}
 }
 
@@ -561,6 +639,7 @@ func TestDeleteForMeHidesDeletedReplyPreviewOnlyForThatUser(t *testing.T) {
 
 func newMessageServiceTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
+	t.Setenv("MESSAGE_ENCRYPTION_KEY", "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=")
 
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {

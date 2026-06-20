@@ -14,7 +14,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestSaveE2EEBackupUsesAuthenticatedUserID(t *testing.T) {
+func TestSaveE2EEBackupDoesNotPersistUserKey(t *testing.T) {
 	database := newE2EEHandlerTestDB(t)
 	context, recorder := newE2EEHandlerContext(
 		http.MethodPost,
@@ -27,12 +27,15 @@ func TestSaveE2EEBackupUsesAuthenticatedUserID(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
 	}
-	var backup models.EncryptedKeyBackup
-	if err := database.First(&backup).Error; err != nil {
-		t.Fatalf("load backup: %v", err)
+	if recorder.Body.String() != `{"enabled":false}` {
+		t.Fatalf("body = %s, want disabled response", recorder.Body.String())
 	}
-	if backup.UserID != 1 {
-		t.Fatalf("backup user_id = %d, want authenticated user 1", backup.UserID)
+	var count int64
+	if err := database.Model(&models.EncryptedKeyBackup{}).Count(&count).Error; err != nil {
+		t.Fatalf("count backups: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("disabled E2EE endpoint persisted %d backups", count)
 	}
 }
 

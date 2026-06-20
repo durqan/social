@@ -73,9 +73,15 @@ func GetConversations(db *gorm.DB, userID uint) ([]map[string]interface{}, error
             last_is_mine,
             last_read,
             unread_count,
-            is_pinned
+            is_pinned,
+            last_message_id,
+            last_message_content,
+            last_encryption_version,
+            last_ciphertext,
+            last_nonce
         FROM (
             SELECT 
+                m.id as last_message_id,
                 CASE 
                     WHEN m.from_id = ? THEN m.to_id
                     ELSE m.from_id
@@ -85,6 +91,10 @@ func GetConversations(db *gorm.DB, userID uint) ([]map[string]interface{}, error
                 u.avatar_position_x,
                 u.avatar_position_y,
                 u.avatar_scale,
+                m.content as last_message_content,
+                m.encryption_version as last_encryption_version,
+                m.ciphertext as last_ciphertext,
+                m.nonce as last_nonce,
                 CASE
                     WHEN m.encryption_version > 0 OR EXISTS (
                         SELECT 1 FROM message_attachments ma

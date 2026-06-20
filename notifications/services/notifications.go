@@ -8,6 +8,7 @@ import (
 	"log"
 	"notifications/dto"
 	"notifications/hub"
+	"notifications/messagecrypto"
 	"notifications/models"
 	pushsvc "notifications/push"
 	"notifications/repository"
@@ -347,6 +348,20 @@ func displayUserName(user models.User) string {
 }
 
 func messagePreview(message models.Message) string {
+	if message.EncryptionVersion > 0 {
+		cipher, err := messagecrypto.NewFromEnv()
+		if err != nil {
+			log.Printf("message preview decrypt failed: message_id=%d error=%v", message.ID, err)
+			return "Не удалось расшифровать сообщение"
+		}
+		content, err := cipher.Decrypt(message.Ciphertext, message.Nonce)
+		if err != nil {
+			log.Printf("message preview decrypt failed: message_id=%d error=%v", message.ID, err)
+			return "Не удалось расшифровать сообщение"
+		}
+		return strings.TrimSpace(content)
+	}
+
 	content := strings.TrimSpace(message.Content)
 	if content != "" {
 		return content

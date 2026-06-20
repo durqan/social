@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"tester/internal/messagecrypto"
 )
 
 const (
@@ -152,5 +154,8 @@ func validateSecurity(cfg Config) {
 
 	if len(cfg.JWTSecret) < 32 || strings.Contains(cfg.JWTSecret, "your-secret-key") {
 		log.Fatal("JWT_SECRET must be changed and contain at least 32 characters in release mode")
+	}
+	if err := messagecrypto.ValidateProductionKey(); err != nil {
+		log.Fatal(err)
 	}
 }

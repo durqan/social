@@ -72,6 +72,10 @@ func SendMessage(db *gorm.DB) gin.HandlerFunc {
 			c.JSON(400, gin.H{"error": "invalid encrypted message payload"})
 			return
 		}
+		if errors.Is(err, services.ErrMessageEncryptionUnavailable) {
+			c.JSON(500, gin.H{"error": "message encryption is not configured"})
+			return
+		}
 		if err != nil {
 			c.JSON(500, gin.H{"error": "failed to send message"})
 			return
@@ -170,6 +174,10 @@ func ForwardMessage(db *gorm.DB) gin.HandlerFunc {
 			c.JSON(400, gin.H{"error": "invalid encrypted message payload"})
 			return
 		}
+		if errors.Is(err, services.ErrMessageEncryptionUnavailable) {
+			c.JSON(500, gin.H{"error": "message encryption is not configured"})
+			return
+		}
 		if err != nil {
 			c.JSON(500, gin.H{"error": "failed to forward message"})
 			return
@@ -229,7 +237,7 @@ func GetConversations(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		conversations, err := repository.GetConversations(db, userID)
+		conversations, err := services.GetConversations(db, userID)
 		if err != nil {
 			c.JSON(500, gin.H{"error": "failed to get conversations"})
 			return
@@ -500,6 +508,10 @@ func UpdateMessage(db *gorm.DB) gin.HandlerFunc {
 		}
 		if errors.Is(err, services.ErrMessageInvalidEncryption) {
 			c.JSON(400, gin.H{"error": "invalid encrypted message payload"})
+			return
+		}
+		if errors.Is(err, services.ErrMessageEncryptionUnavailable) {
+			c.JSON(500, gin.H{"error": "message encryption is not configured"})
 			return
 		}
 		if errors.Is(err, gorm.ErrRecordNotFound) {

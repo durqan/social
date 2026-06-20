@@ -103,6 +103,7 @@ services:
       PORT: ${PORT:-8080}
       GIN_MODE: ${GIN_MODE:-debug}
       JWT_SECRET: ${JWT_SECRET:-local-development-secret-change-before-release}
+      MESSAGE_ENCRYPTION_KEY: ${MESSAGE_ENCRYPTION_KEY:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
@@ -148,6 +149,8 @@ services:
     environment:
       DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgres://social:social@postgres:5432/social?sslmode=disable}
       RABBIT_URL: ${COMPOSE_RABBIT_URL:-amqp://guest:guest@rabbitmq:5672/}
+      GIN_MODE: ${GIN_MODE:-debug}
+      MESSAGE_ENCRYPTION_KEY: ${MESSAGE_ENCRYPTION_KEY:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}
       REDIS_HOST: ${COMPOSE_REDIS_HOST:-redis}
       REDIS_PORT: ${COMPOSE_REDIS_PORT:-6379}
       REDIS_PASSWORD: ${COMPOSE_REDIS_PASSWORD:-}

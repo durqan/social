@@ -267,7 +267,7 @@ function chatErrorMessage(error: unknown) {
       error.message === 'E2EE is not ready for this conversation' ||
       error.message === 'Recipient E2EE is not enabled'
     ) {
-      return 'Сквозное шифрование недоступно: восстановите ключ или попросите собеседника включить E2EE.';
+      return 'Не удалось отправить сообщение.';
     }
   }
 
@@ -1846,9 +1846,7 @@ export default function ChatScreen({ route }: Props) {
             return;
           }
           if (e2eeState.selfEnabled && !e2eeReady) {
-            setError(
-              'Сквозное шифрование недоступно для редактирования сообщения',
-            );
+            setError('Не удалось отредактировать сообщение');
             return;
           }
 
@@ -1866,9 +1864,7 @@ export default function ChatScreen({ route }: Props) {
             recipientPublicKey,
           );
           if (!encryption) {
-            setError(
-              'Сквозное шифрование недоступно для редактирования сообщения',
-            );
+            setError('Не удалось отредактировать сообщение');
             return;
           }
 
@@ -2429,20 +2425,6 @@ export default function ChatScreen({ route }: Props) {
           onPress={() => startVideoCall(otherUserId, route.params.name)}
         />
       </View>
-
-      {e2eeReady ? (
-        <View style={[styles.e2eeStatusBar, themed.surfaceBar]}>
-          <Text style={[styles.e2eeStatusText, themed.accentText]}>
-            E2EE включено для этого диалога
-          </Text>
-        </View>
-      ) : e2eeState.selfEnabled && !e2eeState.loading ? (
-        <View style={[styles.e2eeStatusBar, themed.dangerSoft]}>
-          <Text style={[styles.e2eeStatusText, themed.dangerText]}>
-            E2EE недоступно: восстановите ключ или проверьте ключ собеседника
-          </Text>
-        </View>
-      ) : null}
 
       {pinnedMessage?.message ? (
         <Pressable
@@ -4344,17 +4326,6 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 13,
     lineHeight: 18,
-  },
-  e2eeStatusBar: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
-  },
-  e2eeStatusText: {
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: '800',
   },
   replyBar: {
     flexDirection: 'row',

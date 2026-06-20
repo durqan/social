@@ -1,18 +1,8 @@
 import {
-    createEncryptedMasterKeyBackup,
-    getE2EEBackupPublicKey,
-    restoreE2EEFromBackup,
-} from "@/crypto/keyBackup.js";
-import {
-    createLocalE2EEKeyBundle,
-    getLocalE2EEKeyBundle,
-} from "@/crypto/masterKey.js";
-import {
     ensureWebPushReady,
     requestWebPushPermission,
     type PushNotificationStatus,
 } from "@/features/notifications/api/pushNotifications.js";
-import { e2eeService } from "@/shared/api/e2eeService.js";
 
 export type E2EEBootstrapStatus = 'idle' | 'checking' | 'ready' | 'needs-secret' | 'error';
 export type WebPushBootstrapStatus = PushNotificationStatus | 'checking' | 'error';
@@ -27,10 +17,6 @@ export type PostAuthBootstrapState = {
         status: WebPushBootstrapStatus;
         error: string | null;
     };
-};
-
-type BootstrapOptions = {
-    e2eeSecret?: string;
 };
 
 const initialState: PostAuthBootstrapState = {
@@ -48,12 +34,8 @@ const initialState: PostAuthBootstrapState = {
 let state = initialState;
 let stateVersion = 0;
 const listeners = new Set<() => void>();
-const e2eeInFlight = new Map<number, Promise<E2EEBootstrapStatus>>();
 const pushInFlight = new Map<number, Promise<WebPushBootstrapStatus>>();
-const bootstrapInFlight = new Map<number, {
-    promise: Promise<void>;
-    includesSecret: boolean;
-}>();
+const bootstrapInFlight = new Map<number, Promise<void>>();
 
 function updateState(next: Partial<PostAuthBootstrapState>) {
     state = {
@@ -68,7 +50,6 @@ function ensureStateUser(userId: number) {
         return stateVersion;
     }
     stateVersion += 1;
-    e2eeInFlight.clear();
     pushInFlight.clear();
     bootstrapInFlight.clear();
     updateState({
@@ -129,91 +110,17 @@ export function resetPostAuthBootstrapState() {
     const pendingPush = Array.from(pushInFlight.values());
     stateVersion += 1;
     state = initialState;
-    e2eeInFlight.clear();
     pushInFlight.clear();
     bootstrapInFlight.clear();
     listeners.forEach(listener => listener());
     return Promise.allSettled(pendingPush).then(() => undefined);
 }
 
-export function ensureE2EEReady(userId: number, secret?: string): Promise<E2EEBootstrapStatus> {
+export function ensureE2EEReady(userId: number, _unusedSecret?: string): Promise<E2EEBootstrapStatus> {
     const version = ensureStateUser(userId);
-    const existing = e2eeInFlight.get(userId);
-    if (existing) {
-        if (secret) {
-            return existing.then(status => (
-                status === 'ready' ? status : ensureE2EEReady(userId, secret)
-            ));
-        }
-        return existing;
-    }
-
-    updateE2EE(userId, version, 'checking');
-    const bootstrap = ensureE2EEReadyInternal(userId, version, secret)
-        .then(status => {
-            updateE2EE(userId, version, status);
-            return status;
-        })
-        .catch(error => {
-            const message = error instanceof Error ? error.message : 'E2EE bootstrap failed';
-            updateE2EE(userId, version, 'error', message);
-            throw error;
-        })
-        .finally(() => {
-            if (e2eeInFlight.get(userId) === bootstrap) {
-                e2eeInFlight.delete(userId);
-            }
-        });
-
-    e2eeInFlight.set(userId, bootstrap);
-    return bootstrap;
-}
-
-async function ensureE2EEReadyInternal(
-    userId: number,
-    version: number,
-    secret?: string,
-): Promise<E2EEBootstrapStatus> {
-    const [backup, existingBundle] = await Promise.all([
-        e2eeService.getBackup(),
-        getLocalE2EEKeyBundle(userId),
-    ]);
-    if (!isCurrentBootstrap(userId, version)) {
-        throw new Error('E2EE bootstrap superseded by another session');
-    }
-
-    if (backup.enabled && backup.encrypted_master_key) {
-        const backupPublicKey = getE2EEBackupPublicKey(backup.encrypted_master_key);
-
-        if (existingBundle) {
-            if (existingBundle.publicKeyBase64 !== backupPublicKey) {
-                throw new Error('Local E2EE key does not match the encrypted server backup');
-            }
-            return 'ready';
-        }
-
-        if (!secret) {
-            return 'needs-secret';
-        }
-
-        await restoreE2EEFromBackup(userId, secret, backup.encrypted_master_key);
-        if (!isCurrentBootstrap(userId, version)) {
-            throw new Error('E2EE bootstrap superseded by another session');
-        }
-        return 'ready';
-    }
-
-    const bundle = existingBundle ?? await createLocalE2EEKeyBundle(userId);
-    if (!secret) {
-        return 'needs-secret';
-    }
-
-    const encryptedBackup = await createEncryptedMasterKeyBackup(bundle, secret);
-    if (!isCurrentBootstrap(userId, version)) {
-        throw new Error('E2EE bootstrap superseded by another session');
-    }
-    await e2eeService.enable(encryptedBackup);
-    return 'ready';
+    updateE2EE(userId, version, 'idle');
+    void _unusedSecret;
+    return Promise.resolve('idle');
 }
 
 export function ensureWebPushForUser(userId: number): Promise<WebPushBootstrapStatus> {
@@ -258,48 +165,37 @@ export async function requestAndEnableWebPush(userId: number): Promise<WebPushBo
     }
 }
 
-export function runPostAuthBootstrap(userId: number, options: BootstrapOptions = {}): Promise<void> {
+export function runPostAuthBootstrap(userId: number): Promise<void> {
     const version = ensureStateUser(userId);
     const existing = bootstrapInFlight.get(userId);
     if (existing) {
-        if (options.e2eeSecret && !existing.includesSecret) {
-            const escalated = createPostAuthBootstrap(userId, version, options, existing.promise);
-            bootstrapInFlight.set(userId, escalated);
-            return escalated.promise;
-        }
-        return existing.promise;
+        return existing;
     }
 
-    const bootstrap = createPostAuthBootstrap(userId, version, options);
+    const bootstrap = createPostAuthBootstrap(userId, version);
     bootstrapInFlight.set(userId, bootstrap);
-    return bootstrap.promise;
+    return bootstrap;
 }
 
 function createPostAuthBootstrap(
     userId: number,
     version: number,
-    options: BootstrapOptions,
-    waitFor?: Promise<void>,
 ) {
-    const bootstrap = (waitFor ?? Promise.resolve())
+    const bootstrap = Promise.resolve()
         .then<PromiseSettledResult<unknown>[]>(() => {
             if (!isCurrentBootstrap(userId, version)) {
                 return [];
             }
             return Promise.allSettled([
-                ensureE2EEReady(userId, options.e2eeSecret),
                 ensureWebPushForUser(userId),
             ]);
         })
         .then(() => undefined)
         .finally(() => {
-            if (bootstrapInFlight.get(userId)?.promise === bootstrap) {
+            if (bootstrapInFlight.get(userId) === bootstrap) {
                 bootstrapInFlight.delete(userId);
             }
         });
 
-    return {
-        promise: bootstrap,
-        includesSecret: Boolean(options.e2eeSecret),
-    };
+    return bootstrap;
 }

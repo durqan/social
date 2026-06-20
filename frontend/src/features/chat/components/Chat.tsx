@@ -972,7 +972,7 @@ function Chat() {
         } catch (error) {
             console.error(error);
             setUploadError(error instanceof Error && error.message === 'E2EE is not ready for this conversation'
-                ? 'Сквозное шифрование недоступно: восстановите ключ или попросите собеседника включить E2EE'
+                ? 'Не удалось отправить сообщение'
                 : getUploadErrorMessage(error, 'Не удалось отправить сообщение'));
             return false;
         } finally {
@@ -1037,7 +1037,7 @@ function Chat() {
         } catch (error) {
             console.error(error);
             setUploadError(error instanceof Error && error.message === 'E2EE is not ready for this conversation'
-                ? 'Сквозное шифрование недоступно: восстановите ключ или попросите собеседника включить E2EE'
+                ? 'Не удалось отправить голосовое сообщение'
                 : getUploadErrorMessage(error, 'Не удалось отправить голосовое сообщение'));
             return false;
         } finally {
@@ -1102,7 +1102,7 @@ function Chat() {
         } catch (error) {
             console.error(error);
             setUploadError(error instanceof Error && error.message === 'E2EE is not ready for this conversation'
-                ? 'Сквозное шифрование недоступно: восстановите ключ или попросите собеседника включить E2EE'
+                ? 'Не удалось отправить кружок'
                 : getUploadErrorMessage(error, 'Не удалось отправить кружок'));
             return false;
         } finally {
@@ -1151,7 +1151,7 @@ function Chat() {
                 return;
             }
             if (e2eeState.selfEnabled && !e2eeReady) {
-                setUploadError('Сквозное шифрование недоступно для редактирования сообщения');
+                setUploadError('Не удалось отредактировать сообщение');
                 return;
             }
 
@@ -1161,7 +1161,7 @@ function Chat() {
             const recipientPublicKey = recipientId === Number(userId) ? e2eeState.recipientPublicKey : undefined;
             const encryption = await encryptContentForRecipient(content.trim(), recipientId, recipientPublicKey);
             if (!encryption) {
-                setUploadError('Сквозное шифрование недоступно для редактирования сообщения');
+                setUploadError('Не удалось отредактировать сообщение');
                 return;
             }
 
@@ -1548,16 +1548,6 @@ function Chat() {
                 onOpenRecipient={openUserProfile}
                 recipientLastSeenAt={recipient?.last_seen_at}
             />
-            {e2eeReady && (
-                <div className="border-b border-emerald-100 bg-emerald-50 px-3 py-2 text-center text-xs font-medium text-emerald-700 sm:px-4">
-                    Сообщения защищены сквозным шифрованием
-                </div>
-            )}
-            {!e2eeReady && e2eeState.selfEnabled && !e2eeState.loading && (
-                <div className="border-b border-amber-100 bg-amber-50 px-3 py-2 text-center text-xs font-medium text-amber-700 sm:px-4">
-                    Сквозное шифрование включено, но для этого диалога недоступно. Текстовые сообщения не будут отправлены без E2EE.
-                </div>
-            )}
             <PinnedMessageBanner
                 pinnedMessage={pinnedMessage}
                 onClick={scrollToPinnedMessage}

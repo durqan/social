@@ -13,6 +13,7 @@ import (
 	"notifications/db"
 	"notifications/handlers"
 	"notifications/hub"
+	"notifications/messagecrypto"
 	"notifications/middleware"
 	pushsvc "notifications/push"
 	"notifications/rabbit"
@@ -26,6 +27,11 @@ import (
 func main() {
 	if err := godotenv.Load(); err != nil {
 		log.Println(".env not found")
+	}
+	if os.Getenv("GIN_MODE") == "release" {
+		if err := messagecrypto.ValidateProductionKey(); err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	newDB, err := db.NewDB()

@@ -512,6 +512,7 @@ func chatUploadOwnerKey(filename string) string {
 }
 
 func WithPrivateAttachmentURLs(message models.Message) models.Message {
+	message = DecryptMessageForClient(message)
 	message.From = dto.ToPublicUser(message.From)
 	message.To = dto.ToPublicUser(message.To)
 	if message.ForwardedFromUser != nil {
