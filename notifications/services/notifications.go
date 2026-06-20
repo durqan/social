@@ -352,12 +352,12 @@ func messagePreview(message models.Message) string {
 		cipher, err := messagecrypto.NewFromEnv()
 		if err != nil {
 			log.Printf("message preview decrypt failed: message_id=%d error=%v", message.ID, err)
-			return "Не удалось расшифровать сообщение"
+			return "Новое сообщение"
 		}
 		content, err := cipher.Decrypt(message.Ciphertext, message.Nonce)
 		if err != nil {
 			log.Printf("message preview decrypt failed: message_id=%d error=%v", message.ID, err)
-			return "Не удалось расшифровать сообщение"
+			return "Новое сообщение"
 		}
 		return strings.TrimSpace(content)
 	}

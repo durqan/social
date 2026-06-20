@@ -47,13 +47,15 @@ describe('replaceMobilePushToken', () => {
   });
 
   it('does not revoke when Firebase returns the same token', async () => {
+    const register = jest.fn();
     const revoke = jest.fn();
 
     await replaceMobilePushToken(previous, previous, {
-      register: async () => undefined,
+      register,
       revoke,
     });
 
+    expect(register).not.toHaveBeenCalled();
     expect(revoke).not.toHaveBeenCalled();
   });
 });

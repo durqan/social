@@ -1,6 +1,9 @@
 package services
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
+	"encoding/base64"
 	"fmt"
 	"testing"
 	"time"
@@ -192,6 +195,37 @@ func TestMessagePushTagUsesStableConversationTag(t *testing.T) {
 	}
 }
 
+func TestMessagePreviewDecryptsEncryptedAtRestContent(t *testing.T) {
+	t.Setenv("MESSAGE_ENCRYPTION_KEY", "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=")
+	ciphertext, nonce := encryptNotificationTestMessage(t, "encrypted preview")
+
+	got := messagePreview(models.Message{
+		ID:                30,
+		EncryptionVersion: 1,
+		Ciphertext:        ciphertext,
+		Nonce:             nonce,
+	})
+
+	if got != "encrypted preview" {
+		t.Fatalf("messagePreview() = %q, want decrypted preview", got)
+	}
+}
+
+func TestMessagePreviewFallsBackWhenEncryptedContentCannotBeRead(t *testing.T) {
+	t.Setenv("MESSAGE_ENCRYPTION_KEY", "")
+
+	got := messagePreview(models.Message{
+		ID:                31,
+		EncryptionVersion: 1,
+		Ciphertext:        "bad",
+		Nonce:             "bad",
+	})
+
+	if got != "Новое сообщение" {
+		t.Fatalf("messagePreview() = %q, want safe fallback", got)
+	}
+}
+
 func TestSavePushSubscriptionUpsertsByEndpoint(t *testing.T) {
 	db := newNotificationTestDB(t)
 	service := NewService(repository.NewRepository(db), hub.NewHub(), nil)
@@ -230,6 +264,26 @@ func TestSavePushSubscriptionUpsertsByEndpoint(t *testing.T) {
 	if subscriptions[0].UserID != 11 || subscriptions[0].P256DH != "updated-key" || subscriptions[0].Auth != "updated-auth" {
 		t.Fatalf("subscription was not updated: %+v", subscriptions[0])
 	}
+}
+
+func encryptNotificationTestMessage(t *testing.T, plaintext string) (string, string) {
+	t.Helper()
+
+	key, err := base64.StdEncoding.DecodeString("MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=")
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	aead, err := cipher.NewGCM(block)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nonce := []byte("123456789012")
+	ciphertext := aead.Seal(nil, nonce, []byte(plaintext), nil)
+	return base64.StdEncoding.EncodeToString(ciphertext), base64.StdEncoding.EncodeToString(nonce)
 }
 
 func TestDeletePushSubscriptionOnlyDeletesCurrentUsersEndpoint(t *testing.T) {

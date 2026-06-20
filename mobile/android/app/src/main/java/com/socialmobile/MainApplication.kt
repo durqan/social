@@ -34,15 +34,33 @@ class MainApplication : Application(), ReactApplication {
       return
     }
 
-    val channelId = getString(R.string.default_notification_channel_id)
-    val channel = NotificationChannel(
-      channelId,
-      getString(R.string.notification_channel_name),
+    val manager = getSystemService(NotificationManager::class.java)
+    val generalChannel = NotificationChannel(
+      getString(R.string.default_notification_channel_id),
+      getString(R.string.general_notification_channel_name),
+      NotificationManager.IMPORTANCE_DEFAULT
+    ).apply {
+      description = getString(R.string.general_notification_channel_description)
+    }
+    val messagesChannel = NotificationChannel(
+      getString(R.string.messages_notification_channel_id),
+      getString(R.string.messages_notification_channel_name),
+      NotificationManager.IMPORTANCE_DEFAULT
+    ).apply {
+      description = getString(R.string.messages_notification_channel_description)
+      enableVibration(true)
+    }
+    val incomingCallsChannel = NotificationChannel(
+      getString(R.string.incoming_calls_notification_channel_id),
+      getString(R.string.incoming_calls_notification_channel_name),
       NotificationManager.IMPORTANCE_HIGH
     ).apply {
-      description = getString(R.string.notification_channel_description)
+      description = getString(R.string.incoming_calls_notification_channel_description)
+      enableVibration(true)
     }
 
-    getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+    manager.createNotificationChannels(
+      listOf(generalChannel, messagesChannel, incomingCallsChannel)
+    )
   }
 }

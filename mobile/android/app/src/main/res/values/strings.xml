@@ -1,6 +1,12 @@
 <resources>
     <string name="app_name">Social</string>
-    <string name="default_notification_channel_id">social_notifications</string>
-    <string name="notification_channel_name">Social notifications</string>
-    <string name="notification_channel_description">Messages, calls and social activity</string>
+    <string name="default_notification_channel_id">general</string>
+    <string name="messages_notification_channel_id">messages</string>
+    <string name="incoming_calls_notification_channel_id">incoming_calls</string>
+    <string name="general_notification_channel_name">General</string>
+    <string name="messages_notification_channel_name">Messages</string>
+    <string name="incoming_calls_notification_channel_name">Incoming calls</string>
+    <string name="general_notification_channel_description">General social activity</string>
+    <string name="messages_notification_channel_description">Chat messages</string>
+    <string name="incoming_calls_notification_channel_description">Incoming audio and video calls</string>
 </resources>

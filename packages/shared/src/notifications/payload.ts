@@ -19,7 +19,9 @@ export type NotificationType =
 export type PushNotificationData = {
   type: NotificationType | string;
   actorId?: number;
+  senderId?: number;
   entityId?: number;
+  messageId?: number;
   conversationId?: number;
   callId?: string;
   syncAction?: string;
@@ -68,7 +70,9 @@ export function normalizeNotificationData(
   return {
     type,
     actorId: numberFromValue(data.actor_id ?? data.actorId),
+    senderId: numberFromValue(data.sender_id ?? data.senderId),
     entityId: numberFromValue(data.entity_id ?? data.entityId),
+    messageId: numberFromValue(data.message_id ?? data.messageId),
     conversationId: numberFromValue(data.conversation_id ?? data.conversationId),
     callId,
     syncAction:

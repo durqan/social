@@ -44,7 +44,7 @@ func TestFCMMessageIncludesNotificationForVisiblePayload(t *testing.T) {
 		Android: fcmAndroidConfig{
 			Priority: "HIGH",
 			Notification: &fcmAndroidNotification{
-				ChannelID: "social_notifications",
+				ChannelID: MobileChannelMessages,
 				Tag:       "message:1",
 			},
 		},
@@ -66,5 +66,37 @@ func TestFCMMessageIncludesNotificationForVisiblePayload(t *testing.T) {
 	}
 	if notification["title"] != "Новое сообщение" || notification["body"] != "Привет" {
 		t.Fatalf("unexpected notification payload: %#v", notification)
+	}
+}
+
+func TestMobileChannelIDMatchesNotificationType(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload Payload
+		want    string
+	}{
+		{
+			name:    "message",
+			payload: Payload{Type: "message_received"},
+			want:    MobileChannelMessages,
+		},
+		{
+			name:    "incoming call",
+			payload: Payload{Type: "incoming_call"},
+			want:    MobileChannelIncomingCalls,
+		},
+		{
+			name:    "fallback",
+			payload: Payload{Type: "friend_request"},
+			want:    MobileChannelGeneral,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := mobileChannelID(tt.payload); got != tt.want {
+				t.Fatalf("mobileChannelID() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }

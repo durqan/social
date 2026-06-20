@@ -15,6 +15,12 @@ import {
   type MobilePushTokenPayload,
 } from './tokenRegistration';
 
+export const MOBILE_NOTIFICATION_CHANNELS = {
+  GENERAL: 'general',
+  MESSAGES: 'messages',
+  INCOMING_CALLS: 'incoming_calls',
+} as const;
+
 export type PushNotificationHandlers = {
   userId: number;
   onNotification?: (notification: MobileNotificationData) => void;
@@ -163,8 +169,14 @@ async function ensureMobilePushReadyInternal(session: MobilePushSession) {
     platform: 'android',
     token,
   };
-  activeRegisteredPayload = payload;
   await registerMobilePushToken(payload);
+  if (!session.isCurrent()) {
+    await revokeMobilePushToken(payload).catch(error => {
+      warnDev('[SocialMobile] superseded FCM token revoke failed', error);
+    });
+    return false;
+  }
+  activeRegisteredPayload = payload;
   return true;
 }
 

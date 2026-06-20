@@ -14,11 +14,12 @@ export async function replaceMobilePushToken(
   nextPayload: MobilePushTokenPayload,
   operations: TokenRegistrationOperations,
 ) {
+  if (previousPayload && previousPayload.token === nextPayload.token) {
+    return previousPayload;
+  }
+
   await operations.register(nextPayload);
-  if (
-    previousPayload &&
-    previousPayload.token !== nextPayload.token
-  ) {
+  if (previousPayload) {
     await operations.revoke(previousPayload);
   }
   return nextPayload;

@@ -22,7 +22,8 @@ function actorFromChatURL(url?: string) {
 }
 
 function navigateNow(notification: MobileNotificationData) {
-  const actorId = notification.actorId ?? actorFromChatURL(notification.url);
+  const actorId =
+    notification.actorId ?? notification.senderId ?? actorFromChatURL(notification.url);
   const conversationId = notification.conversationId ?? actorId;
 
   switch (notification.type) {

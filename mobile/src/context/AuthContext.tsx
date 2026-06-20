@@ -107,8 +107,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     chatSocket.disconnect();
-    await resetPostAuthBootstrap();
     await revokeRegisteredPushToken().catch(() => undefined);
+    await resetPostAuthBootstrap();
     try {
       await authApi.logout();
     } catch {

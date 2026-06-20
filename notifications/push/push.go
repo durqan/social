@@ -26,6 +26,12 @@ var ErrMobileTokenInvalid = errors.New("mobile push token invalid")
 
 const firebaseMessagingScope = "https://www.googleapis.com/auth/firebase.messaging"
 
+const (
+	MobileChannelGeneral       = "general"
+	MobileChannelMessages      = "messages"
+	MobileChannelIncomingCalls = "incoming_calls"
+)
+
 type Payload struct {
 	Title          string `json:"title"`
 	Body           string `json:"body"`
@@ -166,7 +172,9 @@ func (s *Service) SendMobile(token models.MobilePushToken, payload Payload) erro
 			"tag":             payload.Tag,
 			"notification_id": fmt.Sprintf("%d", payload.NotificationID),
 			"entity_id":       fmt.Sprintf("%d", payload.EntityID),
+			"message_id":      messageIDDataValue(payload),
 			"actor_id":        fmt.Sprintf("%d", payload.ActorID),
+			"sender_id":       fmt.Sprintf("%d", payload.ActorID),
 			"caller_id":       fmt.Sprintf("%d", payload.ActorID), // explicit alias for call flows
 			"conversation_id": fmt.Sprintf("%d", payload.ConversationID),
 			"sync_action":     payload.SyncAction,
@@ -183,7 +191,7 @@ func (s *Service) SendMobile(token models.MobilePushToken, payload Payload) erro
 			Body:  payload.Body,
 		}
 		message.Android.Notification = &fcmAndroidNotification{
-			ChannelID: "social_notifications",
+			ChannelID: mobileChannelID(payload),
 			Tag:       payload.Tag,
 		}
 	}
@@ -213,6 +221,24 @@ func (s *Service) SendMobile(token models.MobilePushToken, payload Payload) erro
 	}
 
 	return nil
+}
+
+func mobileChannelID(payload Payload) string {
+	switch payload.Type {
+	case "message_received":
+		return MobileChannelMessages
+	case "incoming_call":
+		return MobileChannelIncomingCalls
+	default:
+		return MobileChannelGeneral
+	}
+}
+
+func messageIDDataValue(payload Payload) string {
+	if payload.Type != "message_received" {
+		return ""
+	}
+	return fmt.Sprintf("%d", payload.EntityID)
 }
 
 func isInvalidStatus(status int) bool {
