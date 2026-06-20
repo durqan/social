@@ -1,6 +1,6 @@
 export const CHAT_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
 export const CHAT_ATTACHMENT_MAX_COUNT = 5;
-export const CHAT_ATTACHMENT_MAX_TOTAL_BYTES = 75 * 1024 * 1024;
+export const CHAT_ATTACHMENT_MAX_TOTAL_BYTES = 150 * 1024 * 1024;
 export const CHAT_IMAGE_MAX_COUNT = CHAT_ATTACHMENT_MAX_COUNT;
 export const CHAT_IMAGE_MIME_TYPES = [
   'image/jpeg',
@@ -8,7 +8,7 @@ export const CHAT_IMAGE_MIME_TYPES = [
   'image/webp',
   'image/gif',
 ] as const;
-export const CHAT_VIDEO_MAX_BYTES = 50 * 1024 * 1024;
+export const CHAT_VIDEO_MAX_BYTES = 150 * 1024 * 1024;
 export const CHAT_VIDEO_MIME_TYPES = [
   'video/mp4',
   'video/webm',

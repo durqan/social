@@ -12,7 +12,10 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-const notificationsQueue = "notifications"
+const (
+	notificationsQueue = "notifications"
+	VideoImportsQueue  = "video_imports"
+)
 
 var (
 	ErrNotConfigured = errors.New("rabbitmq is not configured")
@@ -63,14 +66,30 @@ func PublishNotification(req dto.CreateNotificationReq) error {
 	return publisher.PublishNotification(req)
 }
 
+func PublishVideoImport(payload any) error {
+	defaultMu.RLock()
+	publisher := defaultPublisher
+	defaultMu.RUnlock()
+
+	if publisher == nil {
+		return ErrNotConfigured
+	}
+
+	return publisher.PublishJSON(VideoImportsQueue, payload)
+}
+
 func (p *Publisher) PublishNotification(req dto.CreateNotificationReq) error {
+	return p.PublishJSON(notificationsQueue, req)
+}
+
+func (p *Publisher) PublishJSON(queue string, payload any) error {
 	ch, err := p.openChannel()
 	if err != nil {
 		return err
 	}
 	defer ch.Close()
 
-	if _, err := ch.QueueDeclare(notificationsQueue, true, false, false, false, nil); err != nil {
+	if _, err := ch.QueueDeclare(queue, true, false, false, false, nil); err != nil {
 		return err
 	}
 	if err := ch.Confirm(false); err != nil {
@@ -78,7 +97,7 @@ func (p *Publisher) PublishNotification(req dto.CreateNotificationReq) error {
 	}
 	confirms := ch.NotifyPublish(make(chan amqp.Confirmation, 1))
 
-	body, err := json.Marshal(req)
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
@@ -86,7 +105,7 @@ func (p *Publisher) PublishNotification(req dto.CreateNotificationReq) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := ch.PublishWithContext(ctx, "", notificationsQueue, false, false, amqp.Publishing{
+	if err := ch.PublishWithContext(ctx, "", queue, false, false, amqp.Publishing{
 		ContentType:  "application/json",
 		DeliveryMode: amqp.Persistent,
 		Body:         body,

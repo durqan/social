@@ -1,6 +1,10 @@
 FROM golang:1.26-alpine
 
-RUN go install github.com/air-verse/air@latest
+RUN apk add --no-cache ffmpeg netcat-openbsd python3 py3-pip \
+    && python3 -m venv /opt/yt-dlp \
+    && /opt/yt-dlp/bin/pip install --no-cache-dir yt-dlp \
+    && ln -s /opt/yt-dlp/bin/yt-dlp /usr/local/bin/yt-dlp \
+    && go install github.com/air-verse/air@latest
 
 WORKDIR /app
 

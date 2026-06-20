@@ -1,5 +1,5 @@
 import { memo, useRef, useState, type MouseEvent, type TouchEvent } from 'react';
-import type { Message, MessageAttachment } from "@/shared/types/domain.js";
+import type { Message, MessageAttachment, MessageLinkPreview } from "@/shared/types/domain.js";
 import { Avatar } from "@/shared/ui/Avatar.js";
 import { ImageViewer } from "@/shared/ui/ImageViewer.js";
 import { messageAuthorName, messagePreviewText } from "@/features/chat/lib/messagePreview.js";
@@ -80,6 +80,97 @@ function attachmentName(attachment: MessageAttachment, fallback: string) {
     return last || fallback;
 }
 
+function providerLabel(provider: MessageLinkPreview['provider']) {
+    switch (provider) {
+        case 'youtube':
+            return 'YouTube';
+        case 'rutube':
+            return 'RUTUBE';
+        case 'instagram':
+            return 'Instagram';
+        default:
+            return 'Видео';
+    }
+}
+
+function previewDomain(raw: string) {
+    try {
+        return new URL(raw).hostname.replace(/^www\./, '');
+    } catch {
+        return raw;
+    }
+}
+
+export function LinkPreviewCard({
+    preview,
+    hasVideo,
+    onImport,
+}: {
+    preview: MessageLinkPreview;
+    hasVideo: boolean;
+    onImport?: () => void;
+}) {
+    if (preview.status === 'ready' && hasVideo) {
+        return (
+            <div className="mt-2 text-xs text-[var(--app-text-secondary)]">
+                Источник: {providerLabel(preview.provider)}
+            </div>
+        );
+    }
+
+    const importing = preview.status === 'importing';
+    const failed = preview.status === 'failed';
+    return (
+        <div className="mt-2 overflow-hidden rounded-xl border border-[var(--app-border)] bg-[var(--app-card-muted)]">
+            {preview.thumbnail_url ? (
+                <img src={preview.thumbnail_url} alt="" className="max-h-40 w-full object-cover" loading="lazy" />
+            ) : (
+                <div className="flex h-28 w-full items-center justify-center bg-black/10 text-[var(--app-text-secondary)]">
+                    <Icon name="video" className="h-8 w-8" />
+                </div>
+            )}
+            <div className="space-y-2 px-3 py-2">
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase text-[var(--app-text-secondary)]">
+                    <Icon name="video" className="h-4 w-4" />
+                    {providerLabel(preview.provider)}
+                </div>
+                <div className="truncate text-sm font-medium text-[var(--app-text-primary)]">
+                    {preview.title || 'Видео по ссылке'}
+                </div>
+                <div className="truncate text-xs text-[var(--app-text-secondary)]">
+                    {previewDomain(preview.original_url)}
+                </div>
+                {importing ? <div className="text-xs text-[var(--app-text-secondary)]">Видео обрабатывается...</div> : null}
+                {failed ? <div className="text-xs text-red-600">Не удалось сохранить видео</div> : null}
+                <div className="flex flex-wrap gap-2">
+                    {preview.status !== 'ready' ? (
+                        <button
+                            type="button"
+                            disabled={importing}
+                            onClick={event => {
+                                event.stopPropagation();
+                                onImport?.();
+                            }}
+                            className="rounded-lg bg-[var(--app-accent)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-60"
+                        >
+                            {failed ? 'Повторить' : 'Сохранить видео в чат'}
+                        </button>
+                    ) : null}
+                    <a
+                        href={preview.original_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={event => event.stopPropagation()}
+                        className="rounded-lg border border-[var(--app-border)] px-3 py-1.5 text-xs font-medium text-[var(--app-text-primary)]"
+                    >
+                        Открыть ссылку
+                    </a>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 interface ChatMessageProps {
     message: Message;
     isOwn: boolean;
@@ -113,6 +204,7 @@ interface ChatMessageProps {
     formatTime: (date: string) => string;
     formatDate: (date: string) => string;
     onOpenUser?: (userId: number) => void;
+    onImportLinkPreviewVideo?: (message: Message) => void;
 }
 
 const ChatMessageComponent = ({
@@ -145,6 +237,7 @@ const ChatMessageComponent = ({
                                 formatTime,
                                 formatDate,
                                 onOpenUser,
+                                onImportLinkPreviewVideo,
                             }: ChatMessageProps) => {
     const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const suppressNextClickRef = useRef(false);
@@ -480,6 +573,14 @@ const ChatMessageComponent = ({
                                         );
                                     })}
                                 </div>
+                            ) : null}
+
+                            {message.link_preview ? (
+                                <LinkPreviewCard
+                                    preview={message.link_preview}
+                                    hasVideo={videoAttachments.length > 0}
+                                    onImport={() => onImportLinkPreviewVideo?.(message)}
+                                />
                             ) : null}
 
                             {audioAttachments.length ? (

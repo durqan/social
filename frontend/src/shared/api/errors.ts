@@ -54,7 +54,7 @@ const uploadErrorText: Record<string, string> = {
     'file content does not match supported document type': 'Документ поврежден или имеет неподдерживаемый формат.',
     'message attachments are too large': 'Общий размер вложений не должен превышать 75 МБ.',
     'too many attachments': 'Можно прикрепить максимум 5 файлов за раз.',
-    'video is too large': 'Видео слишком большое. Максимум 50 МБ.',
+    'video is too large': 'Видео слишком большое. Максимум 150 МБ.',
     'audio is too large': 'Аудио слишком большое. Максимум 25 МБ.',
     'file is too large': 'Файл слишком большой. Максимум 25 МБ.',
     'invalid json file': 'JSON-файл поврежден или имеет неверный формат.',

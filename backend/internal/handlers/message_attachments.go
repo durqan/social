@@ -108,7 +108,7 @@ func UploadMessageImage(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		var width, height int
+		var width, height, durationSeconds int
 
 		if info.FileType == "image" {
 			if _, err := src.Seek(0, 0); err != nil {
@@ -122,6 +122,9 @@ func UploadMessageImage(db *gorm.DB) gin.HandlerFunc {
 			}
 			width = cfg.Width
 			height = cfg.Height
+		} else if info.FileType == "video" {
+			width, height, _ = dimensionsFromForm(c)
+			durationSeconds, _ = mediaDurationSecondsFromForm(c)
 		}
 
 		if _, err := src.Seek(0, 0); err != nil {
@@ -153,6 +156,8 @@ func UploadMessageImage(db *gorm.DB) gin.HandlerFunc {
 			FileType:         info.FileType,
 			Width:            width,
 			Height:           height,
+			Duration:         durationSeconds,
+			DurationSeconds:  durationSeconds,
 			Size:             file.Size,
 			OriginalFilename: info.OriginalFilename,
 			ContentType:      info.ContentType,
@@ -479,6 +484,24 @@ func videoNoteDurationSecondsFromForm(c *gin.Context) (int, bool) {
 	return 0, false
 }
 
+func mediaDurationSecondsFromForm(c *gin.Context) (int, bool) {
+	for _, key := range []string{"duration", "duration_seconds"} {
+		if duration, ok := services.ParseChatGenericMediaDurationSeconds(c.PostForm(key)); ok {
+			return duration, true
+		}
+	}
+	return 0, false
+}
+
+func dimensionsFromForm(c *gin.Context) (int, int, bool) {
+	width, widthErr := positiveIntFromForm(c, "width")
+	height, heightErr := positiveIntFromForm(c, "height")
+	if widthErr != nil || heightErr != nil {
+		return 0, 0, false
+	}
+	return width, height, true
+}
+
 func encryptedAttachmentInputFromForm(c *gin.Context) (services.MessageAttachmentInput, bool, error) {
 	versionValue := strings.TrimSpace(c.PostForm("encryption_version"))
 	encryptedFileKey := strings.TrimSpace(c.PostForm("encrypted_file_key"))
@@ -624,6 +647,47 @@ func GetMessageAttachment(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		serveMessageAttachmentObject(c, store, key, attachment)
+	}
+}
+
+func GetMessageAttachmentThumbnail(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, ok := authenticatedUserID(c)
+		if !ok {
+			return
+		}
+
+		attachmentID, ok := uintParam(c, "id", "invalid attachment id")
+		if !ok {
+			return
+		}
+
+		attachment, err := repository.GetMessageAttachmentForUser(db, attachmentID, userID)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				c.JSON(404, gin.H{"error": "attachment not found"})
+				return
+			}
+			c.JSON(500, gin.H{"error": "failed to load attachment"})
+			return
+		}
+		if strings.TrimSpace(attachment.ThumbnailURL) == "" {
+			c.JSON(404, gin.H{"error": "attachment thumbnail not found"})
+			return
+		}
+
+		key, ok := services.AttachmentObjectKey(attachment.ThumbnailURL)
+		if !ok {
+			c.JSON(500, gin.H{"error": "invalid attachment thumbnail path"})
+			return
+		}
+		store, err := storage.Default()
+		if err != nil {
+			c.JSON(500, gin.H{"error": "failed to load storage"})
+			return
+		}
+
+		serveStoredObjectWithHeaders(c, store, key, services.ContentTypeForKey(key), "inline")
 	}
 }
 

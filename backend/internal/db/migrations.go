@@ -18,6 +18,7 @@ func Migrate(database *gorm.DB) error {
 		&models.MessageReaction{},
 		&models.MessageUserDeletion{},
 		&models.MessageAttachment{},
+		&models.MessageLinkPreview{},
 		&models.ConversationPin{},
 		&models.PinnedMessage{},
 		&models.CallLog{},

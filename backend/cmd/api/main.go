@@ -6,6 +6,7 @@ import (
 	"tester/internal/cache"
 	"tester/internal/config"
 	"tester/internal/db"
+	"tester/internal/handlers"
 	"tester/internal/rabbit"
 	"tester/internal/server"
 	"tester/internal/services"
@@ -46,6 +47,7 @@ func main() {
 	services.StartAbandonedUploadCleanup(database)
 
 	router := server.NewRouter(database, cfg)
+	handlers.StartMessageUpdateSubscriber(database)
 
 	log.Printf("Server starting on port %s", cfg.Port)
 

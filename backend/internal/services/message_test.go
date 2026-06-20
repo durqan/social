@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"strconv"
 	"strings"
@@ -101,6 +102,87 @@ func TestSendMessagePersistsMessageAndAttachmentsAtomically(t *testing.T) {
 	}
 	if outbox.RecipientID != 2 || outbox.ActorID != 1 || outbox.Type != "message_received" || outbox.EntityID != message.ID {
 		t.Fatalf("unexpected notification outbox row: %+v", outbox)
+	}
+}
+
+func TestSendMessageCreatesYouTubeLinkPreviewWhenMetadataFails(t *testing.T) {
+	db := newMessageServiceTestDB(t)
+	seedAcceptedFriendship(t, db, 1, 2)
+
+	called := make(chan struct{}, 1)
+	restore := SetYTDLPMetadataRunnerForTest(func(ctx context.Context, raw string) (LinkPreviewMetadata, error) {
+		called <- struct{}{}
+		return LinkPreviewMetadata{}, errors.New("yt-dlp failed")
+	})
+	defer restore()
+
+	message, err := SendMessage(db, 1, 2, "watch https://youtu.be/abc", nil, nil, MessageEncryptionInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if message.LinkPreview == nil {
+		t.Fatal("SendMessage returned no link preview")
+	}
+	if message.LinkPreview.Provider != "youtube" {
+		t.Fatalf("provider = %q, want youtube", message.LinkPreview.Provider)
+	}
+	if message.LinkPreview.Status != models.LinkPreviewStatusPreview {
+		t.Fatalf("status = %q, want preview", message.LinkPreview.Status)
+	}
+
+	select {
+	case <-called:
+	case <-time.After(time.Second):
+		t.Fatal("metadata resolver was not called")
+	}
+}
+
+func TestGetMessagesWithReturnsLinkPreviewMetadata(t *testing.T) {
+	db := newMessageServiceTestDB(t)
+	seedAcceptedFriendship(t, db, 1, 2)
+
+	message := models.Message{
+		FromID:  1,
+		ToID:    2,
+		Content: "https://youtu.be/abc",
+	}
+	if err := db.Create(&message).Error; err != nil {
+		t.Fatal(err)
+	}
+	title := "Preview title"
+	thumbnail := "https://i.ytimg.com/vi/abc/hqdefault.jpg"
+	duration := 42
+	if err := db.Create(&models.MessageLinkPreview{
+		MessageID:       message.ID,
+		OriginalURL:     "https://youtu.be/abc",
+		Provider:        "youtube",
+		Title:           &title,
+		ThumbnailURL:    &thumbnail,
+		DurationSeconds: &duration,
+		Status:          models.LinkPreviewStatusPreview,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	messages, err := repository.GetMessagesBetweenPaginated(db, 1, 2, 20, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("messages len = %d, want 1", len(messages))
+	}
+	preview := messages[0].LinkPreview
+	if preview == nil {
+		t.Fatal("message has no link preview")
+	}
+	if preview.Title == nil || *preview.Title != title {
+		t.Fatalf("title = %v, want %q", preview.Title, title)
+	}
+	if preview.ThumbnailURL == nil || *preview.ThumbnailURL != thumbnail {
+		t.Fatalf("thumbnail = %v, want %q", preview.ThumbnailURL, thumbnail)
+	}
+	if preview.DurationSeconds == nil || *preview.DurationSeconds != duration {
+		t.Fatalf("duration = %v, want %d", preview.DurationSeconds, duration)
 	}
 }
 
@@ -739,6 +821,7 @@ func newMessageServiceTestDB(t *testing.T) *gorm.DB {
 		&models.MessageReaction{},
 		&models.MessageUserDeletion{},
 		&models.MessageAttachment{},
+		&models.MessageLinkPreview{},
 		&models.ConversationPin{},
 		&models.PinnedMessage{},
 		&models.EncryptedKeyBackup{},

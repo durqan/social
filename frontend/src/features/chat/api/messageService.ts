@@ -104,6 +104,9 @@ export const messageService = {
             timeout: 300000,
         });
     },
+    async importLinkPreviewVideo(messageId: number): Promise<Message> {
+        return request.post<Message>(`/messages/${messageId}/link-preview/import-video`);
+    },
     async getConversations(): Promise<Conversation[]> {
         const conversations = await request.get<Conversation[]>('/conversations');
         return Array.isArray(conversations) ? conversations : [];

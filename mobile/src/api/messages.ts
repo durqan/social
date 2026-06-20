@@ -1,6 +1,8 @@
 import {
   CHAT_IMAGE_MAX_BYTES,
   CHAT_IMAGE_MIME_TYPES,
+  CHAT_VIDEO_MAX_BYTES,
+  CHAT_VIDEO_MIME_TYPES,
   CHAT_VOICE_MAX_BYTES,
   CHAT_VOICE_MAX_DURATION_SECONDS,
   CHAT_VOICE_MIME_TYPE,
@@ -46,6 +48,17 @@ export type LocalVideoNoteMessage = {
   fileSize?: number;
 };
 
+export type LocalChatVideo = {
+  id: string;
+  uri: string;
+  type: string;
+  fileName: string;
+  durationSeconds?: number;
+  fileSize?: number;
+  width?: number;
+  height?: number;
+};
+
 export type UploadFilePart =
   | {
       uri: string;
@@ -63,6 +76,7 @@ export type UploadFilePart =
 type AttachmentUploadEncryption = EncryptedAttachmentFields & {
   width?: number;
   height?: number;
+  durationSeconds?: number;
 };
 
 type UploadTimedFilePart = UploadFilePart & {
@@ -111,6 +125,9 @@ function appendAttachmentEncryption(
   if (encryption.height !== undefined) {
     formData.append('height', String(encryption.height));
   }
+  if (encryption.durationSeconds !== undefined) {
+    formData.append('duration', String(encryption.durationSeconds));
+  }
 }
 
 export function attachmentForApi(
@@ -129,6 +146,7 @@ export function attachmentForApi(
     size: attachment.size,
     original_filename: attachment.original_filename,
     content_type: attachment.content_type,
+    thumbnail_url: attachment.thumbnail_url,
     encryption_version: attachment.encryption_version,
     encrypted_file_key: attachment.encrypted_file_key,
     file_nonce: attachment.file_nonce,
@@ -146,6 +164,16 @@ export function validateLocalChatImage(image: LocalChatImage) {
     return 'Изображение должно быть не больше 10 МБ';
   }
 
+  return null;
+}
+
+export function validateLocalChatVideo(video: LocalChatVideo) {
+  if (!(CHAT_VIDEO_MIME_TYPES as readonly string[]).includes(video.type)) {
+    return 'Видео должно быть в формате MP4, MOV или WebM';
+  }
+  if (video.fileSize && video.fileSize > 500 * 1024 * 1024) {
+    return 'Исходное видео должно быть не больше 500 МБ';
+  }
   return null;
 }
 
@@ -272,6 +300,39 @@ export const messageApi = {
     return apiRequest<MessageAttachment>('/messages/upload', {
       method: 'POST',
       body: formData,
+    });
+  },
+
+  async uploadVideo(
+    video: LocalChatVideo | UploadTimedFilePart,
+    encryption?: AttachmentUploadEncryption,
+  ) {
+    const formData = new FormData();
+    appendUploadFile(formData, 'attachment', video);
+    formData.append('file_type', 'video');
+    appendAttachmentEncryption(formData, encryption);
+    if ('durationSeconds' in video && video.durationSeconds) {
+      formData.append('duration', String(video.durationSeconds));
+    }
+    if ('width' in video && video.width) {
+      formData.append('width', String(video.width));
+    }
+    if ('height' in video && video.height) {
+      formData.append('height', String(video.height));
+    }
+    if ('fileSize' in video && video.fileSize && video.fileSize > CHAT_VIDEO_MAX_BYTES) {
+      throw new Error('Видео слишком большое после сжатия. Попробуйте выбрать более короткий ролик.');
+    }
+
+    return apiRequest<MessageAttachment>('/messages/upload', {
+      method: 'POST',
+      body: formData,
+    });
+  },
+
+  async importLinkPreviewVideo(messageId: number) {
+    return apiRequest<Message>(`/messages/${messageId}/link-preview/import-video`, {
+      method: 'POST',
     });
   },
 

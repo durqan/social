@@ -980,6 +980,39 @@ function Chat() {
         }
     }, [currentUser, encryptCurrentChatContent, forceScrollToBottom, newMessage, replyToMessage, sendMessageToStore, uploadAttachments, userId, wsService]);
 
+    const importLinkPreviewVideo = useCallback(async (message: Message) => {
+        if (!message.link_preview || message.link_preview.status === 'importing' || message.link_preview.status === 'ready') {
+            return;
+        }
+        setMessages(prev => prev.map(item => item.id === message.id
+            ? {
+                ...item,
+                link_preview: item.link_preview ? {
+                    ...item.link_preview,
+                    status: 'importing',
+                    import_error: null,
+                } : item.link_preview,
+            }
+            : item));
+        try {
+            const updated = await messageService.importLinkPreviewVideo(message.id);
+            const display = await decryptIncomingMessage(updated);
+            setMessages(prev => prev.map(item => item.id === display.id ? display : item));
+        } catch (error) {
+            console.error(error);
+            setMessages(prev => prev.map(item => item.id === message.id
+                ? {
+                    ...item,
+                    link_preview: item.link_preview ? {
+                        ...item.link_preview,
+                        status: 'failed',
+                        import_error: 'Не удалось сохранить видео',
+                    } : item.link_preview,
+                }
+                : item));
+        }
+    }, [decryptIncomingMessage, setMessages]);
+
     const sendVoiceMessage = useCallback(async (file: File, durationSeconds: number, text?: string) => {
         if (!(currentUser?.isEmailVerified ?? currentUser?.is_email_verified ?? false)) {
             setUploadError('Подтвердите email, чтобы продолжить');
@@ -1589,6 +1622,7 @@ function Chat() {
                 formatDate={formatMonthDayDate}
                 formatTime={formatTime}
                 onOpenUser={openUserProfile}
+                onImportLinkPreviewVideo={importLinkPreviewVideo}
                 scrollToMessageRequest={scrollToMessageRequest}
             />
             {otherTyping && <div className="px-4 pb-2 text-sm text-gray-500">{recipient?.name} печатает...</div>}

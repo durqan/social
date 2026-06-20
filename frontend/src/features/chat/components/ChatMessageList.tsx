@@ -102,6 +102,7 @@ interface ChatMessageListProps {
     formatTime: (date: string) => string;
     actionsEnabled?: boolean;
     onOpenUser?: (userId: number) => void;
+    onImportLinkPreviewVideo?: (message: Message) => void;
     scrollToMessageRequest?: ScrollToMessageRequest | null;
 }
 
@@ -139,6 +140,7 @@ export const ChatMessageList = ({
                                     formatTime,
                                     actionsEnabled = true,
                                     onOpenUser,
+                                    onImportLinkPreviewVideo,
                                     scrollToMessageRequest,
                                 }: ChatMessageListProps) => {
     const dialog = useAppDialog();
@@ -601,6 +603,7 @@ export const ChatMessageList = ({
                             formatTime={formatTime}
                             formatDate={formatDate}
                             onOpenUser={onOpenUser}
+                            onImportLinkPreviewVideo={onImportLinkPreviewVideo}
                         />
                     );
                 })

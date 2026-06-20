@@ -29,5 +29,6 @@ type Message struct {
 	ForwardedFromMessage   *Message            `json:"forwarded_from_message" gorm:"foreignKey:ForwardedFromMessageID;references:ID"`
 	ForwardedFromUser      *User               `json:"forwarded_from_user" gorm:"foreignKey:ForwardedFromUserID;references:ID"`
 	Attachments            []MessageAttachment `json:"attachments,omitempty" gorm:"foreignKey:MessageID;constraint:OnDelete:CASCADE;"`
+	LinkPreview            *MessageLinkPreview `json:"link_preview,omitempty" gorm:"foreignKey:MessageID;constraint:OnDelete:CASCADE;"`
 	Reactions              []ReactionSummary   `json:"reactions,omitempty" gorm:"-"`
 }

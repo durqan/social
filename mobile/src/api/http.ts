@@ -350,7 +350,7 @@ export function getApiErrorMessage(error: unknown) {
     'message attachments are too large':
       'Общий размер вложений не должен превышать 75 МБ',
     'too many attachments': 'Можно прикрепить максимум 5 файлов за раз',
-    'video is too large': 'Видео должно быть не больше 50 МБ',
+    'video is too large': 'Видео должно быть не больше 150 МБ',
     'audio is too large': 'Аудио должно быть не больше 25 МБ',
     'file is too large': 'Файл должен быть не больше 25 МБ',
     'invalid json file': 'JSON-файл поврежден или имеет неверный формат',

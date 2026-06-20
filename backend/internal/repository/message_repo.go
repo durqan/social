@@ -22,7 +22,7 @@ func CreateMessageAttachments(db *gorm.DB, attachments []models.MessageAttachmen
 }
 
 func preloadMessageRelations(db *gorm.DB) *gorm.DB {
-	return db.
+	query := db.
 		Preload("From").
 		Preload("To").
 		Preload("Attachments").
@@ -31,10 +31,17 @@ func preloadMessageRelations(db *gorm.DB) *gorm.DB {
 		Preload("ForwardedFromUser").
 		Preload("ForwardedFromMessage.From").
 		Preload("ForwardedFromMessage.Attachments")
+	if db.Migrator().HasTable(&models.MessageLinkPreview{}) {
+		query = query.
+			Preload("LinkPreview").
+			Preload("ReplyToMessage.LinkPreview").
+			Preload("ForwardedFromMessage.LinkPreview")
+	}
+	return query
 }
 
 func preloadPinnedMessageRelations(db *gorm.DB) *gorm.DB {
-	return db.
+	query := db.
 		Preload("Message.From").
 		Preload("Message.To").
 		Preload("Message.Attachments").
@@ -44,6 +51,13 @@ func preloadPinnedMessageRelations(db *gorm.DB) *gorm.DB {
 		Preload("Message.ForwardedFromMessage.From").
 		Preload("Message.ForwardedFromMessage.Attachments").
 		Preload("PinnedBy")
+	if db.Migrator().HasTable(&models.MessageLinkPreview{}) {
+		query = query.
+			Preload("Message.LinkPreview").
+			Preload("Message.ReplyToMessage.LinkPreview").
+			Preload("Message.ForwardedFromMessage.LinkPreview")
+	}
+	return query
 }
 
 func GetMessageAttachmentForUser(db *gorm.DB, attachmentID, userID uint) (*models.MessageAttachment, error) {

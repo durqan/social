@@ -30,10 +30,10 @@ const (
 	ChatImageMaxSize             = 10 << 20 // 10 MB
 	ChatImageMaxRequestSize      = ChatImageMaxSize + 1<<20
 	ChatAttachmentMaxCount       = 5
-	ChatAttachmentMaxTotalSize   = 75 << 20 // 75 MB
-	ChatVideoMaxSize             = 50 << 20 // 50 MB
-	ChatAudioMaxSize             = 25 << 20 // 25 MB
-	ChatFileMaxSize              = 25 << 20 // 25 MB
+	ChatAttachmentMaxTotalSize   = 150 << 20 // 150 MB
+	ChatVideoMaxSize             = 150 << 20 // 150 MB
+	ChatAudioMaxSize             = 25 << 20  // 25 MB
+	ChatFileMaxSize              = 25 << 20  // 25 MB
 	encryptedAttachmentOverhead  = 64 << 10
 	MaxEncryptedAttachmentField  = 64 << 10
 	ChatAttachmentMaxRequestSize = ChatVideoMaxSize + 1<<20 + MaxEncryptedAttachmentField
@@ -195,6 +195,10 @@ func ValidateChatVoiceDurationSeconds(duration int) (int, error) {
 }
 
 func ParseChatVideoNoteDurationSeconds(value string) (int, bool) {
+	return parseChatMediaDurationSeconds(value)
+}
+
+func ParseChatGenericMediaDurationSeconds(value string) (int, bool) {
 	return parseChatMediaDurationSeconds(value)
 }
 
@@ -371,13 +375,19 @@ func normalizeGenericMessageAttachment(item MessageAttachmentInput, userID uint,
 		return models.MessageAttachment{}, err
 	}
 
-	return models.MessageAttachment{
+	attachment := models.MessageAttachment{
 		FileURL:          storedKey,
 		FileType:         expectedType,
 		OriginalFilename: originalFilename,
 		ContentType:      contentType,
 		Size:             size,
-	}, nil
+	}
+	if expectedType == "video" {
+		attachment.Width = positiveIntPtr(item.Width)
+		attachment.Height = positiveIntPtr(item.Height)
+		attachment.DurationSeconds = positiveIntPtr(item.mediaDurationSeconds())
+	}
+	return attachment, nil
 }
 
 func normalizeVoiceAttachment(item MessageAttachmentInput, userID uint) (models.MessageAttachment, error) {
@@ -478,6 +488,10 @@ func PrivateAttachmentURL(attachmentID uint) string {
 	return fmt.Sprintf("%s%d", chatAttachmentURLPrefix, attachmentID)
 }
 
+func PrivateAttachmentThumbnailURL(attachmentID uint) string {
+	return fmt.Sprintf("%s%d/thumbnail", chatAttachmentURLPrefix, attachmentID)
+}
+
 func PrivateUploadURL(filename string) string {
 	return chatUploadURLPrefix + filename
 }
@@ -521,6 +535,9 @@ func WithPrivateAttachmentURLs(message models.Message) models.Message {
 	}
 	for i := range message.Attachments {
 		message.Attachments[i].FileURL = PrivateAttachmentURL(message.Attachments[i].ID)
+		if message.Attachments[i].ThumbnailURL != "" {
+			message.Attachments[i].ThumbnailURL = PrivateAttachmentThumbnailURL(message.Attachments[i].ID)
+		}
 	}
 	if message.ReplyToMessage != nil {
 		reply := WithPrivateAttachmentURLs(*message.ReplyToMessage)
@@ -883,6 +900,13 @@ func (item MessageAttachmentInput) mediaDurationSeconds() int {
 		return item.DurationSeconds
 	}
 	return item.Duration
+}
+
+func positiveIntPtr(value int) *int {
+	if value <= 0 {
+		return nil
+	}
+	return &value
 }
 
 func parseChatMediaDurationSeconds(value string) (int, bool) {

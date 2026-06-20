@@ -7,6 +7,7 @@ type MessageAttachment struct {
 	MessageID         uint      `json:"message_id" gorm:"not null;index"`
 	FileURL           string    `json:"file_url" gorm:"type:text;not null"`
 	FileType          string    `json:"file_type" gorm:"type:varchar(32);not null"`
+	ThumbnailURL      string    `json:"thumbnail_url,omitempty" gorm:"type:text"`
 	OriginalFilename  string    `json:"original_filename,omitempty" gorm:"type:text"`
 	ContentType       string    `json:"content_type,omitempty" gorm:"type:varchar(128)"`
 	Width             *int      `json:"width,omitempty"`

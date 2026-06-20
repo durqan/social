@@ -160,6 +160,33 @@ func broadcastNewMessage(ctx context.Context, message models.Message) {
 	}
 }
 
+func BroadcastMessageUpdate(ctx context.Context, message models.Message) {
+	messageBytes, err := json.Marshal(gin.H{
+		"type":    "message:update",
+		"payload": services.WithPrivateAttachmentURLs(message),
+	})
+	if err != nil {
+		log.Println("Failed to marshal message update:", err)
+		return
+	}
+
+	for _, toConn := range clients.getAll(message.ToID) {
+		if err := toConn.write(ctx, messageBytes); err != nil {
+			log.Println("Failed to send message update to recipient:", err)
+		}
+	}
+
+	for _, fromConn := range clients.getAll(message.FromID) {
+		if err := fromConn.write(ctx, messageBytes); err != nil {
+			log.Println("Failed to send message update to sender:", err)
+		}
+	}
+}
+
+func StartMessageUpdateSubscriber(database *gorm.DB) {
+	services.StartMessageUpdateListener(database, BroadcastMessageUpdate)
+}
+
 func canSendWebSocketMessage(ctx context.Context, userID uint) bool {
 	user, err := repository.GetUserById(dbInstance, userID)
 	if err != nil {

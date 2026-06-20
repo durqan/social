@@ -92,6 +92,7 @@ export interface MessageAttachment {
   message_id?: number;
   file_url: string;
   file_type: 'image' | 'voice' | 'video_note' | 'video' | 'audio' | 'file';
+  thumbnail_url?: string;
   content_type?: string;
   width?: number;
   height?: number;
@@ -152,7 +153,24 @@ export interface Message {
   forwarded_from_message?: Message | null;
   forwarded_from_user?: MessageUser | null;
   attachments?: MessageAttachment[];
+  link_preview?: MessageLinkPreview | null;
   reactions?: ReactionSummary[];
+}
+
+export interface MessageLinkPreview {
+  id: number;
+  message_id: number;
+  original_url: string;
+  provider: 'youtube' | 'rutube' | 'instagram' | 'generic';
+  title?: string | null;
+  description?: string | null;
+  thumbnail_url?: string | null;
+  duration_seconds?: number | null;
+  status: 'preview' | 'importing' | 'ready' | 'failed';
+  import_error?: string | null;
+  video_attachment_id?: number | null;
+  created_at: string;
+  updated_at?: string;
 }
 
 export interface PinnedMessage {

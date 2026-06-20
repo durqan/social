@@ -165,6 +165,15 @@ func SendMessage(db *gorm.DB, fromID, toID uint, content string, attachments []m
 			return err
 		}
 
+		if !encryption.Enabled() {
+			if preview, ok := FirstSupportedVideoLinkPreview(normalizedContent); ok {
+				preview.MessageID = message.ID
+				if err := tx.Create(preview).Error; err != nil {
+					return err
+				}
+			}
+		}
+
 		fullMessage, err := LoadMessage(tx, message.ID)
 		if err != nil {
 			return err
@@ -188,6 +197,9 @@ func SendMessage(db *gorm.DB, fromID, toID uint, content string, attachments []m
 	}
 	if _, err := ForceUserActivity(db, fromID); err != nil {
 		log.Printf("failed to update sender activity: %v", err)
+	}
+	if message.LinkPreview != nil {
+		EnrichMessageLinkPreviewAsync(db, message.ID, message.LinkPreview.ID)
 	}
 	InvalidateMessageCaches()
 	return message, nil
