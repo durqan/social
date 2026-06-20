@@ -64,6 +64,7 @@ function Profile() {
     };
 
     const isChatPage = location.pathname.includes('/chat');
+    const isEditPage = location.pathname.includes('/edit');
 
     const userPresence = usePresence(currentUser?.id);
 
@@ -97,11 +98,11 @@ function Profile() {
                 userPresence={userPresence}
             />
             <div className="lg:ml-72">
-                <header className="sticky top-0 z-30 border-b border-gray-200/80 bg-white/90">
+                <header className="sticky top-0 z-30 border-b border-[var(--app-border)] bg-[var(--app-card)] text-[var(--app-text-primary)] shadow-sm">
                     <div className="relative px-3 py-2.5 sm:px-6 sm:py-3">
                         <div className="flex min-w-0 items-center justify-between gap-2 sm:gap-3">
                             <div className="min-w-0 flex-1">
-                                <h1 className="truncate text-base font-semibold tracking-tight text-gray-950 sm:text-xl">
+                                <h1 className="truncate text-base font-semibold tracking-tight text-[var(--app-text-primary)] sm:text-xl">
                                     {getPageTitle()}
                                 </h1>
                             </div>
@@ -127,7 +128,7 @@ function Profile() {
                         </div>
 
                         <UserSearch
-                            className={`${isChatPage ? 'hidden lg:block' : ''} mt-2 sm:mt-3 lg:absolute lg:left-1/2 lg:top-1/2 lg:mt-0 lg:w-full lg:max-w-md lg:-translate-x-1/2 lg:-translate-y-1/2`}
+                            className={`${isChatPage ? 'hidden lg:block' : isEditPage ? 'hidden sm:block' : ''} mt-2 sm:mt-3 lg:absolute lg:left-1/2 lg:top-1/2 lg:mt-0 lg:w-full lg:max-w-md lg:-translate-x-1/2 lg:-translate-y-1/2`}
                         />
                     </div>
                 </header>

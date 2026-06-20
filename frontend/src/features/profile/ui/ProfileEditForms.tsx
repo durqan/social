@@ -35,16 +35,16 @@ type TabsProps = {
 
 export function ProfileEditTabs({ activeTab, onChange }: TabsProps) {
     const tabClass = (tab: ProfileEditTab) => (
-        `flex-1 px-2 py-3 text-sm font-medium transition-colors sm:px-4 ${
+        `min-h-12 px-2 py-2.5 text-center text-sm font-medium leading-tight transition-colors sm:px-4 ${
             activeTab === tab
-                ? 'text-sky-700 border-b-2 border-sky-600'
-                : 'text-gray-500 hover:text-gray-700'
+                ? 'border-b-2 border-[var(--app-accent)] text-[var(--app-accent)]'
+                : 'text-[var(--app-text-secondary)] hover:text-[var(--app-text-primary)]'
         }`
     );
 
     return (
-        <div className="border-b border-gray-200">
-            <div className="flex">
+        <div className="border-b border-[var(--app-border)]">
+            <div className="grid grid-cols-2 sm:grid-cols-4">
                 <button onClick={() => onChange('profile')} className={tabClass('profile')}>
                     Редактировать профиль
                 </button>
