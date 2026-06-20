@@ -4,12 +4,13 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
 
 import { authApi } from '../api/auth';
-import { getApiErrorMessage } from '../api/http';
+import { ApiError, getApiErrorMessage } from '../api/http';
 import type { LoginPayload, RegisterPayload, User } from '../api/types';
 import { userApi } from '../api/users';
 import { chatSocket } from '../api/ws';
@@ -18,6 +19,7 @@ import {
   runPostAuthBootstrap,
 } from '../bootstrap/postAuthBootstrap';
 import { revokeRegisteredPushToken } from '../notifications/pushNotifications';
+import { logDev, warnDev } from '../utils/logger';
 
 type AuthContextValue = {
   user: User | null;
@@ -37,6 +39,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [initializing, setInitializing] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
+  const logoutPromiseRef = useRef<Promise<void> | null>(null);
 
   const refreshUser = useCallback(async () => {
     const profile = await userApi.getProfile();
@@ -59,9 +62,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
         }
       })
-      .catch(() => {
+      .catch(error => {
         if (mounted) {
-          setUser(null);
+          if (
+            error instanceof ApiError &&
+            (error.status === 401 || error.status === 403)
+          ) {
+            logDev('[SocialMobile] logout reason', {
+              reason: 'bootstrap_profile_auth_invalid',
+              status: error.status,
+            });
+            setUser(null);
+          } else {
+            warnDev('[SocialMobile] profile bootstrap failed without logout', error);
+          }
         }
       })
       .finally(() => {
@@ -106,16 +120,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
-    chatSocket.disconnect();
-    await revokeRegisteredPushToken().catch(() => undefined);
-    await resetPostAuthBootstrap();
-    try {
-      await authApi.logout();
-    } catch {
-      // Local session state is cleared even if the server is temporarily unavailable.
+    if (logoutPromiseRef.current) {
+      logDev('[SocialMobile] logout reason', {
+        reason: 'logout_already_in_progress',
+      });
+      return logoutPromiseRef.current;
     }
-    setAuthError(null);
-    setUser(null);
+
+    logDev('[SocialMobile] logout reason', { reason: 'manual_logout' });
+    logoutPromiseRef.current = (async () => {
+      chatSocket.disconnect();
+      await revokeRegisteredPushToken().catch(() => undefined);
+      await resetPostAuthBootstrap();
+      try {
+        await authApi.logout();
+      } catch {
+        // Local session state is cleared even if the server is temporarily unavailable.
+      }
+      setAuthError(null);
+      setUser(null);
+    })().finally(() => {
+      logoutPromiseRef.current = null;
+    });
+
+    return logoutPromiseRef.current;
   }, []);
 
   const sendVerificationEmail = useCallback(() => {

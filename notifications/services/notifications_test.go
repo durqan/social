@@ -359,6 +359,22 @@ func TestSaveMobilePushTokenUpsertsAndReactivatesToken(t *testing.T) {
 	}
 }
 
+func TestUniqueMobilePushTokensDedupesByToken(t *testing.T) {
+	tokens := []models.MobilePushToken{
+		{ID: 1, Token: "same-token"},
+		{ID: 2, Token: "same-token"},
+		{ID: 3, Token: "other-token"},
+	}
+
+	unique := uniqueMobilePushTokens(tokens)
+	if len(unique) != 2 {
+		t.Fatalf("unique token count = %d, want 2: %+v", len(unique), unique)
+	}
+	if unique[0].ID != 1 || unique[1].ID != 3 {
+		t.Fatalf("unique token order = %+v, want first occurrence order", unique)
+	}
+}
+
 func newNotificationTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 

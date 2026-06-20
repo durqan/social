@@ -202,8 +202,16 @@ func (s *Service) sendPushPayload(userID uint, payload pushsvc.Payload) {
 			log.Printf("failed to load mobile push tokens: %v", err)
 			return
 		}
+		uniqueTokens := uniqueMobilePushTokens(tokens)
+		log.Printf(
+			"info: sending mobile push: notification_id=%d user_id=%d token_count_before_dedupe=%d token_count_after_dedupe=%d platform=fcm/android",
+			payload.NotificationID,
+			userID,
+			len(tokens),
+			len(uniqueTokens),
+		)
 
-		for _, token := range tokens {
+		for _, token := range uniqueTokens {
 			if err := s.push.SendMobile(token, payload); err != nil {
 				log.Printf("failed to send FCM push notification to token %d: %v", token.ID, err)
 
@@ -215,6 +223,23 @@ func (s *Service) sendPushPayload(userID uint, payload pushsvc.Payload) {
 			}
 		}
 	}
+}
+
+func uniqueMobilePushTokens(tokens []models.MobilePushToken) []models.MobilePushToken {
+	if len(tokens) < 2 {
+		return tokens
+	}
+
+	seen := make(map[string]struct{}, len(tokens))
+	unique := make([]models.MobilePushToken, 0, len(tokens))
+	for _, token := range tokens {
+		if _, ok := seen[token.Token]; ok {
+			continue
+		}
+		seen[token.Token] = struct{}{}
+		unique = append(unique, token)
+	}
+	return unique
 }
 
 type pushPayloadDataSource interface {

@@ -132,6 +132,7 @@ import {
 type Props = NativeStackScreenProps<ChatStackParamList, 'Chat'>;
 type LoadMode = 'initial' | 'refresh' | 'silent';
 type ComposerMediaMode = 'voice' | 'video_note';
+type ScrollToLatestReason = 'initial_load' | 'own_message' | 'incoming_message';
 type ChatE2EEState = {
   loading: boolean;
   selfEnabled: boolean;
@@ -325,9 +326,13 @@ export default function ChatScreen({ route }: Props) {
   const listRef = useRef<FlatList<Message>>(null);
   const hasLoadedRef = useRef(false);
   const hasMoreRef = useRef(true);
-  const loadingOlderRef = useRef(false);
+  const isLoadingOlderRef = useRef(false);
   const messagesRef = useRef<Message[]>([]);
-  const shouldScrollToEndRef = useRef(false);
+  const pendingScrollToLatestReasonRef = useRef<ScrollToLatestReason | null>(
+    null,
+  );
+  const isInitialScrollPendingRef = useRef(false);
+  const isUserNearBottomRef = useRef(true);
   const scrollToEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -394,6 +399,7 @@ export default function ChatScreen({ route }: Props) {
   const [recordingBusy, setRecordingBusy] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [playingVoiceUrl, setPlayingVoiceUrl] = useState<string | null>(null);
+  const [messageActionPending, setMessageActionPending] = useState(false);
 
   const [pendingVoice, setPendingVoice] = useState<LocalVoiceMessage | null>(
     null,
@@ -432,6 +438,7 @@ export default function ChatScreen({ route }: Props) {
   const editingMessageRef = useRef<Message | null>(null);
   const replyToMessageRef = useRef<Message | null>(null);
   const recordingBusyRef = useRef<boolean>(false);
+  const messageActionPendingRef = useRef(false);
   const startVoiceRecordingRef = useRef<() => Promise<void> | void>(
     null as any,
   );
@@ -612,6 +619,16 @@ export default function ChatScreen({ route }: Props) {
   }, [otherUserId]);
 
   const scrollToLatestMessage = useCallback((animated = hasLoadedRef.current) => {
+    const reason = pendingScrollToLatestReasonRef.current;
+    if (
+      !reason ||
+      isLoadingOlderRef.current ||
+      (reason === 'incoming_message' && !isUserNearBottomRef.current)
+    ) {
+      pendingScrollToLatestReasonRef.current = null;
+      return;
+    }
+
     setMaintainScrollPositionEnabled(false);
 
     if (scrollToEndTimerRef.current) {
@@ -627,23 +644,29 @@ export default function ChatScreen({ route }: Props) {
     scrollToEndTimerRef.current = setTimeout(() => {
       scroll();
       requestAnimationFrame(scroll);
-      shouldScrollToEndRef.current = false;
+      pendingScrollToLatestReasonRef.current = null;
+      isInitialScrollPendingRef.current = false;
+      isUserNearBottomRef.current = true;
       scrollToEndTimerRef.current = null;
       setMaintainScrollPositionEnabled(true);
     }, 120);
   }, []);
 
-  useEffect(() => {
-    if (Platform.OS !== 'android' || androidKeyboardInset <= 0) {
-      return undefined;
-    }
+  const requestScrollToLatest = useCallback(
+    (reason: ScrollToLatestReason, animated = hasLoadedRef.current) => {
+      if (
+        reason === 'incoming_message' &&
+        !isUserNearBottomRef.current &&
+        !isInitialScrollPendingRef.current
+      ) {
+        return;
+      }
 
-    const timer = setTimeout(() => {
-      listRef.current?.scrollToEnd({ animated: true });
-    }, keyboardInsetUpdateDelayMs);
-
-    return () => clearTimeout(timer);
-  }, [androidKeyboardInset]);
+      pendingScrollToLatestReasonRef.current = reason;
+      scrollToLatestMessage(animated);
+    },
+    [scrollToLatestMessage],
+  );
 
   const decryptChatMessages = useCallback(
     (items: Message[]) =>
@@ -935,18 +958,22 @@ export default function ChatScreen({ route }: Props) {
         const response = await messageApi.getMessagesWith(otherUserId, {
           limit: messagePageSize,
         });
-        const shouldScrollToEnd =
-          mode !== 'silent' || messagesRef.current.length === 0;
+        const shouldInitialScroll =
+          mode === 'initial' &&
+          (!hasLoadedRef.current || messagesRef.current.length === 0);
         const displayMessages = await decryptChatMessages(response.messages);
 
-        shouldScrollToEndRef.current = shouldScrollToEnd;
-        setMaintainScrollPositionEnabled(!shouldScrollToEnd);
+        isInitialScrollPendingRef.current = shouldInitialScroll;
+        pendingScrollToLatestReasonRef.current = shouldInitialScroll
+          ? 'initial_load'
+          : null;
+        setMaintainScrollPositionEnabled(!shouldInitialScroll);
         hasMoreRef.current = response.has_more;
         setHasMore(response.has_more);
         setMessages(displayMessages);
 
-        if (shouldScrollToEnd) {
-          scrollToLatestMessage(false);
+        if (shouldInitialScroll) {
+          requestScrollToLatest('initial_load', false);
         }
 
         markConversationRead().catch(() => undefined);
@@ -967,7 +994,7 @@ export default function ChatScreen({ route }: Props) {
       decryptChatMessages,
       markConversationRead,
       otherUserId,
-      scrollToLatestMessage,
+      requestScrollToLatest,
     ],
   );
 
@@ -976,7 +1003,7 @@ export default function ChatScreen({ route }: Props) {
     const oldestMessage = currentMessages[0];
 
     if (
-      loadingOlderRef.current ||
+      isLoadingOlderRef.current ||
       !hasMoreRef.current ||
       !oldestMessage ||
       refreshing
@@ -984,8 +1011,8 @@ export default function ChatScreen({ route }: Props) {
       return;
     }
 
-    loadingOlderRef.current = true;
-    shouldScrollToEndRef.current = false;
+    isLoadingOlderRef.current = true;
+    pendingScrollToLatestReasonRef.current = null;
     setMaintainScrollPositionEnabled(true);
     setLoadingOlder(true);
 
@@ -1013,14 +1040,20 @@ export default function ChatScreen({ route }: Props) {
     } catch (apiError) {
       setError(chatErrorMessage(apiError));
     } finally {
-      loadingOlderRef.current = false;
+      isLoadingOlderRef.current = false;
       setLoadingOlder(false);
     }
   }, [decryptChatMessages, otherUserId, refreshing]);
 
   const handleMessagesScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      if (event.nativeEvent.contentOffset.y > loadOlderThreshold) {
+      const { contentOffset, contentSize, layoutMeasurement } =
+        event.nativeEvent;
+      const distanceFromBottom =
+        contentSize.height - (contentOffset.y + layoutMeasurement.height);
+      isUserNearBottomRef.current = distanceFromBottom <= 96;
+
+      if (contentOffset.y > loadOlderThreshold) {
         return;
       }
 
@@ -1030,13 +1063,17 @@ export default function ChatScreen({ route }: Props) {
   );
 
   const handleMessageListContentSizeChange = useCallback(() => {
-    if (shouldScrollToEndRef.current) {
+    if (pendingScrollToLatestReasonRef.current && !isLoadingOlderRef.current) {
       scrollToLatestMessage();
     }
   }, [scrollToLatestMessage]);
 
   useEffect(() => {
-    if (shouldScrollToEndRef.current && messages.length > 0) {
+    if (
+      pendingScrollToLatestReasonRef.current &&
+      !isLoadingOlderRef.current &&
+      messages.length > 0
+    ) {
       scrollToLatestMessage(false);
     }
   }, [messages.length, scrollToLatestMessage]);
@@ -1294,7 +1331,11 @@ export default function ChatScreen({ route }: Props) {
             if (previous.some(item => item.id === displayMessage.id)) {
               return previous;
             }
-            shouldScrollToEndRef.current = true;
+            if (displayMessage.from_id === user?.id) {
+              pendingScrollToLatestReasonRef.current = 'own_message';
+            } else if (isUserNearBottomRef.current) {
+              pendingScrollToLatestReasonRef.current = 'incoming_message';
+            }
             return [...previous, displayMessage];
           });
 
@@ -1591,7 +1632,7 @@ export default function ChatScreen({ route }: Props) {
           commentEncryption,
         );
         const displayMessage = await decryptIncomingMessage(sent);
-        shouldScrollToEndRef.current = true;
+        pendingScrollToLatestReasonRef.current = 'own_message';
         setMessages(previous => [...previous, displayMessage]);
         signalChatDataChanged();
       }
@@ -1803,7 +1844,7 @@ export default function ChatScreen({ route }: Props) {
           commentEncryption,
         );
         const displayMessage = await decryptIncomingMessage(sent);
-        shouldScrollToEndRef.current = true;
+        pendingScrollToLatestReasonRef.current = 'own_message';
         setMessages(previous => [...previous, displayMessage]);
         signalChatDataChanged();
       }
@@ -1876,7 +1917,12 @@ export default function ChatScreen({ route }: Props) {
         setError('Введите текст сообщения');
         return;
       }
+      if (messageActionPendingRef.current || sendingRef.current) {
+        return;
+      }
 
+      messageActionPendingRef.current = true;
+      setMessageActionPending(true);
       setSending('sending');
       setError(null);
       try {
@@ -1956,6 +2002,8 @@ export default function ChatScreen({ route }: Props) {
       } catch (apiError) {
         setError(chatErrorMessage(apiError));
       } finally {
+        messageActionPendingRef.current = false;
+        setMessageActionPending(false);
         setSending(null);
       }
       return;
@@ -2027,7 +2075,7 @@ export default function ChatScreen({ route }: Props) {
         );
         const displayMessage = await decryptIncomingMessage(sent);
         draftRef.current = null;
-        shouldScrollToEndRef.current = true;
+        pendingScrollToLatestReasonRef.current = 'own_message';
         setMessages(previous => [...previous, displayMessage]);
         signalChatDataChanged();
       }
@@ -2107,13 +2155,8 @@ export default function ChatScreen({ route }: Props) {
   }
 
   function handleComposerFocus() {
-    if (Platform.OS !== 'android') {
-      return;
-    }
-
-    setTimeout(() => {
-      listRef.current?.scrollToEnd({ animated: true });
-    }, 80);
+    // Focusing the composer must not move the message list. Scroll is driven by
+    // explicit message events only.
   }
 
   async function openComposerAttachments() {
@@ -2228,6 +2271,12 @@ export default function ChatScreen({ route }: Props) {
     message: Message,
     mode: MessageDeleteMode = 'for_me',
   ) {
+    if (messageActionPendingRef.current || sendingRef.current) {
+      return;
+    }
+
+    messageActionPendingRef.current = true;
+    setMessageActionPending(true);
     setSelectedMessage(null);
 
     try {
@@ -2241,6 +2290,9 @@ export default function ChatScreen({ route }: Props) {
       signalChatDataChanged();
     } catch (apiError) {
       setError(getApiErrorMessage(apiError));
+    } finally {
+      messageActionPendingRef.current = false;
+      setMessageActionPending(false);
     }
   }
 
@@ -2388,7 +2440,7 @@ export default function ChatScreen({ route }: Props) {
             (message.to_id === user?.id && message.from_id === otherUserId),
         );
         if (currentChatMessages.length) {
-          shouldScrollToEndRef.current = true;
+          pendingScrollToLatestReasonRef.current = 'own_message';
           setMessages(previous => [...previous, ...currentChatMessages]);
         }
         setForwardMessage(null);
@@ -2411,7 +2463,7 @@ export default function ChatScreen({ route }: Props) {
           (message.to_id === user?.id && message.from_id === otherUserId),
       );
       if (currentChatMessages.length) {
-        shouldScrollToEndRef.current = true;
+        pendingScrollToLatestReasonRef.current = 'own_message';
         setMessages(previous => [...previous, ...currentChatMessages]);
       }
       setForwardMessage(null);
@@ -2863,6 +2915,7 @@ export default function ChatScreen({ route }: Props) {
               variant="primary"
               disabled={
                 Boolean(sending) ||
+                messageActionPending ||
                 recording ||
                 (!trimmedInput &&
                   !editingMessage &&
@@ -2938,6 +2991,7 @@ export default function ChatScreen({ route }: Props) {
         onPin={message => {
           pinSelectedMessage(message).catch(() => undefined);
         }}
+        actionPending={messageActionPending || Boolean(sending)}
         isOwn={Boolean(
           selectedMessage && user?.id && selectedMessage.from_id === user.id,
         )}
@@ -3452,6 +3506,7 @@ function MessageActionSheet({
   onReply,
   onForward,
   onPin,
+  actionPending,
   themeColors,
 }: {
   message: Message | null;
@@ -3464,6 +3519,7 @@ function MessageActionSheet({
   onReply: (message: Message) => void;
   onForward: (message: Message) => void;
   onPin: (message: Message) => void;
+  actionPending: boolean;
   themeColors: ThemeColors;
 }) {
   const themed = useMemo(
@@ -3497,6 +3553,8 @@ function MessageActionSheet({
           {message ? (
             <Pressable
               accessibilityRole="button"
+              accessibilityState={{ disabled: actionPending }}
+              disabled={actionPending}
               style={styles.sheetAction}
               onPress={() => onReply(message)}
             >
@@ -3512,6 +3570,8 @@ function MessageActionSheet({
           {message ? (
             <Pressable
               accessibilityRole="button"
+              accessibilityState={{ disabled: actionPending }}
+              disabled={actionPending}
               style={styles.sheetAction}
               onPress={() => onForward(message)}
             >
@@ -3531,6 +3591,8 @@ function MessageActionSheet({
           {message ? (
             <Pressable
               accessibilityRole="button"
+              accessibilityState={{ disabled: actionPending }}
+              disabled={actionPending}
               style={styles.sheetAction}
               onPress={() => onPin(message)}
             >
@@ -3546,6 +3608,8 @@ function MessageActionSheet({
           {message && isOwn && trimmedText ? (
             <Pressable
               accessibilityRole="button"
+              accessibilityState={{ disabled: actionPending }}
+              disabled={actionPending}
               style={styles.sheetAction}
               onPress={() => onEdit(message)}
             >
@@ -3561,6 +3625,8 @@ function MessageActionSheet({
           {message ? (
             <Pressable
               accessibilityRole="button"
+              accessibilityState={{ disabled: actionPending }}
+              disabled={actionPending}
               style={[styles.sheetAction, styles.sheetDangerAction]}
               onPress={() => onDelete(message, 'for_me')}
             >
@@ -3593,6 +3659,8 @@ function MessageActionSheet({
           {message && isOwn && messageIsReal ? (
             <Pressable
               accessibilityRole="button"
+              accessibilityState={{ disabled: actionPending }}
+              disabled={actionPending}
               style={[styles.sheetAction, styles.sheetDangerAction]}
               onPress={() => onDelete(message, 'for_everyone')}
             >
@@ -3625,6 +3693,8 @@ function MessageActionSheet({
           {trimmedText ? (
             <Pressable
               accessibilityRole="button"
+              accessibilityState={{ disabled: actionPending }}
+              disabled={actionPending}
               style={styles.sheetAction}
               onPress={() => message && onCopyText(message)}
             >
@@ -3640,6 +3710,8 @@ function MessageActionSheet({
           {messageUrl ? (
             <Pressable
               accessibilityRole="button"
+              accessibilityState={{ disabled: actionPending }}
+              disabled={actionPending}
               style={styles.sheetAction}
               onPress={() => onCopyLink(messageUrl)}
             >

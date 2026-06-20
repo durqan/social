@@ -34,9 +34,12 @@ let activePushUserId: number | null = null;
 let pushSessionVersion = 0;
 const pushBootstrapInFlight = new Map<string, Promise<boolean>>();
 let androidPermissionRequestAttempted = false;
+let lastRegisteredTokenKey: string | null = null;
+let activeNotificationListenersCleanup: (() => void) | null = null;
 
 export type MobilePushSession = {
   key: string;
+  userId: number;
   isCurrent: () => boolean;
 };
 
@@ -49,6 +52,7 @@ export function beginMobilePushSession(userId: number): MobilePushSession {
   const version = pushSessionVersion;
   return {
     key: `${userId}:${version}`,
+    userId,
     isCurrent: () =>
       activePushUserId === userId && pushSessionVersion === version,
   };
@@ -56,6 +60,8 @@ export function beginMobilePushSession(userId: number): MobilePushSession {
 
 export function resetMobilePushSession() {
   const pendingBootstrap = Array.from(pushBootstrapInFlight.values());
+  activeNotificationListenersCleanup?.();
+  activeNotificationListenersCleanup = null;
   activePushUserId = null;
   pushSessionVersion += 1;
   pushBootstrapInFlight.clear();
@@ -91,8 +97,28 @@ function notificationFromRemoteMessage(
   return normalizeNotificationData(remoteMessage?.data);
 }
 
-async function registerMobilePushToken(payload: MobilePushTokenPayload) {
+function mobileTokenKey(userId: number, payload: MobilePushTokenPayload) {
+  return `${userId}:${payload.provider}:${payload.platform}:${payload.token}`;
+}
+
+async function registerMobilePushToken(
+  userId: number,
+  payload: MobilePushTokenPayload,
+) {
+  const nextKey = mobileTokenKey(userId, payload);
+  if (lastRegisteredTokenKey === nextKey) {
+    activeRegisteredPayload = payload;
+    logDev('[SocialMobile] FCM token registration skipped', {
+      reason: 'same_user_token',
+      provider: payload.provider,
+      platform: payload.platform,
+      tokenPrefix: payload.token.slice(0, 8),
+    });
+    return;
+  }
+
   await notificationsApi.registerMobilePushToken(payload);
+  lastRegisteredTokenKey = nextKey;
   logDev('[SocialMobile] FCM token ready for backend registration', {
     provider: payload.provider,
     platform: payload.platform,
@@ -169,7 +195,7 @@ async function ensureMobilePushReadyInternal(session: MobilePushSession) {
     platform: 'android',
     token,
   };
-  await registerMobilePushToken(payload);
+  await registerMobilePushToken(session.userId, payload);
   if (!session.isCurrent()) {
     await revokeMobilePushToken(payload).catch(error => {
       warnDev('[SocialMobile] superseded FCM token revoke failed', error);
@@ -187,6 +213,8 @@ export async function initializePushNotifications({
 }: PushNotificationHandlers) {
   const cleanup: Array<() => void> = [];
   const session = beginMobilePushSession(userId);
+  activeNotificationListenersCleanup?.();
+  activeNotificationListenersCleanup = null;
 
   try {
     if (!(await ensureMobilePushReady(session))) {
@@ -209,7 +237,7 @@ export async function initializePushNotifications({
             if (!session.isCurrent()) {
               return Promise.reject(new Error('FCM session superseded'));
             }
-            return registerMobilePushToken(payload);
+            return registerMobilePushToken(userId, payload);
           },
           revoke: payload =>
             revokeMobilePushToken(payload).catch(error => {
@@ -258,14 +286,20 @@ export async function initializePushNotifications({
     warnDev('[SocialMobile] FCM initialization skipped', error);
   }
 
-  return () => {
-    cleanup.forEach(dispose => dispose());
+  const dispose = () => {
+    cleanup.forEach(cleanupListener => cleanupListener());
+    if (activeNotificationListenersCleanup === dispose) {
+      activeNotificationListenersCleanup = null;
+    }
   };
+  activeNotificationListenersCleanup = dispose;
+  return dispose;
 }
 
 export async function revokeRegisteredPushToken() {
   const payload = activeRegisteredPayload;
   activeRegisteredPayload = null;
+  lastRegisteredTokenKey = null;
   if (!payload) {
     return;
   }

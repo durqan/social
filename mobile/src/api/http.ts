@@ -1,6 +1,7 @@
 import CookieManager from '@preeternal/react-native-cookie-manager';
 
 import { API_BASE_URL, apiURL } from '../config/env';
+import { logDev } from '../utils/logger';
 
 type HTTPMethod = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
 
@@ -135,7 +136,13 @@ async function buildApiError(response: Response) {
 }
 
 export async function refreshSession() {
-  sessionRefresh ??= ensureCSRFToken()
+  if (sessionRefresh) {
+    logDev('[SocialMobile] auth refresh reused existing promise');
+    return sessionRefresh;
+  }
+
+  logDev('[SocialMobile] auth refresh started');
+  sessionRefresh = ensureCSRFToken()
     .then(token =>
       fetch(apiURL('/auth/refresh'), {
         method: 'POST',
@@ -150,6 +157,14 @@ export async function refreshSession() {
       if (!response.ok) {
         throw await buildApiError(response);
       }
+      logDev('[SocialMobile] auth refresh ok');
+    })
+    .catch(error => {
+      logDev('[SocialMobile] auth refresh failed', {
+        status: error instanceof ApiError ? error.status : undefined,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
     })
     .finally(() => {
       sessionRefresh = null;
@@ -188,14 +203,15 @@ export async function apiRequest<T>(
   });
 
   if (response.status === 401 && !options.retry && !shouldSkipRefresh(path)) {
+    logDev('[SocialMobile] request 401', { path, method });
     try {
       await refreshSession();
       return apiRequest<T>(path, {
         ...options,
         retry: true,
       });
-    } catch {
-      throw await buildApiError(response);
+    } catch (refreshError) {
+      throw refreshError;
     }
   }
 
