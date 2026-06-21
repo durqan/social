@@ -385,6 +385,74 @@ func TestLegacyPlaintextMessageReadsAsBefore(t *testing.T) {
 	}
 }
 
+func TestGetMessagesBeforeCursorUsesCreatedAtAndID(t *testing.T) {
+	db := newMessageServiceTestDB(t)
+	seedAcceptedFriendship(t, db, 1, 2)
+
+	base := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	seedMessages := []models.Message{
+		{ID: 100, FromID: 1, ToID: 2, Content: "oldest", CreatedAt: base},
+		{ID: 50, FromID: 1, ToID: 2, Content: "middle", CreatedAt: base.Add(time.Minute)},
+		{ID: 40, FromID: 1, ToID: 2, Content: "newest", CreatedAt: base.Add(2 * time.Minute)},
+	}
+	if err := db.Create(&seedMessages).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	firstPage, err := repository.GetMessagesBetweenPaginated(db, 1, 2, 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(firstPage) != 2 || firstPage[0].ID != 50 || firstPage[1].ID != 40 {
+		t.Fatalf("first page ids = %+v, want [50 40]", messageIDs(firstPage))
+	}
+
+	before := firstPage[0].ID
+	secondPage, err := repository.GetMessagesBetweenPaginated(db, 1, 2, 2, &before)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(secondPage) != 1 || secondPage[0].ID != 100 {
+		t.Fatalf("second page ids = %+v, want [100]", messageIDs(secondPage))
+	}
+}
+
+func TestConversationListUsesBatchedUnreadAndAttachmentPreview(t *testing.T) {
+	db := newMessageServiceTestDB(t)
+	seedAcceptedFriendship(t, db, 1, 2)
+
+	first := models.Message{FromID: 2, ToID: 1, Content: "unread", IsRead: false}
+	if err := db.Create(&first).Error; err != nil {
+		t.Fatal(err)
+	}
+	latest := models.Message{FromID: 2, ToID: 1, Content: "", IsRead: false, CreatedAt: time.Now().Add(time.Minute)}
+	if err := db.Create(&latest).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.MessageAttachment{
+		MessageID: latest.ID,
+		FileURL:   "messages/user_2/voice.ogg",
+		FileType:  "voice",
+		Size:      12,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	conversations, err := repository.GetConversations(db, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(conversations) != 1 {
+		t.Fatalf("conversations count = %d, want 1", len(conversations))
+	}
+	if conversations[0]["last_message"] != "Голосовое сообщение" {
+		t.Fatalf("last_message = %v, want voice preview", conversations[0]["last_message"])
+	}
+	if intFromMap(conversations[0], "unread_count") != 2 {
+		t.Fatalf("unread_count = %v, want 2", conversations[0]["unread_count"])
+	}
+}
+
 func TestSendMessageFailsWithoutEncryptionKey(t *testing.T) {
 	db := newMessageServiceTestDB(t)
 	seedAcceptedFriendship(t, db, 1, 2)
@@ -847,6 +915,14 @@ func assertVisibleMessageIDs(t *testing.T, db *gorm.DB, userID, otherID uint, wa
 			t.Fatalf("visible message[%d] for %d = %d, want %d", i, userID, message.ID, want[i])
 		}
 	}
+}
+
+func messageIDs(messages []models.Message) []uint {
+	ids := make([]uint, 0, len(messages))
+	for _, message := range messages {
+		ids = append(ids, message.ID)
+	}
+	return ids
 }
 
 func seedAcceptedFriendship(t *testing.T, db *gorm.DB, userID, friendID uint) {

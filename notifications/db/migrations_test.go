@@ -24,6 +24,10 @@ func TestMigrateCleanDatabaseIsRepeatable(t *testing.T) {
 	assertUniqueIndex(t, database, &models.PushSubscription{}, "idx_push_subscriptions_endpoint")
 	assertUniqueIndex(t, database, &models.MobilePushToken{}, "idx_mobile_push_tokens_token")
 	assertIndex(t, database, &models.Notification{}, "idx_notifications_recipient_conversation_type")
+	assertIndex(t, database, &models.Notification{}, "idx_notifications_recipient_created_id")
+	assertIndex(t, database, &models.Notification{}, "idx_notifications_recipient_actor_type_unread")
+	assertIndex(t, database, &models.Notification{}, "idx_notifications_recipient_type_entity_unread")
+	assertIndex(t, database, &models.Notification{}, "idx_notifications_recipient_conversation_type_unread")
 }
 
 func TestMigrateBackfillsExistingNotificationsAsSeenAndKeepsNewDefaultUnseen(t *testing.T) {

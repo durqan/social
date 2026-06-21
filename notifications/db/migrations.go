@@ -101,6 +101,10 @@ func repairNotificationSeen(database *gorm.DB) error {
 func ensurePerformanceIndexes(database *gorm.DB) error {
 	indexes := []string{
 		"idx_notifications_recipient_conversation_type ON notifications (recipient_id, conversation_id, type)",
+		"idx_notifications_recipient_created_id ON notifications (recipient_id, created_at DESC, id DESC)",
+		"idx_notifications_recipient_actor_type_unread ON notifications (recipient_id, actor_id, type) WHERE is_read = false OR is_seen = false",
+		"idx_notifications_recipient_type_entity_unread ON notifications (recipient_id, type, entity_id) WHERE is_read = false OR is_seen = false",
+		"idx_notifications_recipient_conversation_type_unread ON notifications (recipient_id, conversation_id, type) WHERE is_read = false OR is_seen = false",
 	}
 	for _, index := range indexes {
 		if err := createIndexIfMissing(database, index); err != nil {

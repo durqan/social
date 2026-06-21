@@ -45,6 +45,11 @@ func ensurePerformanceIndexes(database *gorm.DB) error {
 		"idx_posts_user_created_id ON posts (user_id, created_at DESC, id DESC)",
 		"idx_comments_post_created_id ON comments (post_id, created_at ASC, id ASC)",
 		"idx_message_user_deletions_user_message ON message_user_deletions (user_id, message_id)",
+		"idx_messages_from_created_id_active ON messages (from_id, created_at DESC, id DESC) WHERE deleted_at IS NULL",
+		"idx_messages_to_created_id_active ON messages (to_id, created_at DESC, id DESC) WHERE deleted_at IS NULL",
+		"idx_messages_to_unread_from_active ON messages (to_id, is_read, from_id) WHERE deleted_at IS NULL",
+		"idx_message_attachments_message_type_encryption ON message_attachments (message_id, file_type, encryption_version)",
+		"idx_message_reactions_message_created_id ON message_reactions (message_id, created_at ASC, id ASC)",
 	}
 	for _, index := range indexes {
 		if err := createIndexIfMissing(database, index); err != nil {

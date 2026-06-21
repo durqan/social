@@ -23,6 +23,11 @@ func TestMigrateCleanDatabaseIsRepeatable(t *testing.T) {
 	assertBackendIndex(t, database, &models.Post{}, "idx_posts_user_created_id")
 	assertBackendIndex(t, database, &models.Comment{}, "idx_comments_post_created_id")
 	assertBackendIndex(t, database, &models.MessageUserDeletion{}, "idx_message_user_deletions_user_message")
+	assertBackendIndex(t, database, &models.Message{}, "idx_messages_from_created_id_active")
+	assertBackendIndex(t, database, &models.Message{}, "idx_messages_to_created_id_active")
+	assertBackendIndex(t, database, &models.Message{}, "idx_messages_to_unread_from_active")
+	assertBackendIndex(t, database, &models.MessageAttachment{}, "idx_message_attachments_message_type_encryption")
+	assertBackendIndex(t, database, &models.MessageReaction{}, "idx_message_reactions_message_created_id")
 }
 
 func TestMigrateRemovesOldEncryptedBackupDuplicates(t *testing.T) {

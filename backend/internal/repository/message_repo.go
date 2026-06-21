@@ -2,12 +2,16 @@ package repository
 
 import (
 	"errors"
+	"fmt"
+	"sync"
 	"tester/internal/models"
 	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+var messageLinkPreviewTableCache sync.Map
 
 func CreateMessage(db *gorm.DB, message *models.Message) error {
 	return db.Create(message).Error
@@ -31,7 +35,7 @@ func preloadMessageRelations(db *gorm.DB) *gorm.DB {
 		Preload("ForwardedFromUser").
 		Preload("ForwardedFromMessage.From").
 		Preload("ForwardedFromMessage.Attachments")
-	if db.Migrator().HasTable(&models.MessageLinkPreview{}) {
+	if messageLinkPreviewTableExists(db) {
 		query = query.
 			Preload("LinkPreview").
 			Preload("ReplyToMessage.LinkPreview").
@@ -51,13 +55,24 @@ func preloadPinnedMessageRelations(db *gorm.DB) *gorm.DB {
 		Preload("Message.ForwardedFromMessage.From").
 		Preload("Message.ForwardedFromMessage.Attachments").
 		Preload("PinnedBy")
-	if db.Migrator().HasTable(&models.MessageLinkPreview{}) {
+	if messageLinkPreviewTableExists(db) {
 		query = query.
 			Preload("Message.LinkPreview").
 			Preload("Message.ReplyToMessage.LinkPreview").
 			Preload("Message.ForwardedFromMessage.LinkPreview")
 	}
 	return query
+}
+
+func messageLinkPreviewTableExists(db *gorm.DB) bool {
+	cacheKey := fmt.Sprintf("%p", db.Config)
+	if cached, ok := messageLinkPreviewTableCache.Load(cacheKey); ok {
+		return cached.(bool)
+	}
+
+	exists := db.Migrator().HasTable(&models.MessageLinkPreview{})
+	messageLinkPreviewTableCache.Store(cacheKey, exists)
+	return exists
 }
 
 func GetMessageAttachmentForUser(db *gorm.DB, attachmentID, userID uint) (*models.MessageAttachment, error) {
@@ -73,36 +88,63 @@ func GetConversations(db *gorm.DB, userID uint) ([]map[string]interface{}, error
 	var conversations []map[string]interface{}
 
 	err := db.Raw(`
-        SELECT 
-            user_id,
-            name,
-            avatar,
-            avatar_position_x,
-            avatar_position_y,
-            avatar_scale,
-            updated_at,
-            avatar_updated_at,
-            last_seen_at,
-            last_message,
-            last_message_at,
-            last_sender_id,
-            last_sender_name,
-            last_is_mine,
-            last_read,
-            unread_count,
-            is_pinned,
-            last_message_id,
-            last_message_content,
-            last_encryption_version,
-            last_ciphertext,
-            last_nonce
-        FROM (
+        WITH visible_messages AS (
             SELECT 
-                m.id as last_message_id,
+                m.*,
                 CASE 
                     WHEN m.from_id = ? THEN m.to_id
                     ELSE m.from_id
-                END as user_id,
+                END AS peer_user_id
+            FROM messages m
+            WHERE (m.from_id = ? OR m.to_id = ?)
+              AND m.deleted_at IS NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM message_user_deletions mud
+                  WHERE mud.message_id = m.id AND mud.user_id = ?
+              )
+        ),
+        ranked_messages AS (
+            SELECT 
+                vm.*,
+                ROW_NUMBER() OVER (
+                    PARTITION BY vm.peer_user_id
+                    ORDER BY vm.created_at DESC, vm.id DESC
+                ) AS rn
+            FROM visible_messages vm
+        ),
+        last_messages AS (
+            SELECT * FROM ranked_messages WHERE rn = 1
+        ),
+        attachment_flags AS (
+            SELECT
+                ma.message_id,
+                MAX(CASE WHEN ma.encryption_version > 0 THEN 1 ELSE 0 END) AS has_encrypted_attachment,
+                MAX(CASE WHEN ma.file_type = 'video_note' THEN 1 ELSE 0 END) AS has_video_note,
+                MAX(CASE WHEN ma.file_type = 'voice' THEN 1 ELSE 0 END) AS has_voice,
+                MAX(CASE WHEN ma.file_type = 'video' THEN 1 ELSE 0 END) AS has_video,
+                MAX(CASE WHEN ma.file_type = 'audio' THEN 1 ELSE 0 END) AS has_audio,
+                MAX(CASE WHEN ma.file_type = 'file' THEN 1 ELSE 0 END) AS has_file,
+                MAX(CASE WHEN ma.file_type = 'image' THEN 1 ELSE 0 END) AS has_image
+            FROM message_attachments ma
+            JOIN last_messages lm ON lm.id = ma.message_id
+            GROUP BY ma.message_id
+        ),
+        unread_counts AS (
+            SELECT
+                m.from_id AS peer_user_id,
+                COUNT(*) AS unread_count
+            FROM messages m
+            WHERE m.to_id = ?
+              AND m.is_read = false
+              AND m.deleted_at IS NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM message_user_deletions mud
+                  WHERE mud.message_id = m.id AND mud.user_id = ?
+              )
+            GROUP BY m.from_id
+        )
+        SELECT 
+                lm.peer_user_id as user_id,
                 u.name,
                 u.avatar,
                 u.avatar_position_x,
@@ -111,85 +153,61 @@ func GetConversations(db *gorm.DB, userID uint) ([]map[string]interface{}, error
                 u.updated_at,
                 u.updated_at as avatar_updated_at,
                 u.last_seen_at,
-                m.content as last_message_content,
-                m.encryption_version as last_encryption_version,
-                m.ciphertext as last_ciphertext,
-                m.nonce as last_nonce,
+                lm.id as last_message_id,
+                lm.content as last_message_content,
+                lm.encryption_version as last_encryption_version,
+                lm.ciphertext as last_ciphertext,
+                lm.nonce as last_nonce,
                 CASE
-                    WHEN m.encryption_version > 0 OR EXISTS (
-                        SELECT 1 FROM message_attachments ma
-                        WHERE ma.message_id = m.id AND ma.encryption_version > 0
-                    ) THEN 'Зашифрованное сообщение'
+                    WHEN lm.encryption_version > 0 OR COALESCE(af.has_encrypted_attachment, 0) = 1 THEN 'Зашифрованное сообщение'
                     ELSE COALESCE(
-                        NULLIF(m.content, ''),
+                        NULLIF(lm.content, ''),
                         CASE
-                            WHEN EXISTS (
-                                SELECT 1 FROM message_attachments ma
-                                WHERE ma.message_id = m.id AND ma.file_type = 'video_note'
-                            ) THEN 'Видео-сообщение'
-                            WHEN EXISTS (
-                                SELECT 1 FROM message_attachments ma
-                                WHERE ma.message_id = m.id AND ma.file_type = 'voice'
-                            ) THEN 'Голосовое сообщение'
-                            WHEN EXISTS (
-                                SELECT 1 FROM message_attachments ma
-                                WHERE ma.message_id = m.id AND ma.file_type = 'video'
-                            ) THEN 'Видео'
-                            WHEN EXISTS (
-                                SELECT 1 FROM message_attachments ma
-                                WHERE ma.message_id = m.id AND ma.file_type = 'audio'
-                            ) THEN 'Аудио'
-                            WHEN EXISTS (
-                                SELECT 1 FROM message_attachments ma
-                                WHERE ma.message_id = m.id AND ma.file_type = 'file'
-                            ) THEN 'Файл'
-                            WHEN EXISTS (
-                                SELECT 1 FROM message_attachments ma
-                                WHERE ma.message_id = m.id AND ma.file_type = 'image'
-                            ) THEN 'Изображение'
+                            WHEN COALESCE(af.has_video_note, 0) = 1 THEN 'Видео-сообщение'
+                            WHEN COALESCE(af.has_voice, 0) = 1 THEN 'Голосовое сообщение'
+                            WHEN COALESCE(af.has_video, 0) = 1 THEN 'Видео'
+                            WHEN COALESCE(af.has_audio, 0) = 1 THEN 'Аудио'
+                            WHEN COALESCE(af.has_file, 0) = 1 THEN 'Файл'
+                            WHEN COALESCE(af.has_image, 0) = 1 THEN 'Изображение'
                             ELSE ''
                         END
                     )
                 END as last_message,
-                m.created_at as last_message_at,
-                m.from_id as last_sender_id,
+                lm.created_at as last_message_at,
+                lm.from_id as last_sender_id,
                 sender.name as last_sender_name,
-                (m.from_id = ?) as last_is_mine,
-                m.is_read as last_read,
-                (
-                    SELECT COUNT(*) FROM messages 
-                    WHERE to_id = ? AND from_id = CASE WHEN m.from_id = ? THEN m.to_id ELSE m.from_id END 
-                    AND is_read = false
-                    AND deleted_at IS NULL
-                    AND NOT EXISTS (
-                        SELECT 1 FROM message_user_deletions mud
-                        WHERE mud.message_id = messages.id AND mud.user_id = ?
-                    )
-                ) as unread_count,
-                (cp.id IS NOT NULL) as is_pinned,
-                ROW_NUMBER() OVER (
-                    PARTITION BY CASE WHEN m.from_id = ? THEN m.to_id ELSE m.from_id END 
-                    ORDER BY m.created_at DESC
-                ) as rn
-            FROM messages m
-            JOIN users u ON u.id = CASE WHEN m.from_id = ? THEN m.to_id ELSE m.from_id END
-            JOIN users sender ON sender.id = m.from_id
+                (lm.from_id = ?) as last_is_mine,
+                lm.is_read as last_read,
+                COALESCE(uc.unread_count, 0) as unread_count,
+                (cp.id IS NOT NULL) as is_pinned
+            FROM last_messages lm
+            JOIN users u ON u.id = lm.peer_user_id
+            JOIN users sender ON sender.id = lm.from_id
+            LEFT JOIN attachment_flags af ON af.message_id = lm.id
+            LEFT JOIN unread_counts uc ON uc.peer_user_id = lm.peer_user_id
             LEFT JOIN conversation_pins cp
                 ON cp.user_id = ?
-                AND cp.conversation_id = CASE WHEN m.from_id = ? THEN m.to_id ELSE m.from_id END
-            WHERE (m.from_id = ? OR m.to_id = ?)
-            AND m.deleted_at IS NULL
-            AND NOT EXISTS (
-                SELECT 1 FROM message_user_deletions mud
-                WHERE mud.message_id = m.id AND mud.user_id = ?
-            )
-        ) subq
-        WHERE rn = 1
+                AND cp.conversation_id = lm.peer_user_id
         ORDER BY is_pinned DESC, last_message_at DESC
-    `, userID, userID, userID, userID, userID, userID, userID, userID, userID, userID, userID, userID).
+    `, userID, userID, userID, userID, userID, userID, userID, userID).
 		Scan(&conversations).Error
+	normalizeScannedMapValues(conversations)
 
 	return conversations, err
+}
+
+func normalizeScannedMapValues(rows []map[string]interface{}) {
+	for _, row := range rows {
+		for key, value := range row {
+			if pointer, ok := value.(*interface{}); ok {
+				if pointer == nil {
+					row[key] = nil
+					continue
+				}
+				row[key] = *pointer
+			}
+		}
+	}
 }
 
 func ConversationExistsForUser(db *gorm.DB, userID, conversationID uint) (bool, error) {
@@ -465,10 +483,14 @@ func GetMessagesBetweenPaginated(db *gorm.DB, userID1, userID2 uint, limit int, 
 				WHERE mud.message_id = messages.id AND mud.user_id = ?
 			)
 		`, userID1).
-		Order("created_at DESC")
+		Order("created_at DESC, id DESC")
 
 	if beforeID != nil {
-		query = query.Where("id < ?", *beforeID)
+		var err error
+		query, err = applyMessageBeforeCursor(db, query, userID1, userID2, *beforeID)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	err := query.Limit(limit).Find(&messages).Error
@@ -491,6 +513,41 @@ func GetMessagesBetweenPaginated(db *gorm.DB, userID1, userID2 uint, limit int, 
 	}
 
 	return messages, err
+}
+
+func applyMessageBeforeCursor(db *gorm.DB, query *gorm.DB, userID1, userID2, beforeID uint) (*gorm.DB, error) {
+	if beforeID == 0 {
+		return query.Where("1 = 0"), nil
+	}
+
+	var cursor struct {
+		ID        uint
+		CreatedAt time.Time
+	}
+	err := db.Model(&models.Message{}).
+		Select("id", "created_at").
+		Where("id = ? AND ((from_id = ? AND to_id = ?) OR (from_id = ? AND to_id = ?))", beforeID, userID1, userID2, userID2, userID1).
+		Where(`
+			deleted_at IS NULL
+			AND NOT EXISTS (
+				SELECT 1 FROM message_user_deletions mud
+				WHERE mud.message_id = messages.id AND mud.user_id = ?
+			)
+		`, userID1).
+		First(&cursor).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return query.Where("1 = 0"), nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return query.Where(
+		"(created_at < ? OR (created_at = ? AND id < ?))",
+		cursor.CreatedAt,
+		cursor.CreatedAt,
+		cursor.ID,
+	), nil
 }
 
 func ToggleMessageReaction(db *gorm.DB, messageID, userID uint, emoji string) error {
