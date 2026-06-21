@@ -84,6 +84,38 @@ func TestMigrateBackfillsExistingNotificationsAsSeenAndKeepsNewDefaultUnseen(t *
 	}
 }
 
+func TestMigrateBackfillsExistingNullSeenBeforeNotNullConstraint(t *testing.T) {
+	database := newMigrationTestDB(t)
+	if err := database.AutoMigrate(&oldNotificationWithNullableSeen{}); err != nil {
+		t.Fatalf("create nullable is_seen notifications table: %v", err)
+	}
+	if err := database.Create(&oldNotificationWithNullableSeen{
+		RecipientID: 10,
+		ActorID:     20,
+		Type:        "friend_request",
+		EntityID:    30,
+		IsRead:      false,
+		IsSeen:      nil,
+		CreatedAt:   time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
+		DedupeKey:   "old-null-seen",
+	}).Error; err != nil {
+		t.Fatalf("seed null seen notification: %v", err)
+	}
+
+	if err := Migrate(database); err != nil {
+		t.Fatalf("Migrate failed: %v", err)
+	}
+
+	var got models.Notification
+	if err := database.First(&got, "dedupe_key = ?", "old-null-seen").Error; err != nil {
+		t.Fatalf("load migrated notification: %v", err)
+	}
+	if !got.IsSeen {
+		t.Fatal("expected old NULL is_seen notification to become seen")
+	}
+	assertColumnNotNull(t, database, "notifications", "is_seen")
+}
+
 func TestMigrateRepairsAlreadyAppliedSeenColumnBeforeCutoff(t *testing.T) {
 	database := newMigrationTestDB(t)
 	cutoff := time.Date(2026, 1, 10, 12, 0, 0, 0, time.UTC)
@@ -171,6 +203,24 @@ type oldNotificationWithBadSeen struct {
 }
 
 func (oldNotificationWithBadSeen) TableName() string {
+	return "notifications"
+}
+
+type oldNotificationWithNullableSeen struct {
+	ID             uint `gorm:"primaryKey"`
+	RecipientID    uint
+	ActorID        uint
+	Type           string
+	EntityID       uint
+	IsRead         bool
+	IsSeen         *bool
+	CreatedAt      time.Time
+	DedupeKey      string `gorm:"size:128;uniqueIndex"`
+	CallID         string
+	ConversationID uint
+}
+
+func (oldNotificationWithNullableSeen) TableName() string {
 	return "notifications"
 }
 
@@ -295,4 +345,27 @@ func assertIndex(t *testing.T, database *gorm.DB, model any, indexName string) {
 		}
 	}
 	t.Fatalf("missing index %s", indexName)
+}
+
+func assertColumnNotNull(t *testing.T, database *gorm.DB, tableName string, columnName string) {
+	t.Helper()
+
+	columns, err := database.Migrator().ColumnTypes(tableName)
+	if err != nil {
+		t.Fatalf("get column types: %v", err)
+	}
+	for _, column := range columns {
+		if column.Name() != columnName {
+			continue
+		}
+		nullable, ok := column.Nullable()
+		if !ok {
+			t.Fatalf("column %s nullability is unknown", columnName)
+		}
+		if nullable {
+			t.Fatalf("column %s is nullable", columnName)
+		}
+		return
+	}
+	t.Fatalf("missing column %s", columnName)
 }

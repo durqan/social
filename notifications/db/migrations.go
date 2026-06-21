@@ -39,14 +39,16 @@ func Migrate(database *gorm.DB) error {
 }
 
 func migrateNotificationSeen(database *gorm.DB) error {
-	if !database.Migrator().HasTable(&models.Notification{}) ||
-		database.Migrator().HasColumn(&models.Notification{}, "is_seen") {
+	if !database.Migrator().HasTable(&models.Notification{}) {
 		return nil
 	}
+	hasSeenColumn := database.Migrator().HasColumn(&models.Notification{}, "is_seen")
 
 	if database.Dialector.Name() == "postgres" {
-		if err := database.Exec("ALTER TABLE notifications ADD COLUMN is_seen boolean").Error; err != nil {
-			return err
+		if !hasSeenColumn {
+			if err := database.Exec("ALTER TABLE notifications ADD COLUMN is_seen boolean").Error; err != nil {
+				return err
+			}
 		}
 		if err := database.Exec("UPDATE notifications SET is_seen = true WHERE is_seen IS NULL").Error; err != nil {
 			return err
@@ -57,10 +59,12 @@ func migrateNotificationSeen(database *gorm.DB) error {
 		return database.Exec("ALTER TABLE notifications ALTER COLUMN is_seen SET NOT NULL").Error
 	}
 
-	if err := database.Exec("ALTER TABLE notifications ADD COLUMN is_seen boolean DEFAULT false").Error; err != nil {
-		return err
+	if !hasSeenColumn {
+		if err := database.Exec("ALTER TABLE notifications ADD COLUMN is_seen boolean").Error; err != nil {
+			return err
+		}
 	}
-	return database.Exec("UPDATE notifications SET is_seen = true").Error
+	return database.Exec("UPDATE notifications SET is_seen = true WHERE is_seen IS NULL").Error
 }
 
 func repairNotificationSeen(database *gorm.DB) error {
