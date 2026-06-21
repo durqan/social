@@ -10,6 +10,7 @@ import React, {
 } from 'react';
 import { WS_EVENTS } from '@social/shared';
 
+import { useAppLifecycle } from './AppLifecycleContext';
 import { useAuth } from './AuthContext';
 import { useUnread } from './UnreadContext';
 import {
@@ -21,6 +22,10 @@ import { chatSocket, type WsEvent } from '../api/ws';
 import type { SocialNotification } from '../api/types';
 import { initializePushNotifications } from '../notifications/pushNotifications';
 import type { MobileNotificationData } from '../notifications/types';
+import {
+  applyPushNotificationEffects,
+  drainPendingPushEvents,
+} from '../notifications/pushEffects';
 
 type NotificationsContextValue = {
   notifications: SocialNotification[];
@@ -36,10 +41,6 @@ const NotificationsContext = createContext<NotificationsContextValue | undefined
   undefined,
 );
 
-function isChatNotification(notification: MobileNotificationData) {
-  return notification.type === 'message_received';
-}
-
 function notificationMatchesConversation(
   notification: SocialNotification,
   conversationId: number,
@@ -53,6 +54,7 @@ function notificationMatchesConversation(
 
 export function NotificationsProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
+  const { resumeCount } = useAppLifecycle();
   const { refreshUnreadCount, signalChatDataChanged } = useUnread();
   const [notifications, setNotifications] = useState<SocialNotification[]>([]);
   const [loading, setLoading] = useState(false);
@@ -149,23 +151,12 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
 
   const handleNotification = useCallback(
     (notification: MobileNotificationData) => {
-      if (
-        notification.type === 'notification_sync' &&
-        notification.syncAction === 'message_read'
-      ) {
-        markConversationNotificationsRead(notification.conversationId);
-        refreshUnreadCount().catch(() => undefined);
-        signalChatDataChanged();
-        refreshNotifications().catch(() => undefined);
-        return;
-      }
-
-      if (isChatNotification(notification)) {
-        signalChatDataChanged();
-      }
-
-      refreshUnreadCount().catch(() => undefined);
-      refreshNotifications().catch(() => undefined);
+      applyPushNotificationEffects(notification, {
+        markConversationRead: markConversationNotificationsRead,
+        refreshNotifications,
+        refreshUnreadCount,
+        signalChatDataChanged,
+      });
     },
     [
       markConversationNotificationsRead,
@@ -174,6 +165,18 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       signalChatDataChanged,
     ],
   );
+
+  useEffect(() => {
+    if (!user?.id) {
+      return;
+    }
+
+    drainPendingPushEvents()
+      .then(events => {
+        events.forEach(event => handleNotification(event.notification));
+      })
+      .catch(() => undefined);
+  }, [handleNotification, resumeCount, user?.id]);
 
   useEffect(() => {
     if (!user?.id) {

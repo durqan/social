@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { KeyRound, LogOut } from 'lucide-react-native';
+import { Bell, KeyRound, LogOut } from 'lucide-react-native';
 
 import { getApiErrorMessage } from '../../api/http';
 import { userApi } from '../../api/users';
@@ -9,6 +9,12 @@ import { ErrorBanner, SuccessBanner } from '../../components/Feedback';
 import { Screen } from '../../components/Screen';
 import { TextField } from '../../components/TextField';
 import { useAuth } from '../../context/AuthContext';
+import {
+  getMobilePushPermissionStatus,
+  openMobilePushNotificationSettings,
+  requestMobilePushPermissionPrompt,
+  type MobilePushPermissionStatus,
+} from '../../notifications/pushNotifications';
 import { useTheme, useThemeColors } from '../../theme/ThemeContext';
 import { themeOrder, themes, type ThemeColors } from '../../theme/themes';
 import { radius, spacing, typography } from '../../theme/layout';
@@ -29,6 +35,18 @@ export default function SettingsScreen() {
   );
   const [securityError, setSecurityError] = useState<string | null>(null);
   const [securitySuccess, setSecuritySuccess] = useState<string | null>(null);
+  const [pushPermissionStatus, setPushPermissionStatus] =
+    useState<MobilePushPermissionStatus>('unsupported');
+  const [pushPermissionBusy, setPushPermissionBusy] = useState(false);
+
+  async function refreshPushPermissionStatus() {
+    const status = await getMobilePushPermissionStatus();
+    setPushPermissionStatus(status);
+  }
+
+  useEffect(() => {
+    refreshPushPermissionStatus().catch(() => undefined);
+  }, []);
 
   async function handleLogout() {
     setLoggingOut(true);
@@ -68,6 +86,20 @@ export default function SettingsScreen() {
       setSecurityError(securityErrorMessage(apiError));
     } finally {
       setSecurityBusy(null);
+    }
+  }
+
+  async function handlePushPermissionAction() {
+    setPushPermissionBusy(true);
+    try {
+      if (pushPermissionStatus === 'prompt_available') {
+        await requestMobilePushPermissionPrompt();
+      } else {
+        await openMobilePushNotificationSettings();
+      }
+      await refreshPushPermissionStatus();
+    } finally {
+      setPushPermissionBusy(false);
     }
   }
 
@@ -130,6 +162,29 @@ export default function SettingsScreen() {
           />
         </View>
       </View>
+
+      {pushPermissionStatus !== 'unsupported' ? (
+        <View style={styles.card}>
+          <Text style={styles.title}>Уведомления</Text>
+          <Text style={styles.text}>
+            {pushPermissionStatus === 'granted'
+              ? 'Push-уведомления включены.'
+              : 'Push-уведомления отключены для этого устройства.'}
+          </Text>
+          {pushPermissionStatus !== 'granted' ? (
+            <AppButton
+              title={
+                pushPermissionStatus === 'prompt_available'
+                  ? 'Разрешить уведомления'
+                  : 'Открыть настройки'
+              }
+              icon={Bell}
+              loading={pushPermissionBusy}
+              onPress={handlePushPermissionAction}
+            />
+          ) : null}
+        </View>
+      ) : null}
 
       <View style={styles.card}>
         <Text style={styles.title}>Тема оформления</Text>

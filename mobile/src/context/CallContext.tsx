@@ -40,6 +40,11 @@ import {
 import { TURN_CREDENTIAL, TURN_URLS, TURN_USERNAME } from '../config/env';
 import { useAppLifecycle } from './AppLifecycleContext';
 import { useAuth } from './AuthContext';
+import {
+  consumePendingIncomingCall,
+  subscribePendingIncomingCall,
+  type PendingIncomingCallPush,
+} from '../notifications/pendingIncomingCall';
 import { colors } from '../theme/colors';
 import { logDev, warnDev } from '../utils/logger';
 
@@ -290,7 +295,7 @@ function callErrorMessage(error: unknown) {
 
 export function CallProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
-  const { isForeground } = useAppLifecycle();
+  const { isForeground, resumeCount } = useAppLifecycle();
   const [status, setStatus] = useState<CallStatus>('idle');
   const [callType, setCallType] = useState<CallType>('audio');
   const [peerUserId, setPeerUserId] = useState<number | null>(null);
@@ -309,6 +314,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const remoteStreamRef = useRef<MediaStream | null>(null);
   const callIdRef = useRef<string | null>(null);
   const pendingOfferRef = useRef<PendingOffer | null>(null);
+  const pendingIncomingCallPushRef = useRef<PendingIncomingCallPush | null>(null);
   const pendingIceRef = useRef<CallIceCandidate[]>([]);
   const endTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const disconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -378,6 +384,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     remoteStreamRef.current = null;
     callIdRef.current = null;
     pendingOfferRef.current = null;
+    pendingIncomingCallPushRef.current = null;
     pendingIceRef.current = [];
     setLocalStream(null);
     setRemoteStream(null);
@@ -428,6 +435,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       remoteStreamRef.current = null;
       callIdRef.current = null;
       pendingOfferRef.current = null;
+      pendingIncomingCallPushRef.current = null;
       pendingIceRef.current = [];
       setLocalStream(null);
       setRemoteStream(null);
@@ -455,6 +463,29 @@ export function CallProvider({ children }: { children: ReactNode }) {
       }
     },
     [],
+  );
+
+  const stagePendingIncomingCallPush = useCallback(
+    (call: PendingIncomingCallPush) => {
+      if (!user?.id || call.callerId === user.id || statusRef.current !== 'idle') {
+        return;
+      }
+
+      pendingIncomingCallPushRef.current = call;
+      if (call.callerId) {
+        setCallPeer(call.callerId);
+      }
+      if (call.callerName) {
+        setPeerName(call.callerName);
+      }
+      chatSocket.connect();
+      logDev('[SocialMobile] Pending incoming call push staged', {
+        callId: call.callId,
+        callerId: call.callerId,
+        conversationId: call.conversationId,
+      });
+    },
+    [setCallPeer, user?.id],
   );
 
   const openLocalStream = useCallback(async (nextCallType: CallType) => {
@@ -896,6 +927,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
         }
 
         if (statusRef.current !== 'idle') {
+          if (pendingIncomingCallPushRef.current?.callId === callId) {
+            pendingIncomingCallPushRef.current = null;
+          }
           try {
             chatSocket.sendCallReject(fromId, callId);
           } catch {
@@ -910,6 +944,13 @@ export function CallProvider({ children }: { children: ReactNode }) {
         }
 
         const nextCallType = incomingType === 'video' ? 'video' : 'audio';
+        const matchingPushCall =
+          pendingIncomingCallPushRef.current?.callId === callId
+            ? pendingIncomingCallPushRef.current
+            : null;
+        if (matchingPushCall) {
+          pendingIncomingCallPushRef.current = null;
+        }
         pendingOfferRef.current = {
           fromId,
           callId,
@@ -925,7 +966,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
           fromId,
           callType: nextCallType,
         });
-        loadPeerName(fromId).catch(() => undefined);
+        loadPeerName(fromId, matchingPushCall?.callerName).catch(() => undefined);
         return;
       }
 
@@ -1038,6 +1079,33 @@ export function CallProvider({ children }: { children: ReactNode }) {
       unsubscribe();
     };
   }, [handleSocketEvent, resetCall, user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      return;
+    }
+
+    let mounted = true;
+    consumePendingIncomingCall()
+      .then(call => {
+        if (mounted && call) {
+          stagePendingIncomingCallPush(call);
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      mounted = false;
+    };
+  }, [resumeCount, stagePendingIncomingCallPush, user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      return undefined;
+    }
+
+    return subscribePendingIncomingCall(stagePendingIncomingCallPush);
+  }, [stagePendingIncomingCallPush, user?.id]);
 
   useEffect(() => {
     if (!isForeground && statusRef.current !== 'idle') {

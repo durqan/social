@@ -25,12 +25,15 @@ import {
   LoadingState,
 } from '../../components/Feedback';
 import { Screen } from '../../components/Screen';
-import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationsContext';
 import type {
   MainStackParamList,
   MainTabParamList,
 } from '../../navigation/types';
+import {
+  navigateTabNotificationRoute,
+  notificationRouteFromPayload,
+} from '../../notifications/navigation';
 import { useThemeColors } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/themes';
 import { radius, spacing, typography } from '../../theme/layout';
@@ -96,7 +99,6 @@ function notificationIcon(type: string) {
 export default function NotificationsScreen() {
   const isFocused = useIsFocused();
   const navigation = useNavigation<NotificationsNavigation>();
-  const { user } = useAuth();
   const colors = useThemeColors();
   const styles = createStyles(colors);
   const { notifications, loading, error, refreshNotifications, markAsRead } =
@@ -175,36 +177,21 @@ export default function NotificationsScreen() {
     }
 
     const actor = actors[notification.actor_id];
-
-    switch (notification.type) {
-      case 'message_received':
-      case 'incoming_call':
-        navigation.navigate('Chats', {
-          screen: 'Chat',
-          params: {
-            userId: notification.conversation_id || notification.actor_id,
-            name: actor?.name || 'Пользователь',
-          },
-        });
-        return;
-      case 'friend_request':
-        navigation.navigate('Friends');
-        return;
-      case 'friend_accepted':
-        navigation.navigate('UserProfile', {
-          userId: notification.actor_id,
-          name: actor?.name || 'Пользователь',
-        });
-        return;
-      case 'post_liked':
-      case 'comment_created':
-        navigation.navigate('Home');
-        return;
-      default:
-        if (user?.id) {
-          navigation.navigate('Profile');
-        }
-    }
+    navigateTabNotificationRoute(
+      navigation,
+      notificationRouteFromPayload(
+        {
+          type: notification.type,
+          actorId: notification.actor_id,
+          entityId: notification.entity_id,
+          conversationId: notification.conversation_id,
+          callId: notification.call_id,
+        },
+        {
+          actorName: actor?.name || 'Пользователь',
+        },
+      ),
+    );
   }
 
   return (

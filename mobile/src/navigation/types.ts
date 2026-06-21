@@ -13,6 +13,8 @@ export type ChatStackParamList = {
   Chat: {
     userId: number;
     name: string;
+    incomingCall?: boolean;
+    callId?: string;
   };
 };
 

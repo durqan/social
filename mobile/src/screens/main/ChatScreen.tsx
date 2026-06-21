@@ -131,6 +131,7 @@ import {
   decryptMessageForDisplay,
   decryptMessagesForDisplay,
 } from '../../features/chat/lib/e2eeMessageTransform';
+import { setActivePushConversation } from '../../notifications/activeConversation';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'Chat'>;
 type LoadMode = 'initial' | 'refresh' | 'silent';
@@ -1145,12 +1146,15 @@ export default function ChatScreen({ route }: Props) {
   useEffect(() => {
     if (isFocused && isForeground) {
       chatSocket.setActiveConversation(otherUserId);
+      setActivePushConversation(otherUserId);
       return () => {
         chatSocket.clearActiveConversation();
+        setActivePushConversation(null);
       };
     }
 
     chatSocket.clearActiveConversation();
+    setActivePushConversation(null);
     return undefined;
   }, [isFocused, isForeground, otherUserId]);
 

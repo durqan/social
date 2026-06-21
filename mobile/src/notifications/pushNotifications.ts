@@ -11,15 +11,22 @@ import {
   type MobileNotificationData,
 } from './types';
 import {
+  displayForegroundNotification,
+  MOBILE_NOTIFICATION_CHANNELS,
+  openLocalNotificationSettings,
+  registerLocalNotificationBackgroundHandler,
+  registerLocalNotificationOpenHandlers,
+} from './localNotifications';
+import {
+  applyPushNotificationEffects,
+  enqueuePendingPushEvent,
+} from './pushEffects';
+import {
   replaceMobilePushToken,
   type MobilePushTokenPayload,
 } from './tokenRegistration';
 
-export const MOBILE_NOTIFICATION_CHANNELS = {
-  GENERAL: 'general',
-  MESSAGES: 'messages',
-  INCOMING_CALLS: 'incoming_calls',
-} as const;
+export { MOBILE_NOTIFICATION_CHANNELS };
 
 export type PushNotificationHandlers = {
   userId: number;
@@ -34,8 +41,19 @@ let activePushUserId: number | null = null;
 let pushSessionVersion = 0;
 const pushBootstrapInFlight = new Map<string, Promise<boolean>>();
 let androidPermissionRequestAttempted = false;
+let androidPermissionLastRequestAt = 0;
+let androidPermissionSettingsRequired = false;
 let lastRegisteredTokenKey: string | null = null;
 let activeNotificationListenersCleanup: (() => void) | null = null;
+
+const androidPermissionRetryCooldownMs = 60_000;
+
+export type MobilePushPermissionStatus =
+  | 'granted'
+  | 'prompt_available'
+  | 'denied'
+  | 'settings_required'
+  | 'unsupported';
 
 export type MobilePushSession = {
   key: string;
@@ -68,33 +86,86 @@ export function resetMobilePushSession() {
   return Promise.allSettled(pendingBootstrap).then(() => undefined);
 }
 
-async function requestAndroidNotificationPermission() {
+async function checkAndroidNotificationPermission() {
   if (Platform.OS !== 'android' || Platform.Version < 33) {
     return true;
   }
 
-  if (
-    await PermissionsAndroid.check(
-      PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
-    )
-  ) {
+  return PermissionsAndroid.check(
+    PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+  );
+}
+
+export async function getMobilePushPermissionStatus(): Promise<MobilePushPermissionStatus> {
+  if (Platform.OS !== 'android') {
+    return 'unsupported';
+  }
+  if (Platform.Version < 33) {
+    return 'granted';
+  }
+
+  if (await checkAndroidNotificationPermission()) {
+    androidPermissionSettingsRequired = false;
+    return 'granted';
+  }
+
+  if (androidPermissionSettingsRequired) {
+    return 'settings_required';
+  }
+
+  return androidPermissionRequestAttempted ? 'denied' : 'prompt_available';
+}
+
+export function openMobilePushNotificationSettings() {
+  return openLocalNotificationSettings();
+}
+
+async function requestAndroidNotificationPermission(forcePrompt = false) {
+  if (Platform.OS !== 'android' || Platform.Version < 33) {
     return true;
   }
-  if (androidPermissionRequestAttempted) {
+
+  if (await checkAndroidNotificationPermission()) {
+    androidPermissionSettingsRequired = false;
+    androidPermissionRequestAttempted = false;
+    return true;
+  }
+
+  const now = Date.now();
+  const recentlyAttempted =
+    androidPermissionRequestAttempted &&
+    now - androidPermissionLastRequestAt < androidPermissionRetryCooldownMs;
+  if (!forcePrompt && (recentlyAttempted || androidPermissionSettingsRequired)) {
     return false;
   }
 
   androidPermissionRequestAttempted = true;
+  androidPermissionLastRequestAt = now;
   const result = await PermissionsAndroid.request(
     PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
   );
+  androidPermissionSettingsRequired =
+    result === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN;
   return result === PermissionsAndroid.RESULTS.GRANTED;
+}
+
+export function requestMobilePushPermissionPrompt() {
+  return requestAndroidNotificationPermission(true);
 }
 
 function notificationFromRemoteMessage(
   remoteMessage: FirebaseMessagingTypes.RemoteMessage | null,
 ) {
-  return normalizeNotificationData(remoteMessage?.data);
+  return normalizeNotificationData({
+    ...(remoteMessage?.data ?? {}),
+    title:
+      remoteMessage?.data?.title ?? remoteMessage?.notification?.title,
+    body: remoteMessage?.data?.body ?? remoteMessage?.notification?.body,
+    ts:
+      remoteMessage?.data?.ts ??
+      remoteMessage?.data?.timestamp ??
+      remoteMessage?.sentTime,
+  });
 }
 
 function mobileTokenKey(userId: number, payload: MobilePushTokenPayload) {
@@ -137,10 +208,18 @@ async function revokeMobilePushToken(payload: MobilePushTokenPayload) {
 
 export function registerBackgroundMessageHandler() {
   try {
+    registerLocalNotificationBackgroundHandler();
+  } catch (error) {
+    warnDev('[SocialMobile] local notification background handler disabled', error);
+  }
+
+  try {
     messaging().setBackgroundMessageHandler(async remoteMessage => {
+      const notification = notificationFromRemoteMessage(remoteMessage);
+      await enqueuePendingPushEvent(notification);
       logDev(
         '[SocialMobile] Background notification received',
-        notificationFromRemoteMessage(remoteMessage),
+        notification,
       );
     });
   } catch (error) {
@@ -167,6 +246,7 @@ export function ensureMobilePushReady(
 
 async function ensureMobilePushReadyInternal(session: MobilePushSession) {
   if (Platform.OS !== 'android') {
+    // TODO: iOS APNs/FCM registration is intentionally out of scope for now.
     return false;
   }
 
@@ -215,84 +295,111 @@ export async function initializePushNotifications({
   const session = beginMobilePushSession(userId);
   activeNotificationListenersCleanup?.();
   activeNotificationListenersCleanup = null;
+  let disposed = false;
+
+  const handleNotificationOpen = (notification: MobileNotificationData) => {
+    applyPushNotificationEffects(notification, {
+      refreshNotifications: () => undefined,
+      refreshUnreadCount: () => undefined,
+      signalChatDataChanged: () => undefined,
+    });
+    onNotificationOpen?.(notification);
+    navigateFromNotification(notification);
+  };
 
   try {
-    if (!(await ensureMobilePushReady(session))) {
-      return () => undefined;
-    }
-
     cleanup.push(
-      messaging().onTokenRefresh(nextToken => {
-        if (!session.isCurrent()) {
-          return;
-        }
-        const nextPayload: MobilePushTokenPayload = {
-          provider: 'fcm',
-          platform: 'android',
-          token: nextToken,
-        };
-        const previousPayload = activeRegisteredPayload;
-        replaceMobilePushToken(previousPayload, nextPayload, {
-          register: payload => {
-            if (!session.isCurrent()) {
-              return Promise.reject(new Error('FCM session superseded'));
-            }
-            return registerMobilePushToken(userId, payload);
-          },
-          revoke: payload =>
-            revokeMobilePushToken(payload).catch(error => {
-              warnDev(
-                '[SocialMobile] previous FCM token revoke failed',
-                error,
-              );
-            }),
-        })
-          .then(activePayload => {
-            if (session.isCurrent()) {
-              activeRegisteredPayload = activePayload;
-            }
-          })
-          .catch(error => {
-            warnDev(
-              '[SocialMobile] FCM token refresh registration failed',
-              error,
-            );
-          });
+      messaging().onNotificationOpenedApp(remoteMessage => {
+        handleNotificationOpen(notificationFromRemoteMessage(remoteMessage));
       }),
     );
 
+    cleanup.push(registerLocalNotificationOpenHandlers(handleNotificationOpen));
+
+    messaging().getInitialNotification()
+      .then(initialNotification => {
+        if (initialNotification) {
+          handleNotificationOpen(notificationFromRemoteMessage(initialNotification));
+        }
+      })
+      .catch(error => {
+        warnDev('[SocialMobile] FCM initial notification unavailable', error);
+      });
+  } catch (error) {
+    warnDev('[SocialMobile] FCM open handlers skipped', error);
+  }
+
+  try {
     cleanup.push(
       messaging().onMessage(async remoteMessage => {
         const notification = notificationFromRemoteMessage(remoteMessage);
         onNotification?.(notification);
+        await displayForegroundNotification(notification).catch(error => {
+          warnDev('[SocialMobile] foreground local notification skipped', error);
+        });
       }),
     );
-
-    cleanup.push(
-      messaging().onNotificationOpenedApp(remoteMessage => {
-        const notification = notificationFromRemoteMessage(remoteMessage);
-        onNotificationOpen?.(notification);
-        navigateFromNotification(notification);
-      }),
-    );
-
-    const initialNotification = await messaging().getInitialNotification();
-    if (initialNotification) {
-      const notification = notificationFromRemoteMessage(initialNotification);
-      onNotificationOpen?.(notification);
-      navigateFromNotification(notification);
-    }
   } catch (error) {
-    warnDev('[SocialMobile] FCM initialization skipped', error);
+    warnDev('[SocialMobile] FCM foreground handler skipped', error);
   }
 
   const dispose = () => {
+    disposed = true;
     cleanup.forEach(cleanupListener => cleanupListener());
     if (activeNotificationListenersCleanup === dispose) {
       activeNotificationListenersCleanup = null;
     }
   };
   activeNotificationListenersCleanup = dispose;
+
+  try {
+    const ready = await ensureMobilePushReady(session);
+    if (!disposed && ready) {
+      cleanup.push(
+        messaging().onTokenRefresh(nextToken => {
+          if (!session.isCurrent()) {
+            return;
+          }
+          const nextPayload: MobilePushTokenPayload = {
+            provider: 'fcm',
+            platform: 'android',
+            token: nextToken,
+          };
+          const previousPayload = activeRegisteredPayload;
+          replaceMobilePushToken(previousPayload, nextPayload, {
+            register: payload => {
+              if (!session.isCurrent()) {
+                return Promise.reject(new Error('FCM session superseded'));
+              }
+              return registerMobilePushToken(userId, payload);
+            },
+            revoke: payload =>
+              revokeMobilePushToken(payload).catch(error => {
+                warnDev(
+                  '[SocialMobile] previous FCM token revoke failed',
+                  error,
+                );
+              }),
+          })
+            .then(activePayload => {
+              if (session.isCurrent()) {
+                activeRegisteredPayload = activePayload;
+              }
+            })
+            .catch(error => {
+              warnDev(
+                '[SocialMobile] FCM token refresh registration failed',
+                error,
+              );
+            });
+        }),
+      );
+    }
+
+  } catch (error) {
+    warnDev('[SocialMobile] FCM initialization skipped', error);
+  }
+
   return dispose;
 }
 
