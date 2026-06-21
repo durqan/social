@@ -50,12 +50,25 @@ func (r *Repository) FindByRecipientID(userID uint) ([]models.Notification, erro
 func (r *Repository) MarkAsRead(id uint, userID uint) error {
 	return r.db.Model(&models.Notification{}).
 		Where("id = ? AND recipient_id = ?", id, userID).
-		Update("is_read", true).Error
+		Updates(map[string]interface{}{
+			"is_read": true,
+			"is_seen": true,
+		}).Error
 }
 
-func (r *Repository) MarkMatchingAsRead(userID uint, types []string, actorID *uint, entityID *uint) error {
+func (r *Repository) MarkAsSeen(userID uint, ids []uint) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	return r.db.Model(&models.Notification{}).
+		Where("recipient_id = ? AND id IN ?", userID, ids).
+		Update("is_seen", true).Error
+}
+
+func (r *Repository) MarkMatchingAsRead(userID uint, types []string, actorID *uint, entityID *uint, conversationID *uint) error {
 	query := r.db.Model(&models.Notification{}).
-		Where("recipient_id = ? AND is_read = false", userID)
+		Where("recipient_id = ? AND (is_read = false OR is_seen = false)", userID)
 
 	if len(types) > 0 {
 		query = query.Where("type IN ?", types)
@@ -66,19 +79,28 @@ func (r *Repository) MarkMatchingAsRead(userID uint, types []string, actorID *ui
 	if entityID != nil {
 		query = query.Where("entity_id = ?", *entityID)
 	}
+	if conversationID != nil {
+		query = query.Where("(conversation_id = ? OR actor_id = ?)", *conversationID, *conversationID)
+	}
 
-	return query.Update("is_read", true).Error
+	return query.Updates(map[string]interface{}{
+		"is_read": true,
+		"is_seen": true,
+	}).Error
 }
 
 func (r *Repository) MarkMessageConversationRead(userID uint, conversationID uint) error {
 	return r.db.Model(&models.Notification{}).
-		Where("recipient_id = ? AND is_read = false AND type = ? AND (conversation_id = ? OR actor_id = ?)",
+		Where("recipient_id = ? AND (is_read = false OR is_seen = false) AND type = ? AND (conversation_id = ? OR actor_id = ?)",
 			userID,
 			"message_received",
 			conversationID,
 			conversationID,
 		).
-		Update("is_read", true).Error
+		Updates(map[string]interface{}{
+			"is_read": true,
+			"is_seen": true,
+		}).Error
 }
 
 func (r *Repository) IsNotificationRead(id uint) (bool, error) {

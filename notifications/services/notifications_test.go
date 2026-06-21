@@ -171,14 +171,98 @@ func TestMarkMessageConversationReadMarksMatchingNotifications(t *testing.T) {
 	if err := db.Order("entity_id").Find(&notes).Error; err != nil {
 		t.Fatalf("load notifications: %v", err)
 	}
-	if !notes[0].IsRead {
-		t.Fatal("expected matching conversation notification to be read")
+	if !notes[0].IsRead || !notes[0].IsSeen {
+		t.Fatal("expected matching conversation notification to be read and seen")
 	}
 	if notes[1].IsRead {
 		t.Fatal("expected other conversation notification to stay unread")
 	}
 	if notes[2].IsRead {
 		t.Fatal("expected other recipient notification to stay unread")
+	}
+}
+
+func TestMarkAsSeenMarksOnlyCurrentUsersNotifications(t *testing.T) {
+	db := newNotificationTestDB(t)
+	service := NewService(repository.NewRepository(db), hub.NewHub(), nil)
+	notes := []models.Notification{
+		{
+			RecipientID: 10,
+			ActorID:     20,
+			Type:        dto.NotificationTypeFriendRequest,
+			EntityID:    1,
+			DedupeKey:   "seen-owner",
+		},
+		{
+			RecipientID: 11,
+			ActorID:     20,
+			Type:        dto.NotificationTypeFriendRequest,
+			EntityID:    2,
+			DedupeKey:   "seen-other-user",
+		},
+	}
+	if err := db.Create(&notes).Error; err != nil {
+		t.Fatalf("seed notifications: %v", err)
+	}
+
+	if err := service.MarkAsSeen(10, []uint{notes[0].ID, notes[1].ID}); err != nil {
+		t.Fatalf("MarkAsSeen failed: %v", err)
+	}
+
+	var got []models.Notification
+	if err := db.Order("entity_id").Find(&got).Error; err != nil {
+		t.Fatalf("load notifications: %v", err)
+	}
+	if !got[0].IsSeen || got[0].IsRead {
+		t.Fatalf("owner notification seen/read = %v/%v, want seen only", got[0].IsSeen, got[0].IsRead)
+	}
+	if got[1].IsSeen {
+		t.Fatal("foreign notification was marked seen")
+	}
+}
+
+func TestMarkMatchingAsReadSupportsConversationAndMarksSeen(t *testing.T) {
+	db := newNotificationTestDB(t)
+	service := NewService(repository.NewRepository(db), hub.NewHub(), nil)
+	notes := []models.Notification{
+		{
+			RecipientID:    10,
+			ActorID:        20,
+			Type:           dto.NotificationTypeMessage,
+			EntityID:       1,
+			ConversationID: 20,
+			DedupeKey:      "conversation-match",
+		},
+		{
+			RecipientID:    10,
+			ActorID:        30,
+			Type:           dto.NotificationTypeMessage,
+			EntityID:       2,
+			ConversationID: 30,
+			DedupeKey:      "conversation-other",
+		},
+	}
+	if err := db.Create(&notes).Error; err != nil {
+		t.Fatalf("seed notifications: %v", err)
+	}
+
+	conversationID := uint(20)
+	if err := service.MarkMatchingAsRead(10, dto.MarkNotificationsReadReq{
+		Types:          []string{dto.NotificationTypeMessage},
+		ConversationID: &conversationID,
+	}); err != nil {
+		t.Fatalf("MarkMatchingAsRead failed: %v", err)
+	}
+
+	var got []models.Notification
+	if err := db.Order("entity_id").Find(&got).Error; err != nil {
+		t.Fatalf("load notifications: %v", err)
+	}
+	if !got[0].IsRead || !got[0].IsSeen {
+		t.Fatal("expected matching conversation notification to be read and seen")
+	}
+	if got[1].IsRead || got[1].IsSeen {
+		t.Fatal("expected other conversation notification to stay unread and unseen")
 	}
 }
 

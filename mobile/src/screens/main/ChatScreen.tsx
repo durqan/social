@@ -102,6 +102,7 @@ import { Screen } from '../../components/Screen';
 import { useAppLifecycle } from '../../context/AppLifecycleContext';
 import { useAuth } from '../../context/AuthContext';
 import { useCall } from '../../context/CallContext';
+import { useNotifications } from '../../context/NotificationsContext';
 import { useUnread } from '../../context/UnreadContext';
 import { useThemeColors } from '../../theme/ThemeContext';
 import { colors } from '../../theme/colors';
@@ -326,6 +327,7 @@ export default function ChatScreen({ route }: Props) {
   const isFocused = useIsFocused();
   const { isForeground, networkConnected } = useAppLifecycle();
   const { refreshUnreadCount, signalChatDataChanged } = useUnread();
+  const { markMatchingAsRead } = useNotifications();
   const otherUserId = route.params.userId;
   const listRef = useRef<FlatList<Message>>(null);
   const hasLoadedRef = useRef(false);
@@ -970,6 +972,10 @@ export default function ChatScreen({ route }: Props) {
 
   const markConversationRead = useCallback(async () => {
     await messageApi.markAsRead(otherUserId);
+    markMatchingAsRead({
+      types: ['message_received'],
+      conversation_id: otherUserId,
+    }).catch(() => undefined);
     refreshUnreadCount().catch(() => undefined);
     signalChatDataChanged();
     setMessages(previous =>
@@ -982,7 +988,13 @@ export default function ChatScreen({ route }: Props) {
           : message,
       ),
     );
-  }, [otherUserId, refreshUnreadCount, signalChatDataChanged, user?.id]);
+  }, [
+    markMatchingAsRead,
+    otherUserId,
+    refreshUnreadCount,
+    signalChatDataChanged,
+    user?.id,
+  ]);
 
   const loadMessages = useCallback(
     async (mode: LoadMode = 'initial') => {

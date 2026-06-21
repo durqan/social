@@ -220,6 +220,7 @@ export interface SocialNotification {
   call_id?: string;
   conversation_id?: number;
   is_read: boolean;
+  is_seen: boolean;
   created_at: string;
 }
 

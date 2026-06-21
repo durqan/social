@@ -264,10 +264,12 @@ export const useChatMessages = (userId: string | undefined, currentUserId: numbe
         void notificationService.markMatchingAsRead({
             types: ['message_received'],
             actor_id: fromId,
+            conversation_id: fromId,
         })
             .then(() => dispatchNotificationsRead({
                 types: ['message_received'],
                 actor_id: fromId,
+                conversation_id: fromId,
             }))
             .catch(error => {
                 console.error('Ошибка отметки уведомлений сообщений:', error);

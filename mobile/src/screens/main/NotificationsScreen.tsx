@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import {
   useFocusEffect,
@@ -53,12 +53,71 @@ const notificationText: Record<string, (actorName: string) => string> = {
   message_received: actorName => `${actorName} написал(а) вам`,
   incoming_call: actorName => `${actorName} звонил(а) вам`,
 };
+const markSeenDelayMs = 750;
+
+type NotificationListItem = {
+  notification: SocialNotification;
+  count: number;
+  seenIds: number[];
+};
+
+function messageConversationId(notification: SocialNotification) {
+  return notification.conversation_id || notification.actor_id;
+}
+
+function groupNotificationsForDisplay(notifications: SocialNotification[]) {
+  const grouped: NotificationListItem[] = [];
+  const messageGroups = new Map<number, NotificationListItem>();
+
+  notifications.forEach(notification => {
+    if (notification.type !== 'message_received') {
+      grouped.push({
+        notification,
+        count: 1,
+        seenIds: [notification.id],
+      });
+      return;
+    }
+
+    const conversationId = messageConversationId(notification);
+    const existing = messageGroups.get(conversationId);
+    if (existing) {
+      existing.count += 1;
+      existing.seenIds.push(notification.id);
+      if (
+        new Date(notification.created_at).getTime() >
+        new Date(existing.notification.created_at).getTime()
+      ) {
+        existing.notification = notification;
+      }
+      return;
+    }
+
+    const item = {
+      notification,
+      count: 1,
+      seenIds: [notification.id],
+    };
+    messageGroups.set(conversationId, item);
+    grouped.push(item);
+  });
+
+  return grouped;
+}
 
 function notificationTitle(notification: SocialNotification, actor?: User) {
   const actorName = actor?.name || 'Пользователь';
   return (
     notificationText[notification.type]?.(actorName) || 'Новое уведомление'
   );
+}
+
+function notificationListTitle(item: NotificationListItem, actor?: User) {
+  if (item.notification.type === 'message_received' && item.count > 1) {
+    return `${actor?.name || 'Пользователь'}: ${item.count} новых сообщений`;
+  }
+
+  return notificationTitle(item.notification, actor);
 }
 
 function notificationAction(notification: SocialNotification) {
@@ -101,10 +160,14 @@ export default function NotificationsScreen() {
   const navigation = useNavigation<NotificationsNavigation>();
   const colors = useThemeColors();
   const styles = createStyles(colors);
-  const { notifications, loading, error, refreshNotifications, markAsRead } =
+  const { notifications, loading, error, refreshNotifications, markAsRead, markAsSeen } =
     useNotifications();
   const [actors, setActors] = useState<Record<number, User>>({});
   const [hasLoaded, setHasLoaded] = useState(false);
+  const displayNotifications = useMemo(
+    () => groupNotificationsForDisplay(notifications),
+    [notifications],
+  );
 
   const loadNotifications = useCallback(async () => {
     try {
@@ -131,7 +194,8 @@ export default function NotificationsScreen() {
   useEffect(() => {
     const missingActorIds = Array.from(
       new Set(
-        notifications
+        displayNotifications
+          .map(item => item.notification)
           .map(notification => notification.actor_id)
           .filter(actorId => actorId > 0 && !actors[actorId]),
       ),
@@ -169,7 +233,36 @@ export default function NotificationsScreen() {
     return () => {
       active = false;
     };
-  }, [actors, notifications]);
+  }, [actors, displayNotifications]);
+
+  useEffect(() => {
+    if (!isFocused || displayNotifications.length === 0) {
+      return;
+    }
+
+    const unseenIds = Array.from(
+      new Set(
+        displayNotifications
+          .flatMap(item => item.seenIds)
+          .filter(id =>
+            notifications.some(
+              notification => notification.id === id && !notification.is_seen,
+            ),
+          ),
+      ),
+    );
+    if (unseenIds.length === 0) {
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      markAsSeen(unseenIds).catch(() => undefined);
+    }, markSeenDelayMs);
+
+    return () => {
+      clearTimeout(timeout);
+    };
+  }, [displayNotifications, isFocused, markAsSeen, notifications]);
 
   async function openNotification(notification: SocialNotification) {
     if (!notification.is_read) {
@@ -202,13 +295,13 @@ export default function NotificationsScreen() {
     >
       <ErrorBanner message={error} />
       <FlatList
-        data={notifications}
-        keyExtractor={item => String(item.id)}
+        data={displayNotifications}
+        keyExtractor={item => String(item.notification.id)}
         refreshing={loading && hasLoaded}
         onRefresh={loadNotifications}
         contentContainerStyle={[
           styles.listContent,
-          notifications.length === 0 && styles.emptyListContent,
+          displayNotifications.length === 0 && styles.emptyListContent,
         ]}
         ListEmptyComponent={
           loading && !hasLoaded ? (
@@ -221,38 +314,39 @@ export default function NotificationsScreen() {
           )
         }
         renderItem={({ item }) => {
-          const actor = actors[item.actor_id];
-          const Icon = notificationIcon(item.type);
+          const notification = item.notification;
+          const actor = actors[notification.actor_id];
+          const Icon = notificationIcon(notification.type);
           return (
             <Pressable
               accessibilityRole="button"
               style={({ pressed }) => [
                 styles.row,
-                !item.is_read && styles.rowUnread,
+                !notification.is_read && styles.rowUnread,
                 pressed && styles.rowPressed,
               ]}
               onPress={() => {
-                openNotification(item).catch(() => undefined);
+                openNotification(notification).catch(() => undefined);
               }}
             >
               <View
-                style={[styles.iconBadge, item.is_read && styles.iconBadgeRead]}
+                style={[styles.iconBadge, notification.is_read && styles.iconBadgeRead]}
               >
                 <Icon
-                  color={item.is_read ? colors.soft : colors.accentStrong}
+                  color={notification.is_read ? colors.soft : colors.accentStrong}
                   size={18}
                   strokeWidth={2.2}
                 />
               </View>
               <View style={styles.meta}>
                 <Text style={styles.title} numberOfLines={2}>
-                  {notificationTitle(item, actor)}
+                  {notificationListTitle(item, actor)}
                 </Text>
                 <Text style={styles.details} numberOfLines={1}>
-                  {notificationAction(item)} · {formatDateTime(item.created_at)}
+                  {notificationAction(notification)} · {formatDateTime(notification.created_at)}
                 </Text>
               </View>
-              {!item.is_read ? <View style={styles.unreadDot} /> : null}
+              {!notification.is_read ? <View style={styles.unreadDot} /> : null}
             </Pressable>
           );
         }}

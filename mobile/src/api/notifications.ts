@@ -12,6 +12,7 @@ export type MarkNotificationsReadPayload = {
   types: string[];
   actor_id?: number;
   entity_id?: number;
+  conversation_id?: number;
 };
 
 type NotificationRequestOptions = {
@@ -72,6 +73,15 @@ export const notificationsApi = {
         method: 'PATCH',
       },
     );
+  },
+
+  async markAsSeen(notificationIds: number[]) {
+    await requestNotifications<{ status: string }>('/notifications/seen', {
+      method: 'PATCH',
+      body: {
+        ids: notificationIds,
+      },
+    });
   },
 
   async markMatchingAsRead(payload: MarkNotificationsReadPayload) {

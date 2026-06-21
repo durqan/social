@@ -16,6 +16,7 @@ export type MarkNotificationsReadPayload = {
     types: string[];
     actor_id?: number;
     entity_id?: number;
+    conversation_id?: number;
 };
 
 export const showMessageNotification = (name: string, content: string) => {
@@ -48,6 +49,16 @@ export const notificationService = {
     async markAsRead(notificationId: number): Promise<void> {
         await requestNotifications<{ status: string }>(`/notifications/${notificationId}/read`, {
             method: 'PATCH',
+        });
+    },
+
+    async markAsSeen(notificationIds: number[]): Promise<void> {
+        await requestNotifications<{ status: string }>('/notifications/seen', {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ ids: notificationIds }),
         });
     },
 

@@ -125,8 +125,12 @@ func (s *Service) MarkAsRead(id uint, userID uint) error {
 	return s.repo.MarkAsRead(id, userID)
 }
 
+func (s *Service) MarkAsSeen(userID uint, ids []uint) error {
+	return s.repo.MarkAsSeen(userID, ids)
+}
+
 func (s *Service) MarkMatchingAsRead(userID uint, req dto.MarkNotificationsReadReq) error {
-	return s.repo.MarkMatchingAsRead(userID, req.Types, req.ActorID, req.EntityID)
+	return s.repo.MarkMatchingAsRead(userID, req.Types, req.ActorID, req.EntityID, req.ConversationID)
 }
 
 func (s *Service) MarkMessageConversationRead(userID uint, conversationID uint) error {

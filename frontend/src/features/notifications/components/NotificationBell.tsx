@@ -16,7 +16,14 @@ type NotificationBellProps = {
     compact?: boolean;
 };
 
+type NotificationListItem = {
+    notification: SocialNotification;
+    count: number;
+    seenIds: number[];
+};
+
 const fallbackActorName = 'Пользователь';
+const markSeenDelayMs = 750;
 
 const notificationText: Record<string, (actorName: string) => string> = {
     post_liked: actorName => `${actorName} лайкнул(а) ваш пост`,
@@ -79,6 +86,14 @@ function getNotificationTitle(notification: SocialNotification, actorName?: stri
     return buildTitle(actorName || fallbackActorName);
 }
 
+function getNotificationListTitle(item: NotificationListItem, actorName?: string) {
+    if (item.notification.type === 'message_received' && item.count > 1) {
+        return `${actorName || fallbackActorName}: ${item.count} новых сообщений`;
+    }
+
+    return getNotificationTitle(item.notification, actorName);
+}
+
 function getNotificationDetails(notification: SocialNotification) {
     switch (notification.type) {
         case 'message_received':
@@ -100,7 +115,7 @@ function getNotificationDetails(notification: SocialNotification) {
 function getNotificationURL(notification: SocialNotification, userId: number) {
     switch (notification.type) {
         case 'message_received':
-            return `/users/${userId}/chat/${notification.actor_id}`;
+            return `/users/${userId}/chat/${notification.conversation_id || notification.actor_id}`;
         case 'incoming_call':
             return `/users/${userId}/chat/${notification.conversation_id || notification.actor_id}`;
         case 'friend_request':
@@ -137,8 +152,88 @@ function matchesReadPayload(notification: SocialNotification, payload: MarkNotif
     if (payload.entity_id !== undefined && notification.entity_id !== payload.entity_id) {
         return false;
     }
+    if (
+        payload.conversation_id !== undefined &&
+        notification.conversation_id !== payload.conversation_id &&
+        notification.actor_id !== payload.conversation_id
+    ) {
+        return false;
+    }
 
     return true;
+}
+
+function messageConversationId(notification: SocialNotification) {
+    return notification.conversation_id || notification.actor_id;
+}
+
+function isChatPath(conversationId: number) {
+    return new RegExp(`/chat/${conversationId}(?:$|[/?#])`).test(window.location.pathname);
+}
+
+export function notificationSeenIdsForVisibleItems(
+    notifications: SocialNotification[],
+    visibleItems: NotificationListItem[],
+) {
+    const ids = new Set<number>();
+    const visibleMessageConversations = new Set(
+        visibleItems
+            .filter(item => item.notification.type === 'message_received')
+            .map(item => messageConversationId(item.notification))
+            .filter(Boolean),
+    );
+
+    visibleItems.forEach(item => {
+        item.seenIds.forEach(id => ids.add(id));
+    });
+
+    notifications.forEach(notification => {
+        if (
+            notification.type === 'message_received' &&
+            visibleMessageConversations.has(messageConversationId(notification))
+        ) {
+            ids.add(notification.id);
+        }
+    });
+
+    return Array.from(ids);
+}
+
+export function groupNotificationsForDisplay(notifications: SocialNotification[]): NotificationListItem[] {
+    const grouped: NotificationListItem[] = [];
+    const messageGroups = new Map<number, NotificationListItem>();
+
+    notifications.forEach(notification => {
+        if (notification.type !== 'message_received') {
+            grouped.push({
+                notification,
+                count: 1,
+                seenIds: [notification.id],
+            });
+            return;
+        }
+
+        const conversationId = messageConversationId(notification);
+        const existing = messageGroups.get(conversationId);
+        if (existing) {
+            existing.count += 1;
+            existing.seenIds.push(notification.id);
+            if (new Date(notification.created_at).getTime() > new Date(existing.notification.created_at).getTime()) {
+                existing.notification = notification;
+            }
+            return;
+        }
+
+        const item = {
+            notification,
+            count: 1,
+            seenIds: [notification.id],
+        };
+        messageGroups.set(conversationId, item);
+        grouped.push(item);
+    });
+
+    return grouped;
 }
 
 export function NotificationBell({ userId, compact = false }: NotificationBellProps) {
@@ -150,21 +245,22 @@ export function NotificationBell({ userId, compact = false }: NotificationBellPr
     const [actorNames, setActorNames] = useState<Record<number, string>>({});
     const rootRef = useRef<HTMLDivElement>(null);
 
-    const unreadCount = useMemo(
-        () => notifications.filter(notification => !notification.is_read).length,
+    const unseenCount = useMemo(
+        () => notifications.filter(notification => !notification.is_seen).length,
         [notifications],
     );
-    const visibleNotifications = useMemo(() => notifications.slice(0, 5), [notifications]);
-    const hiddenNotificationCount = Math.max(0, notifications.length - visibleNotifications.length);
+    const displayNotifications = useMemo(() => groupNotificationsForDisplay(notifications), [notifications]);
+    const visibleNotifications = useMemo(() => displayNotifications.slice(0, 5), [displayNotifications]);
+    const hiddenNotificationCount = Math.max(0, displayNotifications.length - visibleNotifications.length);
 
     useEffect(() => {
         const baseTitle = document.title.replace(/^\(\d+\)\s+/, '') || 'Durqan';
-        document.title = unreadCount > 0 ? `(${unreadCount}) ${baseTitle}` : baseTitle;
+        document.title = unseenCount > 0 ? `(${unseenCount}) ${baseTitle}` : baseTitle;
 
         return () => {
             document.title = baseTitle;
         };
-    }, [unreadCount]);
+    }, [unseenCount]);
 
     useEffect(() => {
         const unlock = () => unlockNotificationSound();
@@ -187,7 +283,7 @@ export function NotificationBell({ userId, compact = false }: NotificationBellPr
 
             setNotifications(prev => prev.map(notification =>
                 matchesReadPayload(notification, payload)
-                    ? { ...notification, is_read: true }
+                    ? { ...notification, is_read: true, is_seen: true }
                     : notification
             ));
         };
@@ -231,13 +327,30 @@ export function NotificationBell({ userId, compact = false }: NotificationBellPr
         source.onmessage = event => {
             try {
                 const notification = JSON.parse(event.data) as SocialNotification;
+                const conversationId = messageConversationId(notification);
+                const isActiveMessageChat =
+                    notification.type === 'message_received' &&
+                    isChatPath(conversationId);
+                const nextNotification = isActiveMessageChat
+                    ? { ...notification, is_read: true, is_seen: true }
+                    : notification;
                 setErrorMessage('');
                 setNotifications(prev => {
-                    if (prev.some(item => item.id === notification.id)) {
+                    if (prev.some(item => item.id === nextNotification.id)) {
                         return prev;
                     }
-                    return [notification, ...prev];
+                    return [nextNotification, ...prev];
                 });
+
+                if (isActiveMessageChat) {
+                    notificationService.markMatchingAsRead({
+                        types: ['message_received'],
+                        conversation_id: conversationId,
+                    }).catch(error => {
+                        console.error('Ошибка отметки уведомления активного чата:', error);
+                    });
+                    return;
+                }
 
                 if (document.hidden) {
                     playNotificationSound();
@@ -274,6 +387,36 @@ export function NotificationBell({ userId, compact = false }: NotificationBellPr
             source.close();
         };
     }, [navigate, userId]);
+
+    useEffect(() => {
+        if (!open || visibleNotifications.length === 0) {
+            return;
+        }
+
+        const ids = notificationSeenIdsForVisibleItems(notifications, visibleNotifications)
+            .filter(id => notifications.some(notification => notification.id === id && !notification.is_seen));
+        if (ids.length === 0) {
+            return;
+        }
+
+        const timeout = window.setTimeout(() => {
+            notificationService.markAsSeen(ids)
+                .then(() => {
+                    setNotifications(prev => prev.map(notification =>
+                        ids.includes(notification.id)
+                            ? { ...notification, is_seen: true }
+                            : notification
+                    ));
+                })
+                .catch(error => {
+                    console.error('Ошибка отметки уведомлений просмотренными:', error);
+                });
+        }, markSeenDelayMs);
+
+        return () => {
+            window.clearTimeout(timeout);
+        };
+    }, [notifications, open, visibleNotifications]);
 
     useEffect(() => {
         const missingActorIds = Array.from(new Set(
@@ -342,7 +485,7 @@ export function NotificationBell({ userId, compact = false }: NotificationBellPr
         }
 
         setNotifications(prev => prev.map(item =>
-            item.id === notification.id ? { ...item, is_read: true } : item
+            item.id === notification.id ? { ...item, is_read: true, is_seen: true } : item
         ));
 
         try {
@@ -350,7 +493,7 @@ export function NotificationBell({ userId, compact = false }: NotificationBellPr
         } catch (error) {
             console.error('Ошибка отметки уведомления:', error);
             setNotifications(prev => prev.map(item =>
-                item.id === notification.id ? { ...item, is_read: false } : item
+                item.id === notification.id ? { ...item, is_read: notification.is_read, is_seen: notification.is_seen } : item
             ));
         }
 
@@ -368,16 +511,16 @@ export function NotificationBell({ userId, compact = false }: NotificationBellPr
                 onClick={() => setOpen(prev => !prev)}
             >
                 <Icon name="bell" />
-                <NotificationBadge count={unreadCount} />
+                <NotificationBadge count={unseenCount} />
             </button>
 
             {open && (
                 <div className="fixed left-3 right-3 top-16 z-50 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl shadow-gray-900/10 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-[min(360px,calc(100vw-24px))]">
                     <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
                         <p className="font-semibold text-gray-950">Уведомления</p>
-                        {unreadCount > 0 && (
+                        {unseenCount > 0 && (
                             <span className="rounded-full bg-red-50 px-2 py-1 text-xs font-semibold text-red-600">
-                                {unreadCount}
+                                {unseenCount}
                             </span>
                         )}
                     </div>
@@ -390,7 +533,9 @@ export function NotificationBell({ userId, compact = false }: NotificationBellPr
                         ) : notifications.length === 0 ? (
                             <div className="px-4 py-6 text-center text-sm text-gray-500">Нет уведомлений</div>
                         ) : (
-                            visibleNotifications.map(notification => (
+                            visibleNotifications.map(item => {
+                                const notification = item.notification;
+                                return (
                                 <button
                                     key={notification.id}
                                     type="button"
@@ -409,7 +554,7 @@ export function NotificationBell({ userId, compact = false }: NotificationBellPr
                                         />
                                         <span className="min-w-0 flex-1">
                                             <span className="block text-sm font-semibold text-gray-950">
-                                                {getNotificationTitle(notification, actorNames[notification.actor_id])}
+                                                {getNotificationListTitle(item, actorNames[notification.actor_id])}
                                             </span>
                                             <span className="mt-0.5 block truncate text-sm text-gray-600">
                                                 {getNotificationDetails(notification)}
@@ -420,11 +565,12 @@ export function NotificationBell({ userId, compact = false }: NotificationBellPr
                                         </span>
                                     </div>
                                 </button>
-                            ))
+                                );
+                            })
                         )}
                         {hiddenNotificationCount > 0 && (
                             <div className="px-4 py-2 text-center text-xs text-gray-400">
-                                Показаны последние 5 из {notifications.length}
+                                Показаны последние 5 из {displayNotifications.length}
                             </div>
                         )}
                     </div>

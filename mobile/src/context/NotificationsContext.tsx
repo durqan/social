@@ -34,6 +34,7 @@ type NotificationsContextValue = {
   error: string | null;
   refreshNotifications: () => Promise<void>;
   markAsRead: (notificationId: number) => Promise<void>;
+  markAsSeen: (notificationIds: number[]) => Promise<void>;
   markMatchingAsRead: (payload: MarkNotificationsReadPayload) => Promise<void>;
 };
 
@@ -62,7 +63,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   const refreshInFlight = useRef<Promise<void> | null>(null);
 
   const unreadNotificationCount = useMemo(
-    () => notifications.filter(notification => !notification.is_read).length,
+    () => notifications.filter(notification => !notification.is_seen).length,
     [notifications],
   );
 
@@ -102,7 +103,23 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     setNotifications(previous =>
       previous.map(notification =>
         notification.id === notificationId
-          ? { ...notification, is_read: true }
+          ? { ...notification, is_read: true, is_seen: true }
+          : notification,
+      ),
+    );
+  }, []);
+
+  const markAsSeen = useCallback(async (notificationIds: number[]) => {
+    if (notificationIds.length === 0) {
+      return;
+    }
+
+    await notificationsApi.markAsSeen(notificationIds);
+    const seenIds = new Set(notificationIds);
+    setNotifications(previous =>
+      previous.map(notification =>
+        seenIds.has(notification.id)
+          ? { ...notification, is_seen: true }
           : notification,
       ),
     );
@@ -122,9 +139,13 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
           const entityMatches =
             payload.entity_id === undefined ||
             payload.entity_id === notification.entity_id;
+          const conversationMatches =
+            payload.conversation_id === undefined ||
+            payload.conversation_id === notification.conversation_id ||
+            payload.conversation_id === notification.actor_id;
 
-          return typeMatches && actorMatches && entityMatches
-            ? { ...notification, is_read: true }
+          return typeMatches && actorMatches && entityMatches && conversationMatches
+            ? { ...notification, is_read: true, is_seen: true }
             : notification;
         }),
       );
@@ -141,7 +162,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       setNotifications(previous =>
         previous.map(notification =>
           notificationMatchesConversation(notification, conversationId)
-            ? { ...notification, is_read: true }
+            ? { ...notification, is_read: true, is_seen: true }
             : notification,
         ),
       );
@@ -241,12 +262,14 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       error,
       refreshNotifications,
       markAsRead,
+      markAsSeen,
       markMatchingAsRead,
     }),
     [
       error,
       loading,
       markAsRead,
+      markAsSeen,
       markMatchingAsRead,
       notifications,
       refreshNotifications,

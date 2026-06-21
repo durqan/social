@@ -11,6 +11,7 @@ export type {
     LoginPayload,
     Message,
     MessageAttachment,
+    MessageLinkPreview,
     MessageUser,
     PaginatedMessages,
     PasswordChangeData,

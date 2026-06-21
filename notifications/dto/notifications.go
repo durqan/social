@@ -22,7 +22,12 @@ type CreateNotificationReq struct {
 }
 
 type MarkNotificationsReadReq struct {
-	Types    []string `json:"types"`
-	ActorID  *uint    `json:"actor_id,omitempty"`
-	EntityID *uint    `json:"entity_id,omitempty"`
+	Types          []string `json:"types"`
+	ActorID        *uint    `json:"actor_id,omitempty"`
+	EntityID       *uint    `json:"entity_id,omitempty"`
+	ConversationID *uint    `json:"conversation_id,omitempty"`
+}
+
+type MarkNotificationsSeenReq struct {
+	IDs []uint `json:"ids"`
 }
