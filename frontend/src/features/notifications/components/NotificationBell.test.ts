@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   countUnseenNotificationBadge,
-  groupNotificationsForDisplay,
-  notificationSeenIdsForVisibleItems,
+  getNotificationTitle,
+  notificationSeenIdsForVisibleNotifications,
 } from "./NotificationBell";
 import type { SocialNotification } from "@/shared/types/domain.js";
 
@@ -24,99 +24,55 @@ function notification(
   };
 }
 
-describe("NotificationBell notification grouping", () => {
-  it("groups message notifications by conversation for display", () => {
-    const items = groupNotificationsForDisplay([
-      notification(3, {
-        actor_id: 10,
-        type: "message_received",
-        conversation_id: 10,
-        created_at: "2026-01-03T00:00:00.000Z",
-      }),
-      notification(2, {
-        actor_id: 10,
-        type: "message_received",
-        conversation_id: 10,
-        created_at: "2026-01-02T00:00:00.000Z",
-      }),
-      notification(1, {
-        actor_id: 11,
-        type: "message_received",
-        conversation_id: 11,
-        created_at: "2026-01-01T00:00:00.000Z",
-      }),
-    ]);
-
-    expect(items).toHaveLength(2);
-    expect(items[0]?.count).toBe(2);
-    expect(items[0]?.seenIds).toEqual([3, 2]);
-    expect(items[0]?.notification.id).toBe(3);
-  });
-
-  it("marks hidden duplicate message notifications seen with the visible conversation row", () => {
-    const notifications = [
-      notification(3, {
+describe("NotificationBell notification display", () => {
+  it("does not group 251 message notifications into an aggregate title", () => {
+    const notifications = Array.from({ length: 251 }, (_, index) =>
+      notification(index + 1, {
         actor_id: 10,
         type: "message_received",
         conversation_id: 10,
       }),
-      notification(2, {
-        actor_id: 10,
-        type: "message_received",
-        conversation_id: 10,
-      }),
-      notification(1, {
-        actor_id: 11,
-        type: "message_received",
-        conversation_id: 11,
-      }),
-    ];
-    const visibleItems = groupNotificationsForDisplay(notifications).slice(
-      0,
-      1,
     );
 
+    expect(countUnseenNotificationBadge(notifications)).toBe(251);
+    expect(getNotificationTitle(notifications[0], "Анна")).toBe(
+      "Анна написал(а) вам",
+    );
+    expect(getNotificationTitle(notifications[0], "Анна")).not.toContain(
+      "новых сообщений",
+    );
+  });
+
+  it("uses the regular message notification title", () => {
     expect(
-      notificationSeenIdsForVisibleItems(notifications, visibleItems).sort(),
-    ).toEqual([2, 3]);
+      getNotificationTitle(
+        notification(1, {
+          type: "message_received",
+          conversation_id: 10,
+        }),
+        "Анна",
+      ),
+    ).toBe("Анна написал(а) вам");
   });
 
-  it("counts grouped unseen message notifications as one badge item", () => {
-    const notifications = [
-      notification(3, {
-        actor_id: 10,
-        type: "message_received",
-        conversation_id: 10,
-      }),
-      notification(2, {
-        actor_id: 10,
-        type: "message_received",
-        conversation_id: 10,
-      }),
-      notification(1, {
-        type: "friend_request",
-      }),
+  it("selects visible unseen notification ids for mark-as-seen", () => {
+    const visibleNotifications = [
+      notification(1, { is_seen: false }),
+      notification(2, { is_seen: true }),
+      notification(3, { is_seen: false }),
     ];
 
-    expect(countUnseenNotificationBadge(notifications)).toBe(2);
+    expect(
+      notificationSeenIdsForVisibleNotifications(visibleNotifications),
+    ).toEqual([1, 3]);
   });
 
-  it("does not restore badge after grouped duplicate ids are seen and notifications reload", () => {
-    const reloadedNotifications = [
-      notification(3, {
-        actor_id: 10,
-        type: "message_received",
-        conversation_id: 10,
-        is_seen: true,
-      }),
-      notification(2, {
-        actor_id: 10,
-        type: "message_received",
-        conversation_id: 10,
-        is_seen: true,
-      }),
+  it("badge disappears after visible notifications are marked seen", () => {
+    const seenNotifications = [
+      notification(1, { is_seen: true }),
+      notification(2, { is_seen: true }),
     ];
 
-    expect(countUnseenNotificationBadge(reloadedNotifications)).toBe(0);
+    expect(countUnseenNotificationBadge(seenNotifications)).toBe(0);
   });
 });

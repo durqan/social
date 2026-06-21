@@ -16,12 +16,6 @@ type NotificationBellProps = {
   compact?: boolean;
 };
 
-type NotificationListItem = {
-  notification: SocialNotification;
-  count: number;
-  seenIds: number[];
-};
-
 const fallbackActorName = "Пользователь";
 const markSeenDelayMs = 750;
 
@@ -77,7 +71,7 @@ function playNotificationSound() {
   }
 }
 
-function getNotificationTitle(
+export function getNotificationTitle(
   notification: SocialNotification,
   actorName?: string,
 ) {
@@ -87,17 +81,6 @@ function getNotificationTitle(
   }
 
   return buildTitle(actorName || fallbackActorName);
-}
-
-function getNotificationListTitle(
-  item: NotificationListItem,
-  actorName?: string,
-) {
-  if (item.notification.type === "message_received" && item.count > 1) {
-    return `${actorName || fallbackActorName}: ${item.count} новых сообщений`;
-  }
-
-  return getNotificationTitle(item.notification, actorName);
 }
 
 function getNotificationDetails(notification: SocialNotification) {
@@ -188,88 +171,18 @@ function isChatPath(conversationId: number) {
   );
 }
 
-export function notificationSeenIdsForVisibleItems(
-  notifications: SocialNotification[],
-  visibleItems: NotificationListItem[],
-) {
-  const ids = new Set<number>();
-  const visibleMessageConversations = new Set(
-    visibleItems
-      .filter((item) => item.notification.type === "message_received")
-      .map((item) => messageConversationId(item.notification))
-      .filter(Boolean),
-  );
-
-  visibleItems.forEach((item) => {
-    item.seenIds.forEach((id) => ids.add(id));
-  });
-
-  notifications.forEach((notification) => {
-    if (
-      notification.type === "message_received" &&
-      visibleMessageConversations.has(messageConversationId(notification))
-    ) {
-      ids.add(notification.id);
-    }
-  });
-
-  return Array.from(ids);
-}
-
-export function groupNotificationsForDisplay(
-  notifications: SocialNotification[],
-): NotificationListItem[] {
-  const grouped: NotificationListItem[] = [];
-  const messageGroups = new Map<number, NotificationListItem>();
-
-  notifications.forEach((notification) => {
-    if (notification.type !== "message_received") {
-      grouped.push({
-        notification,
-        count: 1,
-        seenIds: [notification.id],
-      });
-      return;
-    }
-
-    const conversationId = messageConversationId(notification);
-    const existing = messageGroups.get(conversationId);
-    if (existing) {
-      existing.count += 1;
-      existing.seenIds.push(notification.id);
-      if (
-        new Date(notification.created_at).getTime() >
-        new Date(existing.notification.created_at).getTime()
-      ) {
-        existing.notification = notification;
-      }
-      return;
-    }
-
-    const item = {
-      notification,
-      count: 1,
-      seenIds: [notification.id],
-    };
-    messageGroups.set(conversationId, item);
-    grouped.push(item);
-  });
-
-  return grouped;
-}
-
 export function countUnseenNotificationBadge(
   notifications: SocialNotification[],
 ) {
-  const unseenIds = new Set(
-    notifications
-      .filter((notification) => !notification.is_seen)
-      .map((notification) => notification.id),
-  );
+  return notifications.filter((notification) => !notification.is_seen).length;
+}
 
-  return groupNotificationsForDisplay(notifications).filter((item) =>
-    item.seenIds.some((id) => unseenIds.has(id)),
-  ).length;
+export function notificationSeenIdsForVisibleNotifications(
+  visibleNotifications: SocialNotification[],
+) {
+  return visibleNotifications
+    .filter((notification) => !notification.is_seen)
+    .map((notification) => notification.id);
 }
 
 export function NotificationBell({
@@ -288,17 +201,13 @@ export function NotificationBell({
     () => countUnseenNotificationBadge(notifications),
     [notifications],
   );
-  const displayNotifications = useMemo(
-    () => groupNotificationsForDisplay(notifications),
-    [notifications],
-  );
   const visibleNotifications = useMemo(
-    () => displayNotifications.slice(0, 5),
-    [displayNotifications],
+    () => notifications.slice(0, 5),
+    [notifications],
   );
   const hiddenNotificationCount = Math.max(
     0,
-    displayNotifications.length - visibleNotifications.length,
+    notifications.length - visibleNotifications.length,
   );
 
   useEffect(() => {
@@ -464,14 +373,8 @@ export function NotificationBell({
       return;
     }
 
-    const ids = notificationSeenIdsForVisibleItems(
-      notifications,
-      visibleNotifications,
-    ).filter((id) =>
-      notifications.some(
-        (notification) => notification.id === id && !notification.is_seen,
-      ),
-    );
+    const ids =
+      notificationSeenIdsForVisibleNotifications(visibleNotifications);
     if (ids.length === 0) {
       return;
     }
@@ -634,8 +537,7 @@ export function NotificationBell({
                 Нет уведомлений
               </div>
             ) : (
-              visibleNotifications.map((item) => {
-                const notification = item.notification;
+              visibleNotifications.map((notification) => {
                 return (
                   <button
                     key={notification.id}
@@ -659,8 +561,8 @@ export function NotificationBell({
                       />
                       <span className="min-w-0 flex-1">
                         <span className="block text-sm font-semibold text-gray-950">
-                          {getNotificationListTitle(
-                            item,
+                          {getNotificationTitle(
+                            notification,
                             actorNames[notification.actor_id],
                           )}
                         </span>
@@ -678,7 +580,7 @@ export function NotificationBell({
             )}
             {hiddenNotificationCount > 0 && (
               <div className="px-4 py-2 text-center text-xs text-gray-400">
-                Показаны последние 5 из {displayNotifications.length}
+                Показаны последние 5 из {notifications.length}
               </div>
             )}
           </div>

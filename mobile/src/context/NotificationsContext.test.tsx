@@ -180,7 +180,7 @@ describe('NotificationsContext', () => {
     expect(contextValue?.unreadNotificationCount).toBe(0);
   });
 
-  it('counts duplicate message notifications from one conversation as one badge item', async () => {
+  it('counts duplicate message notifications as separate unseen badge items', async () => {
     mockNotificationsApi.getNotifications.mockResolvedValueOnce([
       {
         id: 10,
@@ -223,7 +223,7 @@ describe('NotificationsContext', () => {
       );
     });
 
-    expect(contextValue?.unreadNotificationCount).toBe(1);
+    expect(contextValue?.unreadNotificationCount).toBe(2);
 
     await act(async () => {
       await contextValue?.markAsSeen([10, 11]);

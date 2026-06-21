@@ -53,37 +53,8 @@ function notificationMatchesConversation(
   );
 }
 
-function messageConversationId(notification: SocialNotification) {
-  return notification.conversation_id || notification.actor_id;
-}
-
 function countUnseenNotificationBadge(notifications: SocialNotification[]) {
-  const unseenIds = new Set(
-    notifications
-      .filter(notification => !notification.is_seen)
-      .map(notification => notification.id),
-  );
-  const messageConversations = new Set<number>();
-  let count = 0;
-
-  notifications.forEach(notification => {
-    if (!unseenIds.has(notification.id)) {
-      return;
-    }
-    if (notification.type !== 'message_received') {
-      count += 1;
-      return;
-    }
-
-    const conversationId = messageConversationId(notification);
-    if (messageConversations.has(conversationId)) {
-      return;
-    }
-    messageConversations.add(conversationId);
-    count += 1;
-  });
-
-  return count;
+  return notifications.filter(notification => !notification.is_seen).length;
 }
 
 export function NotificationsProvider({ children }: { children: ReactNode }) {
