@@ -15,7 +15,6 @@ import { friendsApi } from '../../api/friends';
 import { getApiErrorMessage } from '../../api/http';
 import type { Friendship, User } from '../../api/types';
 import { userApi } from '../../api/users';
-import { assetURL } from '../../config/env';
 import { AppButton } from '../../components/AppButton';
 import {
   EmptyState,
@@ -29,7 +28,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useThemeColors } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/themes';
 import { radius, spacing, typography } from '../../theme/layout';
-import { avatarImageStyle } from '../../utils/avatar';
+import { avatarImageStyle, buildAvatarUrl } from '../../utils/avatar';
 import { useAppResumeEffect } from '../../utils/useAppResumeEffect';
 import type { MainStackParamList } from '../../navigation/types';
 
@@ -251,13 +250,14 @@ function SearchResultRow({
 }) {
   const colors = useThemeColors();
   const styles = createStyles(colors);
+  const avatarUrl = buildAvatarUrl(user);
 
   return (
     <Pressable style={styles.row} onPress={onProfile}>
       <View style={styles.avatar}>
-        {user.avatar ? (
+        {avatarUrl ? (
           <Image
-            source={{ uri: assetURL(user.avatar) }}
+            source={{ uri: avatarUrl }}
             style={[
               styles.avatarImage,
               avatarImageStyle({

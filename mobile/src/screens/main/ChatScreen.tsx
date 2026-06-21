@@ -7,6 +7,7 @@ import React, {
 } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Clipboard,
   FlatList,
   Image,
@@ -31,7 +32,7 @@ import type {
   NativeSyntheticEvent,
 } from 'react-native';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
-import type { Asset } from 'react-native-image-picker';
+import type { Asset, ImagePickerResponse } from 'react-native-image-picker';
 import {
   Copy,
   Forward,
@@ -62,7 +63,6 @@ import { WS_EVENTS } from '@social/shared';
 import {
   assetURL,
   CHAT_IMAGE_MAX_COUNT,
-  CHAT_IMAGE_MIME_TYPES,
   CHAT_VIDEO_NOTE_MAX_DURATION_SECONDS,
   CHAT_VOICE_MAX_DURATION_SECONDS,
   CHAT_VOICE_MIME_TYPE,
@@ -472,10 +472,7 @@ export default function ChatScreen({ route }: Props) {
       return;
     }
 
-    if (
-      !keyboardVisibleRef.current ||
-      androidKeyboardHeightRef.current <= 0
-    ) {
+    if (!keyboardVisibleRef.current || androidKeyboardHeightRef.current <= 0) {
       setAndroidKeyboardInset(0);
       return;
     }
@@ -643,39 +640,42 @@ export default function ChatScreen({ route }: Props) {
     };
   }, [otherUserId]);
 
-  const scrollToLatestMessage = useCallback((animated = hasLoadedRef.current) => {
-    const reason = pendingScrollToLatestReasonRef.current;
-    if (
-      !reason ||
-      isLoadingOlderRef.current ||
-      (reason === 'incoming_message' && !isUserNearBottomRef.current)
-    ) {
-      pendingScrollToLatestReasonRef.current = null;
-      return;
-    }
+  const scrollToLatestMessage = useCallback(
+    (animated = hasLoadedRef.current) => {
+      const reason = pendingScrollToLatestReasonRef.current;
+      if (
+        !reason ||
+        isLoadingOlderRef.current ||
+        (reason === 'incoming_message' && !isUserNearBottomRef.current)
+      ) {
+        pendingScrollToLatestReasonRef.current = null;
+        return;
+      }
 
-    setMaintainScrollPositionEnabled(false);
+      setMaintainScrollPositionEnabled(false);
 
-    if (scrollToEndTimerRef.current) {
-      clearTimeout(scrollToEndTimerRef.current);
-      scrollToEndTimerRef.current = null;
-    }
+      if (scrollToEndTimerRef.current) {
+        clearTimeout(scrollToEndTimerRef.current);
+        scrollToEndTimerRef.current = null;
+      }
 
-    const scroll = () => {
-      listRef.current?.scrollToEnd({ animated });
-    };
+      const scroll = () => {
+        listRef.current?.scrollToEnd({ animated });
+      };
 
-    requestAnimationFrame(scroll);
-    scrollToEndTimerRef.current = setTimeout(() => {
-      scroll();
       requestAnimationFrame(scroll);
-      pendingScrollToLatestReasonRef.current = null;
-      isInitialScrollPendingRef.current = false;
-      isUserNearBottomRef.current = true;
-      scrollToEndTimerRef.current = null;
-      setMaintainScrollPositionEnabled(true);
-    }, 120);
-  }, []);
+      scrollToEndTimerRef.current = setTimeout(() => {
+        scroll();
+        requestAnimationFrame(scroll);
+        pendingScrollToLatestReasonRef.current = null;
+        isInitialScrollPendingRef.current = false;
+        isUserNearBottomRef.current = true;
+        scrollToEndTimerRef.current = null;
+        setMaintainScrollPositionEnabled(true);
+      }, 120);
+    },
+    [],
+  );
 
   const requestScrollToLatest = useCallback(
     (reason: ScrollToLatestReason, animated = hasLoadedRef.current) => {
@@ -849,23 +849,27 @@ export default function ChatScreen({ route }: Props) {
         );
       }
 
-      const attachment = fileType === 'video'
-        ? await messageApi.uploadVideo({
-            ...uploadFile,
-            durationSeconds: source.durationSeconds || 0,
-            width: source.width,
-            height: source.height,
-          }, {
-            ...encrypted.fields,
-            width: encrypted.metadata.width,
-            height: encrypted.metadata.height,
-            durationSeconds: source.durationSeconds || 0,
-          })
-        : await messageApi.uploadImage(uploadFile, {
-            ...encrypted.fields,
-            width: encrypted.metadata.width,
-            height: encrypted.metadata.height,
-          });
+      const attachment =
+        fileType === 'video'
+          ? await messageApi.uploadVideo(
+              {
+                ...uploadFile,
+                durationSeconds: source.durationSeconds || 0,
+                width: source.width,
+                height: source.height,
+              },
+              {
+                ...encrypted.fields,
+                width: encrypted.metadata.width,
+                height: encrypted.metadata.height,
+                durationSeconds: source.durationSeconds || 0,
+              },
+            )
+          : await messageApi.uploadImage(uploadFile, {
+              ...encrypted.fields,
+              width: encrypted.metadata.width,
+              height: encrypted.metadata.height,
+            });
       return withDecryptedAttachmentPreview(
         attachment,
         encrypted.previewUri,
@@ -1403,28 +1407,11 @@ export default function ChatScreen({ route }: Props) {
     };
   }, [handleSocketEvent]);
 
-  async function pickImages() {
-    if (pendingVideo || pendingVideoRef.current) {
-      setError('Сначала отправьте или удалите выбранное видео');
-      return;
-    }
-    const remaining = CHAT_IMAGE_MAX_COUNT - pendingImages.length;
-    if (remaining <= 0) {
-      setError(
-        `Можно прикрепить не больше ${CHAT_IMAGE_MAX_COUNT} изображений`,
-      );
-      return;
-    }
+  function handlePickerError(defaultMessage: string, apiError: unknown) {
+    setError(getApiErrorMessage(apiError) || defaultMessage);
+  }
 
-    const result = await launchImageLibrary({
-      mediaType: 'mixed',
-      selectionLimit: remaining,
-      includeExtra: true,
-      maxWidth: 1600,
-      maxHeight: 1600,
-      quality: 0.8,
-    });
-
+  async function applyPickedComposerMedia(result: ImagePickerResponse) {
     if (result.didCancel) {
       return;
     }
@@ -1434,11 +1421,17 @@ export default function ChatScreen({ route }: Props) {
       return;
     }
 
-    const videoAsset = (result.assets || []).find(asset =>
+    const assets = result.assets || [];
+    if (assets.length === 0) {
+      setError('Не удалось подготовить вложение. Попробуйте еще раз.');
+      return;
+    }
+
+    const videoAsset = assets.find(asset =>
       (asset.type || '').startsWith('video/'),
     );
     if (videoAsset) {
-      if (pendingImages.length > 0 || (result.assets || []).length > 1) {
+      if (pendingImages.length > 0 || assets.length > 1) {
         setError('В MVP можно отправить одно видео без других вложений');
         return;
       }
@@ -1457,7 +1450,7 @@ export default function ChatScreen({ route }: Props) {
       return;
     }
 
-    const images = (result.assets || [])
+    const images = assets
       .map(assetToLocalImage)
       .filter((image): image is LocalChatImage => Boolean(image));
     const firstError = images.map(validateLocalChatImage).find(Boolean);
@@ -1471,6 +1464,95 @@ export default function ChatScreen({ route }: Props) {
     setPendingImages(previous =>
       [...previous, ...images].slice(0, CHAT_IMAGE_MAX_COUNT),
     );
+  }
+
+  async function pickImagesFromLibrary() {
+    if (pendingVideo || pendingVideoRef.current) {
+      setError('Сначала отправьте или удалите выбранное видео');
+      return;
+    }
+    const remaining = CHAT_IMAGE_MAX_COUNT - pendingImages.length;
+    if (remaining <= 0) {
+      setError(
+        `Можно прикрепить не больше ${CHAT_IMAGE_MAX_COUNT} изображений`,
+      );
+      return;
+    }
+
+    try {
+      const result = await launchImageLibrary({
+        mediaType: 'mixed',
+        selectionLimit: remaining,
+        includeExtra: true,
+        maxWidth: 1600,
+        maxHeight: 1600,
+        quality: 0.8,
+      });
+
+      await applyPickedComposerMedia(result);
+    } catch (apiError) {
+      handlePickerError(
+        'Не удалось выбрать файл. Попробуйте еще раз.',
+        apiError,
+      );
+    }
+  }
+
+  async function ensureCameraPermission() {
+    if (Platform.OS !== 'android') {
+      return true;
+    }
+
+    const granted = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.CAMERA,
+      {
+        title: 'Доступ к камере',
+        message: 'Разрешите доступ к камере, чтобы сделать фото.',
+        buttonNegative: 'Отмена',
+        buttonPositive: 'Разрешить',
+      },
+    );
+
+    return granted === PermissionsAndroid.RESULTS.GRANTED;
+  }
+
+  async function takePhoto() {
+    if (pendingVideo || pendingVideoRef.current) {
+      setError('Сначала отправьте или удалите выбранное видео');
+      return;
+    }
+    if (pendingImages.length >= CHAT_IMAGE_MAX_COUNT) {
+      setError(
+        `Можно прикрепить не больше ${CHAT_IMAGE_MAX_COUNT} изображений`,
+      );
+      return;
+    }
+
+    try {
+      const permitted = await ensureCameraPermission();
+      if (!permitted) {
+        const message = 'Разрешите доступ к камере, чтобы сделать фото';
+        setError(message);
+        Alert.alert('Нет доступа к камере', message);
+        return;
+      }
+
+      const result = await launchCamera({
+        mediaType: 'photo',
+        includeExtra: true,
+        maxWidth: 1600,
+        maxHeight: 1600,
+        quality: 0.8,
+        saveToPhotos: false,
+      });
+
+      await applyPickedComposerMedia(result);
+    } catch (apiError) {
+      handlePickerError(
+        'Не удалось сделать фото. Попробуйте еще раз.',
+        apiError,
+      );
+    }
   }
 
   async function ensureRecordAudioPermission() {
@@ -1490,6 +1572,23 @@ export default function ChatScreen({ route }: Props) {
     );
 
     return granted === PermissionsAndroid.RESULTS.GRANTED;
+  }
+
+  function voiceRecorderErrorMessage(apiError: unknown) {
+    const rawMessage =
+      apiError instanceof Error ? apiError.message : String(apiError || '');
+    if (/start failed/i.test(rawMessage)) {
+      return 'Не удалось начать запись. Проверьте доступ к микрофону и попробуйте еще раз.';
+    }
+    return getApiErrorMessage(apiError);
+  }
+
+  async function stopSoundBeforeRecording() {
+    Sound.removePlaybackEndListener();
+    Sound.removePlayBackListener();
+    Sound.removeRecordBackListener();
+    await Sound.stopPlayer().catch(() => undefined);
+    await Sound.stopRecorder().catch(() => undefined);
   }
 
   async function ensureVideoNotePermissions() {
@@ -1550,14 +1649,15 @@ export default function ChatScreen({ route }: Props) {
     try {
       const permitted = await ensureRecordAudioPermission();
       if (!permitted) {
-        setError(
-          'Разрешите доступ к микрофону, чтобы записать голосовое сообщение',
-        );
+        const message =
+          'Разрешите доступ к микрофону, чтобы записать голосовое сообщение';
+        setError(message);
+        Alert.alert('Нет доступа к микрофону', message);
         return;
       }
 
+      await stopSoundBeforeRecording();
       Sound.setSubscriptionDuration(0.25);
-      Sound.removeRecordBackListener();
       Sound.addRecordBackListener(event => {
         const seconds = Math.max(
           0,
@@ -1579,8 +1679,15 @@ export default function ChatScreen({ route }: Props) {
         ).catch(() => undefined);
       }, CHAT_VOICE_MAX_DURATION_SECONDS * 1000);
     } catch (apiError) {
+      clearRecordingLimitTimer();
       Sound.removeRecordBackListener();
-      setError(getApiErrorMessage(apiError));
+      await Sound.stopRecorder().catch(() => undefined);
+      recordingActiveRef.current = false;
+      recordingStartedAtRef.current = 0;
+      recordingSecondsRef.current = 0;
+      setRecording(false);
+      setRecordingSeconds(0);
+      setError(voiceRecorderErrorMessage(apiError));
     } finally {
       recordingBusyRef.current = false;
       setRecordingBusy(false);
@@ -2081,7 +2188,13 @@ export default function ChatScreen({ route }: Props) {
     }
 
     let uploadFailed = false;
-    setSending(pendingVideo ? 'preparingVideo' : pendingImages.length > 0 ? 'uploading' : 'sending');
+    setSending(
+      pendingVideo
+        ? 'preparingVideo'
+        : pendingImages.length > 0
+        ? 'uploading'
+        : 'sending',
+    );
     setUploadProgress(
       pendingImages.length > 0
         ? {
@@ -2100,13 +2213,22 @@ export default function ChatScreen({ route }: Props) {
       const attachments: MessageAttachment[] = [];
       if (pendingVideo) {
         try {
-          const compressedVideo = await compressLocalChatVideo(pendingVideo, stage => {
-            setSending(stage === 'compressing' ? 'compressingVideo' : 'preparingVideo');
-          });
+          const compressedVideo = await compressLocalChatVideo(
+            pendingVideo,
+            stage => {
+              setSending(
+                stage === 'compressing' ? 'compressingVideo' : 'preparingVideo',
+              );
+            },
+          );
           setSending('uploadingVideo');
           attachments.push(
             e2eeReady
-              ? await encryptAndUploadAttachment(compressedVideo, 'video', otherUserId)
+              ? await encryptAndUploadAttachment(
+                  compressedVideo,
+                  'video',
+                  otherUserId,
+                )
               : await messageApi.uploadVideo(compressedVideo),
           );
         } catch (apiError) {
@@ -2299,12 +2421,37 @@ export default function ChatScreen({ route }: Props) {
   }
 
   async function openComposerAttachments() {
-    if (pendingVoiceRef.current || pendingVideoRef.current || pendingVideoNoteRef.current) {
+    if (
+      pendingVoiceRef.current ||
+      pendingVideoRef.current ||
+      pendingVideoNoteRef.current
+    ) {
       setError('Сначала отправьте или удалите текущие вложения');
       return;
     }
 
-    await pickImages();
+    Alert.alert('Вложение', undefined, [
+      {
+        text: 'Сделать фото',
+        onPress: () => {
+          takePhoto().catch(() => {
+            setError('Не удалось сделать фото. Попробуйте еще раз.');
+          });
+        },
+      },
+      {
+        text: 'Выбрать из галереи',
+        onPress: () => {
+          pickImagesFromLibrary().catch(() => {
+            setError('Не удалось выбрать файл. Попробуйте еще раз.');
+          });
+        },
+      },
+      {
+        text: 'Отмена',
+        style: 'cancel',
+      },
+    ]);
   }
 
   function showComposerStickerNotice() {
@@ -2624,14 +2771,17 @@ export default function ChatScreen({ route }: Props) {
 
   const trimmedInput = input.trim();
   const showComposerSendButton =
-    Boolean(trimmedInput) || Boolean(editingMessage) || pendingImages.length > 0 || Boolean(pendingVideo);
-  const composerMediaIcon =
-    composerMediaMode === 'voice' ? Mic : VideoIcon;
+    Boolean(trimmedInput) ||
+    Boolean(editingMessage) ||
+    pendingImages.length > 0 ||
+    Boolean(pendingVideo);
+  const composerMediaIcon = composerMediaMode === 'voice' ? Mic : VideoIcon;
   const composerMediaLabel =
     composerMediaMode === 'voice'
       ? 'Микрофон. Нажмите, чтобы выбрать видео-сообщение, удерживайте для записи'
       : 'Видео-сообщение. Нажмите, чтобы выбрать микрофон, удерживайте для записи';
-  const composerMediaDisabled = Boolean(sending) || Boolean(editingMessage);
+  const composerMediaDisabled =
+    Boolean(sending) || Boolean(editingMessage) || recordingBusy;
 
   return (
     <Screen
@@ -2761,7 +2911,10 @@ export default function ChatScreen({ route }: Props) {
             >
               {pendingImages.map(image => (
                 <View key={image.id} style={styles.previewItem}>
-                  <Image source={{ uri: image.uri }} style={styles.previewImage} />
+                  <Image
+                    source={{ uri: image.uri }}
+                    style={styles.previewImage}
+                  />
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel="Убрать вложение"
@@ -2785,7 +2938,10 @@ export default function ChatScreen({ route }: Props) {
               resizeMode="cover"
             />
             <View style={styles.previewVideoMeta}>
-              <Text style={[styles.previewVideoTitle, themed.text]} numberOfLines={1}>
+              <Text
+                style={[styles.previewVideoTitle, themed.text]}
+                numberOfLines={1}
+              >
                 {pendingVideo.fileName}
               </Text>
               <Text style={[styles.previewVideoSubtitle, themed.mutedText]}>
@@ -2847,7 +3003,9 @@ export default function ChatScreen({ route }: Props) {
               style={[styles.editingCancel, themed.surfaceMuted]}
               onPress={cancelEditingMessage}
             >
-              <Text style={[styles.editingCancelText, themed.mutedText]}>×</Text>
+              <Text style={[styles.editingCancelText, themed.mutedText]}>
+                ×
+              </Text>
             </Pressable>
           </View>
         ) : null}
@@ -2870,7 +3028,9 @@ export default function ChatScreen({ route }: Props) {
               style={[styles.editingCancel, themed.surfaceMuted]}
               onPress={() => setReplyToMessage(null)}
             >
-              <Text style={[styles.editingCancelText, themed.mutedText]}>×</Text>
+              <Text style={[styles.editingCancelText, themed.mutedText]}>
+                ×
+              </Text>
             </Pressable>
           </View>
         ) : null}
@@ -2923,7 +3083,9 @@ export default function ChatScreen({ route }: Props) {
                 Проверьте запись перед отправкой.
               </Text>
             </View>
-            <View style={[styles.previewActions, styles.previewVideoNoteActions]}>
+            <View
+              style={[styles.previewActions, styles.previewVideoNoteActions]}
+            >
               <IconButton
                 icon={Trash2}
                 label="Удалить видео-сообщение"
@@ -2966,7 +3128,11 @@ export default function ChatScreen({ route }: Props) {
                 disabled={Boolean(sending)}
               >
                 {previewPlaying ? (
-                  <Pause color={themeColors.white} size={16} strokeWidth={2.6} />
+                  <Pause
+                    color={themeColors.white}
+                    size={16}
+                    strokeWidth={2.6}
+                  />
                 ) : (
                   <Play color={themeColors.white} size={16} strokeWidth={2.6} />
                 )}
@@ -3043,7 +3209,12 @@ export default function ChatScreen({ route }: Props) {
             label="Прикрепить"
             variant="ghost"
             icon={Paperclip}
-            disabled={Boolean(sending) || Boolean(editingMessage) || recording}
+            disabled={
+              Boolean(sending) ||
+              Boolean(editingMessage) ||
+              recording ||
+              recordingBusy
+            }
             onPress={openComposerAttachments}
             style={styles.composerSideButton}
           />
@@ -3063,21 +3234,24 @@ export default function ChatScreen({ route }: Props) {
               multiline
               scrollEnabled={inputHeight >= composerInputMaxHeight}
               maxLength={1000}
-              editable={!sending && !recording}
+              editable={!sending && !recording && !recordingBusy}
               textAlignVertical="top"
               style={[styles.input, themed.text, { height: inputHeight }]}
             />
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Стикеры"
-              accessibilityState={{ disabled: Boolean(sending) || recording }}
-              disabled={Boolean(sending) || recording}
+              accessibilityState={{
+                disabled: Boolean(sending) || recording || recordingBusy,
+              }}
+              disabled={Boolean(sending) || recording || recordingBusy}
               hitSlop={6}
               onPress={showComposerStickerNotice}
               style={({ pressed }) => [
                 styles.composerEmojiButton,
                 pressed && styles.composerButtonPressed,
-                (Boolean(sending) || recording) && styles.composerButtonDisabled,
+                (Boolean(sending) || recording || recordingBusy) &&
+                  styles.composerButtonDisabled,
               ]}
             >
               <Smile color={themeColors.muted} size={21} strokeWidth={2.35} />
@@ -3093,6 +3267,7 @@ export default function ChatScreen({ route }: Props) {
                 Boolean(sending) ||
                 messageActionPending ||
                 recording ||
+                recordingBusy ||
                 (!trimmedInput &&
                   !editingMessage &&
                   pendingImages.length === 0 &&
@@ -3110,6 +3285,7 @@ export default function ChatScreen({ route }: Props) {
               variant="primary"
               icon={composerMediaIcon}
               disabled={composerMediaDisabled}
+              loading={recordingBusy}
               delayLongPress={260}
               onPress={toggleComposerMediaMode}
               onLongPress={() => {
@@ -3263,7 +3439,9 @@ function assetToLocalVideo(asset?: Asset): LocalChatVideo | null {
     uri: asset.uri,
     type: asset.type || 'video/mp4',
     fileName: asset.fileName || `chat-video-${Date.now()}.mp4`,
-    durationSeconds: asset.duration ? Math.max(1, Math.round(asset.duration)) : undefined,
+    durationSeconds: asset.duration
+      ? Math.max(1, Math.round(asset.duration))
+      : undefined,
     fileSize: asset.fileSize,
     width: asset.width,
     height: asset.height,
@@ -3314,7 +3492,12 @@ function LinkPreviewCard({
   }
   if (preview.status === 'ready' && hasVideo) {
     return (
-      <Text style={[styles.linkPreviewSource, outgoing ? themed.outgoingSoftText : themed.mutedText]}>
+      <Text
+        style={[
+          styles.linkPreviewSource,
+          outgoing ? themed.outgoingSoftText : themed.mutedText,
+        ]}
+      >
         Источник: {linkPreviewProviderLabel(preview.provider)}
       </Text>
     );
@@ -3325,23 +3508,50 @@ function LinkPreviewCard({
   return (
     <View style={[styles.linkPreviewCard, themed.voiceAttachment]}>
       {preview.thumbnail_url ? (
-        <Image source={{ uri: preview.thumbnail_url }} style={styles.linkPreviewThumb} />
+        <Image
+          source={{ uri: preview.thumbnail_url }}
+          style={styles.linkPreviewThumb}
+        />
       ) : (
-        <View style={[styles.linkPreviewThumb, styles.linkPreviewThumbPlaceholder]}>
+        <View
+          style={[styles.linkPreviewThumb, styles.linkPreviewThumbPlaceholder]}
+        >
           <VideoIcon size={30} color={themeColors.muted} />
         </View>
       )}
-      <Text style={[styles.linkPreviewProvider, outgoing ? themed.outgoingSoftText : themed.mutedText]}>
+      <Text
+        style={[
+          styles.linkPreviewProvider,
+          outgoing ? themed.outgoingSoftText : themed.mutedText,
+        ]}
+      >
         {linkPreviewProviderLabel(preview.provider)}
       </Text>
-      <Text style={[styles.linkPreviewTitle, outgoing ? themed.outgoingMessageText : themed.text]} numberOfLines={2}>
+      <Text
+        style={[
+          styles.linkPreviewTitle,
+          outgoing ? themed.outgoingMessageText : themed.text,
+        ]}
+        numberOfLines={2}
+      >
         {preview.title || 'Видео по ссылке'}
       </Text>
-      <Text style={[styles.linkPreviewUrl, outgoing ? themed.outgoingSoftText : themed.mutedText]} numberOfLines={1}>
+      <Text
+        style={[
+          styles.linkPreviewUrl,
+          outgoing ? themed.outgoingSoftText : themed.mutedText,
+        ]}
+        numberOfLines={1}
+      >
         {linkPreviewDomain(preview.original_url)}
       </Text>
       {importing ? (
-        <Text style={[styles.linkPreviewStatus, outgoing ? themed.outgoingSoftText : themed.mutedText]}>
+        <Text
+          style={[
+            styles.linkPreviewStatus,
+            outgoing ? themed.outgoingSoftText : themed.mutedText,
+          ]}
+        >
           Видео обрабатывается...
         </Text>
       ) : null}
@@ -3353,7 +3563,10 @@ function LinkPreviewCard({
           <Pressable
             accessibilityRole="button"
             disabled={importing}
-            style={[styles.linkPreviewButton, importing && styles.linkPreviewButtonDisabled]}
+            style={[
+              styles.linkPreviewButton,
+              importing && styles.linkPreviewButtonDisabled,
+            ]}
             onPress={onImport}
           >
             <Text style={styles.linkPreviewButtonText}>
@@ -3364,9 +3577,16 @@ function LinkPreviewCard({
         <Pressable
           accessibilityRole="link"
           style={styles.linkPreviewSecondaryButton}
-          onPress={() => Linking.openURL(preview.original_url).catch(() => undefined)}
+          onPress={() =>
+            Linking.openURL(preview.original_url).catch(() => undefined)
+          }
         >
-          <Text style={[styles.linkPreviewSecondaryText, outgoing ? themed.outgoingMessageText : themed.text]}>
+          <Text
+            style={[
+              styles.linkPreviewSecondaryText,
+              outgoing ? themed.outgoingMessageText : themed.text,
+            ]}
+          >
             Открыть
           </Text>
         </Pressable>
@@ -3616,7 +3836,12 @@ function MessageBubble({
                     style={styles.genericVideo}
                   />
                 ) : (
-                  <View style={[styles.genericVideo, styles.genericVideoPlaceholder]}>
+                  <View
+                    style={[
+                      styles.genericVideo,
+                      styles.genericVideoPlaceholder,
+                    ]}
+                  >
                     <VideoIcon size={34} color="#fff" />
                   </View>
                 )}

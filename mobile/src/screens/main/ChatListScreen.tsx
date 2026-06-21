@@ -15,7 +15,6 @@ import { MessageCircle, Pin, PinOff, Trash2 } from 'lucide-react-native';
 import { getApiErrorMessage } from '../../api/http';
 import { messageApi } from '../../api/messages';
 import type { Conversation } from '../../api/types';
-import { assetURL } from '../../config/env';
 import {
   EmptyState,
   ErrorBanner,
@@ -27,7 +26,7 @@ import { useUnread } from '../../context/UnreadContext';
 import { useThemeColors } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/themes';
 import { radius, spacing, typography } from '../../theme/layout';
-import { avatarImageStyle } from '../../utils/avatar';
+import { avatarImageStyle, buildAvatarUrl } from '../../utils/avatar';
 import { formatDateTime } from '../../utils/format';
 import { useAppResumeEffect } from '../../utils/useAppResumeEffect';
 import type { ChatStackParamList } from '../../navigation/types';
@@ -308,12 +307,13 @@ function ConversationAvatar({
   colors: ThemeColors;
 }) {
   const styles = createStyles(colors);
+  const avatarUrl = buildAvatarUrl(conversation);
 
   return (
     <View style={[styles.avatar, isUnread && styles.avatarUnread]}>
-      {conversation.avatar ? (
+      {avatarUrl ? (
         <Image
-          source={{ uri: assetURL(conversation.avatar) }}
+          source={{ uri: avatarUrl }}
           style={[
             styles.avatarImage,
             avatarImageStyle({

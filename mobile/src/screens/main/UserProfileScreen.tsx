@@ -5,7 +5,6 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ban, MessageCircle, RotateCcw, UserPlus } from 'lucide-react-native';
 
 import { isEmailVerified } from '../../api/auth';
-import { assetURL } from '../../config/env';
 import { getApiErrorMessage } from '../../api/http';
 import type { User } from '../../api/types';
 import { userApi } from '../../api/users';
@@ -21,7 +20,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useThemeColors } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/themes';
 import { radius, spacing, typography } from '../../theme/layout';
-import { avatarImageStyle } from '../../utils/avatar';
+import { avatarImageStyle, buildAvatarUrl } from '../../utils/avatar';
 import { formatDateTime } from '../../utils/format';
 import type { MainStackParamList } from '../../navigation/types';
 import { WallFeed } from './WallFeed';
@@ -158,14 +157,15 @@ export default function UserProfileScreen({ navigation, route }: Props) {
   }
 
   const isCurrentUser = currentUser?.id === profile.id;
+  const avatarUrl = buildAvatarUrl(profile);
 
   return (
     <Screen>
       <View style={styles.card}>
         <View style={styles.avatar}>
-          {profile.avatar ? (
+          {avatarUrl ? (
             <Image
-              source={{ uri: assetURL(profile.avatar) }}
+              source={{ uri: avatarUrl }}
               style={[
                 styles.avatarImage,
                 avatarImageStyle({

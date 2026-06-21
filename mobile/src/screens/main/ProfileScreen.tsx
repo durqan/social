@@ -6,7 +6,7 @@ import type { Asset } from 'react-native-image-picker';
 import { Camera, Save } from 'lucide-react-native';
 
 import { isEmailVerified } from '../../api/auth';
-import { assetURL, CHAT_IMAGE_MIME_TYPES } from '../../config/env';
+import { CHAT_IMAGE_MIME_TYPES } from '../../config/env';
 import { getApiErrorMessage } from '../../api/http';
 import { userApi } from '../../api/users';
 import { AppButton } from '../../components/AppButton';
@@ -22,7 +22,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useThemeColors } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/themes';
 import { radius, spacing, typography } from '../../theme/layout';
-import { avatarImageStyle } from '../../utils/avatar';
+import { avatarImageStyle, buildAvatarUrl } from '../../utils/avatar';
 import { formatDateTime } from '../../utils/format';
 import { useAppResumeEffect } from '../../utils/useAppResumeEffect';
 
@@ -235,6 +235,8 @@ export default function ProfileScreen() {
     );
   }
 
+  const avatarUrl = buildAvatarUrl(user);
+
   return (
     <Screen refreshing={refreshing} onRefresh={handleRefresh}>
       <View style={styles.card}>
@@ -244,9 +246,9 @@ export default function ProfileScreen() {
           disabled={avatarUploading}
           onPress={handlePickAvatar}
         >
-          {user.avatar ? (
+          {avatarUrl ? (
             <Image
-              source={{ uri: assetURL(user.avatar) }}
+              source={{ uri: avatarUrl }}
               style={[
                 styles.avatarImage,
                 avatarImageStyle({

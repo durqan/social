@@ -20,7 +20,6 @@ import { Check, Search, Trash2, UserRound, X } from 'lucide-react-native';
 import { friendsApi } from '../../api/friends';
 import { getApiErrorMessage } from '../../api/http';
 import type { Friendship, User } from '../../api/types';
-import { assetURL } from '../../config/env';
 import { AppButton } from '../../components/AppButton';
 import { IconButton } from '../../components/IconButton';
 import {
@@ -33,7 +32,7 @@ import { useNotifications } from '../../context/NotificationsContext';
 import { useThemeColors } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/themes';
 import { radius, spacing, typography } from '../../theme/layout';
-import { avatarImageStyle } from '../../utils/avatar';
+import { avatarImageStyle, buildAvatarUrl } from '../../utils/avatar';
 import { useAppResumeEffect } from '../../utils/useAppResumeEffect';
 import type {
   MainStackParamList,
@@ -319,19 +318,20 @@ export default function FriendsScreen() {
 
 function UserAvatar({ user, colors }: { user?: User; colors: ThemeColors }) {
   const styles = createStyles(colors);
+  const avatarUrl = buildAvatarUrl(user);
 
   return (
     <View style={styles.avatar}>
-      {user?.avatar ? (
+      {avatarUrl ? (
         <Image
-          source={{ uri: assetURL(user.avatar) }}
+          source={{ uri: avatarUrl }}
           style={[
             styles.avatarImage,
             avatarImageStyle({
               size: 44,
-              positionX: user.avatarPositionX,
-              positionY: user.avatarPositionY,
-              scale: user.avatarScale,
+              positionX: user?.avatarPositionX,
+              positionY: user?.avatarPositionY,
+              scale: user?.avatarScale,
             }),
           ]}
           resizeMode="cover"

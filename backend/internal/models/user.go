@@ -17,5 +17,6 @@ type User struct {
 	AvatarScale     float64    `json:"avatar_scale" gorm:"default:1"`
 	IsEmailVerified bool       `json:"is_email_verified" gorm:"default:false"`
 	CreatedAt       time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt       time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 	LastSeenAt      *time.Time `json:"last_seen_at"`
 }

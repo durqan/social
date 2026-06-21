@@ -19,6 +19,8 @@ type PublicUserResponse struct {
 	AvatarScale     float64    `json:"avatar_scale"`
 	IsEmailVerified bool       `json:"is_email_verified"`
 	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	AvatarUpdatedAt time.Time  `json:"avatar_updated_at"`
 	LastSeenAt      *time.Time `json:"last_seen_at"`
 }
 
@@ -56,6 +58,8 @@ func ToPublicUserResponse(user models.User) PublicUserResponse {
 		AvatarScale:     user.AvatarScale,
 		IsEmailVerified: user.IsEmailVerified,
 		CreatedAt:       user.CreatedAt,
+		UpdatedAt:       user.UpdatedAt,
+		AvatarUpdatedAt: user.UpdatedAt,
 		LastSeenAt:      user.LastSeenAt,
 	}
 }

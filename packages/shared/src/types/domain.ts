@@ -12,6 +12,10 @@ export interface User {
   avatar_position_x?: number;
   avatar_position_y?: number;
   avatar_scale?: number;
+  avatarUpdatedAt?: string;
+  avatar_updated_at?: string;
+  updatedAt?: string;
+  updated_at?: string;
   createdAt?: string;
   created_at?: string;
   isEmailVerified?: boolean;
@@ -40,7 +44,7 @@ export interface Friendship {
   id: number;
   user_id: number;
   friend_id: number;
-  status: 'pending' | 'accepted' | 'rejected' | 'blocked';
+  status: "pending" | "accepted" | "rejected" | "blocked";
   created_at: string;
   user?: User;
   friend?: User;
@@ -54,6 +58,8 @@ export interface PostUser {
   avatar_position_x?: number;
   avatar_position_y?: number;
   avatar_scale?: number;
+  avatar_updated_at?: string;
+  updated_at?: string;
 }
 
 export interface Post {
@@ -91,7 +97,7 @@ export interface MessageAttachment {
   attachment_id?: string;
   message_id?: number;
   file_url: string;
-  file_type: 'image' | 'voice' | 'video_note' | 'video' | 'audio' | 'file';
+  file_type: "image" | "voice" | "video_note" | "video" | "audio" | "file";
   thumbnail_url?: string;
   content_type?: string;
   width?: number;
@@ -121,6 +127,8 @@ export interface MessageUser {
   avatar_position_x?: number;
   avatar_position_y?: number;
   avatar_scale?: number;
+  avatar_updated_at?: string;
+  updated_at?: string;
   is_email_verified?: boolean;
   created_at?: string;
 }
@@ -161,12 +169,12 @@ export interface MessageLinkPreview {
   id: number;
   message_id: number;
   original_url: string;
-  provider: 'youtube' | 'rutube' | 'instagram' | 'generic';
+  provider: "youtube" | "rutube" | "instagram" | "generic";
   title?: string | null;
   description?: string | null;
   thumbnail_url?: string | null;
   duration_seconds?: number | null;
-  status: 'preview' | 'importing' | 'ready' | 'failed';
+  status: "preview" | "importing" | "ready" | "failed";
   import_error?: string | null;
   video_attachment_id?: number | null;
   created_at: string;
@@ -190,6 +198,8 @@ export interface Conversation {
   avatar_position_x?: number;
   avatar_position_y?: number;
   avatar_scale?: number;
+  avatar_updated_at?: string;
+  updated_at?: string;
   last_seen_at?: string | null;
   last_message: string;
   last_message_at: string;

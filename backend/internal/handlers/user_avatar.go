@@ -140,7 +140,17 @@ func UploadAvatar(db *gorm.DB) gin.HandlerFunc {
 			}
 		}
 
-		c.JSON(200, gin.H{"avatar": dto.AvatarEndpoint(id, key)})
+		updatedUser, err := repository.GetUserById(db, id)
+		if err != nil {
+			c.JSON(500, gin.H{"error": "failed to fetch updated user"})
+			return
+		}
+		updatedProfile := dto.ToPrivateUserResponse(updatedUser)
+		c.JSON(200, gin.H{
+			"avatar":            updatedProfile.Avatar,
+			"updated_at":        updatedProfile.UpdatedAt,
+			"avatar_updated_at": updatedProfile.AvatarUpdatedAt,
+		})
 	}
 }
 

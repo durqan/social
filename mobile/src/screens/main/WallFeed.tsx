@@ -20,7 +20,6 @@ import {
 import { getApiErrorMessage } from '../../api/http';
 import { postApi } from '../../api/posts';
 import type { Comment, Post, PostUser, User } from '../../api/types';
-import { assetURL } from '../../config/env';
 import { AppButton } from '../../components/AppButton';
 import { IconButton } from '../../components/IconButton';
 import {
@@ -32,7 +31,7 @@ import { useNotifications } from '../../context/NotificationsContext';
 import { useThemeColors } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/themes';
 import { elevation, radius, spacing, typography } from '../../theme/layout';
-import { avatarImageStyle } from '../../utils/avatar';
+import { avatarImageStyle, buildAvatarUrl } from '../../utils/avatar';
 import { formatDateTime } from '../../utils/format';
 import { useAppResumeEffect } from '../../utils/useAppResumeEffect';
 
@@ -589,6 +588,7 @@ function PostAvatar({
 }) {
   const styles = createStyles(colors);
   const size = small ? 34 : 42;
+  const avatarUrl = buildAvatarUrl(user);
 
   return (
     <View
@@ -601,14 +601,14 @@ function PostAvatar({
         },
       ]}
     >
-      {user?.avatar ? (
+      {avatarUrl ? (
         <Image
-          source={{ uri: assetURL(user.avatar) }}
+          source={{ uri: avatarUrl }}
           style={avatarImageStyle({
             size,
-            positionX: user.avatar_position_x,
-            positionY: user.avatar_position_y,
-            scale: user.avatar_scale,
+            positionX: user?.avatar_position_x,
+            positionY: user?.avatar_position_y,
+            scale: user?.avatar_scale,
           })}
         />
       ) : (
