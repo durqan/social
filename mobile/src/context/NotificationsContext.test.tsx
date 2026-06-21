@@ -40,11 +40,15 @@ jest.mock('../notifications/pushEffects', () => ({
 jest.mock('../api/http', () => ({
   getApiErrorMessage: jest.fn(() => 'Ошибка'),
 }));
-jest.mock('@social/shared', () => ({
-  WS_EVENTS: {
-    CONVERSATION_READ: 'conversation_read',
-  },
-}), { virtual: true });
+jest.mock(
+  '@social/shared',
+  () => ({
+    WS_EVENTS: {
+      CONVERSATION_READ: 'conversation_read',
+    },
+  }),
+  { virtual: true },
+);
 
 describe('NotificationsContext', () => {
   beforeEach(() => {
@@ -78,7 +82,10 @@ describe('NotificationsContext', () => {
   });
 
   it('counts only unseen notifications for the badge and updates after mark-as-seen', async () => {
-    const { NotificationsProvider, useNotifications } = require('./NotificationsContext');
+    const {
+      NotificationsProvider,
+      useNotifications,
+    } = require('./NotificationsContext');
     let contextValue: ReturnType<typeof useNotifications> | undefined;
     function Consumer() {
       contextValue = useNotifications();
@@ -105,7 +112,10 @@ describe('NotificationsContext', () => {
 
   it('keeps badge state unchanged when mark-as-seen fails', async () => {
     mockNotificationsApi.markAsSeen.mockRejectedValueOnce(new Error('failed'));
-    const { NotificationsProvider, useNotifications } = require('./NotificationsContext');
+    const {
+      NotificationsProvider,
+      useNotifications,
+    } = require('./NotificationsContext');
     let contextValue: ReturnType<typeof useNotifications> | undefined;
     function Consumer() {
       contextValue = useNotifications();
@@ -138,7 +148,10 @@ describe('NotificationsContext', () => {
         created_at: '2026-01-01T00:00:00.000Z',
       },
     ]);
-    const { NotificationsProvider, useNotifications } = require('./NotificationsContext');
+    const {
+      NotificationsProvider,
+      useNotifications,
+    } = require('./NotificationsContext');
     let contextValue: ReturnType<typeof useNotifications> | undefined;
     function Consumer() {
       contextValue = useNotifications();
@@ -164,6 +177,58 @@ describe('NotificationsContext', () => {
       is_read: true,
       is_seen: true,
     });
+    expect(contextValue?.unreadNotificationCount).toBe(0);
+  });
+
+  it('counts duplicate message notifications from one conversation as one badge item', async () => {
+    mockNotificationsApi.getNotifications.mockResolvedValueOnce([
+      {
+        id: 10,
+        recipient_id: 1,
+        actor_id: 2,
+        type: 'message_received',
+        entity_id: 100,
+        conversation_id: 2,
+        is_read: false,
+        is_seen: false,
+        created_at: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        id: 11,
+        recipient_id: 1,
+        actor_id: 2,
+        type: 'message_received',
+        entity_id: 101,
+        conversation_id: 2,
+        is_read: false,
+        is_seen: false,
+        created_at: '2026-01-02T00:00:00.000Z',
+      },
+    ]);
+    const {
+      NotificationsProvider,
+      useNotifications,
+    } = require('./NotificationsContext');
+    let contextValue: ReturnType<typeof useNotifications> | undefined;
+    function Consumer() {
+      contextValue = useNotifications();
+      return null;
+    }
+
+    await act(async () => {
+      TestRenderer.create(
+        <NotificationsProvider>
+          <Consumer />
+        </NotificationsProvider>,
+      );
+    });
+
+    expect(contextValue?.unreadNotificationCount).toBe(1);
+
+    await act(async () => {
+      await contextValue?.markAsSeen([10, 11]);
+    });
+
     expect(contextValue?.unreadNotificationCount).toBe(0);
   });
 });

@@ -33,7 +33,33 @@ func Migrate(database *gorm.DB) error {
 		return err
 	}
 
+	if err := ensurePerformanceIndexes(database); err != nil {
+		return err
+	}
+
 	return normalizeStoredUploadKeys(database)
+}
+
+func ensurePerformanceIndexes(database *gorm.DB) error {
+	indexes := []string{
+		"idx_posts_user_created_id ON posts (user_id, created_at DESC, id DESC)",
+		"idx_comments_post_created_id ON comments (post_id, created_at ASC, id ASC)",
+		"idx_message_user_deletions_user_message ON message_user_deletions (user_id, message_id)",
+	}
+	for _, index := range indexes {
+		if err := createIndexIfMissing(database, index); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func createIndexIfMissing(database *gorm.DB, definition string) error {
+	concurrently := ""
+	if database.Dialector.Name() == "postgres" {
+		concurrently = "CONCURRENTLY "
+	}
+	return database.Exec("CREATE INDEX " + concurrently + "IF NOT EXISTS " + definition).Error
 }
 
 func migrateEncryptedKeyBackups(database *gorm.DB) error {

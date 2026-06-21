@@ -38,9 +38,9 @@ type NotificationsContextValue = {
   markMatchingAsRead: (payload: MarkNotificationsReadPayload) => Promise<void>;
 };
 
-const NotificationsContext = createContext<NotificationsContextValue | undefined>(
-  undefined,
-);
+const NotificationsContext = createContext<
+  NotificationsContextValue | undefined
+>(undefined);
 
 function notificationMatchesConversation(
   notification: SocialNotification,
@@ -53,6 +53,39 @@ function notificationMatchesConversation(
   );
 }
 
+function messageConversationId(notification: SocialNotification) {
+  return notification.conversation_id || notification.actor_id;
+}
+
+function countUnseenNotificationBadge(notifications: SocialNotification[]) {
+  const unseenIds = new Set(
+    notifications
+      .filter(notification => !notification.is_seen)
+      .map(notification => notification.id),
+  );
+  const messageConversations = new Set<number>();
+  let count = 0;
+
+  notifications.forEach(notification => {
+    if (!unseenIds.has(notification.id)) {
+      return;
+    }
+    if (notification.type !== 'message_received') {
+      count += 1;
+      return;
+    }
+
+    const conversationId = messageConversationId(notification);
+    if (messageConversations.has(conversationId)) {
+      return;
+    }
+    messageConversations.add(conversationId);
+    count += 1;
+  });
+
+  return count;
+}
+
 export function NotificationsProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const { resumeCount } = useAppLifecycle();
@@ -63,7 +96,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   const refreshInFlight = useRef<Promise<void> | null>(null);
 
   const unreadNotificationCount = useMemo(
-    () => notifications.filter(notification => !notification.is_seen).length,
+    () => countUnseenNotificationBadge(notifications),
     [notifications],
   );
 
@@ -144,7 +177,10 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
             payload.conversation_id === notification.conversation_id ||
             payload.conversation_id === notification.actor_id;
 
-          return typeMatches && actorMatches && entityMatches && conversationMatches
+          return typeMatches &&
+            actorMatches &&
+            entityMatches &&
+            conversationMatches
             ? { ...notification, is_read: true, is_seen: true }
             : notification;
         }),
@@ -287,7 +323,9 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
 export function useNotifications() {
   const value = useContext(NotificationsContext);
   if (!value) {
-    throw new Error('useNotifications must be used inside NotificationsProvider');
+    throw new Error(
+      'useNotifications must be used inside NotificationsProvider',
+    );
   }
   return value;
 }

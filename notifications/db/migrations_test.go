@@ -3,6 +3,7 @@ package db
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"notifications/models"
 
@@ -22,6 +23,155 @@ func TestMigrateCleanDatabaseIsRepeatable(t *testing.T) {
 
 	assertUniqueIndex(t, database, &models.PushSubscription{}, "idx_push_subscriptions_endpoint")
 	assertUniqueIndex(t, database, &models.MobilePushToken{}, "idx_mobile_push_tokens_token")
+	assertIndex(t, database, &models.Notification{}, "idx_notifications_recipient_conversation_type")
+}
+
+func TestMigrateBackfillsExistingNotificationsAsSeenAndKeepsNewDefaultUnseen(t *testing.T) {
+	database := newMigrationTestDB(t)
+	oldCreatedAt := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	if err := database.AutoMigrate(&oldNotificationBeforeSeen{}); err != nil {
+		t.Fatalf("create old notifications table: %v", err)
+	}
+	if err := database.Create(&oldNotificationBeforeSeen{
+		RecipientID: 10,
+		ActorID:     20,
+		Type:        "friend_request",
+		EntityID:    30,
+		IsRead:      false,
+		CreatedAt:   oldCreatedAt,
+		DedupeKey:   "old-before-seen",
+	}).Error; err != nil {
+		t.Fatalf("seed old notification: %v", err)
+	}
+
+	if err := Migrate(database); err != nil {
+		t.Fatalf("Migrate failed: %v", err)
+	}
+
+	var oldNotification models.Notification
+	if err := database.First(&oldNotification, "dedupe_key = ?", "old-before-seen").Error; err != nil {
+		t.Fatalf("load old notification: %v", err)
+	}
+	if !oldNotification.IsSeen {
+		t.Fatal("expected existing notification to be backfilled as seen")
+	}
+
+	newNotification := models.Notification{
+		RecipientID: 10,
+		ActorID:     21,
+		Type:        "friend_request",
+		EntityID:    31,
+		DedupeKey:   "new-after-seen",
+	}
+	if err := database.Create(&newNotification).Error; err != nil {
+		t.Fatalf("create new notification: %v", err)
+	}
+	if err := database.First(&newNotification, newNotification.ID).Error; err != nil {
+		t.Fatalf("reload new notification: %v", err)
+	}
+	if newNotification.IsSeen {
+		t.Fatal("expected new notification after migration to default unseen")
+	}
+
+	var unseenCount int64
+	if err := database.Model(&models.Notification{}).
+		Where("recipient_id = ? AND is_seen = ?", 10, false).
+		Count(&unseenCount).Error; err != nil {
+		t.Fatalf("count unseen notifications: %v", err)
+	}
+	if unseenCount != 1 {
+		t.Fatalf("unseen count = %d, want only the new notification", unseenCount)
+	}
+}
+
+func TestMigrateRepairsAlreadyAppliedSeenColumnBeforeCutoff(t *testing.T) {
+	database := newMigrationTestDB(t)
+	cutoff := time.Date(2026, 1, 10, 12, 0, 0, 0, time.UTC)
+	t.Setenv(notificationSeenRepairBeforeEnv, cutoff.Format(time.RFC3339))
+	if err := database.AutoMigrate(&oldNotificationWithBadSeen{}); err != nil {
+		t.Fatalf("create notifications table: %v", err)
+	}
+	if err := database.Create(&[]oldNotificationWithBadSeen{
+		{
+			RecipientID: 10,
+			ActorID:     20,
+			Type:        "friend_request",
+			EntityID:    30,
+			IsRead:      false,
+			IsSeen:      false,
+			CreatedAt:   cutoff.Add(-time.Hour),
+			DedupeKey:   "old-bad-unseen",
+		},
+		{
+			RecipientID: 10,
+			ActorID:     21,
+			Type:        "friend_request",
+			EntityID:    31,
+			IsRead:      false,
+			IsSeen:      false,
+			CreatedAt:   cutoff.Add(time.Hour),
+			DedupeKey:   "new-real-unseen",
+		},
+	}).Error; err != nil {
+		t.Fatalf("seed notifications: %v", err)
+	}
+
+	if err := Migrate(database); err != nil {
+		t.Fatalf("Migrate failed: %v", err)
+	}
+
+	var notifications []models.Notification
+	if err := database.Find(&notifications).Error; err != nil {
+		t.Fatalf("load notifications: %v", err)
+	}
+	if len(notifications) != 2 {
+		t.Fatalf("notifications length = %d, want 2", len(notifications))
+	}
+	byKey := make(map[string]models.Notification, len(notifications))
+	for _, notification := range notifications {
+		byKey[notification.DedupeKey] = notification
+	}
+	if !byKey["old-bad-unseen"].IsSeen {
+		t.Fatal("expected old notification before repair cutoff to become seen")
+	}
+	if byKey["new-real-unseen"].IsSeen {
+		t.Fatal("expected new notification after repair cutoff to stay unseen")
+	}
+}
+
+type oldNotificationBeforeSeen struct {
+	ID             uint `gorm:"primaryKey"`
+	RecipientID    uint
+	ActorID        uint
+	Type           string
+	EntityID       uint
+	IsRead         bool
+	CreatedAt      time.Time
+	DedupeKey      string `gorm:"size:128;uniqueIndex"`
+	CallID         string
+	ConversationID uint
+}
+
+func (oldNotificationBeforeSeen) TableName() string {
+	return "notifications"
+}
+
+type oldNotificationWithBadSeen struct {
+	ID             uint `gorm:"primaryKey"`
+	RecipientID    uint
+	ActorID        uint
+	Type           string
+	EntityID       uint
+	IsRead         bool
+	IsSeen         bool `gorm:"default:false"`
+	CreatedAt      time.Time
+	DedupeKey      string `gorm:"size:128;uniqueIndex"`
+	CallID         string
+	ConversationID uint
+}
+
+func (oldNotificationWithBadSeen) TableName() string {
+	return "notifications"
 }
 
 func TestMigrateRemovesOldPushAndTokenDuplicates(t *testing.T) {
@@ -130,4 +280,19 @@ func assertUniqueIndex(t *testing.T, database *gorm.DB, model any, indexName str
 		return
 	}
 	t.Fatalf("missing unique index %s", indexName)
+}
+
+func assertIndex(t *testing.T, database *gorm.DB, model any, indexName string) {
+	t.Helper()
+
+	indexes, err := database.Migrator().GetIndexes(model)
+	if err != nil {
+		t.Fatalf("get indexes: %v", err)
+	}
+	for _, index := range indexes {
+		if index.Name() == indexName {
+			return
+		}
+	}
+	t.Fatalf("missing index %s", indexName)
 }

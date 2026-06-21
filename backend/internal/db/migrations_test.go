@@ -20,6 +20,9 @@ func TestMigrateCleanDatabaseIsRepeatable(t *testing.T) {
 		t.Fatalf("second Migrate failed: %v", err)
 	}
 	assertBackendUniqueIndex(t, database, &models.EncryptedKeyBackup{}, "ux_e2ee_backup_user")
+	assertBackendIndex(t, database, &models.Post{}, "idx_posts_user_created_id")
+	assertBackendIndex(t, database, &models.Comment{}, "idx_comments_post_created_id")
+	assertBackendIndex(t, database, &models.MessageUserDeletion{}, "idx_message_user_deletions_user_message")
 }
 
 func TestMigrateRemovesOldEncryptedBackupDuplicates(t *testing.T) {
@@ -105,4 +108,19 @@ func assertBackendUniqueIndex(t *testing.T, database *gorm.DB, model any, indexN
 		return
 	}
 	t.Fatalf("missing unique index %s", indexName)
+}
+
+func assertBackendIndex(t *testing.T, database *gorm.DB, model any, indexName string) {
+	t.Helper()
+
+	indexes, err := database.Migrator().GetIndexes(model)
+	if err != nil {
+		t.Fatalf("get indexes: %v", err)
+	}
+	for _, index := range indexes {
+		if index.Name() == indexName {
+			return
+		}
+	}
+	t.Fatalf("missing index %s", indexName)
 }
