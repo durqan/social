@@ -82,6 +82,7 @@ type PeerConnectionEventTarget = {
 
 const CallContext = createContext<CallContextValue | undefined>(undefined);
 const disconnectedCleanupDelayMs = 10000;
+const backgroundCallEndDelayMs = 7000;
 
 function createCallId() {
   return `call-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -318,6 +319,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const pendingIceRef = useRef<CallIceCandidate[]>([]);
   const endTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const disconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const backgroundEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const pcListenerCleanupRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -361,6 +365,13 @@ export function CallProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const clearBackgroundEndTimer = useCallback(() => {
+    if (backgroundEndTimerRef.current) {
+      clearTimeout(backgroundEndTimerRef.current);
+      backgroundEndTimerRef.current = null;
+    }
+  }, []);
+
   const closePeerConnection = useCallback(() => {
     clearDisconnectTimer();
     pcListenerCleanupRef.current?.();
@@ -377,6 +388,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     }
 
     clearEndTimer();
+    clearBackgroundEndTimer();
     closePeerConnection();
     stopStream(localStreamRef.current);
     localStreamRef.current = null;
@@ -397,6 +409,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     setCallStatus('idle');
   }, [
     clearEndTimer,
+    clearBackgroundEndTimer,
     closePeerConnection,
     setCallPeer,
     setCallStatus,
@@ -428,6 +441,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       }
 
       clearEndTimer();
+      clearBackgroundEndTimer();
       closePeerConnection();
       stopStream(localStreamRef.current);
       localStreamRef.current = null;
@@ -445,7 +459,13 @@ export function CallProvider({ children }: { children: ReactNode }) {
       setCallStatus(nextStatus);
       endTimerRef.current = setTimeout(resetCall, 1800);
     },
-    [clearEndTimer, closePeerConnection, resetCall, setCallStatus],
+    [
+      clearEndTimer,
+      clearBackgroundEndTimer,
+      closePeerConnection,
+      resetCall,
+      setCallStatus,
+    ],
   );
 
   const loadPeerName = useCallback(
@@ -748,6 +768,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       }
 
       clearEndTimer();
+      clearBackgroundEndTimer();
       setError(null);
       const callId = createCallId();
       callIdRef.current = callId;
@@ -757,13 +778,60 @@ export function CallProvider({ children }: { children: ReactNode }) {
       setCallStatus('connecting');
 
       try {
+        const isCurrentStart = () =>
+          callIdRef.current === callId &&
+          peerUserIdRef.current === toId &&
+          statusRef.current !== 'idle' &&
+          statusRef.current !== 'ended' &&
+          statusRef.current !== 'error';
+        const cleanupStaleStart = (
+          stream: MediaStream | null,
+          pc?: PeerConnection,
+        ) => {
+          if (pc) {
+            if (pcRef.current === pc) {
+              closePeerConnection();
+            } else {
+              pc.close();
+            }
+          }
+
+          if (stream) {
+            stopStream(stream);
+            if (localStreamRef.current === stream) {
+              localStreamRef.current = null;
+              setLocalStream(null);
+            }
+          }
+        };
+
         chatSocket.connect();
         const stream = await openLocalStream(nextCallType);
+        if (!isCurrentStart()) {
+          cleanupStaleStart(stream);
+          return;
+        }
+
         const pc = createPeerConnection(toId, callId);
+        if (!isCurrentStart()) {
+          cleanupStaleStart(stream, pc);
+          return;
+        }
+
         stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
         const offer = (await pc.createOffer()) as CallSessionDescription;
+        if (!isCurrentStart()) {
+          cleanupStaleStart(stream, pc);
+          return;
+        }
+
         await pc.setLocalDescription(new RTCSessionDescription(offer));
+        if (!isCurrentStart()) {
+          cleanupStaleStart(stream, pc);
+          return;
+        }
+
         logDev('[SocialMobile] Sending call offer', {
           callId,
           toId,
@@ -779,6 +847,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
     },
     [
       clearEndTimer,
+      clearBackgroundEndTimer,
+      closePeerConnection,
       createPeerConnection,
       finishCall,
       openLocalStream,
@@ -1108,10 +1178,22 @@ export function CallProvider({ children }: { children: ReactNode }) {
   }, [stagePendingIncomingCallPush, user?.id]);
 
   useEffect(() => {
-    if (!isForeground && statusRef.current !== 'idle') {
-      endCall();
+    if (isForeground || statusRef.current === 'idle') {
+      clearBackgroundEndTimer();
+      return;
     }
-  }, [endCall, isForeground]);
+
+    if (backgroundEndTimerRef.current) {
+      return;
+    }
+
+    backgroundEndTimerRef.current = setTimeout(() => {
+      backgroundEndTimerRef.current = null;
+      if (statusRef.current !== 'idle') {
+        endCall();
+      }
+    }, backgroundCallEndDelayMs);
+  }, [clearBackgroundEndTimer, endCall, isForeground]);
 
   useEffect(
     () => () => {
