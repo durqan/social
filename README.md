@@ -1,6 +1,6 @@
 # Social Network
 
-Full-stack социальная сеть с веб-клиентом, React Native Android-приложением, REST API, WebSocket-чатом, push-уведомлениями, 1-на-1 звонками и сквозным шифрованием личных сообщений.
+Full-stack социальная сеть с веб-клиентом, React Native Android-приложением, REST API, WebSocket-чатом, push-уведомлениями, 1-на-1 звонками и server-side encryption личных сообщений.
 
 ## Возможности
 
@@ -33,15 +33,14 @@ Full-stack социальная сеть с веб-клиентом, React Nativ
 * Загрузка изображений, файлов, голосовых и видео-сообщений.
 * WebSocket-синхронизация в реальном времени.
 
-### Сквозное шифрование (E2EE)
+### Шифрование сообщений на сервере
 
-* Сквозное шифрование личных сообщений.
-* Сквозное шифрование вложений.
-* Сервер не имеет доступа к содержимому зашифрованных сообщений.
-* Сервер не имеет доступа к содержимому зашифрованных вложений.
-* Локальное шифрование и расшифровка на стороне клиента.
-* Восстановление E2EE-ключей после смены браузера или устройства.
-* Совместимость со старыми сообщениями без шифрования.
+* Messages are encrypted at rest on the server before being stored in the database.
+* This is not end-to-end encryption.
+* The backend can decrypt messages when serving them to authenticated clients.
+* Клиент отправляет и получает обычный текст сообщений.
+* Старые plaintext-сообщения с `encryption_version = 0` остаются читаемыми.
+* E2EE endpoints and frontend crypto helpers are disabled/experimental and are not active for normal chat flow.
 
 ### Уведомления
 
@@ -97,9 +96,7 @@ Full-stack социальная сеть с веб-клиентом, React Nativ
 * HttpOnly Cookies
 * CSRF Protection
 * AES-256-GCM
-* RSA-OAEP
-* Argon2id
-* End-to-End Encryption (E2EE)
+* Server-side message encryption at rest
 * Password Hashing
 
 ### Notifications
@@ -117,7 +114,6 @@ Full-stack социальная сеть с веб-клиентом, React Nativ
 * Docker
 * Docker Compose
 * Nginx
-* Certbot
 * Coturn (optional)
 
 ## Архитектура
@@ -127,27 +123,28 @@ backend/        основной API, авторизация, пользоват
 frontend/       React/Vite веб-клиент
 mobile/         React Native Android-приложение
 notifications/  сервис уведомлений
-init/           SQL инициализация PostgreSQL
-certbot/        сертификаты Let's Encrypt
+backend/init/   SQL инициализация PostgreSQL для backend-контейнера
+packages/       shared TypeScript-типы и helpers
 ```
 
-## End-to-End Encryption
+## Message Encryption
 
-Личные сообщения и вложения могут быть защищены сквозным шифрованием.
+Личные сообщения защищаются server-side encryption / encryption at rest.
 
 Особенности реализации:
 
-* Шифрование выполняется только на стороне клиента.
-* Сервер хранит только зашифрованные данные.
+* Клиент отправляет обычный текст сообщения.
+* Backend шифрует текст перед сохранением в таблицу `messages`.
+* В БД для новых текстовых сообщений хранится `ciphertext`, `nonce` и `encryption_version`, а `content` остается пустым.
+* Backend расшифровывает сообщение перед отдачей клиенту.
+* Это защищает содержимое сообщений при утечке БД.
+* Это не защищает сообщения от backend-сервера или администратора с доступом к `MESSAGE_ENCRYPTION_KEY`.
 * Для шифрования сообщений используется AES-256-GCM.
-* Для защиты ключей используется RSA-OAEP.
-* Для резервного хранения ключей используется Argon2id.
-* Поддерживается восстановление ключей после смены устройства или браузера.
-* Сервер не может прочитать содержимое зашифрованных сообщений и вложений.
+* E2EE-заготовки (`/e2ee/*`, key backup и frontend crypto helpers) сейчас disabled/experimental и не являются активной end-to-end encryption системой.
 
 Важно:
 
-Если пользователь потеряет пароль и доступ ко всем устройствам одновременно, восстановление E2EE-данных будет невозможно.
+`MESSAGE_ENCRYPTION_KEY` обязателен для production (`GIN_MODE=release`). Ключ должен быть base64-encoded 32 bytes и не должен логироваться или попадать в исходники. В local compose есть dev fallback только для локальной разработки, его нельзя использовать в production.
 
 ## Быстрый старт
 
@@ -228,6 +225,7 @@ Frontend:
 ```bash
 cd frontend
 npm run lint
+npm run test
 npm run build
 ```
 
@@ -245,7 +243,7 @@ npm test -- --runInBand
 
 * Full-stack приложение на Go + React + React Native.
 * WebSocket чат в реальном времени.
-* Сквозное шифрование сообщений и вложений.
+* Server-side encryption / encryption at rest для текстовых сообщений.
 * WebRTC аудио и видеозвонки.
 * Push-уведомления.
 * RabbitMQ.
