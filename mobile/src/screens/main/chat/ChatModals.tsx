@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, Text, View } from 'react-native';
 import { Copy, Forward, Link, Pencil, Pin, Reply, Trash2 } from 'lucide-react-native';
 
 import type { Message, User } from '../../../api/types';

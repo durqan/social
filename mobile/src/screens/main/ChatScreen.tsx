@@ -887,6 +887,8 @@ export default function ChatScreen({ route }: Props) {
     },
     [
       decryptChatMessages,
+      hasMoreRef,
+      messagesRef,
       markConversationRead,
       otherUserId,
       requestScrollToLatest,
@@ -938,7 +940,7 @@ export default function ChatScreen({ route }: Props) {
       isLoadingOlderRef.current = false;
       setLoadingOlder(false);
     }
-  }, [decryptChatMessages, otherUserId, refreshing]);
+  }, [decryptChatMessages, hasMoreRef, messagesRef, otherUserId, refreshing]);
 
   const handleMessagesScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -1247,6 +1249,7 @@ export default function ChatScreen({ route }: Props) {
     [
       decryptIncomingMessage,
       markConversationRead,
+      messagesRef,
       otherUserId,
       refreshUnreadCount,
       restoreDraftAfterSendError,
