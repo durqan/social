@@ -138,28 +138,34 @@ class ChatSocket {
     this.connect();
   }
 
-  waitUntilConnected(timeoutMs = 8000) {
+  waitUntilConnected(timeoutMs = 8000): Promise<boolean> {
     if (this.isConnected()) {
       return Promise.resolve(true);
     }
 
-    this.connect();
+    return new Promise(resolve => {
+      let settled = false;
+      let unsubscribe: (() => void) | undefined;
 
-    return new Promise<boolean>(resolve => {
-      let unsubscribe = () => undefined;
-      const timeout = setTimeout(() => {
-        unsubscribe();
-        resolve(this.isConnected());
-      }, timeoutMs);
-
-      unsubscribe = this.onStatus(connected => {
-        if (!connected) {
+      const finish = (connected: boolean) => {
+        if (settled) {
           return;
         }
 
+        settled = true;
         clearTimeout(timeout);
-        unsubscribe();
-        resolve(true);
+        unsubscribe?.();
+        resolve(connected);
+      };
+
+      const timeout = setTimeout(() => {
+        finish(false);
+      }, timeoutMs);
+
+      unsubscribe = this.onStatus(connected => {
+        if (connected) {
+          finish(true);
+        }
       });
     });
   }
