@@ -36,7 +36,6 @@ import {
   Pause,
   Paperclip,
   Pencil,
-  Phone,
   Play,
   Send,
   Smile,
@@ -93,7 +92,6 @@ import {
 import { Screen } from '../../components/Screen';
 import { useAppLifecycle } from '../../context/AppLifecycleContext';
 import { useAuth } from '../../context/AuthContext';
-import { useCall } from '../../context/CallContext';
 import { useNotifications } from '../../context/NotificationsContext';
 import { useUnread } from '../../context/UnreadContext';
 import { useThemeColors } from '../../theme/ThemeContext';
@@ -227,7 +225,6 @@ export default function ChatScreen({ route }: Props) {
     () => createChatThemeStyles(themeColors),
     [themeColors],
   );
-  const { startAudioCall, startVideoCall, status: callStatus } = useCall();
   const isFocused = useIsFocused();
   const { isForeground, networkConnected } = useAppLifecycle();
   const { refreshUnreadCount, signalChatDataChanged } = useUnread();
@@ -2653,23 +2650,6 @@ export default function ChatScreen({ route }: Props) {
     >
       <ErrorBanner message={error} />
       <SuccessBanner message={copyNotice} />
-
-      <View style={styles.callActions}>
-        <IconButton
-          label="Аудиозвонок"
-          variant="secondary"
-          icon={Phone}
-          disabled={callStatus !== 'idle'}
-          onPress={() => startAudioCall(otherUserId, route.params.name)}
-        />
-        <IconButton
-          label="Видеозвонок"
-          variant="secondary"
-          icon={VideoIcon}
-          disabled={callStatus !== 'idle'}
-          onPress={() => startVideoCall(otherUserId, route.params.name)}
-        />
-      </View>
 
       {pinnedMessage?.message ? (
         <Pressable

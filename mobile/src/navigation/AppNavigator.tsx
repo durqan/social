@@ -13,14 +13,18 @@ import {
   Home,
   Menu,
   MessageCircle,
+  Phone,
   UserRound,
   UsersRound,
+  Video,
 } from 'lucide-react-native';
 
 import { useAppLifecycle } from '../context/AppLifecycleContext';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationsContext';
 import { useUnread } from '../context/UnreadContext';
+import { useCall } from '../context/CallContext';
+import { IconButton } from '../components/IconButton';
 import {
   flushPendingNotificationNavigation,
   navigationRef,
@@ -100,6 +104,41 @@ function AuthNavigator() {
   );
 }
 
+
+function ChatHeaderActions({
+  userId,
+  name,
+}: {
+  userId: number;
+  name?: string;
+}) {
+  const { status, startAudioCall, startVideoCall } = useCall();
+  const disabled = status !== 'idle';
+
+  return (
+    <View style={stylesStatic.chatHeaderActions}>
+      <IconButton
+        icon={Phone}
+        label="Аудиозвонок"
+        variant="ghost"
+        size="sm"
+        disabled={disabled}
+        onPress={() => startAudioCall(userId, name)}
+        style={stylesStatic.chatHeaderButton}
+      />
+      <IconButton
+        icon={Video}
+        label="Видеозвонок"
+        variant="ghost"
+        size="sm"
+        disabled={disabled}
+        onPress={() => startVideoCall(userId, name)}
+        style={stylesStatic.chatHeaderButton}
+      />
+    </View>
+  );
+}
+
 function ChatNavigator() {
   const colors = useThemeColors();
   const styles = createStyles(colors);
@@ -122,7 +161,15 @@ function ChatNavigator() {
       <ChatStack.Screen
         name="Chat"
         component={ChatScreen}
-        options={({ route }) => ({ title: route.params.name })}
+        options={({ route }) => ({
+          title: route.params.name,
+          headerRight: () => (
+            <ChatHeaderActions
+              userId={route.params.userId}
+              name={route.params.name}
+            />
+          ),
+        })}
       />
     </ChatStack.Navigator>
   );
@@ -475,6 +522,16 @@ const createStyles = (colors: ThemeColors) =>
   });
 
 const stylesStatic = StyleSheet.create({
+  chatHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  chatHeaderButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+  },
   tabIconShell: {
     width: 32,
     height: 28,

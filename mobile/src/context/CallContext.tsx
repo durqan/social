@@ -19,6 +19,8 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Mic, MicOff, Phone, PhoneOff, RotateCcw, Video, VideoOff } from 'lucide-react-native';
 import {
   mediaDevices,
   RTCIceCandidate,
@@ -46,7 +48,6 @@ import {
   subscribePendingIncomingCall,
   type PendingIncomingCallPush,
 } from '../notifications/pendingIncomingCall';
-import { colors } from '../theme/colors';
 import { logDev, warnDev } from '../utils/logger';
 
 type CallStatus =
@@ -1446,6 +1447,8 @@ function CallOverlay({
   onToggleCamera: () => void;
   onSwitchCamera: () => void;
 }) {
+  const insets = useSafeAreaInsets();
+
   if (status === 'idle') {
     return null;
   }
@@ -1454,10 +1457,23 @@ function CallOverlay({
   const showLocalPreview = callType === 'video' && localStream;
   const showActiveControls =
     status === 'connecting' || status === 'ringing' || status === 'active';
+  const initial = peerName.slice(0, 1).toUpperCase();
 
   return (
-    <Modal visible animationType="slide" presentationStyle="fullScreen">
+    <Modal visible animationType="fade" presentationStyle="fullScreen">
       <View style={styles.callRoot}>
+        <View style={styles.callGlowTop} />
+        <View style={styles.callGlowBottom} />
+
+        <View style={[styles.callHeader, { paddingTop: Math.max(insets.top, 28) + 22 }]}>
+          <Text style={styles.callName} numberOfLines={1}>
+            {peerName}
+          </Text>
+          <Text style={styles.callStatus}>
+            {error ?? statusText(status, callType)}
+          </Text>
+        </View>
+
         <View style={styles.remoteStage}>
           {showVideo ? (
             <RTCView
@@ -1467,23 +1483,15 @@ function CallOverlay({
             />
           ) : (
             <View style={styles.audioStage}>
+              <View style={styles.avatarPulse} />
+              <View style={styles.peerAvatar}>
+                <Text style={styles.peerInitial}>{initial}</Text>
+              </View>
               {status === 'connecting' ? (
                 <ActivityIndicator color="#ffffff" size="large" />
               ) : null}
-              <Text style={styles.peerInitial}>
-                {peerName.slice(0, 1).toUpperCase()}
-              </Text>
             </View>
           )}
-
-          <View style={styles.callHeader}>
-            <Text style={styles.callName} numberOfLines={1}>
-              {peerName}
-            </Text>
-            <Text style={styles.callStatus}>
-              {error ?? statusText(status, callType)}
-            </Text>
-          </View>
 
           {showLocalPreview ? (
             <View style={styles.localPreview}>
@@ -1497,32 +1505,58 @@ function CallOverlay({
           ) : null}
         </View>
 
-        <View style={styles.callControls}>
+        <View style={[styles.callControls, { paddingBottom: Math.max(insets.bottom, 16) + 16 }]}>
           {status === 'incoming' ? (
-            <>
-              <CallButton title="Отклонить" danger onPress={onReject} />
-              <CallButton title="Ответить" onPress={onAccept} />
-            </>
+            <View style={styles.incomingControlsRow}>
+              <CallButton
+                label="Отклонить"
+                icon={PhoneOff}
+                danger
+                large
+                onPress={onReject}
+              />
+              <CallButton
+                label="Ответить"
+                icon={Phone}
+                accept
+                large
+                onPress={onAccept}
+              />
+            </View>
           ) : null}
 
           {showActiveControls ? (
             <>
+              <View style={styles.callButtonsRow}>
+                <CallButton
+                  label={microphoneOn ? 'Микрофон' : 'Выкл.'}
+                  icon={microphoneOn ? Mic : MicOff}
+                  muted={!microphoneOn}
+                  onPress={onToggleMicrophone}
+                />
+                {callType === 'video' ? (
+                  <>
+                    <CallButton
+                      label={cameraOn ? 'Камера' : 'Выкл.'}
+                      icon={cameraOn ? Video : VideoOff}
+                      muted={!cameraOn}
+                      onPress={onToggleCamera}
+                    />
+                    <CallButton
+                      label="Сменить"
+                      icon={RotateCcw}
+                      onPress={onSwitchCamera}
+                    />
+                  </>
+                ) : null}
+              </View>
               <CallButton
-                title={microphoneOn ? 'Микрофон' : 'Включить микрофон'}
-                muted={!microphoneOn}
-                onPress={onToggleMicrophone}
+                label="Завершить"
+                icon={PhoneOff}
+                danger
+                large
+                onPress={onEnd}
               />
-              {callType === 'video' ? (
-                <>
-                  <CallButton
-                    title={cameraOn ? 'Камера' : 'Включить камеру'}
-                    muted={!cameraOn}
-                    onPress={onToggleCamera}
-                  />
-                  <CallButton title="Сменить" onPress={onSwitchCamera} />
-                </>
-              ) : null}
-              <CallButton title="Завершить" danger onPress={onEnd} />
             </>
           ) : null}
         </View>
@@ -1532,28 +1566,45 @@ function CallOverlay({
 }
 
 function CallButton({
-  title,
+  label,
+  icon: Icon,
   danger,
+  accept,
   muted,
+  large,
   onPress,
 }: {
-  title: string;
+  label: string;
+  icon: React.ComponentType<{
+    color?: string;
+    size?: number;
+    strokeWidth?: number;
+  }>;
   danger?: boolean;
+  accept?: boolean;
   muted?: boolean;
+  large?: boolean;
   onPress: () => void;
 }) {
   return (
-    <Pressable
-      accessibilityRole="button"
-      style={[
-        styles.callButton,
-        danger && styles.callButtonDanger,
-        muted && styles.callButtonMuted,
-      ]}
-      onPress={onPress}
-    >
-      <Text style={styles.callButtonText}>{title}</Text>
-    </Pressable>
+    <View style={styles.callButtonWrap}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        style={({ pressed }) => [
+          styles.callButton,
+          large && styles.callButtonLarge,
+          danger && styles.callButtonDanger,
+          accept && styles.callButtonAccept,
+          muted && styles.callButtonMuted,
+          pressed && styles.callButtonPressed,
+        ]}
+        onPress={onPress}
+      >
+        <Icon color="#ffffff" size={large ? 30 : 23} strokeWidth={2.5} />
+      </Pressable>
+      <Text style={styles.callButtonText}>{label}</Text>
+    </View>
   );
 }
 
@@ -1568,13 +1619,33 @@ export function useCall() {
 const styles = StyleSheet.create({
   callRoot: {
     flex: 1,
-    backgroundColor: '#111827',
+    backgroundColor: '#0f172a',
+    overflow: 'hidden',
+  },
+  callGlowTop: {
+    position: 'absolute',
+    top: -140,
+    left: -90,
+    width: 280,
+    height: 280,
+    borderRadius: 140,
+    backgroundColor: 'rgba(37, 99, 235, 0.36)',
+  },
+  callGlowBottom: {
+    position: 'absolute',
+    right: -120,
+    bottom: -130,
+    width: 320,
+    height: 320,
+    borderRadius: 160,
+    backgroundColor: 'rgba(14, 165, 233, 0.22)',
   },
   remoteStage: {
     flex: 1,
     position: 'relative',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 24,
   },
   remoteVideo: {
     ...StyleSheet.absoluteFill,
@@ -1582,84 +1653,139 @@ const styles = StyleSheet.create({
   audioStage: {
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 20,
+    gap: 22,
+  },
+  avatarPulse: {
+    position: 'absolute',
+    width: 190,
+    height: 190,
+    borderRadius: 95,
+    backgroundColor: 'rgba(96, 165, 250, 0.16)',
+  },
+  peerAvatar: {
+    width: 132,
+    height: 132,
+    borderRadius: 66,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2563eb',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.28)',
+    shadowColor: '#2563eb',
+    shadowOpacity: 0.34,
+    shadowRadius: 26,
+    shadowOffset: { width: 0, height: 16 },
+    elevation: 8,
   },
   peerInitial: {
-    width: 112,
-    height: 112,
-    borderRadius: 56,
-    overflow: 'hidden',
-    backgroundColor: colors.accent,
     color: '#ffffff',
-    fontSize: 52,
-    lineHeight: 112,
-    fontWeight: '800',
+    fontSize: 58,
+    lineHeight: 70,
+    fontWeight: '900',
     textAlign: 'center',
   },
   callHeader: {
     position: 'absolute',
-    left: 20,
-    right: 20,
-    top: 48,
+    zIndex: 10,
+    left: 24,
+    right: 24,
     alignItems: 'center',
-    gap: 6,
+    gap: 7,
   },
   callName: {
     color: '#ffffff',
-    fontSize: 24,
-    lineHeight: 30,
-    fontWeight: '800',
+    fontSize: 30,
+    lineHeight: 36,
+    fontWeight: '900',
+    textAlign: 'center',
   },
   callStatus: {
-    color: 'rgba(255,255,255,0.78)',
-    fontSize: 15,
-    lineHeight: 21,
+    color: 'rgba(226, 232, 240, 0.82)',
+    fontSize: 17,
+    lineHeight: 23,
+    fontWeight: '600',
     textAlign: 'center',
   },
   localPreview: {
     position: 'absolute',
-    right: 18,
-    bottom: 18,
-    width: 112,
-    height: 160,
+    right: 20,
+    bottom: 22,
+    width: 118,
+    height: 168,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.35)',
-    borderRadius: 14,
+    borderColor: 'rgba(255,255,255,0.32)',
+    borderRadius: 22,
     backgroundColor: '#020617',
+    shadowColor: '#000000',
+    shadowOpacity: 0.26,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 8,
   },
   localVideo: {
     flex: 1,
   },
   callControls: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: 10,
-    paddingHorizontal: 18,
-    paddingTop: 16,
-    paddingBottom: 32,
-    backgroundColor: '#111827',
+    alignItems: 'center',
+    gap: 22,
+    paddingHorizontal: 22,
+    paddingTop: 18,
+    backgroundColor: 'rgba(15, 23, 42, 0.96)',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255,255,255,0.12)',
   },
-  callButton: {
-    minWidth: 92,
-    minHeight: 48,
-    borderRadius: 24,
+  incomingControlsRow: {
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+  },
+  callButtonsRow: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.accent,
-    paddingHorizontal: 14,
+    gap: 22,
+  },
+  callButtonWrap: {
+    alignItems: 'center',
+    gap: 8,
+  },
+  callButton: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  callButtonLarge: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
   },
   callButtonDanger: {
-    backgroundColor: colors.danger,
+    backgroundColor: '#ef4444',
+    borderColor: '#ef4444',
+  },
+  callButtonAccept: {
+    backgroundColor: '#22c55e',
+    borderColor: '#22c55e',
   },
   callButtonMuted: {
-    backgroundColor: '#374151',
+    backgroundColor: 'rgba(148, 163, 184, 0.22)',
+    borderColor: 'rgba(148, 163, 184, 0.28)',
+  },
+  callButtonPressed: {
+    opacity: 0.78,
+    transform: [{ scale: 0.96 }],
   },
   callButtonText: {
-    color: '#ffffff',
-    fontSize: 13,
-    lineHeight: 17,
+    color: 'rgba(248, 250, 252, 0.9)',
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: '800',
     textAlign: 'center',
   },

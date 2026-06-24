@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Bell, KeyRound, LogOut } from 'lucide-react-native';
+import { Bell, ChevronRight, KeyRound, LogOut, Palette } from 'lucide-react-native';
 
 import { getApiErrorMessage } from '../../api/http';
 import { userApi } from '../../api/users';
@@ -107,23 +107,35 @@ export default function SettingsScreen() {
 
   return (
     <Screen>
-      <View style={styles.card}>
-        <Text style={styles.title}>Аккаунт</Text>
-        <Text style={styles.text}>
-          {user?.name || user?.email || 'Ваш профиль'} сейчас активен на этом
-          устройстве.
-        </Text>
+      <View style={styles.accountCard}>
+        <View style={styles.accountAvatar}>
+          <Text style={styles.accountAvatarText}>
+            {(user?.name || user?.email || '?').slice(0, 1).toUpperCase()}
+          </Text>
+        </View>
+        <View style={styles.accountInfo}>
+          <Text style={styles.title}>Аккаунт</Text>
+          <Text style={styles.text} numberOfLines={2}>
+            {user?.name || user?.email || 'Ваш профиль'} активен на этом устройстве.
+          </Text>
+        </View>
         <AppButton
           title="Выйти"
           variant="danger"
           icon={LogOut}
           loading={loggingOut}
           onPress={handleLogout}
+          style={styles.logoutButton}
         />
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.title}>Безопасность</Text>
+        <View style={styles.cardHeader}>
+          <View style={styles.headerIcon}>
+            <KeyRound color={colors.accent} size={18} strokeWidth={2.5} />
+          </View>
+          <Text style={styles.title}>Безопасность</Text>
+        </View>
         <ErrorBanner message={securityError} />
         <SuccessBanner message={securitySuccess} />
 
@@ -165,7 +177,12 @@ export default function SettingsScreen() {
 
       {pushPermissionStatus !== 'unsupported' ? (
         <View style={styles.card}>
-          <Text style={styles.title}>Уведомления</Text>
+          <View style={styles.cardHeader}>
+            <View style={styles.headerIcon}>
+              <Bell color={colors.accent} size={18} strokeWidth={2.5} />
+            </View>
+            <Text style={styles.title}>Уведомления</Text>
+          </View>
           <Text style={styles.text}>
             {pushPermissionStatus === 'granted'
               ? 'Push-уведомления включены.'
@@ -187,7 +204,12 @@ export default function SettingsScreen() {
       ) : null}
 
       <View style={styles.card}>
-        <Text style={styles.title}>Тема оформления</Text>
+        <View style={styles.cardHeader}>
+          <View style={styles.headerIcon}>
+            <Palette color={colors.accent} size={18} strokeWidth={2.5} />
+          </View>
+          <Text style={styles.title}>Тема оформления</Text>
+        </View>
         <Text style={styles.text}>
           Палитра применяется сразу и адаптирована под мобильный интерфейс.
         </Text>
@@ -238,12 +260,11 @@ export default function SettingsScreen() {
                     {theme.description}
                   </Text>
                 </View>
-                <View
-                  style={[
-                    styles.themeMark,
-                    selected && styles.themeMarkSelected,
-                  ]}
-                />
+                {selected ? (
+                  <View style={[styles.themeMark, styles.themeMarkSelected]} />
+                ) : (
+                  <ChevronRight color={colors.soft} size={18} strokeWidth={2.3} />
+                )}
               </Pressable>
             );
           })}
@@ -259,20 +280,66 @@ function securityErrorMessage(error: unknown) {
 
 const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
+    accountCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 24,
+      backgroundColor: colors.card,
+      padding: spacing.md,
+      gap: spacing.md,
+    },
+    accountAvatar: {
+      width: 52,
+      height: 52,
+      borderRadius: 26,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.accentSoft,
+    },
+    accountAvatarText: {
+      color: colors.accentStrong,
+      fontSize: 22,
+      fontWeight: '900',
+    },
+    accountInfo: {
+      flex: 1,
+      minWidth: 0,
+    },
+    logoutButton: {
+      minHeight: 40,
+      paddingHorizontal: spacing.md,
+      borderRadius: radius.pill,
+    },
     card: {
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: radius.lg,
+      borderRadius: 22,
       backgroundColor: colors.card,
       padding: spacing.lg,
       gap: spacing.md,
+    },
+    cardHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+    },
+    headerIcon: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.selected,
     },
     title: {
       ...typography.h3,
       color: colors.text,
     },
     text: {
-      ...typography.caption,
+      fontSize: 14,
+      lineHeight: 20,
       color: colors.muted,
     },
     section: {
@@ -293,13 +360,13 @@ const createStyles = (colors: ThemeColors) =>
       gap: spacing.sm,
     },
     themeOption: {
-      minHeight: 86,
+      minHeight: 76,
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing.md,
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: radius.lg,
+      borderRadius: 18,
       backgroundColor: colors.cardMuted,
       padding: spacing.md,
     },

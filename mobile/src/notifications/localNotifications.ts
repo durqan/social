@@ -1,6 +1,7 @@
 import notifee, {
   AndroidCategory,
   AndroidImportance,
+  AndroidVisibility,
   EventType,
 } from '@notifee/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -18,6 +19,8 @@ export const MOBILE_NOTIFICATION_CHANNELS = {
 
 const pendingOpenedLocalNotificationKey =
   '@social/pending-opened-local-notifications:v1';
+
+const incomingCallVibrationPattern = [300, 500, 300, 500, 300, 900];
 
 type LocalNotificationOpenHandler = (
   notification: MobileNotificationData,
@@ -159,6 +162,8 @@ async function createLocalNotificationChannels() {
     name: 'Incoming calls',
     importance: AndroidImportance.HIGH,
     vibration: true,
+    vibrationPattern: incomingCallVibrationPattern,
+    sound: 'default',
   });
 }
 
@@ -194,9 +199,33 @@ export async function displayForegroundNotification(
           ? AndroidCategory.MESSAGE
           : AndroidCategory.SOCIAL,
       importance: incomingCall ? AndroidImportance.HIGH : AndroidImportance.DEFAULT,
+      visibility: incomingCall ? AndroidVisibility.PUBLIC : undefined,
+      sound: incomingCall ? 'default' : undefined,
+      vibrationPattern: incomingCall ? incomingCallVibrationPattern : undefined,
+      ongoing: incomingCall,
+      autoCancel: !incomingCall,
       pressAction: {
         id: 'default',
+        launchActivity: 'default',
       },
+      fullScreenAction: incomingCall
+        ? {
+            id: 'default',
+            launchActivity: 'default',
+          }
+        : undefined,
+      actions: incomingCall
+        ? [
+            {
+              title: 'Ответить',
+              pressAction: { id: 'answer', launchActivity: 'default' },
+            },
+            {
+              title: 'Отклонить',
+              pressAction: { id: 'reject' },
+            },
+          ]
+        : undefined,
       timestamp: notification.timestamp,
       showTimestamp: Boolean(notification.timestamp),
     },
@@ -257,6 +286,13 @@ export function registerLocalNotificationOpenHandlers(
       return;
     }
 
+    if (event.detail.pressAction?.id === 'reject') {
+      if (event.detail.notification?.id) {
+        notifee.cancelNotification(event.detail.notification.id).catch(() => undefined);
+      }
+      return;
+    }
+
     onOpen(notificationFromNotifeeData(event.detail.notification?.data));
   });
 
@@ -285,6 +321,14 @@ export function registerLocalNotificationBackgroundHandler() {
     const notification = notificationFromNotifeeData(
       event.detail.notification?.data,
     );
+
+    if (event.detail.pressAction?.id === 'reject') {
+      if (event.detail.notification?.id) {
+        await notifee.cancelNotification(event.detail.notification.id);
+      }
+      return;
+    }
+
     await enqueuePendingPushEvent(notification);
     await enqueuePendingOpenedLocalNotification(notification);
   });

@@ -174,17 +174,13 @@ export const styles = StyleSheet.create({
     flex: 1,
   },
   callActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.sm,
+    display: 'none',
   },
   messageList: {
     paddingHorizontal: spacing.md,
-    paddingTop: spacing.md,
-    paddingBottom: 18,
-    gap: spacing.sm,
+    paddingTop: spacing.sm,
+    paddingBottom: 14,
+    gap: 6,
     flexGrow: 1,
   },
   emptyMessageList: {
@@ -198,10 +194,10 @@ export const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   bubble: {
-    maxWidth: '84%',
-    borderRadius: radius.lg,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    maxWidth: '82%',
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     gap: spacing.xs,
   },
   incoming: {
@@ -213,7 +209,8 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.accent,
   },
   messageText: {
-    ...typography.body,
+    fontSize: 16,
+    lineHeight: 21,
     color: colors.text,
   },
   outgoingText: {
@@ -647,8 +644,8 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginHorizontal: 14,
-    marginTop: 10,
+    marginHorizontal: 12,
+    marginTop: 6,
     marginBottom: 4,
     borderRadius: radius.md,
     padding: spacing.md,

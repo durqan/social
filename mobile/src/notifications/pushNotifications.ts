@@ -217,6 +217,9 @@ export function registerBackgroundMessageHandler() {
     messaging().setBackgroundMessageHandler(async remoteMessage => {
       const notification = notificationFromRemoteMessage(remoteMessage);
       await enqueuePendingPushEvent(notification);
+      await displayForegroundNotification(notification).catch(error => {
+        warnDev('[SocialMobile] background local notification skipped', error);
+      });
       logDev(
         '[SocialMobile] Background notification received',
         notification,
@@ -333,6 +336,7 @@ export async function initializePushNotifications({
     cleanup.push(
       messaging().onMessage(async remoteMessage => {
         const notification = notificationFromRemoteMessage(remoteMessage);
+        await enqueuePendingPushEvent(notification);
         onNotification?.(notification);
         await displayForegroundNotification(notification).catch(error => {
           warnDev('[SocialMobile] foreground local notification skipped', error);
