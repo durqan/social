@@ -11,7 +11,7 @@ import { WS_URL } from '../config/env';
 import type { EncryptedMessagePayload } from '../crypto/encryptMessage';
 import { getCookieHeader, refreshSession } from './http';
 import type { MessageAttachment } from './types';
-import { logDev } from '../utils/logger';
+import { logDev, warnDev } from '../utils/logger';
 
 export type { CallIceCandidate, CallSessionDescription, CallType, WsEvent };
 
@@ -138,6 +138,32 @@ class ChatSocket {
     this.connect();
   }
 
+  waitUntilConnected(timeoutMs = 8000) {
+    if (this.isConnected()) {
+      return Promise.resolve(true);
+    }
+
+    this.connect();
+
+    return new Promise<boolean>(resolve => {
+      let unsubscribe = () => undefined;
+      const timeout = setTimeout(() => {
+        unsubscribe();
+        resolve(this.isConnected());
+      }, timeoutMs);
+
+      unsubscribe = this.onStatus(connected => {
+        if (!connected) {
+          return;
+        }
+
+        clearTimeout(timeout);
+        unsubscribe();
+        resolve(true);
+      });
+    });
+  }
+
   disconnect() {
     if (this.activeConversationId !== null) {
       this.clearActiveConversation();
@@ -204,7 +230,7 @@ class ChatSocket {
     callType: CallType,
     callId: string,
   ) {
-    this.sendEvent({
+    return this.sendEvent({
       type: WS_EVENTS.CALL_OFFER,
       payload: {
         to_id: toId,
@@ -216,7 +242,7 @@ class ChatSocket {
   }
 
   sendCallAnswer(toId: number, answer: CallSessionDescription, callId: string) {
-    this.sendEvent({
+    return this.sendEvent({
       type: WS_EVENTS.CALL_ANSWER,
       payload: {
         to_id: toId,
@@ -227,7 +253,7 @@ class ChatSocket {
   }
 
   sendCallIce(toId: number, candidate: CallIceCandidate, callId: string) {
-    this.sendEvent({
+    return this.sendEvent({
       type: WS_EVENTS.CALL_ICE,
       payload: {
         to_id: toId,
@@ -238,7 +264,7 @@ class ChatSocket {
   }
 
   sendCallEnd(toId: number, callId: string) {
-    this.sendEvent({
+    return this.sendEvent({
       type: WS_EVENTS.CALL_END,
       payload: {
         to_id: toId,
@@ -248,7 +274,7 @@ class ChatSocket {
   }
 
   sendCallReject(toId: number, callId: string) {
-    this.sendEvent({
+    return this.sendEvent({
       type: WS_EVENTS.CALL_REJECT,
       payload: {
         to_id: toId,
@@ -329,18 +355,50 @@ class ChatSocket {
   private sendEvent(event: OutgoingEvent, queueIfClosed = true) {
     if (!this.isConnected()) {
       if (!queueIfClosed) {
-        return;
+        return false;
       }
 
       this.pendingEvents.push({
         ...event,
         queuedAt: Date.now(),
       });
+      this.logSocketSend(event, 'queued');
       this.connect();
+      return false;
+    }
+
+    try {
+      this.ws?.send(JSON.stringify(event));
+      this.logSocketSend(event, 'sent');
+      return true;
+    } catch (error) {
+      warnDev('[SocialMobile] WebSocket send failed', {
+        type: event.type,
+        callId: this.eventCallId(event),
+        error,
+      });
+      if (queueIfClosed) {
+        this.pendingEvents.push({
+          ...event,
+          queuedAt: Date.now(),
+        });
+      }
+      this.connect();
+      return false;
+    }
+  }
+
+  private logSocketSend(event: OutgoingEvent, mode: 'sent' | 'queued') {
+    if (!this.isCallEvent(event)) {
       return;
     }
 
-    this.ws?.send(JSON.stringify(event));
+    logDev('[SocialMobile] Call signaling event ' + mode, {
+      type: event.type,
+      callId: this.eventCallId(event),
+      connected: this.isConnected(),
+      pendingEvents: this.pendingEvents.length,
+    });
   }
 
   private syncActiveConversation() {
@@ -374,6 +432,7 @@ class ChatSocket {
 
     events.forEach(({ queuedAt: _queuedAt, ...event }) => {
       this.ws?.send(JSON.stringify(event));
+      this.logSocketSend(event, 'sent');
     });
   }
 

@@ -70,8 +70,13 @@ Release APK:
 cd mobile
 SOCIAL_API_BASE_URL=https://example.com/api \
 SOCIAL_NOTIFICATIONS_BASE_URL=https://example.com/notifications-api \
+SOCIAL_TURN_URLS=turn:example.com:3478?transport=udp,turn:example.com:3478?transport=tcp \
+SOCIAL_TURN_USERNAME=turn-user \
+SOCIAL_TURN_CREDENTIAL=turn-password \
 npm run build:android:release
 ```
+
+Для звонков на реальных телефонах TURN-переменные должны быть переданы именно во время сборки APK: они инлайнятся Metro/Babel в JS bundle. Если собрать release без `SOCIAL_TURN_URLS`, приложение будет использовать только публичный STUN и на части сетей звонок может отображаться как принятый, но без аудио/видео соединения.
 
 Release variant собирает JS bundle внутрь APK, поэтому установленное приложение запускается без Metro. Для release используйте публичный HTTPS backend URL; не используйте `localhost`, `127.0.0.1`, `10.0.2.2` или LAN/private IP.
 

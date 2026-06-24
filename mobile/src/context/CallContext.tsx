@@ -80,6 +80,14 @@ type PeerConnectionEventTarget = {
     handler: (event: unknown) => void,
   ) => void;
 };
+type PeerConnectionHandlers = {
+  onicecandidate?: ((event: unknown) => void) | null;
+  ontrack?: ((event: unknown) => void) | null;
+  onconnectionstatechange?: ((event: unknown) => void) | null;
+  oniceconnectionstatechange?: ((event: unknown) => void) | null;
+  onicegatheringstatechange?: ((event: unknown) => void) | null;
+  onsignalingstatechange?: ((event: unknown) => void) | null;
+};
 
 const CallContext = createContext<CallContextValue | undefined>(undefined);
 const disconnectedCleanupDelayMs = 10000;
@@ -670,6 +678,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         iceServers: servers,
       });
       const eventTarget = pc as unknown as PeerConnectionEventTarget;
+      const peerHandlers = pc as unknown as PeerConnectionHandlers;
       const isCurrentConnection = () =>
         pcRef.current === pc && callIdRef.current === callId;
 
@@ -815,6 +824,12 @@ export function CallProvider({ children }: { children: ReactNode }) {
         'signalingstatechange',
         handleSignalingStateChange,
       );
+      peerHandlers.onicecandidate = handleIceCandidate;
+      peerHandlers.ontrack = handleTrack;
+      peerHandlers.onconnectionstatechange = handleConnectionStateChange;
+      peerHandlers.oniceconnectionstatechange = handleIceConnectionStateChange;
+      peerHandlers.onicegatheringstatechange = handleIceGatheringStateChange;
+      peerHandlers.onsignalingstatechange = handleSignalingStateChange;
       pcListenerCleanupRef.current = () => {
         eventTarget.removeEventListener?.('icecandidate', handleIceCandidate);
         eventTarget.removeEventListener?.('track', handleTrack);
@@ -834,6 +849,34 @@ export function CallProvider({ children }: { children: ReactNode }) {
           'signalingstatechange',
           handleSignalingStateChange,
         );
+        if (peerHandlers.onicecandidate === handleIceCandidate) {
+          peerHandlers.onicecandidate = null;
+        }
+        if (peerHandlers.ontrack === handleTrack) {
+          peerHandlers.ontrack = null;
+        }
+        if (
+          peerHandlers.onconnectionstatechange === handleConnectionStateChange
+        ) {
+          peerHandlers.onconnectionstatechange = null;
+        }
+        if (
+          peerHandlers.oniceconnectionstatechange ===
+          handleIceConnectionStateChange
+        ) {
+          peerHandlers.oniceconnectionstatechange = null;
+        }
+        if (
+          peerHandlers.onicegatheringstatechange ===
+          handleIceGatheringStateChange
+        ) {
+          peerHandlers.onicegatheringstatechange = null;
+        }
+        if (
+          peerHandlers.onsignalingstatechange === handleSignalingStateChange
+        ) {
+          peerHandlers.onsignalingstatechange = null;
+        }
       };
 
       return pc;
@@ -912,12 +955,25 @@ export function CallProvider({ children }: { children: ReactNode }) {
           return;
         }
 
+        const socketReady = await chatSocket.waitUntilConnected(8000);
+        if (!socketReady) {
+          throw new Error('WebSocket is not connected');
+        }
+
         logDev('[SocialMobile] Sending call offer', {
           callId,
           toId,
           callType: nextCallType,
         });
-        chatSocket.sendCallOffer(toId, offer, nextCallType, callId);
+        const offerSent = chatSocket.sendCallOffer(
+          toId,
+          offer,
+          nextCallType,
+          callId,
+        );
+        if (!offerSent) {
+          throw new Error('WebSocket is not connected');
+        }
         setCallStatus('ringing');
       } catch (callError) {
         const message = callErrorMessage(callError);
@@ -977,16 +1033,24 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
       const answer = (await pc.createAnswer()) as CallSessionDescription;
       await pc.setLocalDescription(new RTCSessionDescription(answer));
+      const socketReady = await chatSocket.waitUntilConnected(8000);
+      if (!socketReady) {
+        throw new Error('WebSocket is not connected');
+      }
+
       logDev('[SocialMobile] Sending call answer', {
         callId: pendingOffer.callId,
         toId: pendingOffer.fromId,
         callType: pendingOffer.callType,
       });
-      chatSocket.sendCallAnswer(
+      const answerSent = chatSocket.sendCallAnswer(
         pendingOffer.fromId,
         answer,
         pendingOffer.callId,
       );
+      if (!answerSent) {
+        throw new Error('WebSocket is not connected');
+      }
       setCallStatus('active');
     } catch (callError) {
       try {
