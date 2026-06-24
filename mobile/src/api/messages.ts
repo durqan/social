@@ -5,12 +5,11 @@ import {
   CHAT_VIDEO_MIME_TYPES,
   CHAT_VOICE_MAX_BYTES,
   CHAT_VOICE_MAX_DURATION_SECONDS,
-  CHAT_VOICE_MIME_TYPE,
   CHAT_VIDEO_NOTE_MAX_BYTES,
   CHAT_VIDEO_NOTE_MAX_DURATION_SECONDS,
   CHAT_VIDEO_NOTE_MIME_TYPES,
 } from '../config/env';
-import { formatDuration } from '../utils/format';
+import { formatDuration } from '@social/shared';
 import type { EncryptedAttachmentFields } from '../crypto/attachment';
 import type { EncryptedMessagePayload } from '../crypto/encryptMessage';
 import { apiRequest, toQueryString } from './http';
@@ -178,7 +177,9 @@ export function validateLocalChatVideo(video: LocalChatVideo) {
 }
 
 export function validateLocalVoiceMessage(voice: LocalVoiceMessage) {
-  if (voice.type !== CHAT_VOICE_MIME_TYPE) {
+  const allowedVoiceMimeTypes = ['audio/webm', 'audio/mp4', 'audio/m4a', 'audio/aac'];
+
+  if (!allowedVoiceMimeTypes.includes(voice.type)) {
     return 'Поддерживаются только голосовые сообщения WebM';
   }
 

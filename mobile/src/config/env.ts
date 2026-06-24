@@ -24,7 +24,7 @@ declare const process:
     }
   | undefined;
 
-const defaultApiBaseURL = 'http://10.0.2.2:8080';
+const defaultApiBaseURL = 'https://durqan.ru/api';
 const configuredApiBaseURL =
   typeof process !== 'undefined' ? process.env.SOCIAL_API_BASE_URL : undefined;
 const configuredNotificationsBaseURL =

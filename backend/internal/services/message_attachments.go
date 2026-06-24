@@ -85,6 +85,9 @@ var allowedChatVoiceTypes = map[string]struct {
 	"audio/webm":      {extension: ".webm", contentType: "audio/webm"},
 	"audio/ogg":       {extension: ".ogg", contentType: "audio/ogg"},
 	"application/ogg": {extension: ".ogg", contentType: "audio/ogg"},
+	"audio/mp4":       {extension: ".m4a", contentType: "audio/mp4"},
+	"audio/m4a":       {extension: ".m4a", contentType: "audio/mp4"},
+	"audio/x-m4a":     {extension: ".m4a", contentType: "audio/mp4"},
 }
 
 var allowedChatVideoNoteTypes = map[string]struct {
@@ -122,7 +125,7 @@ func ValidateChatVoiceUpload(data []byte, declaredContentType string) (string, s
 func ValidateChatVoiceUploadMagic(header []byte, declaredContentType string) (string, string, error) {
 	declaredExtension, canonicalContentType, ok := ChatVoiceExtension(declaredContentType)
 	if !ok {
-		return "", "", errors.New("voice must be webm or ogg")
+		return "", "", errors.New("voice must be webm, ogg or m4a")
 	}
 
 	actualExtension, ok := chatVoiceExtensionFromMagic(header)
@@ -929,6 +932,8 @@ func chatVoiceExtensionFromFilename(filename string) string {
 		return ".webm"
 	case ".ogg":
 		return ".ogg"
+	case ".m4a":
+		return ".m4a"
 	default:
 		return ""
 	}
@@ -973,6 +978,9 @@ func chatVoiceExtensionFromMagic(data []byte) (string, bool) {
 	}
 	if len(data) >= 4 && string(data[:4]) == "OggS" {
 		return ".ogg", true
+	}
+	if len(data) >= 8 && string(data[4:8]) == "ftyp" {
+		return ".m4a", true
 	}
 	return "", false
 }

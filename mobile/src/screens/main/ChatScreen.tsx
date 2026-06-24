@@ -56,8 +56,7 @@ import {
   CHAT_IMAGE_MAX_COUNT,
   CHAT_VIDEO_NOTE_MAX_DURATION_SECONDS,
   CHAT_VOICE_MAX_DURATION_SECONDS,
-  CHAT_VOICE_MIME_TYPE,
-} from '../../config/env';
+} from '@social/shared';
 import { e2eeApi } from '../../api/e2ee';
 import { friendsApi } from '../../api/friends';
 import { getApiErrorMessage, getCookieHeader } from '../../api/http';
@@ -161,16 +160,13 @@ const LOCAL_TYPING_STOP_DELAY_MS = 1400;
 const LONG_PRESS_DELAY_MS = 260;
 const SCROLL_EVENT_THROTTLE_MS = 80;
 const voiceAudioSet = {
+  AudioEncoderAndroid: AudioEncoderAndroidType.AAC,
+  OutputFormatAndroid: OutputFormatAndroidType.MPEG_4,
   AudioSourceAndroid: AudioSourceAndroidType.MIC,
-  OutputFormatAndroid: OutputFormatAndroidType.WEBM,
-  AudioEncoderAndroid: AudioEncoderAndroidType.VORBIS,
   AudioChannels: 1,
   AudioSamplingRate: 44100,
   AudioEncodingBitRate: 64000,
 } as const;
-
-
-
 
 
 function useLatest<T>(value: T) {
@@ -1598,8 +1594,8 @@ export default function ChatScreen({ route }: Props) {
     // Commit to local preview card (no auto upload/send)
     const voice: LocalVoiceMessage = {
       uri: path,
-      type: CHAT_VOICE_MIME_TYPE,
-      fileName: `voice-message-${Date.now()}.webm`,
+      type: 'audio/mp4',
+      fileName: `voice-message-${Date.now()}.m4a`,
       durationSeconds: Math.max(1, Math.round(durationSeconds)),
     };
     setPendingVoice(voice);
