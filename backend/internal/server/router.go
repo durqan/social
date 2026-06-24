@@ -35,10 +35,23 @@ func NewRouter(database *gorm.DB, cfg config.Config) *gin.Engine {
 	registerPostRoutes(router, database)
 	registerMessageRoutes(router, database)
 	registerConversationRoutes(router, database)
+	registerCallRoutes(router, database)
 	registerE2EERoutes(router, database)
 	registerWebSocketRoutes(router, database, cfg)
 
 	return router
+}
+
+func registerCallRoutes(router *gin.Engine, database *gorm.DB) {
+	calls := router.Group(
+		"/calls",
+		middleware.AuthMiddleware(),
+		middleware.UserActivityMiddleware(database),
+		middleware.CSRFMiddleware(),
+	)
+
+	calls.GET("/active", handlers.GetActiveCall(database))
+	calls.GET("/:callId", handlers.GetCall(database))
 }
 
 func registerAuthRoutes(router *gin.Engine, database *gorm.DB) {

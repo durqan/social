@@ -19,4 +19,5 @@ type CreateNotificationReq struct {
 	// They allow the notifications service and clients to route and de-duplicate call invites.
 	CallID         string `json:"call_id,omitempty"`
 	ConversationID uint   `json:"conversation_id,omitempty"`
+	CallType       string `json:"call_type,omitempty"`
 }

@@ -47,6 +47,8 @@ type Payload struct {
 	// CallID is the ephemeral call identifier from the offer. Clients use it for
 	// matching against active call state and for stale call detection.
 	CallID string `json:"call_id,omitempty"`
+	// CallType is "audio" or "video" for incoming_call notifications.
+	CallType string `json:"call_type,omitempty"`
 }
 
 type Service struct {
@@ -179,6 +181,7 @@ func (s *Service) SendMobile(token models.MobilePushToken, payload Payload) erro
 			"conversation_id": fmt.Sprintf("%d", payload.ConversationID),
 			"sync_action":     payload.SyncAction,
 			"call_id":         payload.CallID,
+			"call_type":       payload.CallType,
 			"ts":              "", // best effort; web deep link carries authoritative ts in the URL query
 		},
 		Android: fcmAndroidConfig{

@@ -15,11 +15,11 @@ func TestCreateCallOfferDedupesByCallID(t *testing.T) {
 	db := newCallRepoTestDB(t)
 	seedCallUsers(t, db, 1, 2)
 
-	first, err := CreateCallOffer(db, 1, 2, "call-1", models.CallTypeVideo, nil)
+	first, err := CreateCallOffer(db, 1, 2, "call-1", models.CallTypeVideo, nil, `{"type":"offer","sdp":"first"}`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := CreateCallOffer(db, 1, 2, "call-1", models.CallTypeVideo, nil)
+	second, err := CreateCallOffer(db, 1, 2, "call-1", models.CallTypeVideo, nil, `{"type":"offer","sdp":"second"}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,11 +40,11 @@ func TestCreateCallOfferFailsPreviousActiveRingingBetweenUsers(t *testing.T) {
 	db := newCallRepoTestDB(t)
 	seedCallUsers(t, db, 1, 2)
 
-	first, err := CreateCallOffer(db, 1, 2, "call-1", models.CallTypeAudio, nil)
+	first, err := CreateCallOffer(db, 1, 2, "call-1", models.CallTypeAudio, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := CreateCallOffer(db, 2, 1, "call-2", models.CallTypeVideo, nil)
+	second, err := CreateCallOffer(db, 2, 1, "call-2", models.CallTypeVideo, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestCallAnswerAndEndLifecycle(t *testing.T) {
 	db := newCallRepoTestDB(t)
 	seedCallUsers(t, db, 1, 2)
 
-	call, err := CreateCallOffer(db, 1, 2, "call-1", models.CallTypeAudio, nil)
+	call, err := CreateCallOffer(db, 1, 2, "call-1", models.CallTypeAudio, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestCallRejectMarksDeclined(t *testing.T) {
 	db := newCallRepoTestDB(t)
 	seedCallUsers(t, db, 1, 2)
 
-	call, err := CreateCallOffer(db, 1, 2, "call-1", models.CallTypeAudio, nil)
+	call, err := CreateCallOffer(db, 1, 2, "call-1", models.CallTypeAudio, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,11 +137,46 @@ func TestCallRejectMarksDeclined(t *testing.T) {
 	}
 }
 
+func TestFindActiveRingingCallForCalleeReturnsRecoveryPayload(t *testing.T) {
+	db := newCallRepoTestDB(t)
+	seedCallUsers(t, db, 1, 2)
+
+	conversationID := uint(1)
+	offer := `{"type":"offer","sdp":"offer-sdp"}`
+	call, err := CreateCallOffer(db, 1, 2, "call-1", models.CallTypeVideo, &conversationID, offer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if call.ExpiresAt == nil {
+		t.Fatal("call should have expires_at for stale recovery filtering")
+	}
+	if err := AppendCallIceCandidate(db, 1, 2, "call-1", `{"candidate":"candidate:1 1 udp 1 127.0.0.1 10000 typ host"}`); err != nil {
+		t.Fatal(err)
+	}
+
+	active, err := FindActiveRingingCallForCallee(db, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active.CallID != "call-1" {
+		t.Fatalf("active call id = %q, want call-1", active.CallID)
+	}
+	if active.ConversationID == nil || *active.ConversationID != conversationID {
+		t.Fatalf("conversation id = %v, want %d", active.ConversationID, conversationID)
+	}
+	if active.OfferPayload != offer {
+		t.Fatalf("offer payload = %q, want %q", active.OfferPayload, offer)
+	}
+	if active.IceCandidates == "" {
+		t.Fatal("expected stored ICE candidates")
+	}
+}
+
 func TestCallStatusUpdateRequiresParticipant(t *testing.T) {
 	db := newCallRepoTestDB(t)
 	seedCallUsers(t, db, 1, 2, 3)
 
-	call, err := CreateCallOffer(db, 1, 2, "call-1", models.CallTypeAudio, nil)
+	call, err := CreateCallOffer(db, 1, 2, "call-1", models.CallTypeAudio, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}

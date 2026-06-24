@@ -18,4 +18,6 @@ type Notification struct {
 	CallID string `json:"call_id" gorm:"size:64;index"`
 	// ConversationID is the peer user id to open the chat with (from recipient perspective).
 	ConversationID uint `json:"conversation_id" gorm:"index"`
+	// CallType is "audio" or "video" for incoming_call notifications.
+	CallType string `json:"call_type" gorm:"size:20"`
 }

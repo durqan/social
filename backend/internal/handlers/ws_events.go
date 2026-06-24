@@ -536,7 +536,7 @@ func forwardCallEvent(ctx context.Context, eventType string, fromID uint, payloa
 	}
 
 	callType := callTypeFromPayload(callPayload)
-	recordCallEvent(eventType, fromID, toID, callID, callType)
+	recordCallEvent(eventType, fromID, toID, callID, callType, callOfferPayload(callPayload), callCandidatePayload(callPayload))
 
 	// === INCOMING CALL WEB PUSH (only for offer) ===
 	// All other signalling events (call:answer, call:ice, call:end, call:reject) MUST NOT
@@ -552,7 +552,7 @@ func forwardCallEvent(ctx context.Context, eventType string, fromID uint, payloa
 		// Publish is intentionally decoupled (goroutine) so that any Rabbit / notifications-service
 		// unavailability or slowness CANNOT break or delay the WebSocket call signalling path.
 		// Errors inside publish are logged (as warning/error) but execution continues to WS forward.
-		go enqueueIncomingCallNotification(dbInstance, toID, fromID, callID, fromID)
+		go enqueueIncomingCallNotification(dbInstance, toID, fromID, callID, fromID, callType)
 	}
 
 	// Why we send push even if the user has active WS connections:
@@ -606,7 +606,23 @@ func callTypeFromPayload(callPayload map[string]json.RawMessage) string {
 	return repository.NormalizeCallType(callType)
 }
 
-func recordCallEvent(eventType string, fromID uint, toID uint, callID string, callType string) {
+func callOfferPayload(callPayload map[string]json.RawMessage) string {
+	raw, ok := callPayload["offer"]
+	if !ok || len(raw) == 0 {
+		return ""
+	}
+	return string(raw)
+}
+
+func callCandidatePayload(callPayload map[string]json.RawMessage) string {
+	raw, ok := callPayload["candidate"]
+	if !ok || len(raw) == 0 {
+		return ""
+	}
+	return string(raw)
+}
+
+func recordCallEvent(eventType string, fromID uint, toID uint, callID string, callType string, offerPayload string, candidatePayload string) {
 	if dbInstance == nil {
 		return
 	}
@@ -617,7 +633,8 @@ func recordCallEvent(eventType string, fromID uint, toID uint, callID string, ca
 	var err error
 	switch eventType {
 	case "call:offer":
-		_, err = repository.CreateCallOffer(dbInstance, fromID, toID, callID, callType, nil)
+		conversationID := fromID
+		_, err = repository.CreateCallOffer(dbInstance, fromID, toID, callID, callType, &conversationID, offerPayload)
 	case "call:answer":
 		err = repository.MarkCallAnswered(dbInstance, fromID, toID, callID)
 	case "call:reject":
@@ -625,7 +642,7 @@ func recordCallEvent(eventType string, fromID uint, toID uint, callID string, ca
 	case "call:end":
 		err = repository.MarkCallEnded(dbInstance, fromID, toID, callID)
 	case "call:ice":
-		return
+		err = repository.AppendCallIceCandidate(dbInstance, fromID, toID, callID, candidatePayload)
 	}
 
 	if err != nil {

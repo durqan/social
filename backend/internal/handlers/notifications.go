@@ -64,7 +64,7 @@ func enqueueMessageReadSync(db *gorm.DB, readerID uint, conversationID uint) {
 // Publication errors (e.g. Rabbit down) are logged but MUST NOT prevent the WS call signalling.
 // If callID is empty we still publish using conversationID fallback for tag/URL (dedup will be weaker).
 // See detailed rationale in ws_events.go.
-func enqueueIncomingCallNotification(db *gorm.DB, recipientID, actorID uint, callID string, conversationID uint) {
+func enqueueIncomingCallNotification(db *gorm.DB, recipientID, actorID uint, callID string, conversationID uint, callType string) {
 	if recipientID == actorID {
 		return
 	}
@@ -84,6 +84,7 @@ func enqueueIncomingCallNotification(db *gorm.DB, recipientID, actorID uint, cal
 		EntityID:       0,
 		CallID:         callID,
 		ConversationID: conversationID,
+		CallType:       callType,
 	}
 
 	if err := services.EnqueueNotificationOutbox(db, req); err != nil {

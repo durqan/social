@@ -127,6 +127,7 @@ function dataForNotification(notification: MobileNotificationData) {
     data.conversation_id = String(notification.conversationId);
   }
   if (notification.callId) data.call_id = notification.callId;
+  if (notification.callType) data.call_type = notification.callType;
   if (notification.syncAction) data.sync_action = notification.syncAction;
   if (notification.url) data.url = notification.url;
   if (notification.title) data.title = notification.title;

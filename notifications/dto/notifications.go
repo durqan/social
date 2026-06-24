@@ -19,6 +19,7 @@ type CreateNotificationReq struct {
 	// ConversationID is the peer user id (from the recipient's point of view, the person to open chat with).
 	CallID         string `json:"call_id,omitempty"`
 	ConversationID uint   `json:"conversation_id,omitempty"`
+	CallType       string `json:"call_type,omitempty"`
 }
 
 type MarkNotificationsReadReq struct {

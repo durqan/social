@@ -29,6 +29,7 @@ import {
 } from 'react-native-webrtc';
 import { WS_EVENTS } from '@social/shared';
 
+import { callsApi, type ActiveCall } from '../api/calls';
 import { userApi } from '../api/users';
 import {
   chatSocket,
@@ -316,6 +317,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const callIdRef = useRef<string | null>(null);
   const pendingOfferRef = useRef<PendingOffer | null>(null);
   const pendingIncomingCallPushRef = useRef<PendingIncomingCallPush | null>(null);
+  const hydratingCallIdsRef = useRef(new Set<string>());
+  const hydratingActiveRef = useRef(false);
   const pendingIceRef = useRef<CallIceCandidate[]>([]);
   const endTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const disconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -485,6 +488,88 @@ export function CallProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const showHydratedIncomingCall = useCallback(
+    async (call: ActiveCall, fallbackName?: string) => {
+      if (!user?.id || call.status !== 'ringing' || call.callee_id !== user.id) {
+        return;
+      }
+
+      if (call.caller_id === user.id || statusRef.current !== 'idle') {
+        return;
+      }
+
+      pendingOfferRef.current = call.offer
+        ? {
+            fromId: call.caller_id,
+            callId: call.call_id,
+            offer: call.offer,
+            callType: call.call_type === 'video' ? 'video' : 'audio',
+          }
+        : null;
+      pendingIceRef.current = call.ice_candidates ?? [];
+      pendingIncomingCallPushRef.current = null;
+      callIdRef.current = call.call_id;
+      setCallPeer(call.caller_id);
+      setCurrentCallType(call.call_type === 'video' ? 'video' : 'audio');
+      setError(null);
+      setCallStatus('incoming');
+      await loadPeerName(call.caller_id, fallbackName ?? call.caller?.name);
+    },
+    [
+      loadPeerName,
+      setCallPeer,
+      setCallStatus,
+      setCurrentCallType,
+      user?.id,
+    ],
+  );
+
+  const hydrateIncomingCall = useCallback(
+    async (callId?: string | null, fallbackName?: string) => {
+      if (!user?.id) {
+        return;
+      }
+
+      const normalizedCallId = callId?.trim();
+      if (normalizedCallId) {
+        if (
+          callIdRef.current === normalizedCallId &&
+          statusRef.current === 'incoming' &&
+          pendingOfferRef.current
+        ) {
+          return;
+        }
+        if (hydratingCallIdsRef.current.has(normalizedCallId)) {
+          return;
+        }
+        hydratingCallIdsRef.current.add(normalizedCallId);
+      } else {
+        if (hydratingActiveRef.current) {
+          return;
+        }
+        hydratingActiveRef.current = true;
+      }
+
+      try {
+        const call = normalizedCallId
+          ? await callsApi.getActiveCall(normalizedCallId)
+          : await callsApi.getActiveCall();
+        if (call) {
+          await showHydratedIncomingCall(call, fallbackName);
+        }
+      } catch (hydrateError) {
+        warnDev('[SocialMobile] Failed to hydrate incoming call', hydrateError);
+      } finally {
+        if (normalizedCallId) {
+          hydratingCallIdsRef.current.delete(normalizedCallId);
+        } else {
+          hydratingActiveRef.current = false;
+        }
+      }
+    },
+    [showHydratedIncomingCall, user?.id],
+  );
+
   const stagePendingIncomingCallPush = useCallback(
     (call: PendingIncomingCallPush) => {
       if (!user?.id || call.callerId === user.id || statusRef.current !== 'idle') {
@@ -492,20 +577,15 @@ export function CallProvider({ children }: { children: ReactNode }) {
       }
 
       pendingIncomingCallPushRef.current = call;
-      if (call.callerId) {
-        setCallPeer(call.callerId);
-      }
-      if (call.callerName) {
-        setPeerName(call.callerName);
-      }
       chatSocket.connect();
+      hydrateIncomingCall(call.callId, call.callerName).catch(() => undefined);
       logDev('[SocialMobile] Pending incoming call push staged', {
         callId: call.callId,
         callerId: call.callerId,
         conversationId: call.conversationId,
       });
     },
-    [setCallPeer, user?.id],
+    [hydrateIncomingCall, user?.id],
   );
 
   const openLocalStream = useCallback(async (nextCallType: CallType) => {
@@ -872,6 +952,12 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const acceptCall = useCallback(async () => {
     const pendingOffer = pendingOfferRef.current;
     if (!pendingOffer) {
+      const callId = callIdRef.current;
+      if (callId) {
+        setError('Восстанавливаем соединение звонка...');
+        chatSocket.connect();
+        hydrateIncomingCall(callId).catch(() => undefined);
+      }
       return;
     }
 
@@ -916,6 +1002,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     createPeerConnection,
     finishCall,
     flushPendingIce,
+    hydrateIncomingCall,
     openLocalStream,
     setCallStatus,
   ]);
@@ -997,9 +1084,25 @@ export function CallProvider({ children }: { children: ReactNode }) {
         }
 
         if (statusRef.current !== 'idle') {
-          if (pendingIncomingCallPushRef.current?.callId === callId) {
+          if (statusRef.current === 'incoming' && callIdRef.current === callId) {
+            const nextCallType = incomingType === 'video' ? 'video' : 'audio';
+            const matchingPushCall =
+              pendingIncomingCallPushRef.current?.callId === callId
+                ? pendingIncomingCallPushRef.current
+                : null;
             pendingIncomingCallPushRef.current = null;
+            pendingOfferRef.current = {
+              fromId,
+              callId,
+              offer,
+              callType: nextCallType,
+            };
+            setCallPeer(fromId);
+            setCurrentCallType(nextCallType);
+            loadPeerName(fromId, matchingPushCall?.callerName).catch(() => undefined);
+            return;
           }
+
           try {
             chatSocket.sendCallReject(fromId, callId);
           } catch {
@@ -1156,6 +1259,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     }
 
     let mounted = true;
+    hydrateIncomingCall().catch(() => undefined);
     consumePendingIncomingCall()
       .then(call => {
         if (mounted && call) {
@@ -1167,7 +1271,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     return () => {
       mounted = false;
     };
-  }, [resumeCount, stagePendingIncomingCallPush, user?.id]);
+  }, [hydrateIncomingCall, resumeCount, stagePendingIncomingCallPush, user?.id]);
 
   useEffect(() => {
     if (!user?.id) {
@@ -1176,6 +1280,18 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
     return subscribePendingIncomingCall(stagePendingIncomingCallPush);
   }, [stagePendingIncomingCallPush, user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      return undefined;
+    }
+
+    return chatSocket.onStatus(connected => {
+      if (connected) {
+        hydrateIncomingCall().catch(() => undefined);
+      }
+    });
+  }, [hydrateIncomingCall, user?.id]);
 
   useEffect(() => {
     if (isForeground || statusRef.current === 'idle') {

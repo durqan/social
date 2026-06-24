@@ -1,9 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 import { useAuth } from "@/app/providers/AuthContext.js";
 import { useWebSocket } from "@/app/providers/WebSocketContext.js";
 
+import { callService, type ActiveCall } from "@/features/call/api/callService.js";
 import { CallChatPanel } from "@/features/call/components/CallChatPanel.js";
 import { CallOverlay } from "@/features/call/components/CallOverlay.js";
 import { userService } from "@/shared/api/userService.js";
@@ -50,8 +51,10 @@ function isCallId(value: unknown): value is string {
 
 export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
     const navigate = useNavigate();
+    const location = useLocation();
     const wsService = useWebSocket();
     const { currentUser } = useAuth();
+    const currentUserId = currentUser?.id;
 
     const [status, statusRef, setCallStatus] = useRefState<CallStatus>('idle');
     const [callType, callTypeRef, setCurrentCallType] = useRefState<CallType>('audio');
@@ -76,6 +79,8 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
     const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
     const callIdRef = useRef<string | null>(null);
     const incomingOfferRef = useRef<RTCSessionDescriptionInit | null>(null);
+    const hydratingCallIdsRef = useRef(new Set<string>());
+    const hydratingActiveRef = useRef(false);
     const pendingIceRef = useRef<RTCIceCandidateInit[]>([]);
     const disconnectTimeoutRef = useRef<number | null>(null);
 
@@ -246,6 +251,79 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
         }
     }, []);
 
+    const showHydratedIncomingCall = useCallback(async (call: ActiveCall) => {
+        if (!currentUserId || call.status !== 'ringing' || call.callee_id !== currentUserId) {
+            return;
+        }
+
+        if (call.caller_id === currentUserId) {
+            return;
+        }
+
+        if (statusRef.current !== 'idle') {
+            return;
+        }
+
+        setError(null);
+        callIdRef.current = call.call_id;
+        incomingOfferRef.current = call.offer ?? null;
+        pendingIceRef.current = call.ice_candidates ?? [];
+        setCallPeer(call.caller_id);
+        setCurrentCallType(call.call_type === 'video' ? 'video' : 'audio');
+        setCallStatus('incoming');
+        await loadPeerName(call.caller_id, call.caller?.name);
+    }, [
+        currentUserId,
+        loadPeerName,
+        setCallPeer,
+        setCallStatus,
+        setCurrentCallType,
+        statusRef,
+    ]);
+
+    const hydrateIncomingCall = useCallback(async (callId?: string | null) => {
+        if (!currentUserId) {
+            return;
+        }
+
+        const normalizedCallId = callId?.trim();
+        if (normalizedCallId) {
+            if (
+                callIdRef.current === normalizedCallId &&
+                statusRef.current === 'incoming' &&
+                incomingOfferRef.current
+            ) {
+                return;
+            }
+            if (hydratingCallIdsRef.current.has(normalizedCallId)) {
+                return;
+            }
+            hydratingCallIdsRef.current.add(normalizedCallId);
+        } else {
+            if (hydratingActiveRef.current) {
+                return;
+            }
+            hydratingActiveRef.current = true;
+        }
+
+        try {
+            const call = normalizedCallId
+                ? await callService.getActiveCall(normalizedCallId)
+                : await callService.getActiveCall();
+            if (call) {
+                await showHydratedIncomingCall(call);
+            }
+        } catch (error) {
+            console.error('Failed to hydrate incoming call:', error);
+        } finally {
+            if (normalizedCallId) {
+                hydratingCallIdsRef.current.delete(normalizedCallId);
+            } else {
+                hydratingActiveRef.current = false;
+            }
+        }
+    }, [currentUserId, showHydratedIncomingCall, statusRef]);
+
     const startCallWithType = useCallback(async (toId: number, name: string | undefined, nextCallType: CallType) => {
         if (!currentUser || statusRef.current !== 'idle') {
             return;
@@ -389,7 +467,14 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
         const nextCallType = callTypeRef.current;
         const callId = callIdRef.current;
 
-        if (!fromId || !offer || !callId) {
+        if (!fromId || !callId) {
+            return;
+        }
+
+        if (!offer) {
+            setError('Восстанавливаем соединение звонка...');
+            void hydrateIncomingCall(callId);
+            wsService.connect();
             return;
         }
 
@@ -421,6 +506,7 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
         createPeerConnection,
         flushPendingIce,
         getLocalStream,
+        hydrateIncomingCall,
         setCallStatus,
         wsService,
     ]);
@@ -463,6 +549,14 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
                     }
 
                     if (statusRef.current !== 'idle') {
+                        if (statusRef.current === 'incoming' && callIdRef.current === callId) {
+                            incomingOfferRef.current = offer;
+                            setCallPeer(fromId);
+                            setCurrentCallType(incomingCallType === 'video' ? 'video' : 'audio');
+                            await loadPeerName(fromId);
+                            return;
+                        }
+
                         wsService.sendCallReject(fromId, callId);
                         return;
                     }
@@ -589,6 +683,84 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
         setCurrentCallType,
         wsService,
     ]);
+
+    useEffect(() => {
+        if (!currentUserId) {
+            return;
+        }
+
+        void hydrateIncomingCall();
+    }, [currentUserId, hydrateIncomingCall]);
+
+    useEffect(() => {
+        if (!currentUserId) {
+            return;
+        }
+
+        const params = new URLSearchParams(location.search);
+        const incomingCall = params.get('incomingCall') === '1' || params.has('incomingCallId');
+        const callId = params.get('callId') || params.get('incomingCallId');
+        if (incomingCall || callId) {
+            void hydrateIncomingCall(callId);
+        }
+    }, [currentUserId, hydrateIncomingCall, location.search]);
+
+    useEffect(() => {
+        if (!currentUserId) {
+            return undefined;
+        }
+
+        const hydrateActiveCall = () => {
+            void hydrateIncomingCall();
+        };
+
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+                hydrateActiveCall();
+            }
+        };
+
+        const handleServiceWorkerMessage = (event: MessageEvent) => {
+            const data = event.data as {
+                type?: string;
+                kind?: string;
+                callId?: string;
+                conversationId?: number;
+                url?: string;
+            } | undefined;
+
+            if (data?.type !== 'notification-click' || data.kind !== 'incoming_call') {
+                return;
+            }
+
+            if (data.url) {
+                try {
+                    const target = new URL(data.url);
+                    if (target.origin === window.location.origin) {
+                        navigate(`${target.pathname}${target.search}${target.hash}`);
+                    }
+                } catch {
+                    // Ignore malformed notification URLs; hydration below is enough.
+                }
+            } else if (data.conversationId) {
+                navigate(`/users/${currentUserId}/chat/${data.conversationId}`);
+            }
+
+            void hydrateIncomingCall(data.callId);
+        };
+
+        window.addEventListener('focus', hydrateActiveCall);
+        window.addEventListener('visibilitychange', handleVisibilityChange);
+        window.addEventListener('websocket:open', hydrateActiveCall);
+        navigator.serviceWorker?.addEventListener?.('message', handleServiceWorkerMessage);
+
+        return () => {
+            window.removeEventListener('focus', hydrateActiveCall);
+            window.removeEventListener('visibilitychange', handleVisibilityChange);
+            window.removeEventListener('websocket:open', hydrateActiveCall);
+            navigator.serviceWorker?.removeEventListener?.('message', handleServiceWorkerMessage);
+        };
+    }, [currentUserId, hydrateIncomingCall, navigate]);
 
     useEffect(() => {
         if (!currentUser && statusRef.current !== 'idle') {

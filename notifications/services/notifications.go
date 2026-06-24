@@ -33,6 +33,7 @@ func (s *Service) CreateNotification(req *dto.CreateNotificationReq) error {
 		EntityID:       req.EntityID,
 		CallID:         req.CallID,
 		ConversationID: req.ConversationID,
+		CallType:       req.CallType,
 		DedupeKey:      DedupeKey(*req),
 	}
 
@@ -267,6 +268,7 @@ func buildPushPayload(notification models.Notification, dataSource pushPayloadDa
 		ActorID:        notification.ActorID,
 		CallID:         notification.CallID,
 		ConversationID: notification.ConversationID,
+		CallType:       notification.CallType,
 	}
 
 	if notification.Type == dto.NotificationTypeMessage {

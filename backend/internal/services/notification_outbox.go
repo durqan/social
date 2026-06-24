@@ -57,6 +57,7 @@ func EnqueueNotificationOutbox(tx *gorm.DB, req dto.CreateNotificationReq) error
 		EntityID:       req.EntityID,
 		CallID:         strings.TrimSpace(req.CallID),
 		ConversationID: req.ConversationID,
+		CallType:       req.CallType,
 		DedupeKey:      dedupeKey,
 		Status:         NotificationOutboxStatusPending,
 		NextAttemptAt:  now,
@@ -191,6 +192,7 @@ func notificationOutboxRequest(item models.NotificationOutbox) dto.CreateNotific
 		EntityID:       item.EntityID,
 		CallID:         item.CallID,
 		ConversationID: item.ConversationID,
+		CallType:       item.CallType,
 	}
 }
 

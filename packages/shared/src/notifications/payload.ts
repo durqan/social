@@ -24,6 +24,7 @@ export type PushNotificationData = {
   messageId?: number;
   conversationId?: number;
   callId?: string;
+  callType?: 'audio' | 'video' | string;
   syncAction?: string;
   url?: string;
 };
@@ -66,6 +67,12 @@ export function normalizeNotificationData(
       : typeof data.callId === 'string'
         ? data.callId
         : undefined;
+  const callType =
+    typeof data.call_type === 'string'
+      ? data.call_type
+      : typeof data.callType === 'string'
+        ? data.callType
+        : undefined;
 
   return {
     type,
@@ -75,6 +82,7 @@ export function normalizeNotificationData(
     messageId: numberFromValue(data.message_id ?? data.messageId),
     conversationId: numberFromValue(data.conversation_id ?? data.conversationId),
     callId,
+    callType,
     syncAction:
       typeof data.sync_action === 'string'
         ? data.sync_action

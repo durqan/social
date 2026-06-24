@@ -11,6 +11,7 @@ type NotificationOutbox struct {
 	EntityID       uint       `json:"entity_id" gorm:"index"`
 	CallID         string     `json:"call_id" gorm:"size:64;index"`
 	ConversationID uint       `json:"conversation_id" gorm:"index"`
+	CallType       string     `json:"call_type" gorm:"size:20"`
 	DedupeKey      string     `json:"-" gorm:"size:128;uniqueIndex"`
 	Status         string     `json:"status" gorm:"size:32;not null;default:pending;index"`
 	Attempts       int        `json:"attempts" gorm:"not null;default:0;index"`
