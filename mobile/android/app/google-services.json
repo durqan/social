@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "216264257941",
+    "project_id": "socialmobile-6e506",
+    "storage_bucket": "socialmobile-6e506.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:216264257941:android:a0459821a955dd8798469c",
+        "android_client_info": {
+          "package_name": "com.socialmobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBE0oghdsOw9I7bSVs2cFbiQBrzX-d4wAk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

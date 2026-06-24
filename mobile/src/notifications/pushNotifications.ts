@@ -217,13 +217,8 @@ export function registerBackgroundMessageHandler() {
     messaging().setBackgroundMessageHandler(async remoteMessage => {
       const notification = notificationFromRemoteMessage(remoteMessage);
       await enqueuePendingPushEvent(notification);
-      await displayForegroundNotification(notification).catch(error => {
-        warnDev('[SocialMobile] background local notification skipped', error);
-      });
-      logDev(
-        '[SocialMobile] Background notification received',
-        notification,
-      );
+
+      logDev('[SocialMobile] Background notification received', notification);
     });
   } catch (error) {
     warnDev('[SocialMobile] FCM background handler disabled', error);
