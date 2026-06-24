@@ -8,7 +8,6 @@ import React, {
 import {
   ActivityIndicator,
   Alert,
-  Clipboard,
   FlatList,
   Image,
   Keyboard,
@@ -24,6 +23,7 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
+import Clipboard from '@react-native-clipboard/clipboard';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type {
   GestureResponderEvent,
@@ -145,11 +145,27 @@ type ChatE2EEState = {
   recipientPublicKey: string;
   localKey: LocalE2EEKeyBundle | null;
 };
-const composerInputMinHeight = 48;
-const composerInputMaxHeight = 136;
-const keyboardInsetUpdateDelayMs = 80;
-const messagePageSize = 50;
-const loadOlderThreshold = 56;
+type SendingState =
+  | 'preparingVideo'
+  | 'compressingVideo'
+  | 'uploading'
+  | 'uploadingVoice'
+  | 'uploadingVideo'
+  | 'uploadingVideoNote'
+  | 'sending'
+  | null;
+
+const COMPOSER_INPUT_MIN_HEIGHT = 48;
+const COMPOSER_INPUT_MAX_HEIGHT = 136;
+const KEYBOARD_INSET_UPDATE_DELAY_MS = 80;
+const MESSAGE_PAGE_SIZE = 50;
+const LOAD_OLDER_THRESHOLD = 56;
+const COPY_NOTICE_TIMEOUT_MS = 1600;
+const REMOTE_TYPING_TIMEOUT_MS = 2200;
+const LOCAL_TYPING_STOP_DELAY_MS = 1400;
+const LONG_PRESS_DELAY_MS = 260;
+const SCROLL_EVENT_THROTTLE_MS = 80;
+const TEMP_MESSAGE_ID_THRESHOLD = 10000000;
 const voiceAudioSet = {
   AudioSourceAndroid: AudioSourceAndroidType.MIC,
   OutputFormatAndroid: OutputFormatAndroidType.WEBM,
@@ -187,18 +203,14 @@ function formatBytes(bytes?: number) {
   return `${safeBytes} Б`;
 }
 
-function estimateComposerInputHeight(value: string) {
-  if (!value) {
-    return composerInputMinHeight;
-  }
+function useLatest<T>(value: T) {
+  const ref = useRef(value);
+  ref.current = value;
+  return ref;
+}
 
-  const hardLines = value.split('\n').length;
-  const softLines = Math.ceil(value.length / 36);
-  const estimatedLines = Math.max(hardLines, softLines);
-  return Math.min(
-    composerInputMaxHeight,
-    Math.max(composerInputMinHeight, 28 + estimatedLines * 22),
-  );
+function isPersistedMessage(message: Message) {
+  return message.id > 0 && message.id < TEMP_MESSAGE_ID_THRESHOLD;
 }
 
 function messageUpdateTime(message: Message) {
@@ -331,9 +343,7 @@ export default function ChatScreen({ route }: Props) {
   const otherUserId = route.params.userId;
   const listRef = useRef<FlatList<Message>>(null);
   const hasLoadedRef = useRef(false);
-  const hasMoreRef = useRef(true);
   const isLoadingOlderRef = useRef(false);
-  const messagesRef = useRef<Message[]>([]);
   const pendingScrollToLatestReasonRef = useRef<ScrollToLatestReason | null>(
     null,
   );
@@ -353,10 +363,6 @@ export default function ChatScreen({ route }: Props) {
   const recordingMaxTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
-  const playingVoiceUrlRef = useRef<string | null>(null);
-  const previewPlayingRef = useRef<boolean>(false);
-  const pendingVoiceRef = useRef<LocalVoiceMessage | null>(null);
-  const pendingVideoRef = useRef<LocalChatVideo | null>(null);
   const previewProgressBarRef = useRef<View>(null);
   const typingStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingActiveRef = useRef(false);
@@ -373,7 +379,7 @@ export default function ChatScreen({ route }: Props) {
   const keyboardVisibleRef = useRef(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
-  const [inputHeight, setInputHeight] = useState(composerInputMinHeight);
+  const [inputHeight, setInputHeight] = useState(COMPOSER_INPUT_MIN_HEIGHT);
   const [pendingImages, setPendingImages] = useState<LocalChatImage[]>([]);
   const [pendingVideo, setPendingVideo] = useState<LocalChatVideo | null>(null);
   const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
@@ -398,16 +404,7 @@ export default function ChatScreen({ route }: Props) {
   const [hasLoaded, setHasLoaded] = useState(false);
   const [maintainScrollPositionEnabled, setMaintainScrollPositionEnabled] =
     useState(false);
-  const [sending, setSending] = useState<
-    | 'preparingVideo'
-    | 'compressingVideo'
-    | 'uploading'
-    | 'uploadingVoice'
-    | 'uploadingVideo'
-    | 'uploadingVideoNote'
-    | 'sending'
-    | null
-  >(null);
+  const [sending, setSending] = useState<SendingState>(null);
   const [uploadProgress, setUploadProgress] = useState<{
     current: number;
     total: number;
@@ -446,22 +443,19 @@ export default function ChatScreen({ route }: Props) {
       e2eeState.localKey,
   );
 
-  const pendingImagesRef = useRef<LocalChatImage[]>([]);
-  const pendingVideoNoteRef = useRef<LocalVideoNoteMessage | null>(null);
+  const messagesRef = useLatest(messages);
+  const hasMoreRef = useLatest(hasMore);
+  const pendingImagesRef = useLatest(pendingImages);
+  const pendingVideoRef = useLatest(pendingVideo);
+  const pendingVideoNoteRef = useLatest(pendingVideoNote);
+  const pendingVoiceRef = useLatest(pendingVoice);
+  const playingVoiceUrlRef = useLatest(playingVoiceUrl);
+  const previewPlayingRef = useLatest(previewPlaying);
+  const sendingRef = useLatest<SendingState>(sending);
+  const editingMessageRef = useLatest(editingMessage);
+  const replyToMessageRef = useLatest(replyToMessage);
+  const recordingBusyRef = useLatest(recordingBusy);
   const composerMediaHoldActiveRef = useRef(false);
-  const sendingRef = useRef<
-    | 'preparingVideo'
-    | 'compressingVideo'
-    | 'uploading'
-    | 'uploadingVoice'
-    | 'uploadingVideo'
-    | 'uploadingVideoNote'
-    | 'sending'
-    | null
-  >(null);
-  const editingMessageRef = useRef<Message | null>(null);
-  const replyToMessageRef = useRef<Message | null>(null);
-  const recordingBusyRef = useRef<boolean>(false);
   const messageActionPendingRef = useRef(false);
   const startVoiceRecordingRef = useRef<() => Promise<void> | void>(
     null as any,
@@ -539,7 +533,7 @@ export default function ChatScreen({ route }: Props) {
       requestAnimationFrame(applyAndroidKeyboardInset);
       keyboardInsetTimerRef.current = setTimeout(
         applyAndroidKeyboardInset,
-        keyboardInsetUpdateDelayMs,
+        KEYBOARD_INSET_UPDATE_DELAY_MS,
       );
     });
     const hideSubscription = Keyboard.addListener('keyboardDidHide', () => {
@@ -567,54 +561,9 @@ export default function ChatScreen({ route }: Props) {
       return undefined;
     }
 
-    const timer = setTimeout(() => setCopyNotice(null), 1600);
+    const timer = setTimeout(() => setCopyNotice(null), COPY_NOTICE_TIMEOUT_MS);
     return () => clearTimeout(timer);
   }, [copyNotice]);
-
-  useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
-
-  useEffect(() => {
-    playingVoiceUrlRef.current = playingVoiceUrl;
-  }, [playingVoiceUrl]);
-
-  useEffect(() => {
-    pendingVoiceRef.current = pendingVoice;
-  }, [pendingVoice]);
-
-  useEffect(() => {
-    pendingVideoNoteRef.current = pendingVideoNote;
-  }, [pendingVideoNote]);
-
-  useEffect(() => {
-    pendingVideoRef.current = pendingVideo;
-  }, [pendingVideo]);
-
-  useEffect(() => {
-    previewPlayingRef.current = previewPlaying;
-  }, [previewPlaying]);
-
-  useEffect(() => {
-    hasMoreRef.current = hasMore;
-  }, [hasMore]);
-
-  useEffect(() => {
-    pendingImagesRef.current = pendingImages;
-  }, [pendingImages]);
-  useEffect(() => {
-    sendingRef.current = sending;
-  }, [sending]);
-  useEffect(() => {
-    editingMessageRef.current = editingMessage;
-  }, [editingMessage]);
-
-  useEffect(() => {
-    replyToMessageRef.current = replyToMessage;
-  }, [replyToMessage]);
-  useEffect(() => {
-    recordingBusyRef.current = recordingBusy;
-  }, [recordingBusy]);
 
   useEffect(() => {
     return () => {
@@ -1010,7 +959,7 @@ export default function ChatScreen({ route }: Props) {
       setError(null);
       try {
         const response = await messageApi.getMessagesWith(otherUserId, {
-          limit: messagePageSize,
+          limit: MESSAGE_PAGE_SIZE,
         });
         const shouldInitialScroll =
           mode === 'initial' &&
@@ -1073,7 +1022,7 @@ export default function ChatScreen({ route }: Props) {
     try {
       const response = await messageApi.getMessagesWith(otherUserId, {
         before: oldestMessage.id,
-        limit: messagePageSize,
+        limit: MESSAGE_PAGE_SIZE,
       });
       hasMoreRef.current = response.has_more;
       setHasMore(response.has_more);
@@ -1107,7 +1056,7 @@ export default function ChatScreen({ route }: Props) {
         contentSize.height - (contentOffset.y + layoutMeasurement.height);
       isUserNearBottomRef.current = distanceFromBottom <= 96;
 
-      if (contentOffset.y > loadOlderThreshold) {
+      if (contentOffset.y > LOAD_OLDER_THRESHOLD) {
         return;
       }
 
@@ -1207,7 +1156,7 @@ export default function ChatScreen({ route }: Props) {
     }
 
     setInput(draftRef.current.input);
-    setInputHeight(estimateComposerInputHeight(draftRef.current.input));
+    setInputHeight(COMPOSER_INPUT_MIN_HEIGHT);
     setPendingImages(draftRef.current.pendingImages);
     setPendingVideo(draftRef.current.pendingVideo);
     draftRef.current = null;
@@ -1354,7 +1303,7 @@ export default function ChatScreen({ route }: Props) {
           otherTypingTimerRef.current = setTimeout(() => {
             setOtherTyping(false);
             otherTypingTimerRef.current = null;
-          }, 2200);
+          }, REMOTE_TYPING_TIMEOUT_MS);
           return;
         }
 
@@ -1826,7 +1775,7 @@ export default function ChatScreen({ route }: Props) {
       }
       if (comment) {
         setInput('');
-        setInputHeight(composerInputMinHeight);
+        setInputHeight(COMPOSER_INPUT_MIN_HEIGHT);
         stopLocalTyping();
       }
       setReplyToMessage(null);
@@ -2040,7 +1989,7 @@ export default function ChatScreen({ route }: Props) {
 
       if (comment) {
         setInput('');
-        setInputHeight(composerInputMinHeight);
+        setInputHeight(COMPOSER_INPUT_MIN_HEIGHT);
         stopLocalTyping();
       }
       setReplyToMessage(null);
@@ -2163,7 +2112,7 @@ export default function ChatScreen({ route }: Props) {
             ),
           );
           setInput('');
-          setInputHeight(composerInputMinHeight);
+          setInputHeight(COMPOSER_INPUT_MIN_HEIGHT);
           setEditingMessage(null);
           stopLocalTyping();
           signalChatDataChanged();
@@ -2184,7 +2133,7 @@ export default function ChatScreen({ route }: Props) {
           ),
         );
         setInput('');
-        setInputHeight(composerInputMinHeight);
+        setInputHeight(COMPOSER_INPUT_MIN_HEIGHT);
         setEditingMessage(null);
         stopLocalTyping();
         signalChatDataChanged();
@@ -2302,7 +2251,7 @@ export default function ChatScreen({ route }: Props) {
       }
 
       setInput('');
-      setInputHeight(composerInputMinHeight);
+      setInputHeight(COMPOSER_INPUT_MIN_HEIGHT);
       setPendingImages([]);
       setPendingVideo(null);
       setReplyToMessage(null);
@@ -2395,7 +2344,7 @@ export default function ChatScreen({ route }: Props) {
     setInput(nextValue);
 
     if (!nextValue) {
-      setInputHeight(composerInputMinHeight);
+      setInputHeight(COMPOSER_INPUT_MIN_HEIGHT);
     }
 
     if (editingMessageRef.current || !isFocused) {
@@ -2420,13 +2369,13 @@ export default function ChatScreen({ route }: Props) {
       chatSocket.sendTypingStop(otherUserId);
       typingActiveRef.current = false;
       typingStopTimerRef.current = null;
-    }, 1400);
+    }, LOCAL_TYPING_STOP_DELAY_MS);
   }
 
   function handleComposerContentSizeChange(contentHeight: number) {
     const nextHeight = Math.min(
-      composerInputMaxHeight,
-      Math.max(composerInputMinHeight, Math.ceil(contentHeight) + 16),
+      COMPOSER_INPUT_MAX_HEIGHT,
+      Math.max(COMPOSER_INPUT_MIN_HEIGHT, Math.ceil(contentHeight) + 16),
     );
     setInputHeight(nextHeight);
   }
@@ -2581,7 +2530,7 @@ export default function ChatScreen({ route }: Props) {
     setSelectedMessage(null);
 
     try {
-      if (message.id > 0 && message.id < 10000000) {
+      if (isPersistedMessage(message)) {
         await messageApi.deleteMessage(message.id, mode);
       }
       setMessages(previous => previous.filter(item => item.id !== message.id));
@@ -2604,14 +2553,14 @@ export default function ChatScreen({ route }: Props) {
     stopLocalTyping();
     setEditingMessage(message);
     setInput(message.content);
-    setInputHeight(estimateComposerInputHeight(message.content));
+    setInputHeight(COMPOSER_INPUT_MIN_HEIGHT);
     setError(null);
   }
 
   function cancelEditingMessage() {
     setEditingMessage(null);
     setInput('');
-    setInputHeight(composerInputMinHeight);
+    setInputHeight(COMPOSER_INPUT_MIN_HEIGHT);
     setError(null);
     stopLocalTyping();
   }
@@ -2874,7 +2823,7 @@ export default function ChatScreen({ route }: Props) {
               : undefined
           }
           onScroll={handleMessagesScroll}
-          scrollEventThrottle={80}
+          scrollEventThrottle={SCROLL_EVENT_THROTTLE_MS}
           renderItem={({ item }) => (
             <MessageBubble
               message={item}
@@ -3248,7 +3197,7 @@ export default function ChatScreen({ route }: Props) {
               placeholder="Сообщение…"
               placeholderTextColor={themeColors.soft}
               multiline
-              scrollEnabled={inputHeight >= composerInputMaxHeight}
+              scrollEnabled={inputHeight >= COMPOSER_INPUT_MAX_HEIGHT}
               maxLength={1000}
               editable={!sending && !recording && !recordingBusy}
               textAlignVertical="top"
@@ -3302,7 +3251,7 @@ export default function ChatScreen({ route }: Props) {
               icon={composerMediaIcon}
               disabled={composerMediaDisabled}
               loading={recordingBusy}
-              delayLongPress={260}
+              delayLongPress={LONG_PRESS_DELAY_MS}
               onPress={toggleComposerMediaMode}
               onLongPress={() => {
                 startComposerMediaRecording().catch(() => undefined);
@@ -4123,7 +4072,7 @@ function MessageActionSheet({
   const trimmedText = message?.content.trim() ?? '';
   const messageUrl = message ? firstUrl(message.content) : '';
   const messageIsReal = Boolean(
-    message && message.id > 0 && message.id < 10000000,
+    message && isPersistedMessage(message),
   );
 
   return (
