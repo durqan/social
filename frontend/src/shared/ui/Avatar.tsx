@@ -39,6 +39,7 @@ export const Avatar = ({
         <img
             src={src}
             alt={name || 'Avatar'}
+            loading="lazy"
             className="block h-full w-full object-cover"
             style={{
                 objectPosition: `${positionX}% ${positionY}%`,

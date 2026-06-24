@@ -14,7 +14,9 @@ type QueuedEvent = OutgoingEvent & {
     queuedAt: number;
 };
 
-const reconnectDelayMs = 3000;
+const reconnectBaseDelayMs = 1000;
+const reconnectMaxDelayMs = 30000;
+
 const callEventQueueTtlMs = 30000;
 const callEventTypes: ReadonlySet<string> = new Set([
     WS_EVENTS.CALL_OFFER,
@@ -60,6 +62,7 @@ export class WebSocketService {
     private opening = false;
     private activeConversationId: number | null = null;
     private hasConnected = false;
+    private reconnectAttempts = 0;
 
     connect() {
         this.shouldReconnect = true;
@@ -95,6 +98,7 @@ export class WebSocketService {
         this.ws.onopen = () => {
             const reconnected = this.hasConnected;
             this.hasConnected = true;
+            this.reconnectAttempts = 0;
             this.opening = false;
             this.shouldReconnect = true;
             this.syncActiveConversation();
@@ -220,6 +224,7 @@ export class WebSocketService {
         this.clearReconnectTimer();
         this.pendingEvents = [];
         this.hasConnected = false;
+        this.reconnectAttempts = 0;
         this.ws?.close();
         this.ws = null;
     }
@@ -288,13 +293,20 @@ export class WebSocketService {
             return;
         }
 
+        const exp = Math.min(
+            reconnectBaseDelayMs * Math.pow(2, this.reconnectAttempts),
+            reconnectMaxDelayMs,
+        );
+        const jitter = Math.random() * 1000 - 500; // ±500ms
+        const delay = Math.max(reconnectBaseDelayMs, exp + jitter);
+        this.reconnectAttempts++;
+
         this.reconnectTimer = window.setTimeout(() => {
             this.reconnectTimer = null;
-
             if (this.shouldReconnect) {
                 this.connect();
             }
-        }, reconnectDelayMs);
+        }, delay);
     }
 
     private clearReconnectTimer() {
