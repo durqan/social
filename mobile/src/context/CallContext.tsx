@@ -1488,7 +1488,7 @@ function CallOverlay({
                 <Text style={styles.peerInitial}>{initial}</Text>
               </View>
               {status === 'connecting' ? (
-                <ActivityIndicator color="#ffffff" size="large" />
+                <ActivityIndicator color="#2563eb" size="large" />
               ) : null}
             </View>
           )}
@@ -1586,6 +1586,8 @@ function CallButton({
   large?: boolean;
   onPress: () => void;
 }) {
+  const iconColor = danger || accept ? '#ffffff' : '#0f172a';
+
   return (
     <View style={styles.callButtonWrap}>
       <Pressable
@@ -1601,7 +1603,7 @@ function CallButton({
         ]}
         onPress={onPress}
       >
-        <Icon color="#ffffff" size={large ? 30 : 23} strokeWidth={2.5} />
+        <Icon color={iconColor} size={large ? 30 : 23} strokeWidth={2.5} />
       </Pressable>
       <Text style={styles.callButtonText}>{label}</Text>
     </View>
@@ -1619,7 +1621,7 @@ export function useCall() {
 const styles = StyleSheet.create({
   callRoot: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: '#f8fbff',
     overflow: 'hidden',
   },
   callGlowTop: {
@@ -1629,7 +1631,7 @@ const styles = StyleSheet.create({
     width: 280,
     height: 280,
     borderRadius: 140,
-    backgroundColor: 'rgba(37, 99, 235, 0.36)',
+    backgroundColor: 'rgba(37, 99, 235, 0.09)',
   },
   callGlowBottom: {
     position: 'absolute',
@@ -1638,7 +1640,7 @@ const styles = StyleSheet.create({
     width: 320,
     height: 320,
     borderRadius: 160,
-    backgroundColor: 'rgba(14, 165, 233, 0.22)',
+    backgroundColor: 'rgba(14, 165, 233, 0.08)',
   },
   remoteStage: {
     flex: 1,
@@ -1660,7 +1662,7 @@ const styles = StyleSheet.create({
     width: 190,
     height: 190,
     borderRadius: 95,
-    backgroundColor: 'rgba(96, 165, 250, 0.16)',
+    backgroundColor: 'rgba(37, 99, 235, 0.08)',
   },
   peerAvatar: {
     width: 132,
@@ -1668,9 +1670,9 @@ const styles = StyleSheet.create({
     borderRadius: 66,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#2563eb',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.28)',
+    backgroundColor: '#38bdf8',
+    borderWidth: 10,
+    borderColor: '#e0f2fe',
     shadowColor: '#2563eb',
     shadowOpacity: 0.34,
     shadowRadius: 26,
@@ -1693,14 +1695,14 @@ const styles = StyleSheet.create({
     gap: 7,
   },
   callName: {
-    color: '#ffffff',
+    color: '#0f172a',
     fontSize: 30,
     lineHeight: 36,
     fontWeight: '900',
     textAlign: 'center',
   },
   callStatus: {
-    color: 'rgba(226, 232, 240, 0.82)',
+    color: '#64748b',
     fontSize: 17,
     lineHeight: 23,
     fontWeight: '600',
@@ -1714,10 +1716,10 @@ const styles = StyleSheet.create({
     height: 168,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.32)',
+    borderColor: '#ffffff',
     borderRadius: 22,
-    backgroundColor: '#020617',
-    shadowColor: '#000000',
+    backgroundColor: '#e2e8f0',
+    shadowColor: '#64748b',
     shadowOpacity: 0.26,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 10 },
@@ -1731,9 +1733,17 @@ const styles = StyleSheet.create({
     gap: 22,
     paddingHorizontal: 22,
     paddingTop: 18,
-    backgroundColor: 'rgba(15, 23, 42, 0.96)',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(255,255,255,0.12)',
+    marginHorizontal: 20,
+    marginBottom: 18,
+    borderRadius: 30,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(15,23,42,0.08)',
+    shadowColor: '#94a3b8',
+    shadowOpacity: 0.22,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 10,
   },
   incomingControlsRow: {
     width: '100%',
@@ -1757,9 +1767,9 @@ const styles = StyleSheet.create({
     borderRadius: 29,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.16)',
+    backgroundColor: '#ffffff',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.18)',
+    borderColor: 'rgba(15,23,42,0.08)',
   },
   callButtonLarge: {
     width: 72,
@@ -1775,15 +1785,15 @@ const styles = StyleSheet.create({
     borderColor: '#22c55e',
   },
   callButtonMuted: {
-    backgroundColor: 'rgba(148, 163, 184, 0.22)',
-    borderColor: 'rgba(148, 163, 184, 0.28)',
+    backgroundColor: '#e2e8f0',
+    borderColor: '#cbd5e1',
   },
   callButtonPressed: {
     opacity: 0.78,
     transform: [{ scale: 0.96 }],
   },
   callButtonText: {
-    color: 'rgba(248, 250, 252, 0.9)',
+    color: '#334155',
     fontSize: 12,
     lineHeight: 16,
     fontWeight: '800',

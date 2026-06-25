@@ -1,6 +1,6 @@
 import { themes } from './themes';
 
-export const colors = themes['aurora-glass'];
+export const colors = themes['classic-light'];
 
 export const spacing = {
   xs: 4,

@@ -8,7 +8,6 @@ import React, {
   type ReactNode,
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Appearance } from 'react-native';
 
 import {
   defaultThemeId,
@@ -29,7 +28,7 @@ type ThemeContextValue = {
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
 function initialThemeId(): ThemeId {
-  return Appearance.getColorScheme() === 'dark' ? 'classic-dark' : defaultThemeId;
+  return defaultThemeId;
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
@@ -45,7 +44,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         }
 
         if (isThemeId(storedThemeId)) {
-          setThemeId(storedThemeId);
+          setThemeId(themes[storedThemeId].isDark ? defaultThemeId : storedThemeId);
         } else if (storedThemeId) {
           AsyncStorage.removeItem(themeStorageKey).catch(() => undefined);
         }

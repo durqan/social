@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Bell, ChevronRight, KeyRound, LogOut, Palette } from 'lucide-react-native';
+import { Bell, ChevronRight, KeyRound, Lock, LogOut, MonitorSmartphone, Palette, ShieldCheck } from 'lucide-react-native';
 
 import { getApiErrorMessage } from '../../api/http';
 import { userApi } from '../../api/users';
@@ -16,10 +16,12 @@ import {
   type MobilePushPermissionStatus,
 } from '../../notifications/pushNotifications';
 import { useTheme, useThemeColors } from '../../theme/ThemeContext';
-import { themeOrder, themes, type ThemeColors } from '../../theme/themes';
-import { radius, spacing, typography } from '../../theme/layout';
+import { themeOrder, themes, type ThemeColors, type ThemeId } from '../../theme/themes';
+import { elevation, radius, spacing, typography } from '../../theme/layout';
 
 type SecurityBusyAction = 'password';
+
+type SettingsIcon = React.ComponentType<{ color?: string; size?: number; strokeWidth?: number }>;
 
 export default function SettingsScreen() {
   const { logout, user } = useAuth();
@@ -30,13 +32,10 @@ export default function SettingsScreen() {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [securityBusy, setSecurityBusy] = useState<SecurityBusyAction | null>(
-    null,
-  );
+  const [securityBusy, setSecurityBusy] = useState<SecurityBusyAction | null>(null);
   const [securityError, setSecurityError] = useState<string | null>(null);
   const [securitySuccess, setSecuritySuccess] = useState<string | null>(null);
-  const [pushPermissionStatus, setPushPermissionStatus] =
-    useState<MobilePushPermissionStatus>('unsupported');
+  const [pushPermissionStatus, setPushPermissionStatus] = useState<MobilePushPermissionStatus>('unsupported');
   const [pushPermissionBusy, setPushPermissionBusy] = useState(false);
 
   async function refreshPushPermissionStatus() {
@@ -54,9 +53,7 @@ export default function SettingsScreen() {
   }
 
   async function handleChangePassword() {
-    if (!user?.id) {
-      return;
-    }
+    if (!user?.id) return;
     if (!currentPassword || !newPassword || !confirmPassword) {
       setSecurityError('Заполните все поля смены пароля.');
       return;
@@ -74,16 +71,13 @@ export default function SettingsScreen() {
     setSecurityError(null);
     setSecuritySuccess(null);
     try {
-      await userApi.changePassword(user.id, {
-        current_password: currentPassword,
-        new_password: newPassword,
-      });
+      await userApi.changePassword(user.id, { current_password: currentPassword, new_password: newPassword });
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
       setSecuritySuccess('Пароль изменен.');
     } catch (apiError) {
-      setSecurityError(securityErrorMessage(apiError));
+      setSecurityError(getApiErrorMessage(apiError));
     } finally {
       setSecurityBusy(null);
     }
@@ -103,183 +97,116 @@ export default function SettingsScreen() {
     }
   }
 
-  const securityBusyNow = Boolean(securityBusy);
-
   return (
-    <Screen>
+    <Screen contentContainerStyle={styles.screenContent}>
       <View style={styles.accountCard}>
         <View style={styles.accountAvatar}>
-          <Text style={styles.accountAvatarText}>
-            {(user?.name || user?.email || '?').slice(0, 1).toUpperCase()}
-          </Text>
+          <Text style={styles.accountAvatarText}>{(user?.name || user?.email || '?').slice(0, 1).toUpperCase()}</Text>
         </View>
         <View style={styles.accountInfo}>
-          <Text style={styles.title}>Аккаунт</Text>
-          <Text style={styles.text} numberOfLines={2}>
-            {user?.name || user?.email || 'Ваш профиль'} активен на этом устройстве.
-          </Text>
+          <Text style={styles.accountTitle}>Аккаунт</Text>
+          <Text style={styles.accountText} numberOfLines={2}>{user?.name || user?.email || 'Вы'} сейчас активен на этом устройстве.</Text>
         </View>
-        <AppButton
-          title="Выйти"
-          variant="danger"
-          icon={LogOut}
-          loading={loggingOut}
-          onPress={handleLogout}
-          style={styles.logoutButton}
-        />
       </View>
+
+      <Pressable accessibilityRole="button" style={styles.logoutFullButton} disabled={loggingOut} onPress={handleLogout}>
+        <LogOut color={colors.danger} size={20} strokeWidth={2.5} />
+        <Text style={styles.logoutFullText}>{loggingOut ? 'Выходим...' : 'Выйти из аккаунта'}</Text>
+      </Pressable>
 
       <View style={styles.card}>
         <View style={styles.cardHeader}>
-          <View style={styles.headerIcon}>
-            <KeyRound color={colors.accent} size={18} strokeWidth={2.5} />
+          <View style={styles.headerIcon}><ShieldCheck color={colors.accent} size={20} strokeWidth={2.5} /></View>
+          <View style={styles.headerTextBlock}>
+            <Text style={styles.title}>Безопасность</Text>
+            <Text style={styles.text}>Пароль, сессии и защита аккаунта</Text>
           </View>
-          <Text style={styles.title}>Безопасность</Text>
         </View>
+
+        <SettingsRow icon={Lock} title="Смена пароля" subtitle="Обновите пароль для защиты аккаунта" />
+
         <ErrorBanner message={securityError} />
         <SuccessBanner message={securitySuccess} />
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Смена пароля</Text>
-          <TextField
-            label="Текущий пароль"
-            value={currentPassword}
-            secureTextEntry
-            textContentType="password"
-            autoComplete="password"
-            onChangeText={setCurrentPassword}
-          />
-          <TextField
-            label="Новый пароль"
-            value={newPassword}
-            secureTextEntry
-            textContentType="newPassword"
-            autoComplete="password-new"
-            onChangeText={setNewPassword}
-          />
-          <TextField
-            label="Повторите новый пароль"
-            value={confirmPassword}
-            secureTextEntry
-            textContentType="newPassword"
-            autoComplete="password-new"
-            onChangeText={setConfirmPassword}
-          />
-          <AppButton
-            title="Сменить пароль"
-            icon={KeyRound}
-            loading={securityBusy === 'password'}
-            disabled={securityBusyNow}
-            onPress={handleChangePassword}
-          />
+        <View style={styles.passwordBox}>
+          <TextField label="Текущий пароль" value={currentPassword} secureTextEntry textContentType="password" autoComplete="password" onChangeText={setCurrentPassword} />
+          <TextField label="Новый пароль" value={newPassword} secureTextEntry textContentType="newPassword" autoComplete="password-new" onChangeText={setNewPassword} />
+          <TextField label="Повторите новый пароль" value={confirmPassword} secureTextEntry textContentType="newPassword" autoComplete="password-new" onChangeText={setConfirmPassword} />
+          <AppButton title="Сменить пароль" icon={KeyRound} loading={securityBusy === 'password'} disabled={Boolean(securityBusy)} onPress={handleChangePassword} style={styles.primaryButton} />
         </View>
+
+        <SettingsRow icon={MonitorSmartphone} title="Активные сессии" subtitle="Текущее устройство активно" rightText="1" />
       </View>
 
       {pushPermissionStatus !== 'unsupported' ? (
         <View style={styles.card}>
           <View style={styles.cardHeader}>
-            <View style={styles.headerIcon}>
-              <Bell color={colors.accent} size={18} strokeWidth={2.5} />
+            <View style={styles.headerIcon}><Bell color={colors.accent} size={20} strokeWidth={2.5} /></View>
+            <View style={styles.headerTextBlock}>
+              <Text style={styles.title}>Уведомления</Text>
+              <Text style={styles.text}>{pushPermissionStatus === 'granted' ? 'Push-уведомления включены' : 'Push-уведомления отключены'}</Text>
             </View>
-            <Text style={styles.title}>Уведомления</Text>
           </View>
-          <Text style={styles.text}>
-            {pushPermissionStatus === 'granted'
-              ? 'Push-уведомления включены.'
-              : 'Push-уведомления отключены для этого устройства.'}
-          </Text>
           {pushPermissionStatus !== 'granted' ? (
-            <AppButton
-              title={
-                pushPermissionStatus === 'prompt_available'
-                  ? 'Разрешить уведомления'
-                  : 'Открыть настройки'
-              }
-              icon={Bell}
-              loading={pushPermissionBusy}
-              onPress={handlePushPermissionAction}
-            />
+            <AppButton title={pushPermissionStatus === 'prompt_available' ? 'Разрешить уведомления' : 'Открыть настройки'} icon={Bell} loading={pushPermissionBusy} onPress={handlePushPermissionAction} style={styles.primaryButton} />
           ) : null}
         </View>
       ) : null}
 
       <View style={styles.card}>
         <View style={styles.cardHeader}>
-          <View style={styles.headerIcon}>
-            <Palette color={colors.accent} size={18} strokeWidth={2.5} />
+          <View style={styles.headerIcon}><Palette color={colors.accent} size={20} strokeWidth={2.5} /></View>
+          <View style={styles.headerTextBlock}>
+            <Text style={styles.title}>Тема оформления</Text>
+            <Text style={styles.text}>По умолчанию — светлый чистый интерфейс</Text>
           </View>
-          <Text style={styles.title}>Тема оформления</Text>
         </View>
-        <Text style={styles.text}>
-          Палитра применяется сразу и адаптирована под мобильный интерфейс.
-        </Text>
         <View style={styles.themeGrid}>
-          {themeOrder.map(nextThemeId => {
-            const theme = themes[nextThemeId];
-            const selected = themeId === nextThemeId;
-
-            return (
-              <Pressable
-                key={theme.id}
-                accessibilityRole="button"
-                accessibilityState={{ selected }}
-                style={({ pressed }) => [
-                  styles.themeOption,
-                  selected && styles.themeOptionSelected,
-                  pressed && styles.themeOptionPressed,
-                ]}
-                onPress={() => setThemeId(theme.id)}
-              >
-                <View style={styles.themePreview}>
-                  <View
-                    style={[
-                      styles.themePreviewBand,
-                      { backgroundColor: theme.profileCover },
-                    ]}
-                  />
-                  <View style={styles.themePreviewBody}>
-                    <View
-                      style={[
-                        styles.themePreviewDot,
-                        { backgroundColor: theme.accent },
-                      ]}
-                    />
-                    <View
-                      style={[
-                        styles.themePreviewLine,
-                        { backgroundColor: theme.text },
-                      ]}
-                    />
-                  </View>
-                </View>
-                <View style={styles.themeMeta}>
-                  <Text style={styles.themeName} numberOfLines={1}>
-                    {theme.name}
-                  </Text>
-                  <Text style={styles.themeDescription} numberOfLines={2}>
-                    {theme.description}
-                  </Text>
-                </View>
-                {selected ? (
-                  <View style={[styles.themeMark, styles.themeMarkSelected]} />
-                ) : (
-                  <ChevronRight color={colors.soft} size={18} strokeWidth={2.3} />
-                )}
-              </Pressable>
-            );
-          })}
+          {themeOrder.map(nextThemeId => (
+            <ThemeOption key={nextThemeId} themeId={nextThemeId} selected={themeId === nextThemeId} onPress={() => setThemeId(nextThemeId)} />
+          ))}
         </View>
       </View>
     </Screen>
   );
 }
 
-function securityErrorMessage(error: unknown) {
-  return getApiErrorMessage(error);
+function SettingsRow({ icon: Icon, title, subtitle, rightText }: { icon: SettingsIcon; title: string; subtitle: string; rightText?: string }) {
+  const colors = useThemeColors();
+  const styles = createStyles(colors);
+  return (
+    <View style={styles.rowItem}>
+      <View style={styles.rowIcon}><Icon color={colors.accent} size={18} strokeWidth={2.4} /></View>
+      <View style={styles.rowText}>
+        <Text style={styles.rowTitle}>{title}</Text>
+        <Text style={styles.rowSubtitle}>{subtitle}</Text>
+      </View>
+      {rightText ? <Text style={styles.rowRightText}>{rightText}</Text> : <ChevronRight color={colors.soft} size={20} strokeWidth={2.4} />}
+    </View>
+  );
+}
+
+function ThemeOption({ themeId, selected, onPress }: { themeId: ThemeId; selected: boolean; onPress: () => void }) {
+  const colors = useThemeColors();
+  const styles = createStyles(colors);
+  const theme = themes[themeId];
+  return (
+    <Pressable accessibilityRole="button" accessibilityState={{ selected }} style={({ pressed }) => [styles.themeOption, selected && styles.themeOptionSelected, pressed && styles.themeOptionPressed]} onPress={onPress}>
+      <View style={[styles.themeSwatch, { backgroundColor: theme.background }]}>
+        <View style={[styles.themeSwatchAccent, { backgroundColor: theme.accent }]} />
+      </View>
+      <View style={styles.themeMeta}>
+        <Text style={styles.themeName} numberOfLines={1}>{theme.name}</Text>
+        <Text style={styles.themeDescription} numberOfLines={1}>{theme.isDark ? 'Темная тема' : 'Светлая тема'}</Text>
+      </View>
+      <View style={[styles.themeCheck, selected && styles.themeCheckSelected]} />
+    </Pressable>
+  );
 }
 
 const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
+    screenContent: { gap: 14 },
     accountCard: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -287,145 +214,41 @@ const createStyles = (colors: ThemeColors) =>
       borderColor: colors.border,
       borderRadius: 24,
       backgroundColor: colors.card,
-      padding: spacing.md,
-      gap: spacing.md,
-    },
-    accountAvatar: {
-      width: 52,
-      height: 52,
-      borderRadius: 26,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: colors.accentSoft,
-    },
-    accountAvatarText: {
-      color: colors.accentStrong,
-      fontSize: 22,
-      fontWeight: '900',
-    },
-    accountInfo: {
-      flex: 1,
-      minWidth: 0,
-    },
-    logoutButton: {
-      minHeight: 40,
-      paddingHorizontal: spacing.md,
-      borderRadius: radius.pill,
-    },
-    card: {
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 22,
-      backgroundColor: colors.card,
       padding: spacing.lg,
       gap: spacing.md,
+      shadowColor: colors.shadow,
+      ...(colors.isDark ? elevation.none : elevation.card),
     },
-    cardHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.sm,
-    },
-    headerIcon: {
-      width: 34,
-      height: 34,
-      borderRadius: 17,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: colors.selected,
-    },
-    title: {
-      ...typography.h3,
-      color: colors.text,
-    },
-    text: {
-      fontSize: 14,
-      lineHeight: 20,
-      color: colors.muted,
-    },
-    section: {
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: colors.border,
-      paddingTop: spacing.md,
-      gap: spacing.sm,
-    },
-    sectionTitle: {
-      ...typography.body,
-      color: colors.text,
-      fontWeight: '800',
-    },
-    actions: {
-      gap: spacing.sm,
-    },
-    themeGrid: {
-      gap: spacing.sm,
-    },
-    themeOption: {
-      minHeight: 76,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.md,
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 18,
-      backgroundColor: colors.cardMuted,
-      padding: spacing.md,
-    },
-    themeOptionSelected: {
-      borderColor: colors.accent,
-      backgroundColor: colors.selected,
-    },
-    themeOptionPressed: {
-      backgroundColor: colors.pressed,
-    },
-    themePreview: {
-      width: 58,
-      height: 58,
-      overflow: 'hidden',
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: radius.md,
-      backgroundColor: colors.surface,
-    },
-    themePreviewBand: {
-      height: 20,
-    },
-    themePreviewBody: {
-      flex: 1,
-      justifyContent: 'center',
-      gap: 6,
-      paddingHorizontal: 8,
-    },
-    themePreviewDot: {
-      width: 12,
-      height: 12,
-      borderRadius: 6,
-    },
-    themePreviewLine: {
-      width: 34,
-      height: 5,
-      borderRadius: 999,
-      opacity: 0.76,
-    },
-    themeMeta: {
-      flex: 1,
-      gap: 3,
-    },
-    themeName: {
-      ...typography.body,
-      color: colors.text,
-      fontWeight: '800',
-    },
-    themeDescription: {
-      ...typography.tiny,
-      color: colors.muted,
-    },
-    themeMark: {
-      width: 12,
-      height: 12,
-      borderRadius: 6,
-      backgroundColor: colors.border,
-    },
-    themeMarkSelected: {
-      backgroundColor: colors.accent,
-    },
+    accountAvatar: { width: 54, height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentSoft },
+    accountAvatarText: { color: colors.accent, fontSize: 23, fontWeight: '900' },
+    accountInfo: { flex: 1, minWidth: 0 },
+    accountTitle: { ...typography.h3, color: colors.text },
+    accountText: { marginTop: 3, ...typography.caption, color: colors.muted },
+    logoutFullButton: { minHeight: 58, borderRadius: 22, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 10, backgroundColor: colors.dangerSoft, borderWidth: 1, borderColor: 'rgba(239,68,68,0.16)' },
+    logoutFullText: { color: colors.danger, fontSize: 16, fontWeight: '900' },
+    card: { borderWidth: 1, borderColor: colors.border, borderRadius: 24, backgroundColor: colors.card, padding: spacing.lg, gap: spacing.md, shadowColor: colors.shadow, shadowOpacity: colors.isDark ? 0 : 0.08, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: colors.isDark ? 0 : 1 },
+    cardHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+    headerIcon: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentSoft },
+    headerTextBlock: { flex: 1, minWidth: 0 },
+    title: { ...typography.h3, color: colors.text },
+    text: { marginTop: 2, fontSize: 13, lineHeight: 18, color: colors.muted },
+    rowItem: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: 58, borderRadius: 18, padding: spacing.md, backgroundColor: colors.cardMuted, borderWidth: 1, borderColor: colors.border },
+    rowIcon: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface },
+    rowText: { flex: 1, minWidth: 0 },
+    rowTitle: { color: colors.text, fontSize: 14, lineHeight: 18, fontWeight: '900' },
+    rowSubtitle: { marginTop: 2, color: colors.muted, fontSize: 12, lineHeight: 16 },
+    rowRightText: { color: colors.accent, fontSize: 14, fontWeight: '900' },
+    passwordBox: { gap: spacing.sm, borderWidth: 1, borderColor: colors.border, borderRadius: 20, padding: spacing.md, backgroundColor: colors.surface },
+    primaryButton: { borderRadius: 18 },
+    themeGrid: { gap: spacing.sm },
+    themeOption: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: spacing.md, borderWidth: 1, borderColor: colors.border, borderRadius: 18, backgroundColor: colors.cardMuted, padding: spacing.md },
+    themeOptionSelected: { borderColor: colors.accentBorder, backgroundColor: colors.selected },
+    themeOptionPressed: { opacity: 0.78 },
+    themeSwatch: { width: 42, height: 42, borderRadius: 15, borderWidth: 1, borderColor: colors.border, overflow: 'hidden', justifyContent: 'flex-end' },
+    themeSwatchAccent: { height: 12 },
+    themeMeta: { flex: 1, minWidth: 0 },
+    themeName: { color: colors.text, fontSize: 14, lineHeight: 18, fontWeight: '900' },
+    themeDescription: { marginTop: 2, color: colors.muted, fontSize: 12, lineHeight: 16 },
+    themeCheck: { width: 14, height: 14, borderRadius: 7, backgroundColor: colors.border },
+    themeCheckSelected: { backgroundColor: colors.accent },
   });

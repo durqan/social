@@ -56,13 +56,13 @@ export type ThemeColors = {
 };
 
 export const themeOrder: ThemeId[] = [
-  'classic-dark',
   'classic-light',
   'aurora-glass',
-  'midnight-orchid',
   'sakura-dream',
-  'neo-tokyo',
   'green-farm',
+  'classic-dark',
+  'midnight-orchid',
+  'neo-tokyo',
   'ember-wasteland',
   'amoled-void',
 ];
@@ -458,7 +458,7 @@ export const themes: Record<ThemeId, ThemeColors> = {
   },
 };
 
-export const defaultThemeId: ThemeId = 'classic-dark';
+export const defaultThemeId: ThemeId = 'classic-light';
 
 export function isThemeId(value: string | null | undefined): value is ThemeId {
   return Boolean(value && Object.prototype.hasOwnProperty.call(themes, value));
