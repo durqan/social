@@ -182,13 +182,15 @@ func (s *Service) SendMobile(token models.MobilePushToken, payload Payload) erro
 			"sync_action":     payload.SyncAction,
 			"call_id":         payload.CallID,
 			"call_type":       payload.CallType,
-			"ts":              "", // best effort; web deep link carries authoritative ts in the URL query
+			"title":           payload.Title,
+			"body":            payload.Body,
+			"ts":              fmt.Sprintf("%d", time.Now().UnixMilli()),
 		},
 		Android: fcmAndroidConfig{
 			Priority: "HIGH",
 		},
 	}
-	if !payload.Silent {
+	if !payload.Silent && !isCallControlPush(payload.Type) {
 		message.Notification = &fcmNotification{
 			Title: payload.Title,
 			Body:  payload.Body,
@@ -230,11 +232,18 @@ func mobileChannelID(payload Payload) string {
 	switch payload.Type {
 	case "message_received":
 		return MobileChannelMessages
-	case "incoming_call":
+	case "incoming_call", "call_ended", "call_rejected", "call_missed":
 		return MobileChannelIncomingCalls
 	default:
 		return MobileChannelGeneral
 	}
+}
+
+func isCallControlPush(pushType string) bool {
+	return pushType == "incoming_call" ||
+		pushType == "call_ended" ||
+		pushType == "call_rejected" ||
+		pushType == "call_missed"
 }
 
 func messageIDDataValue(payload Payload) string {

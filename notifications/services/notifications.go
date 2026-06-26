@@ -275,7 +275,7 @@ func buildPushPayload(notification models.Notification, dataSource pushPayloadDa
 		return buildMessagePushPayload(notification, dataSource, payload)
 	}
 
-	if notification.Type == dto.NotificationTypeIncomingCall {
+	if isCallNotification(notification.Type) {
 		return buildIncomingCallPushPayload(notification, dataSource, payload)
 	}
 
@@ -348,7 +348,7 @@ func buildIncomingCallPushPayload(
 	fallback pushsvc.Payload,
 ) pushsvc.Payload {
 	payload := fallback
-	payload.Title = "Входящий звонок"
+	payload.Title = callPushTitle(notification.Type)
 
 	convID := notification.ConversationID
 	if convID == 0 {
@@ -359,19 +359,61 @@ func buildIncomingCallPushPayload(
 	payload.Tag = buildTag(notification, convID)
 
 	if dataSource == nil {
-		payload.Body = "Вам звонит пользователь"
+		payload.Body = callPushFallbackBody(notification.Type)
 		return payload
 	}
 
 	actor, err := dataSource.FindUserByID(notification.ActorID)
 	if err != nil || displayUserName(actor) == "" {
-		payload.Body = "Вам звонит пользователь"
+		payload.Body = callPushFallbackBody(notification.Type)
 		return payload
 	}
 
 	name := displayUserName(actor)
-	payload.Body = fmt.Sprintf("%s звонит вам", name)
+	switch notification.Type {
+	case dto.NotificationTypeCallEnded:
+		payload.Body = fmt.Sprintf("%s завершил звонок", name)
+	case dto.NotificationTypeCallRejected:
+		payload.Body = fmt.Sprintf("%s отклонил звонок", name)
+	case dto.NotificationTypeCallMissed:
+		payload.Body = fmt.Sprintf("Пропущенный звонок от %s", name)
+	default:
+		payload.Body = fmt.Sprintf("%s звонит вам", name)
+	}
 	return payload
+}
+
+func isCallNotification(notificationType string) bool {
+	return notificationType == dto.NotificationTypeIncomingCall ||
+		notificationType == dto.NotificationTypeCallEnded ||
+		notificationType == dto.NotificationTypeCallRejected ||
+		notificationType == dto.NotificationTypeCallMissed
+}
+
+func callPushTitle(notificationType string) string {
+	switch notificationType {
+	case dto.NotificationTypeCallEnded:
+		return "Звонок завершен"
+	case dto.NotificationTypeCallRejected:
+		return "Звонок отклонен"
+	case dto.NotificationTypeCallMissed:
+		return "Пропущенный звонок"
+	default:
+		return "Входящий звонок"
+	}
+}
+
+func callPushFallbackBody(notificationType string) string {
+	switch notificationType {
+	case dto.NotificationTypeCallEnded:
+		return "Звонок завершен"
+	case dto.NotificationTypeCallRejected:
+		return "Звонок отклонен"
+	case dto.NotificationTypeCallMissed:
+		return "У вас пропущенный звонок"
+	default:
+		return "Вам звонит пользователь"
+	}
 }
 
 func displayUserName(user models.User) string {
@@ -424,6 +466,12 @@ func pushTitle(notificationType string) string {
 		return "Новый комментарий"
 	case dto.NotificationTypeIncomingCall:
 		return "Входящий звонок"
+	case dto.NotificationTypeCallEnded:
+		return "Звонок завершен"
+	case dto.NotificationTypeCallRejected:
+		return "Звонок отклонен"
+	case dto.NotificationTypeCallMissed:
+		return "Пропущенный звонок"
 	default:
 		return "Новое уведомление"
 	}
@@ -444,6 +492,12 @@ func pushBody(notificationType string) string {
 	case dto.NotificationTypeIncomingCall:
 		// Actual body is built in buildIncomingCallPushPayload using the caller's name.
 		return "Вам звонит пользователь"
+	case dto.NotificationTypeCallEnded:
+		return "Звонок завершен"
+	case dto.NotificationTypeCallRejected:
+		return "Звонок отклонен"
+	case dto.NotificationTypeCallMissed:
+		return "У вас пропущенный звонок"
 	default:
 		return "Откройте приложение, чтобы посмотреть"
 	}
@@ -459,7 +513,7 @@ func pushURL(notification models.Notification) string {
 		return fmt.Sprintf("/users/%d", notification.ActorID)
 	case dto.NotificationTypePostLiked, dto.NotificationTypeCommentCreated:
 		return fmt.Sprintf("/users/%d/wall", notification.RecipientID)
-	case dto.NotificationTypeIncomingCall:
+	case dto.NotificationTypeIncomingCall, dto.NotificationTypeCallEnded, dto.NotificationTypeCallRejected, dto.NotificationTypeCallMissed:
 		// Deep link into the chat with the caller. The query params are used by the PWA
 		// to know it arrived from a call push (for stale detection / future auto-accept hints).
 		conv := notification.ConversationID
@@ -483,7 +537,7 @@ func buildTag(notification models.Notification, conversationID uint) string {
 		}
 		return "messages"
 	}
-	if notification.Type == dto.NotificationTypeIncomingCall {
+	if isCallNotification(notification.Type) {
 		if notification.CallID != "" {
 			return fmt.Sprintf("call-%s", notification.CallID)
 		}

@@ -12,6 +12,7 @@ const (
 	CallStatusDeclined = "declined"
 	CallStatusEnded    = "ended"
 	CallStatusFailed   = "failed"
+	CallStatusReplaced = "replaced"
 )
 
 type CallLog struct {

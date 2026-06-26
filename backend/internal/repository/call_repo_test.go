@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -15,11 +16,11 @@ func TestCreateCallOfferDedupesByCallID(t *testing.T) {
 	db := newCallRepoTestDB(t)
 	seedCallUsers(t, db, 1, 2)
 
-	first, err := CreateCallOffer(db, 1, 2, "call-1", models.CallTypeVideo, nil, `{"type":"offer","sdp":"first"}`)
+	first, _, _, err := CreateCallOffer(db, 1, 2, "call-1", models.CallTypeVideo, nil, `{"type":"offer","sdp":"first"}`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := CreateCallOffer(db, 1, 2, "call-1", models.CallTypeVideo, nil, `{"type":"offer","sdp":"second"}`)
+	second, _, _, err := CreateCallOffer(db, 1, 2, "call-1", models.CallTypeVideo, nil, `{"type":"offer","sdp":"second"}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,15 +37,15 @@ func TestCreateCallOfferDedupesByCallID(t *testing.T) {
 	}
 }
 
-func TestCreateCallOfferFailsPreviousActiveRingingBetweenUsers(t *testing.T) {
+func TestCreateCallOfferReplacesPreviousActiveRingingBetweenUsers(t *testing.T) {
 	db := newCallRepoTestDB(t)
 	seedCallUsers(t, db, 1, 2)
 
-	first, err := CreateCallOffer(db, 1, 2, "call-1", models.CallTypeAudio, nil, "")
+	first, _, _, err := CreateCallOffer(db, 1, 2, "call-1", models.CallTypeAudio, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := CreateCallOffer(db, 2, 1, "call-2", models.CallTypeVideo, nil, "")
+	second, replaced, _, err := CreateCallOffer(db, 2, 1, "call-2", models.CallTypeVideo, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,11 +57,14 @@ func TestCreateCallOfferFailsPreviousActiveRingingBetweenUsers(t *testing.T) {
 	if err := db.First(&previous, first.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if previous.Status != models.CallStatusFailed {
-		t.Fatalf("previous call status = %q, want %q", previous.Status, models.CallStatusFailed)
+	if len(replaced) != 1 || replaced[0].CallID != "call-1" {
+		t.Fatalf("replaced calls = %#v, want call-1", replaced)
+	}
+	if previous.Status != models.CallStatusReplaced {
+		t.Fatalf("previous call status = %q, want %q", previous.Status, models.CallStatusReplaced)
 	}
 	if previous.EndedAt == nil {
-		t.Fatal("previous failed call should have ended_at")
+		t.Fatal("previous replaced call should have ended_at")
 	}
 
 	var active models.CallLog
@@ -79,12 +83,14 @@ func TestCallAnswerAndEndLifecycle(t *testing.T) {
 	db := newCallRepoTestDB(t)
 	seedCallUsers(t, db, 1, 2)
 
-	call, err := CreateCallOffer(db, 1, 2, "call-1", models.CallTypeAudio, nil, "")
+	call, _, _, err := CreateCallOffer(db, 1, 2, "call-1", models.CallTypeAudio, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := MarkCallAnswered(db, 2, 1, "call-1"); err != nil {
+	if _, ok, err := MarkCallAnswered(db, 2, 1, "call-1"); err != nil {
 		t.Fatal(err)
+	} else if !ok {
+		t.Fatal("expected answer transition to be forwarded")
 	}
 
 	answeredAt := time.Now().Add(-3 * time.Second)
@@ -94,8 +100,10 @@ func TestCallAnswerAndEndLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := MarkCallEnded(db, 1, 2, "call-1"); err != nil {
+	if _, ok, err := MarkCallEnded(db, 1, 2, "call-1"); err != nil {
 		t.Fatal(err)
+	} else if !ok {
+		t.Fatal("expected end transition to be forwarded")
 	}
 
 	var ended models.CallLog
@@ -117,12 +125,14 @@ func TestCallRejectMarksDeclined(t *testing.T) {
 	db := newCallRepoTestDB(t)
 	seedCallUsers(t, db, 1, 2)
 
-	call, err := CreateCallOffer(db, 1, 2, "call-1", models.CallTypeAudio, nil, "")
+	call, _, _, err := CreateCallOffer(db, 1, 2, "call-1", models.CallTypeAudio, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := MarkCallDeclined(db, 2, 1, "call-1"); err != nil {
+	if _, ok, err := MarkCallDeclined(db, 2, 1, "call-1"); err != nil {
 		t.Fatal(err)
+	} else if !ok {
+		t.Fatal("expected reject transition to be forwarded")
 	}
 
 	var declined models.CallLog
@@ -143,15 +153,17 @@ func TestFindActiveRingingCallForCalleeReturnsRecoveryPayload(t *testing.T) {
 
 	conversationID := uint(1)
 	offer := `{"type":"offer","sdp":"offer-sdp"}`
-	call, err := CreateCallOffer(db, 1, 2, "call-1", models.CallTypeVideo, &conversationID, offer)
+	call, _, _, err := CreateCallOffer(db, 1, 2, "call-1", models.CallTypeVideo, &conversationID, offer)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if call.ExpiresAt == nil {
 		t.Fatal("call should have expires_at for stale recovery filtering")
 	}
-	if err := AppendCallIceCandidate(db, 1, 2, "call-1", `{"candidate":"candidate:1 1 udp 1 127.0.0.1 10000 typ host"}`); err != nil {
+	if _, ok, err := AppendCallIceCandidate(db, 1, 2, "call-1", `{"candidate":"candidate:1 1 udp 1 127.0.0.1 10000 typ host"}`); err != nil {
 		t.Fatal(err)
+	} else if !ok {
+		t.Fatal("expected ice transition to be forwarded")
 	}
 
 	active, err := FindActiveRingingCallForCallee(db, 2)
@@ -176,12 +188,14 @@ func TestCallStatusUpdateRequiresParticipant(t *testing.T) {
 	db := newCallRepoTestDB(t)
 	seedCallUsers(t, db, 1, 2, 3)
 
-	call, err := CreateCallOffer(db, 1, 2, "call-1", models.CallTypeAudio, nil, "")
+	call, _, _, err := CreateCallOffer(db, 1, 2, "call-1", models.CallTypeAudio, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := MarkCallDeclined(db, 3, 1, "call-1"); err != nil {
+	if _, ok, err := MarkCallDeclined(db, 3, 1, "call-1"); err != nil {
 		t.Fatal(err)
+	} else if ok {
+		t.Fatal("non-participant reject should not be forwarded")
 	}
 
 	var unchanged models.CallLog
@@ -190,6 +204,103 @@ func TestCallStatusUpdateRequiresParticipant(t *testing.T) {
 	}
 	if unchanged.Status != models.CallStatusRinging {
 		t.Fatalf("non-participant changed call status to %q", unchanged.Status)
+	}
+}
+
+func TestCreateCallOfferRejectsBusyParticipant(t *testing.T) {
+	db := newCallRepoTestDB(t)
+	seedCallUsers(t, db, 1, 2, 3)
+
+	if _, _, _, err := CreateCallOffer(db, 1, 2, "call-1", models.CallTypeAudio, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := CreateCallOffer(db, 3, 2, "call-2", models.CallTypeAudio, nil, ""); !errors.Is(err, ErrCallBusy) {
+		t.Fatalf("second call err = %v, want ErrCallBusy", err)
+	}
+
+	var count int64
+	if err := db.Model(&models.CallLog{}).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("call_logs count = %d, want 1", count)
+	}
+}
+
+func TestExpireStaleRingingCallsWithResult(t *testing.T) {
+	db := newCallRepoTestDB(t)
+	seedCallUsers(t, db, 1, 2)
+
+	call, _, _, err := CreateCallOffer(db, 1, 2, "call-1", models.CallTypeAudio, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expiredAt := time.Now().Add(-time.Second)
+	if err := db.Model(&models.CallLog{}).
+		Where("id = ?", call.ID).
+		Update("expires_at", expiredAt).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	expired, err := ExpireStaleRingingCallsWithResult(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(expired) != 1 || expired[0].CallID != "call-1" {
+		t.Fatalf("expired calls = %#v, want call-1", expired)
+	}
+	if expired[0].Status != models.CallStatusMissed {
+		t.Fatalf("expired status = %q, want missed", expired[0].Status)
+	}
+}
+
+func TestStaleCallIDDoesNotFallbackToLatestActiveCall(t *testing.T) {
+	db := newCallRepoTestDB(t)
+	seedCallUsers(t, db, 1, 2)
+
+	oldCall, _, _, err := CreateCallOffer(db, 1, 2, "call-old", models.CallTypeAudio, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := MarkCallEnded(db, 1, 2, "call-old"); err != nil {
+		t.Fatal(err)
+	} else if !ok {
+		t.Fatal("expected old call to end")
+	}
+
+	activeCall, _, _, err := CreateCallOffer(db, 1, 2, "call-new", models.CallTypeAudio, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, ok, err := MarkCallDeclined(db, 2, 1, "call-old"); err != nil {
+		t.Fatal(err)
+	} else if ok {
+		t.Fatal("stale reject should not be forwarded")
+	}
+	if _, ok, err := AppendCallIceCandidate(db, 1, 2, "call-old", `{"candidate":"candidate:old"}`); err != nil {
+		t.Fatal(err)
+	} else if ok {
+		t.Fatal("stale ice should not be forwarded")
+	}
+
+	var active models.CallLog
+	if err := db.First(&active, activeCall.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if active.Status != models.CallStatusRinging {
+		t.Fatalf("active call status = %q, want ringing", active.Status)
+	}
+	if active.IceCandidates != "" {
+		t.Fatal("stale ice candidate was appended to active call")
+	}
+
+	var old models.CallLog
+	if err := db.First(&old, oldCall.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if old.Status != models.CallStatusEnded {
+		t.Fatalf("old call status = %q, want ended", old.Status)
 	}
 }
 

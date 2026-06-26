@@ -25,12 +25,26 @@ var onlineUsers = struct {
 
 var dbInstance *gorm.DB
 var websocketOriginPatterns []string
+var callTimeoutSweeperOnce sync.Once
 
 const websocketPingInterval = 30 * time.Second
+const callTimeoutSweepInterval = 5 * time.Second
 
 func InitWebSocket(db *gorm.DB, originPatterns []string) {
 	dbInstance = db
 	websocketOriginPatterns = originPatterns
+	callTimeoutSweeperOnce.Do(func() {
+		go startCallTimeoutSweeper(db)
+	})
+}
+
+func startCallTimeoutSweeper(db *gorm.DB) {
+	ticker := time.NewTicker(callTimeoutSweepInterval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		emitExpiredCallTimeouts(context.Background(), db)
+	}
 }
 
 func WebSocketHandler(c *gin.Context) {

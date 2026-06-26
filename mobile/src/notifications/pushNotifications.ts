@@ -13,6 +13,7 @@ import {
 import {
   displayForegroundNotification,
   MOBILE_NOTIFICATION_CHANNELS,
+  cancelIncomingCallNotification,
   openLocalNotificationSettings,
   registerLocalNotificationBackgroundHandler,
   registerLocalNotificationOpenHandlers,
@@ -135,7 +136,10 @@ async function requestAndroidNotificationPermission(forcePrompt = false) {
   const recentlyAttempted =
     androidPermissionRequestAttempted &&
     now - androidPermissionLastRequestAt < androidPermissionRetryCooldownMs;
-  if (!forcePrompt && (recentlyAttempted || androidPermissionSettingsRequired)) {
+  if (
+    !forcePrompt &&
+    (recentlyAttempted || androidPermissionSettingsRequired)
+  ) {
     return false;
   }
 
@@ -158,13 +162,29 @@ function notificationFromRemoteMessage(
 ) {
   return normalizeNotificationData({
     ...(remoteMessage?.data ?? {}),
-    title:
-      remoteMessage?.data?.title ?? remoteMessage?.notification?.title,
+    title: remoteMessage?.data?.title ?? remoteMessage?.notification?.title,
     body: remoteMessage?.data?.body ?? remoteMessage?.notification?.body,
     ts:
       remoteMessage?.data?.ts ??
       remoteMessage?.data?.timestamp ??
       remoteMessage?.sentTime,
+  });
+}
+
+function isCallTerminalNotification(notification: MobileNotificationData) {
+  return (
+    notification.type === 'call_ended' ||
+    notification.type === 'call_rejected' ||
+    notification.type === 'call_missed'
+  );
+}
+
+async function applyCallTerminalNotification(notification: MobileNotificationData) {
+  if (!isCallTerminalNotification(notification)) {
+    return;
+  }
+  await cancelIncomingCallNotification(notification.callId).catch(error => {
+    warnDev('[SocialMobile] stale call notification cancel failed', error);
   });
 }
 
@@ -210,13 +230,25 @@ export function registerBackgroundMessageHandler() {
   try {
     registerLocalNotificationBackgroundHandler();
   } catch (error) {
-    warnDev('[SocialMobile] local notification background handler disabled', error);
+    warnDev(
+      '[SocialMobile] local notification background handler disabled',
+      error,
+    );
   }
 
   try {
     messaging().setBackgroundMessageHandler(async remoteMessage => {
       const notification = notificationFromRemoteMessage(remoteMessage);
       await enqueuePendingPushEvent(notification);
+      await applyCallTerminalNotification(notification);
+      if (notification.type === 'incoming_call') {
+        await displayForegroundNotification(notification).catch(error => {
+          warnDev(
+            '[SocialMobile] background incoming call notification skipped',
+            error,
+          );
+        });
+      }
 
       logDev('[SocialMobile] Background notification received', notification);
     });
@@ -314,10 +346,13 @@ export async function initializePushNotifications({
 
     cleanup.push(registerLocalNotificationOpenHandlers(handleNotificationOpen));
 
-    messaging().getInitialNotification()
+    messaging()
+      .getInitialNotification()
       .then(initialNotification => {
         if (initialNotification) {
-          handleNotificationOpen(notificationFromRemoteMessage(initialNotification));
+          handleNotificationOpen(
+            notificationFromRemoteMessage(initialNotification),
+          );
         }
       })
       .catch(error => {
@@ -332,10 +367,16 @@ export async function initializePushNotifications({
       messaging().onMessage(async remoteMessage => {
         const notification = notificationFromRemoteMessage(remoteMessage);
         await enqueuePendingPushEvent(notification);
+        await applyCallTerminalNotification(notification);
         onNotification?.(notification);
-        await displayForegroundNotification(notification).catch(error => {
-          warnDev('[SocialMobile] foreground local notification skipped', error);
-        });
+        if (!isCallTerminalNotification(notification)) {
+          await displayForegroundNotification(notification).catch(error => {
+            warnDev(
+              '[SocialMobile] foreground local notification skipped',
+              error,
+            );
+          });
+        }
       }),
     );
   } catch (error) {
@@ -394,7 +435,6 @@ export async function initializePushNotifications({
         }),
       );
     }
-
   } catch (error) {
     warnDev('[SocialMobile] FCM initialization skipped', error);
   }

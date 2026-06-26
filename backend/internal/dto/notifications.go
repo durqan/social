@@ -7,6 +7,9 @@ const (
 	NotificationTypeFriendAccepted = "friend_accepted"
 	NotificationTypeMessage        = "message_received"
 	NotificationTypeIncomingCall   = "incoming_call"
+	NotificationTypeCallEnded      = "call_ended"
+	NotificationTypeCallRejected   = "call_rejected"
+	NotificationTypeCallMissed     = "call_missed"
 )
 
 type CreateNotificationReq struct {

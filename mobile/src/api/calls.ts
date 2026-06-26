@@ -9,7 +9,8 @@ export type ActiveCallStatus =
   | 'rejected'
   | 'missed'
   | 'ended'
-  | 'failed';
+  | 'failed'
+  | 'replaced';
 
 export type CallUser = {
   id: number;
@@ -44,7 +45,31 @@ export const callsApi = {
 
   async getActiveCall(callId?: string) {
     const query = toQueryString({ call_id: callId });
-    const response = await apiRequest<ActiveCallResponse>(`/calls/active${query}`);
+    const response = await apiRequest<ActiveCallResponse>(
+      `/calls/active${query}`,
+    );
     return response.call;
+  },
+
+  async acceptCallIntent(callId: string) {
+    const response = await apiRequest<ActiveCallResponse>(
+      `/calls/${encodeURIComponent(callId)}/accept`,
+      { method: 'POST' },
+    );
+    return response.call;
+  },
+
+  rejectCall(callId: string) {
+    return apiRequest<{ ok: boolean }>(
+      `/calls/${encodeURIComponent(callId)}/reject`,
+      { method: 'POST' },
+    );
+  },
+
+  endCall(callId: string) {
+    return apiRequest<{ ok: boolean }>(
+      `/calls/${encodeURIComponent(callId)}/end`,
+      { method: 'POST' },
+    );
   },
 };

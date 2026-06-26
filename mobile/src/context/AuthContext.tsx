@@ -18,6 +18,7 @@ import {
   resetPostAuthBootstrap,
   runPostAuthBootstrap,
 } from '../bootstrap/postAuthBootstrap';
+import { shutdownCurrentCallForLogout } from './callLifecycle';
 import { revokeRegisteredPushToken } from '../notifications/pushNotifications';
 import { logDev, warnDev } from '../utils/logger';
 
@@ -74,7 +75,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             });
             setUser(null);
           } else {
-            warnDev('[SocialMobile] profile bootstrap failed without logout', error);
+            warnDev(
+              '[SocialMobile] profile bootstrap failed without logout',
+              error,
+            );
           }
         }
       })
@@ -129,6 +133,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     logDev('[SocialMobile] logout reason', { reason: 'manual_logout' });
     logoutPromiseRef.current = (async () => {
+      await shutdownCurrentCallForLogout().catch(() => undefined);
       chatSocket.disconnect();
       await revokeRegisteredPushToken().catch(() => undefined);
       await resetPostAuthBootstrap();

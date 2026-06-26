@@ -100,3 +100,31 @@ func enqueueIncomingCallNotification(db *gorm.DB, recipientID, actorID uint, cal
 		req.CallID, req.ActorID, req.RecipientID, req.ConversationID,
 	)
 }
+
+func enqueueCallStateNotification(db *gorm.DB, recipientID, actorID uint, notificationType string, callID string, conversationID uint, callType string) {
+	if db == nil || recipientID == 0 || actorID == 0 || recipientID == actorID || callID == "" {
+		return
+	}
+
+	req := dto.CreateNotificationReq{
+		Action:         "create",
+		RecipientID:    recipientID,
+		ActorID:        actorID,
+		Type:           notificationType,
+		EntityID:       0,
+		CallID:         callID,
+		ConversationID: conversationID,
+		CallType:       callType,
+	}
+
+	if err := services.EnqueueNotificationOutbox(db, req); err != nil {
+		log.Printf(
+			"failed to enqueue call state notification: call_id=%s type=%s recipient_id=%d actor_id=%d error=%v",
+			callID,
+			notificationType,
+			recipientID,
+			actorID,
+			err,
+		)
+	}
+}

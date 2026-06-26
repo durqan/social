@@ -23,6 +23,9 @@ export type PushNotificationEffect =
     }
   | {
       type: 'incoming_call';
+    }
+  | {
+      type: 'call_terminal';
     };
 
 export type PendingPushEvent = {
@@ -83,6 +86,17 @@ export function effectsForPushNotification(
     ];
   }
 
+  if (
+    notification.type === 'call_ended' ||
+    notification.type === 'call_rejected' ||
+    notification.type === 'call_missed'
+  ) {
+    return [
+      { type: 'call_terminal' },
+      { type: 'refresh_notifications' },
+    ];
+  }
+
   return [{ type: 'refresh_unread' }, { type: 'refresh_notifications' }];
 }
 
@@ -107,6 +121,9 @@ export function applyPushNotificationEffects(
         return;
       case 'incoming_call':
         rememberPendingIncomingCall(notification).catch(() => undefined);
+        return;
+      case 'call_terminal':
+        return;
     }
   });
 }

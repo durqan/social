@@ -9,7 +9,10 @@ import { Platform } from 'react-native';
 
 import { getActivePushConversation } from './activeConversation';
 import { enqueuePendingPushEvent } from './pushEffects';
-import { normalizeNotificationData, type MobileNotificationData } from './types';
+import {
+  normalizeNotificationData,
+  type MobileNotificationData,
+} from './types';
 
 export const MOBILE_NOTIFICATION_CHANNELS = {
   GENERAL: 'general',
@@ -27,14 +30,19 @@ type LocalNotificationOpenHandler = (
 ) => void;
 
 function notificationConversationId(notification: MobileNotificationData) {
-  return notification.conversationId ?? notification.actorId ?? notification.senderId;
+  return (
+    notification.conversationId ?? notification.actorId ?? notification.senderId
+  );
 }
 
 export function shouldDisplayForegroundNotification(
   notification: MobileNotificationData,
   activeConversationId = getActivePushConversation(),
 ) {
-  if (notification.type === 'notification_sync' || notification.type === 'message_read') {
+  if (
+    notification.type === 'notification_sync' ||
+    notification.type === 'message_read'
+  ) {
     return false;
   }
 
@@ -189,16 +197,18 @@ export async function displayForegroundNotification(
       channelId: incomingCall
         ? MOBILE_NOTIFICATION_CHANNELS.INCOMING_CALLS
         : notification.type === 'message_received'
-          ? MOBILE_NOTIFICATION_CHANNELS.MESSAGES
-          : MOBILE_NOTIFICATION_CHANNELS.GENERAL,
+        ? MOBILE_NOTIFICATION_CHANNELS.MESSAGES
+        : MOBILE_NOTIFICATION_CHANNELS.GENERAL,
       smallIcon: 'ic_stat_social_notification',
       color: '#2563eb',
       category: incomingCall
         ? AndroidCategory.CALL
         : notification.type === 'message_received'
-          ? AndroidCategory.MESSAGE
-          : AndroidCategory.SOCIAL,
-      importance: incomingCall ? AndroidImportance.HIGH : AndroidImportance.DEFAULT,
+        ? AndroidCategory.MESSAGE
+        : AndroidCategory.SOCIAL,
+      importance: incomingCall
+        ? AndroidImportance.HIGH
+        : AndroidImportance.DEFAULT,
       visibility: incomingCall ? AndroidVisibility.PUBLIC : undefined,
       sound: incomingCall ? 'default' : undefined,
       vibrationPattern: incomingCall ? incomingCallVibrationPattern : undefined,
@@ -234,6 +244,13 @@ export async function displayForegroundNotification(
   return true;
 }
 
+export function cancelIncomingCallNotification(callId?: string | null) {
+  if (!callId) {
+    return Promise.resolve();
+  }
+  return notifee.cancelNotification(`call-${callId}`);
+}
+
 async function enqueuePendingOpenedLocalNotification(
   notification: MobileNotificationData,
 ) {
@@ -242,7 +259,9 @@ async function enqueuePendingOpenedLocalNotification(
   if (raw) {
     try {
       const parsed = JSON.parse(raw);
-      existing = Array.isArray(parsed) ? parsed as MobileNotificationData[] : [];
+      existing = Array.isArray(parsed)
+        ? (parsed as MobileNotificationData[])
+        : [];
     } catch {
       existing = [];
     }
@@ -275,6 +294,51 @@ function notificationFromNotifeeData(data: unknown) {
   );
 }
 
+async function rejectIncomingCallFromNotification(
+  notification: MobileNotificationData,
+  notificationId?: string,
+) {
+  if (notificationId) {
+    await notifee.cancelNotification(notificationId).catch(() => undefined);
+  }
+  if (!notification.callId) {
+    return;
+  }
+  const { callsApi } = await import('../api/calls');
+  await callsApi.rejectCall(notification.callId).catch(() => undefined);
+}
+
+async function acceptIncomingCallFromNotification(
+  notification: MobileNotificationData,
+  onOpen: LocalNotificationOpenHandler,
+) {
+  if (!notification.callId) {
+    onOpen(notification);
+    return;
+  }
+
+  try {
+    const { callsApi } = await import('../api/calls');
+    const call = await callsApi.acceptCallIntent(notification.callId);
+    if (!call || call.status !== 'ringing') {
+      await cancelIncomingCallNotification(notification.callId).catch(
+        () => undefined,
+      );
+      return;
+    }
+  } catch {
+    await cancelIncomingCallNotification(notification.callId).catch(
+      () => undefined,
+    );
+    return;
+  }
+
+  await cancelIncomingCallNotification(notification.callId).catch(
+    () => undefined,
+  );
+  onOpen(notification);
+}
+
 export function registerLocalNotificationOpenHandlers(
   onOpen: LocalNotificationOpenHandler,
 ) {
@@ -286,25 +350,42 @@ export function registerLocalNotificationOpenHandlers(
       return;
     }
 
+    const notification = notificationFromNotifeeData(
+      event.detail.notification?.data,
+    );
     if (event.detail.pressAction?.id === 'reject') {
-      if (event.detail.notification?.id) {
-        notifee.cancelNotification(event.detail.notification.id).catch(() => undefined);
-      }
+      rejectIncomingCallFromNotification(
+        notification,
+        event.detail.notification?.id,
+      ).catch(() => undefined);
+      return;
+    }
+    if (event.detail.pressAction?.id === 'answer') {
+      acceptIncomingCallFromNotification(notification, onOpen).catch(
+        () => undefined,
+      );
       return;
     }
 
-    onOpen(notificationFromNotifeeData(event.detail.notification?.data));
+    onOpen(notification);
   });
 
-  notifee.getInitialNotification().then(initialNotification => {
-    if (initialNotification?.notification.data) {
-      onOpen(notificationFromNotifeeData(initialNotification.notification.data));
-    }
-  }).catch(() => undefined);
+  notifee
+    .getInitialNotification()
+    .then(initialNotification => {
+      if (initialNotification?.notification.data) {
+        onOpen(
+          notificationFromNotifeeData(initialNotification.notification.data),
+        );
+      }
+    })
+    .catch(() => undefined);
 
-  drainPendingOpenedLocalNotifications().then(notifications => {
-    notifications.forEach(onOpen);
-  }).catch(() => undefined);
+  drainPendingOpenedLocalNotifications()
+    .then(notifications => {
+      notifications.forEach(onOpen);
+    })
+    .catch(() => undefined);
 
   return cleanup;
 }
@@ -323,9 +404,30 @@ export function registerLocalNotificationBackgroundHandler() {
     );
 
     if (event.detail.pressAction?.id === 'reject') {
-      if (event.detail.notification?.id) {
-        await notifee.cancelNotification(event.detail.notification.id);
+      await rejectIncomingCallFromNotification(
+        notification,
+        event.detail.notification?.id,
+      );
+      return;
+    }
+
+    if (event.detail.pressAction?.id === 'answer' && notification.callId) {
+      try {
+        const { callsApi } = await import('../api/calls');
+        const call = await callsApi.acceptCallIntent(notification.callId);
+        if (!call || call.status !== 'ringing') {
+          await cancelIncomingCallNotification(notification.callId);
+          return;
+        }
+      } catch {
+        await cancelIncomingCallNotification(notification.callId);
+        return;
       }
+      await cancelIncomingCallNotification(notification.callId).catch(
+        () => undefined,
+      );
+      await enqueuePendingPushEvent(notification);
+      await enqueuePendingOpenedLocalNotification(notification);
       return;
     }
 

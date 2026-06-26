@@ -5,6 +5,9 @@ export const NOTIFICATION_TYPES = {
   POST_LIKED: 'post_liked',
   COMMENT_CREATED: 'comment_created',
   INCOMING_CALL: 'incoming_call',
+  CALL_ENDED: 'call_ended',
+  CALL_REJECTED: 'call_rejected',
+  CALL_MISSED: 'call_missed',
   NOTIFICATION_SYNC: 'notification_sync',
   SYSTEM: 'system',
 } as const;

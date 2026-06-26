@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
+	"sync"
 	"time"
 
 	"tester/internal/middleware"
@@ -20,6 +22,15 @@ import (
 type WSMessage struct {
 	Type    string          `json:"type"`
 	Payload json.RawMessage `json:"payload"`
+}
+
+var callEventOrder = struct {
+	sync.Mutex
+	lastSeq map[string]int64
+	seenIDs map[string]time.Time
+}{
+	lastSeq: make(map[string]int64),
+	seenIDs: make(map[string]time.Time),
 }
 
 func handleWebSocketMessage(ctx context.Context, userID uint, client *websocketClient, wsMsg WSMessage) {
@@ -504,6 +515,8 @@ func writeToUsers(ctx context.Context, payload []byte, userIDs ...uint) {
 }
 
 func forwardCallEvent(ctx context.Context, eventType string, fromID uint, payload json.RawMessage) {
+	emitExpiredCallTimeouts(ctx, dbInstance)
+
 	var callPayload map[string]json.RawMessage
 
 	if err := json.Unmarshal(payload, &callPayload); err != nil {
@@ -534,9 +547,27 @@ func forwardCallEvent(ctx context.Context, eventType string, fromID uint, payloa
 		log.Println("Invalid call payload: invalid call_id")
 		return
 	}
+	callID = strings.TrimSpace(callID)
+	if callID == "" {
+		log.Println("Invalid call payload: empty call_id")
+		return
+	}
 
 	callType := callTypeFromPayload(callPayload)
-	recordCallEvent(eventType, fromID, toID, callID, callType, callOfferPayload(callPayload), callCandidatePayload(callPayload))
+	if !acceptCallEventOrder(fromID, callID, callPayload) {
+		log.Printf("late or duplicate call event ignored: type=%s call_id=%s from_id=%d", eventType, callID, fromID)
+		return
+	}
+	transition, ok := recordCallEvent(eventType, fromID, toID, callID, callType, callOfferPayload(callPayload), callCandidatePayload(callPayload))
+	if !ok {
+		log.Printf("call event ignored before forward: type=%s call_id=%s from_id=%d to_id=%d", eventType, callID, fromID, toID)
+		return
+	}
+	for _, replaced := range transition.Replaced {
+		sendCallStateEvent(ctx, "call:replaced", fromID, replaced.CallID, replaced.CallerID, replaced.CalleeID)
+		enqueueCallStateNotification(dbInstance, replaced.CalleeID, replaced.CallerID, "call_ended", replaced.CallID, conversationIDForCall(replaced), replaced.CallType)
+		log.Printf("call state transition: call_id=%s from=ringing to=replaced reason=new_offer caller_id=%d callee_id=%d", replaced.CallID, replaced.CallerID, replaced.CalleeID)
+	}
 
 	// === INCOMING CALL WEB PUSH (only for offer) ===
 	// All other signalling events (call:answer, call:ice, call:end, call:reject) MUST NOT
@@ -552,7 +583,13 @@ func forwardCallEvent(ctx context.Context, eventType string, fromID uint, payloa
 		// Publish is intentionally decoupled (goroutine) so that any Rabbit / notifications-service
 		// unavailability or slowness CANNOT break or delay the WebSocket call signalling path.
 		// Errors inside publish are logged (as warning/error) but execution continues to WS forward.
-		go enqueueIncomingCallNotification(dbInstance, toID, fromID, callID, fromID, callType)
+		go enqueueIncomingCallNotification(dbInstance, toID, fromID, callID, fromID, transition.CallType)
+	}
+	if eventType == "call:end" {
+		go enqueueCallStateNotification(dbInstance, toID, fromID, "call_ended", callID, fromID, transition.CallType)
+	}
+	if eventType == "call:reject" {
+		go enqueueCallStateNotification(dbInstance, toID, fromID, "call_rejected", callID, fromID, transition.CallType)
 	}
 
 	// Why we send push even if the user has active WS connections:
@@ -591,6 +628,67 @@ func forwardCallEvent(ctx context.Context, eventType string, fromID uint, payloa
 			log.Println("Failed to forward call event:", err)
 		}
 	}
+	log.Printf("call event forwarded: type=%s call_id=%s from_id=%d to_id=%d status=%s", eventType, callID, fromID, toID, transition.Status)
+}
+
+func emitExpiredCallTimeouts(ctx context.Context, database *gorm.DB) {
+	if database == nil {
+		return
+	}
+	expired, err := repository.ExpireStaleRingingCallsWithResult(database)
+	if err != nil {
+		log.Printf("failed to expire stale calls: error=%v", err)
+		return
+	}
+	for _, call := range expired {
+		sendCallStateEvent(ctx, "call:timeout", call.CallerID, call.CallID, call.CallerID, call.CalleeID)
+		enqueueCallStateNotification(database, call.CalleeID, call.CallerID, "call_missed", call.CallID, conversationIDForCall(call), call.CallType)
+		log.Printf("call state transition: call_id=%s from=ringing to=missed reason=server_timeout caller_id=%d callee_id=%d", call.CallID, call.CallerID, call.CalleeID)
+	}
+}
+
+func acceptCallEventOrder(fromID uint, callID string, payload map[string]json.RawMessage) bool {
+	if fromID == 0 || callID == "" {
+		return false
+	}
+
+	var eventID string
+	if raw, ok := payload["event_id"]; ok {
+		_ = json.Unmarshal(raw, &eventID)
+		eventID = strings.TrimSpace(eventID)
+	}
+	var seq int64
+	if raw, ok := payload["event_seq"]; ok {
+		_ = json.Unmarshal(raw, &seq)
+	}
+
+	callEventOrder.Lock()
+	defer callEventOrder.Unlock()
+
+	now := time.Now()
+	if eventID != "" {
+		key := callID + ":" + eventID
+		if _, exists := callEventOrder.seenIDs[key]; exists {
+			return false
+		}
+		callEventOrder.seenIDs[key] = now
+	}
+	if seq > 0 {
+		key := fmt.Sprintf("%s:%d", callID, fromID)
+		if last := callEventOrder.lastSeq[key]; seq <= last {
+			return false
+		}
+		callEventOrder.lastSeq[key] = seq
+	}
+	if len(callEventOrder.seenIDs) > 10000 {
+		cutoff := now.Add(-10 * time.Minute)
+		for key, seenAt := range callEventOrder.seenIDs {
+			if seenAt.Before(cutoff) {
+				delete(callEventOrder.seenIDs, key)
+			}
+		}
+	}
+	return true
 }
 
 func callTypeFromPayload(callPayload map[string]json.RawMessage) string {
@@ -622,30 +720,50 @@ func callCandidatePayload(callPayload map[string]json.RawMessage) string {
 	return string(raw)
 }
 
-func recordCallEvent(eventType string, fromID uint, toID uint, callID string, callType string, offerPayload string, candidatePayload string) {
+type callTransitionResult struct {
+	models.CallLog
+	Replaced []models.CallLog
+}
+
+func recordCallEvent(eventType string, fromID uint, toID uint, callID string, callType string, offerPayload string, candidatePayload string) (callTransitionResult, bool) {
+	var transition callTransitionResult
 	if dbInstance == nil {
-		return
+		return transition, false
 	}
 
-	// TODO: mark stale ringing calls as missed with a bounded background sweep.
-	// A disconnect alone is not reliable enough here because users may reconnect,
-	// have multiple devices, or keep a tab alive while the callee never answers.
 	var err error
+	var shouldForward bool
 	switch eventType {
 	case "call:offer":
 		conversationID := fromID
-		_, err = repository.CreateCallOffer(dbInstance, fromID, toID, callID, callType, &conversationID, offerPayload)
+		var created *models.CallLog
+		created, transition.Replaced, shouldForward, err = repository.CreateCallOffer(dbInstance, fromID, toID, callID, callType, &conversationID, offerPayload)
+		if errors.Is(err, repository.ErrCallBusy) {
+			sendCallStateEvent(context.Background(), "call:busy", toID, callID, fromID)
+			log.Printf("call event rejected: type=call:offer call_id=%s caller_id=%d callee_id=%d reason=busy", callID, fromID, toID)
+			return transition, false
+		}
+		if created != nil {
+			transition.CallLog = *created
+		}
 	case "call:answer":
-		err = repository.MarkCallAnswered(dbInstance, fromID, toID, callID)
+		transition.CallLog, shouldForward, err = repository.MarkCallAnswered(dbInstance, fromID, toID, callID)
 	case "call:reject":
-		err = repository.MarkCallDeclined(dbInstance, fromID, toID, callID)
+		transition.CallLog, shouldForward, err = repository.MarkCallDeclined(dbInstance, fromID, toID, callID)
 	case "call:end":
-		err = repository.MarkCallEnded(dbInstance, fromID, toID, callID)
+		transition.CallLog, shouldForward, err = repository.MarkCallEnded(dbInstance, fromID, toID, callID)
 	case "call:ice":
-		err = repository.AppendCallIceCandidate(dbInstance, fromID, toID, callID, candidatePayload)
+		transition.CallLog, shouldForward, err = repository.AppendCallIceCandidate(dbInstance, fromID, toID, callID, candidatePayload)
+	default:
+		return transition, false
 	}
 
 	if err != nil {
 		log.Printf("failed to record %s call event: call_id=%s from_id=%d to_id=%d error=%v", eventType, callID, fromID, toID, err)
+		return transition, false
 	}
+	if shouldForward {
+		log.Printf("call state transition accepted: type=%s call_id=%s from_id=%d to_id=%d status=%s", eventType, callID, fromID, toID, transition.Status)
+	}
+	return transition, shouldForward
 }

@@ -1,12 +1,14 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
 	"time"
 
+	"tester/internal/dto"
 	"tester/internal/models"
 	"tester/internal/repository"
 
@@ -44,6 +46,7 @@ func GetCall(database *gorm.DB) gin.HandlerFunc {
 		if !ok {
 			return
 		}
+		emitExpiredCallTimeouts(c.Request.Context(), database)
 
 		callID := strings.TrimSpace(c.Param("callId"))
 		call, err := repository.FindCallForParticipant(database, userID, callID)
@@ -66,6 +69,7 @@ func GetActiveCall(database *gorm.DB) gin.HandlerFunc {
 		if !ok {
 			return
 		}
+		emitExpiredCallTimeouts(c.Request.Context(), database)
 
 		callID := strings.TrimSpace(c.Query("call_id"))
 		if callID != "" {
@@ -94,6 +98,166 @@ func GetActiveCall(database *gorm.DB) gin.HandlerFunc {
 
 		c.JSON(http.StatusOK, gin.H{"call": callToResponse(call)})
 	}
+}
+
+func DebugCall(database *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, ok := authenticatedUserID(c)
+		if !ok {
+			return
+		}
+		emitExpiredCallTimeouts(c.Request.Context(), database)
+
+		callID := strings.TrimSpace(c.Param("callId"))
+		call, err := repository.DebugCallDump(database, userID, callID)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			jsonError(c, http.StatusNotFound, "call not found")
+			return
+		}
+		if err != nil {
+			jsonError(c, http.StatusInternalServerError, "failed to get call debug dump")
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"call_id":          call.CallID,
+			"conversation_id":  call.ConversationID,
+			"caller_id":        call.CallerID,
+			"callee_id":        call.CalleeID,
+			"call_type":        call.CallType,
+			"status":           call.Status,
+			"started_at":       call.StartedAt,
+			"expires_at":       call.ExpiresAt,
+			"answered_at":      call.AnsweredAt,
+			"ended_at":         call.EndedAt,
+			"duration_seconds": call.DurationSeconds,
+			"updated_at":       call.UpdatedAt,
+		})
+	}
+}
+
+func RejectCall(database *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, ok := authenticatedUserID(c)
+		if !ok {
+			return
+		}
+		emitExpiredCallTimeouts(c.Request.Context(), database)
+
+		callID := strings.TrimSpace(c.Param("callId"))
+		call, err := repository.FindCallForParticipant(database, userID, callID)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusOK, gin.H{"ok": true})
+			return
+		}
+		if err != nil {
+			jsonError(c, http.StatusInternalServerError, "failed to get call")
+			return
+		}
+		if call.CalleeID != userID {
+			jsonError(c, http.StatusForbidden, "only callee can reject call")
+			return
+		}
+
+		transitionCall, shouldForward, err := repository.MarkCallDeclined(database, userID, call.CallerID, callID)
+		if err != nil {
+			jsonError(c, http.StatusInternalServerError, "failed to reject call")
+			return
+		}
+		if shouldForward {
+			sendCallStateEvent(c.Request.Context(), "call:reject", userID, transitionCall.CallID, transitionCall.CallerID, transitionCall.CalleeID)
+		}
+
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	}
+}
+
+func EndCall(database *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, ok := authenticatedUserID(c)
+		if !ok {
+			return
+		}
+		emitExpiredCallTimeouts(c.Request.Context(), database)
+
+		callID := strings.TrimSpace(c.Param("callId"))
+		call, err := repository.FindCallForParticipant(database, userID, callID)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusOK, gin.H{"ok": true})
+			return
+		}
+		if err != nil {
+			jsonError(c, http.StatusInternalServerError, "failed to get call")
+			return
+		}
+		peerID := call.CalleeID
+		if userID == call.CalleeID {
+			peerID = call.CallerID
+		}
+
+		transitionCall, shouldForward, err := repository.MarkCallEnded(database, userID, peerID, callID)
+		if err != nil {
+			jsonError(c, http.StatusInternalServerError, "failed to end call")
+			return
+		}
+		if shouldForward {
+			sendCallStateEvent(c.Request.Context(), "call:end", userID, transitionCall.CallID, transitionCall.CallerID, transitionCall.CalleeID)
+			enqueueCallStateNotification(database, peerID, userID, dto.NotificationTypeCallEnded, transitionCall.CallID, conversationIDForCall(transitionCall), transitionCall.CallType)
+		}
+
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	}
+}
+
+func AcceptCallIntent(database *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, ok := authenticatedUserID(c)
+		if !ok {
+			return
+		}
+		emitExpiredCallTimeouts(c.Request.Context(), database)
+
+		callID := strings.TrimSpace(c.Param("callId"))
+		call, err := repository.FindCallForParticipant(database, userID, callID)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			jsonError(c, http.StatusGone, "call is no longer active")
+			return
+		}
+		if err != nil {
+			jsonError(c, http.StatusInternalServerError, "failed to get call")
+			return
+		}
+		if call.CalleeID != userID || call.Status != models.CallStatusRinging || (call.ExpiresAt != nil && !call.ExpiresAt.After(time.Now())) {
+			jsonError(c, http.StatusGone, "call is no longer active")
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"call": callToResponse(call)})
+	}
+}
+
+func sendCallStateEvent(ctx context.Context, eventType string, fromID uint, callID string, participantIDs ...uint) {
+	eventBytes, err := json.Marshal(gin.H{
+		"type": eventType,
+		"payload": gin.H{
+			"from_id": fromID,
+			"call_id": callID,
+		},
+	})
+	if err != nil {
+		return
+	}
+	writeToUsers(ctx, eventBytes, participantIDs...)
+}
+
+func conversationIDForCall(call models.CallLog) uint {
+	if call.ConversationID != nil && *call.ConversationID != 0 {
+		return *call.ConversationID
+	}
+	if call.CallerID != 0 {
+		return call.CallerID
+	}
+	return call.CalleeID
 }
 
 func callToResponse(call models.CallLog) callResponse {

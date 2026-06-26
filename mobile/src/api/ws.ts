@@ -27,6 +27,12 @@ type RNWebSocketConstructor = new (
   },
 ) => WebSocket;
 
+function createEventId(type: string, callId?: string) {
+  return `${type}:${callId ?? 'event'}:${Date.now()}:${Math.random()
+    .toString(36)
+    .slice(2)}`;
+}
+
 function attachmentForTransport(
   attachment: MessageAttachment,
 ): MessageAttachment {
@@ -66,6 +72,7 @@ class ChatSocket {
   private networkOnline = true;
   private pendingEvents: QueuedEvent[] = [];
   private activeConversationId: number | null = null;
+  private callEventSeq = new Map<string, number>();
   private readonly callEventQueueTtlMs = 30000;
   private readonly callEventTypes: ReadonlySet<string> = new Set([
     WS_EVENTS.CALL_OFFER,
@@ -243,6 +250,8 @@ class ChatSocket {
         offer,
         call_type: callType,
         call_id: callId,
+        event_id: createEventId(WS_EVENTS.CALL_OFFER, callId),
+        event_seq: this.nextCallEventSeq(callId),
       },
     });
   }
@@ -254,6 +263,8 @@ class ChatSocket {
         to_id: toId,
         answer,
         call_id: callId,
+        event_id: createEventId(WS_EVENTS.CALL_ANSWER, callId),
+        event_seq: this.nextCallEventSeq(callId),
       },
     });
   }
@@ -265,6 +276,8 @@ class ChatSocket {
         to_id: toId,
         candidate,
         call_id: callId,
+        event_id: createEventId(WS_EVENTS.CALL_ICE, callId),
+        event_seq: this.nextCallEventSeq(callId),
       },
     });
   }
@@ -275,8 +288,11 @@ class ChatSocket {
       payload: {
         to_id: toId,
         call_id: callId,
+        event_id: createEventId(WS_EVENTS.CALL_END, callId),
+        event_seq: this.nextCallEventSeq(callId),
       },
     });
+    this.callEventSeq.delete(callId);
   }
 
   sendCallReject(toId: number, callId: string) {
@@ -285,8 +301,11 @@ class ChatSocket {
       payload: {
         to_id: toId,
         call_id: callId,
+        event_id: createEventId(WS_EVENTS.CALL_REJECT, callId),
+        event_seq: this.nextCallEventSeq(callId),
       },
     });
+    this.callEventSeq.delete(callId);
   }
 
   private sendEventToUser(
@@ -508,6 +527,12 @@ class ChatSocket {
 
     const callId = (event.payload as { call_id?: unknown }).call_id;
     return typeof callId === 'string' ? callId : null;
+  }
+
+  private nextCallEventSeq(callId: string) {
+    const next = (this.callEventSeq.get(callId) ?? 0) + 1;
+    this.callEventSeq.set(callId, next);
+    return next;
   }
 }
 
