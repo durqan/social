@@ -62,6 +62,7 @@ class ChatSocket {
   private readonly minReconnectDelay = 1000;
   private readonly maxReconnectDelay = 30000;
   private ws: WebSocket | null = null;
+  private socketGeneration = 0;
   private handlers = new Set<WsHandler>();
   private statusHandlers = new Set<StatusHandler>();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -178,16 +179,19 @@ class ChatSocket {
   }
 
   disconnect() {
+    this.socketGeneration += 1;
     if (this.activeConversationId !== null) {
       this.clearActiveConversation();
     }
     this.shouldReconnect = false;
+    this.opening = false;
     this.clearReconnectTimer();
     this.reconnectAttempts = 0;
     this.pendingEvents = [];
     this.setConnected(false);
-    this.ws?.close();
+    const socket = this.ws;
     this.ws = null;
+    socket?.close();
   }
 
   sendMessage(
@@ -197,7 +201,7 @@ class ChatSocket {
     replyToMessageId?: number | null,
     encryption?: EncryptedMessagePayload,
   ) {
-    this.sendEvent({
+    return this.sendEvent({
       type: WS_EVENTS.MESSAGE_SEND,
       payload: {
         to_id: toId,
@@ -283,7 +287,7 @@ class ChatSocket {
   }
 
   sendCallEnd(toId: number, callId: string) {
-    return this.sendEvent({
+    const sent = this.sendEvent({
       type: WS_EVENTS.CALL_END,
       payload: {
         to_id: toId,
@@ -293,10 +297,11 @@ class ChatSocket {
       },
     });
     this.callEventSeq.delete(callId);
+    return sent;
   }
 
   sendCallReject(toId: number, callId: string) {
-    return this.sendEvent({
+    const sent = this.sendEvent({
       type: WS_EVENTS.CALL_REJECT,
       payload: {
         to_id: toId,
@@ -306,6 +311,7 @@ class ChatSocket {
       },
     });
     this.callEventSeq.delete(callId);
+    return sent;
   }
 
   private sendEventToUser(
@@ -338,39 +344,73 @@ class ChatSocket {
 
   private async open() {
     this.opening = true;
+    const generation = this.socketGeneration + 1;
+    this.socketGeneration = generation;
 
     try {
       await refreshSession();
+      if (!this.shouldReconnect || generation !== this.socketGeneration) {
+        this.opening = false;
+        return;
+      }
       const cookieHeader = await getCookieHeader();
+      if (!this.shouldReconnect || generation !== this.socketGeneration) {
+        this.opening = false;
+        return;
+      }
       const SocketCtor = WebSocket as unknown as RNWebSocketConstructor;
 
-      this.ws = new SocketCtor(WS_URL, undefined, {
+      const socket = new SocketCtor(WS_URL, undefined, {
         headers: cookieHeader
           ? {
               Cookie: cookieHeader,
             }
           : undefined,
       });
+      if (!this.shouldReconnect || generation !== this.socketGeneration) {
+        this.opening = false;
+        socket.close();
+        return;
+      }
 
-      this.ws.onopen = () => {
+      this.ws = socket;
+
+      socket.onopen = () => {
+        if (!this.isCurrentSocket(socket, generation)) {
+          socket.close();
+          return;
+        }
         this.opening = false;
         this.reconnectAttempts = 0;
         this.setConnected(true);
         this.syncActiveConversation();
         this.flushPendingEvents();
       };
-      this.ws.onmessage = event => this.handleRawMessage(event.data);
-      this.ws.onerror = () => {
+      socket.onmessage = event => {
+        if (this.isCurrentSocket(socket, generation)) {
+          this.handleRawMessage(event.data);
+        }
+      };
+      socket.onerror = () => {
+        if (!this.isCurrentSocket(socket, generation)) {
+          return;
+        }
         this.opening = false;
         this.setConnected(false);
       };
-      this.ws.onclose = () => {
+      socket.onclose = () => {
+        if (!this.isCurrentSocket(socket, generation)) {
+          return;
+        }
         this.opening = false;
         this.ws = null;
         this.setConnected(false);
         this.scheduleReconnect();
       };
     } catch {
+      if (generation !== this.socketGeneration) {
+        return;
+      }
       this.opening = false;
       this.setConnected(false);
       this.scheduleReconnect();
@@ -469,7 +509,16 @@ class ChatSocket {
     try {
       const parsed = JSON.parse(raw) as WsEvent;
       if (parsed && typeof parsed.type === 'string') {
-        this.handlers.forEach(handler => handler(parsed));
+        this.handlers.forEach(handler => {
+          try {
+            handler(parsed);
+          } catch (error) {
+            warnDev('[SocialMobile] WebSocket handler failed', {
+              type: parsed.type,
+              error,
+            });
+          }
+        });
       }
     } catch {
       // Ignore malformed events from the socket.
@@ -533,6 +582,10 @@ class ChatSocket {
     const next = (this.callEventSeq.get(callId) ?? 0) + 1;
     this.callEventSeq.set(callId, next);
     return next;
+  }
+
+  private isCurrentSocket(socket: WebSocket, generation: number) {
+    return this.ws === socket && this.socketGeneration === generation;
   }
 }
 

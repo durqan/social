@@ -9,3 +9,7 @@ export function setActivePushConversation(conversationId: number | null) {
 export function getActivePushConversation() {
   return activeConversationId;
 }
+
+export function clearActivePushConversation() {
+  activeConversationId = null;
+}

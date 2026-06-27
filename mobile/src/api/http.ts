@@ -16,6 +16,7 @@ const unsafeMethods = new Set<HTTPMethod>(['POST', 'PATCH', 'PUT', 'DELETE']);
 
 let csrfRefresh: Promise<string> | null = null;
 let sessionRefresh: Promise<void> | null = null;
+const authInvalidHandlers = new Set<(error: unknown) => void>();
 
 export class ApiError extends Error {
   status: number;
@@ -53,6 +54,23 @@ export async function getCookieHeader() {
 
 export async function clearSessionCookies() {
   await CookieManager.clearAll();
+}
+
+export function onAuthInvalid(handler: (error: unknown) => void) {
+  authInvalidHandlers.add(handler);
+  return () => {
+    authInvalidHandlers.delete(handler);
+  };
+}
+
+function notifyAuthInvalid(error: unknown) {
+  authInvalidHandlers.forEach(handler => {
+    try {
+      handler(error);
+    } catch {
+      // Auth invalidation is best-effort; one broken subscriber must not block others.
+    }
+  });
 }
 
 export async function ensureCSRFToken() {
@@ -211,6 +229,12 @@ export async function apiRequest<T>(
         retry: true,
       });
     } catch (refreshError) {
+      if (
+        refreshError instanceof ApiError &&
+        (refreshError.status === 401 || refreshError.status === 403)
+      ) {
+        notifyAuthInvalid(refreshError);
+      }
       throw refreshError;
     }
   }
@@ -288,8 +312,7 @@ export function getApiErrorMessage(error: unknown) {
       'Комментарий должен быть от 1 до 500 символов.',
     'you can only edit your own posts':
       'Можно редактировать только свои посты.',
-    'you can only delete your own posts':
-      'Можно удалять только свои посты.',
+    'you can only delete your own posts': 'Можно удалять только свои посты.',
     'failed to pin conversation':
       'Не удалось закрепить диалог. Попробуйте позже.',
     'failed to unpin conversation':

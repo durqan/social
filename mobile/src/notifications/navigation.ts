@@ -97,7 +97,9 @@ export function notificationRouteFromPayload(
   } = {},
 ): NotificationRoute {
   const actorId =
-    notification.actorId ?? notification.senderId ?? actorFromChatURL(notification.url);
+    notification.actorId ??
+    notification.senderId ??
+    actorFromChatURL(notification.url);
   const conversationId = notification.conversationId ?? actorId;
 
   switch (notification.type) {
@@ -130,7 +132,9 @@ export function notificationRouteFromPayload(
     case 'comment_created':
       return routeFromURL(notification.url) ?? { kind: 'tab', tab: 'Home' };
     default:
-      return routeFromURL(notification.url) ?? { kind: 'tab', tab: 'Notifications' };
+      return (
+        routeFromURL(notification.url) ?? { kind: 'tab', tab: 'Notifications' }
+      );
   }
 }
 
@@ -227,4 +231,8 @@ export function flushPendingNotificationNavigation() {
   const notification = pendingNotification;
   pendingNotification = null;
   navigateNow(notification);
+}
+
+export function clearPendingNotificationNavigation() {
+  pendingNotification = null;
 }

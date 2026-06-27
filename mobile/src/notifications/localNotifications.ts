@@ -286,6 +286,10 @@ export async function drainPendingOpenedLocalNotifications() {
   }
 }
 
+export async function clearPendingOpenedLocalNotifications() {
+  await AsyncStorage.removeItem(pendingOpenedLocalNotificationKey);
+}
+
 function notificationFromNotifeeData(data: unknown) {
   return normalizeNotificationData(
     data && typeof data === 'object'
@@ -296,10 +300,12 @@ function notificationFromNotifeeData(data: unknown) {
 
 async function rejectIncomingCallFromNotification(
   notification: MobileNotificationData,
-  notificationId?: string,
+  localNotificationId?: string,
 ) {
-  if (notificationId) {
-    await notifee.cancelNotification(notificationId).catch(() => undefined);
+  if (localNotificationId) {
+    await notifee
+      .cancelNotification(localNotificationId)
+      .catch(() => undefined);
   }
   if (!notification.callId) {
     return;

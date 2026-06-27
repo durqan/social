@@ -79,7 +79,7 @@ import type {
   MessageAttachment,
   PinnedMessage,
   User,
-} from '../../api/types';
+} from '@social/shared';
 import { chatSocket, type WsEvent } from '../../api/ws';
 import { IconButton } from '../../components/IconButton';
 import {
@@ -168,13 +168,11 @@ const voiceAudioSet = {
   AudioEncodingBitRate: 64000,
 } as const;
 
-
 function useLatest<T>(value: T) {
   const ref = useRef(value);
   ref.current = value;
   return ref;
 }
-
 
 function messageUpdateTime(message: Message) {
   if (!message.updated_at) {
@@ -196,7 +194,49 @@ function shouldApplyMessageUpdate(current: Message, updated: Message) {
   return updatedTime >= currentTime;
 }
 
+function messageBelongsToChat(
+  message: Message,
+  currentUserId: number | undefined,
+  otherUserId: number,
+) {
+  return (
+    (message.from_id === otherUserId && message.to_id === currentUserId) ||
+    (message.to_id === otherUserId && message.from_id === currentUserId)
+  );
+}
 
+function mergeMessage(current: Message | undefined, next: Message) {
+  if (!current) {
+    return next;
+  }
+
+  if (!shouldApplyMessageUpdate(current, next)) {
+    return current;
+  }
+
+  return {
+    ...next,
+    reactions: next.reactions ?? current.reactions,
+    reaction_version: next.reaction_version ?? current.reaction_version,
+  };
+}
+
+function mergeMessageLists(current: Message[], next: Message[]) {
+  const byId = new Map<number, Message>();
+  current.forEach(message => {
+    byId.set(message.id, message);
+  });
+  next.forEach(message => {
+    byId.set(message.id, mergeMessage(byId.get(message.id), message));
+  });
+
+  return Array.from(byId.values()).sort((first, second) => {
+    if (first.id !== second.id) {
+      return first.id - second.id;
+    }
+    return Date.parse(first.created_at) - Date.parse(second.created_at);
+  });
+}
 
 function chatErrorMessage(error: unknown) {
   if (error instanceof Error) {
@@ -210,7 +250,6 @@ function chatErrorMessage(error: unknown) {
 
   return getApiErrorMessage(error);
 }
-
 
 export default function ChatScreen({ route }: Props) {
   const { user } = useAuth();
@@ -262,6 +301,10 @@ export default function ChatScreen({ route }: Props) {
     null,
   );
   const keyboardVisibleRef = useRef(false);
+  const screenMountedRef = useRef(true);
+  const chatSessionSeqRef = useRef(0);
+  const loadMessagesSeqRef = useRef(0);
+  const loadPinnedSeqRef = useRef(0);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [inputHeight, setInputHeight] = useState(COMPOSER_INPUT_MIN_HEIGHT);
@@ -348,6 +391,40 @@ export default function ChatScreen({ route }: Props) {
   const stopVoiceRecordingRef = useRef<(send: boolean) => Promise<void> | void>(
     null as any,
   );
+
+  const isCurrentChatSession = useCallback((sessionSeq: number) => {
+    return screenMountedRef.current && chatSessionSeqRef.current === sessionSeq;
+  }, []);
+
+  useEffect(() => {
+    screenMountedRef.current = true;
+
+    return () => {
+      screenMountedRef.current = false;
+      chatSessionSeqRef.current += 1;
+      loadMessagesSeqRef.current += 1;
+      loadPinnedSeqRef.current += 1;
+    };
+  }, []);
+
+  useEffect(() => {
+    chatSessionSeqRef.current += 1;
+    loadMessagesSeqRef.current += 1;
+    loadPinnedSeqRef.current += 1;
+    hasLoadedRef.current = false;
+    isLoadingOlderRef.current = false;
+    setMessages([]);
+    setHasLoaded(false);
+    setHasMore(true);
+    setLoading(false);
+    setRefreshing(false);
+    setLoadingOlder(false);
+    setPinnedMessage(null);
+    setSelectedMessage(null);
+    setEditingMessage(null);
+    setReplyToMessage(null);
+    setError(null);
+  }, [otherUserId, user?.id]);
 
   const applyAndroidKeyboardInset = useCallback(() => {
     if (Platform.OS !== 'android') {
@@ -805,7 +882,11 @@ export default function ChatScreen({ route }: Props) {
   }, [user?.id]);
 
   const markConversationRead = useCallback(async () => {
+    const sessionSeq = chatSessionSeqRef.current;
     await messageApi.markAsRead(otherUserId);
+    if (!isCurrentChatSession(sessionSeq)) {
+      return;
+    }
     markMatchingAsRead({
       types: ['message_received'],
       conversation_id: otherUserId,
@@ -823,6 +904,7 @@ export default function ChatScreen({ route }: Props) {
       ),
     );
   }, [
+    isCurrentChatSession,
     markMatchingAsRead,
     otherUserId,
     refreshUnreadCount,
@@ -832,6 +914,8 @@ export default function ChatScreen({ route }: Props) {
 
   const loadMessages = useCallback(
     async (mode: LoadMode = 'initial') => {
+      const sessionSeq = chatSessionSeqRef.current;
+      const requestSeq = ++loadMessagesSeqRef.current;
       const showInitialLoading = mode === 'initial' && !hasLoadedRef.current;
 
       if (showInitialLoading) {
@@ -850,6 +934,12 @@ export default function ChatScreen({ route }: Props) {
           mode === 'initial' &&
           (!hasLoadedRef.current || messagesRef.current.length === 0);
         const displayMessages = await decryptChatMessages(response.messages);
+        if (
+          !isCurrentChatSession(sessionSeq) ||
+          loadMessagesSeqRef.current !== requestSeq
+        ) {
+          return;
+        }
 
         isInitialScrollPendingRef.current = shouldInitialScroll;
         pendingScrollToLatestReasonRef.current = shouldInitialScroll
@@ -858,7 +948,11 @@ export default function ChatScreen({ route }: Props) {
         setMaintainScrollPositionEnabled(!shouldInitialScroll);
         hasMoreRef.current = response.has_more;
         setHasMore(response.has_more);
-        setMessages(displayMessages);
+        setMessages(previous =>
+          mode === 'silent'
+            ? mergeMessageLists(previous, displayMessages)
+            : displayMessages,
+        );
 
         if (shouldInitialScroll) {
           requestScrollToLatest('initial_load', false);
@@ -866,21 +960,32 @@ export default function ChatScreen({ route }: Props) {
 
         markConversationRead().catch(() => undefined);
       } catch (apiError) {
-        setError(getApiErrorMessage(apiError));
-      } finally {
-        hasLoadedRef.current = true;
-        setHasLoaded(true);
-        if (showInitialLoading) {
-          setLoading(false);
+        if (
+          isCurrentChatSession(sessionSeq) &&
+          loadMessagesSeqRef.current === requestSeq
+        ) {
+          setError(getApiErrorMessage(apiError));
         }
-        if (mode === 'refresh') {
-          setRefreshing(false);
+      } finally {
+        if (
+          isCurrentChatSession(sessionSeq) &&
+          loadMessagesSeqRef.current === requestSeq
+        ) {
+          hasLoadedRef.current = true;
+          setHasLoaded(true);
+          if (showInitialLoading) {
+            setLoading(false);
+          }
+          if (mode === 'refresh') {
+            setRefreshing(false);
+          }
         }
       }
     },
     [
       decryptChatMessages,
       hasMoreRef,
+      isCurrentChatSession,
       messagesRef,
       markConversationRead,
       otherUserId,
@@ -889,6 +994,7 @@ export default function ChatScreen({ route }: Props) {
   );
 
   const loadOlderMessages = useCallback(async () => {
+    const sessionSeq = chatSessionSeqRef.current;
     const currentMessages = messagesRef.current;
     const oldestMessage = currentMessages[0];
 
@@ -912,10 +1018,16 @@ export default function ChatScreen({ route }: Props) {
         limit: MESSAGE_PAGE_SIZE,
       });
       hasMoreRef.current = response.has_more;
+      if (!isCurrentChatSession(sessionSeq)) {
+        return;
+      }
       setHasMore(response.has_more);
 
       if (response.messages.length) {
         const displayMessages = await decryptChatMessages(response.messages);
+        if (!isCurrentChatSession(sessionSeq)) {
+          return;
+        }
         setMessages(previous => {
           const existingIds = new Set(previous.map(message => message.id));
           const olderMessages = displayMessages.filter(
@@ -928,12 +1040,23 @@ export default function ChatScreen({ route }: Props) {
         });
       }
     } catch (apiError) {
-      setError(chatErrorMessage(apiError));
+      if (isCurrentChatSession(sessionSeq)) {
+        setError(chatErrorMessage(apiError));
+      }
     } finally {
-      isLoadingOlderRef.current = false;
-      setLoadingOlder(false);
+      if (isCurrentChatSession(sessionSeq)) {
+        isLoadingOlderRef.current = false;
+        setLoadingOlder(false);
+      }
     }
-  }, [decryptChatMessages, hasMoreRef, messagesRef, otherUserId, refreshing]);
+  }, [
+    decryptChatMessages,
+    hasMoreRef,
+    isCurrentChatSession,
+    messagesRef,
+    otherUserId,
+    refreshing,
+  ]);
 
   const handleMessagesScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -969,20 +1092,32 @@ export default function ChatScreen({ route }: Props) {
   }, [messages.length, scrollToLatestMessage]);
 
   const loadPinnedMessage = useCallback(async () => {
+    const sessionSeq = chatSessionSeqRef.current;
+    const requestSeq = ++loadPinnedSeqRef.current;
     try {
       const pin = await messageApi.getPinnedMessage(otherUserId);
-      setPinnedMessage(
-        pin?.message
-          ? {
-              ...pin,
-              message: await decryptIncomingMessage(pin.message),
-            }
-          : pin,
-      );
+      const displayPin = pin?.message
+        ? {
+            ...pin,
+            message: await decryptIncomingMessage(pin.message),
+          }
+        : pin;
+      if (
+        !isCurrentChatSession(sessionSeq) ||
+        loadPinnedSeqRef.current !== requestSeq
+      ) {
+        return;
+      }
+      setPinnedMessage(displayPin);
     } catch {
-      setPinnedMessage(null);
+      if (
+        isCurrentChatSession(sessionSeq) &&
+        loadPinnedSeqRef.current === requestSeq
+      ) {
+        setPinnedMessage(null);
+      }
     }
-  }, [decryptIncomingMessage, otherUserId]);
+  }, [decryptIncomingMessage, isCurrentChatSession, otherUserId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -1106,9 +1241,11 @@ export default function ChatScreen({ route }: Props) {
 
       if (event.type === WS_EVENTS.MESSAGE_UPDATE) {
         const message = event.payload as Message;
-        const belongsToChat =
-          (message.from_id === otherUserId && message.to_id === user?.id) ||
-          (message.to_id === otherUserId && message.from_id === user?.id);
+        const belongsToChat = messageBelongsToChat(
+          message,
+          user?.id,
+          otherUserId,
+        );
         const existingMessage = messagesRef.current.find(
           item => item.id === message.id,
         );
@@ -1121,8 +1258,12 @@ export default function ChatScreen({ route }: Props) {
           return;
         }
 
+        const sessionSeq = chatSessionSeqRef.current;
         decryptIncomingMessage(message)
           .then(displayMessage => {
+            if (!isCurrentChatSession(sessionSeq)) {
+              return;
+            }
             setMessages(previous =>
               previous.map(item =>
                 item.id === message.id &&
@@ -1137,36 +1278,75 @@ export default function ChatScreen({ route }: Props) {
         return;
       }
 
+      if (event.type === WS_EVENTS.MESSAGE_REACTION) {
+        const payload = event.payload as {
+          message_id?: number;
+          conversation_id?: number;
+          reaction_version?: number;
+          reactions?: Message['reactions'];
+        };
+
+        if (payload.conversation_id !== otherUserId || !payload.message_id) {
+          return;
+        }
+
+        setMessages(previous =>
+          previous.map(message => {
+            if (message.id !== payload.message_id) {
+              return message;
+            }
+            const currentVersion = message.reaction_version ?? 0;
+            const nextVersion = payload.reaction_version ?? currentVersion;
+            if (nextVersion < currentVersion) {
+              return message;
+            }
+            return {
+              ...message,
+              reaction_version: nextVersion,
+              reactions: payload.reactions ?? [],
+            };
+          }),
+        );
+        return;
+      }
+
       if (event.type === WS_EVENTS.MESSAGE_PINNED) {
         const payload = event.payload as {
-          conversation_user_id?: number;
           pinned_message?: PinnedMessage | null;
         };
-        if (
-          !payload.conversation_user_id ||
-          payload.conversation_user_id === otherUserId
-        ) {
-          if (payload.pinned_message?.message) {
-            decryptIncomingMessage(payload.pinned_message.message)
-              .then(displayMessage => {
-                setPinnedMessage({
-                  ...payload.pinned_message!,
-                  message: displayMessage,
-                });
-              })
-              .catch(() => undefined);
-          } else {
-            setPinnedMessage(payload.pinned_message ?? null);
-          }
+        const pinnedPayload = payload.pinned_message;
+        if (!pinnedPayload) {
+          setPinnedMessage(null);
+          return;
         }
+        if (
+          !messageBelongsToChat(pinnedPayload.message, user?.id, otherUserId)
+        ) {
+          return;
+        }
+        const sessionSeq = chatSessionSeqRef.current;
+        decryptIncomingMessage(pinnedPayload.message)
+          .then(displayMessage => {
+            if (!isCurrentChatSession(sessionSeq)) {
+              return;
+            }
+            setPinnedMessage({
+              ...pinnedPayload,
+              message: displayMessage,
+            });
+          })
+          .catch(() => undefined);
         return;
       }
 
       if (event.type === WS_EVENTS.MESSAGE_UNPINNED) {
-        const payload = event.payload as { conversation_user_id?: number };
+        const payload = event.payload as {
+          participant_ids?: number[];
+        };
         if (
-          !payload.conversation_user_id ||
-          payload.conversation_user_id === otherUserId
+          user?.id &&
+          payload.participant_ids?.includes(user.id) &&
+          payload.participant_ids.includes(otherUserId)
         ) {
           setPinnedMessage(null);
         }
@@ -1207,9 +1387,11 @@ export default function ChatScreen({ route }: Props) {
       }
 
       const message = event.payload as Message;
-      const belongsToChat =
-        (message.from_id === otherUserId && message.to_id === user?.id) ||
-        (message.to_id === otherUserId && message.from_id === user?.id);
+      const belongsToChat = messageBelongsToChat(
+        message,
+        user?.id,
+        otherUserId,
+      );
 
       if (!belongsToChat) {
         return;
@@ -1219,8 +1401,12 @@ export default function ChatScreen({ route }: Props) {
         draftRef.current = null;
       }
 
+      const sessionSeq = chatSessionSeqRef.current;
       decryptIncomingMessage(message)
         .then(displayMessage => {
+          if (!isCurrentChatSession(sessionSeq)) {
+            return;
+          }
           setMessages(previous => {
             if (previous.some(item => item.id === displayMessage.id)) {
               return previous;
@@ -1241,6 +1427,7 @@ export default function ChatScreen({ route }: Props) {
     },
     [
       decryptIncomingMessage,
+      isCurrentChatSession,
       markConversationRead,
       messagesRef,
       otherUserId,
@@ -1611,6 +1798,10 @@ export default function ChatScreen({ route }: Props) {
   // It reads current `input` as optional text comment (voice + text support).
   // Returns true on success.
   async function sendVoiceMessage(voice: LocalVoiceMessage): Promise<boolean> {
+    if (sendingRef.current || messageActionPendingRef.current) {
+      return false;
+    }
+
     const normalizedUri =
       voice.uri.startsWith('file://') || voice.uri.startsWith('content://')
         ? voice.uri
@@ -1625,6 +1816,7 @@ export default function ChatScreen({ route }: Props) {
 
     const comment = input.trim();
 
+    sendingRef.current = 'uploadingVoice';
     setSending('uploadingVoice');
     setUploadProgress(null);
     setError(null);
@@ -1672,6 +1864,7 @@ export default function ChatScreen({ route }: Props) {
       setError(chatErrorMessage(apiError));
       return false;
     } finally {
+      sendingRef.current = null;
       setSending(null);
       setUploadProgress(null);
     }
@@ -1821,6 +2014,10 @@ export default function ChatScreen({ route }: Props) {
   }
 
   async function sendVideoNoteMessage(videoNote: LocalVideoNoteMessage) {
+    if (sendingRef.current || messageActionPendingRef.current) {
+      return false;
+    }
+
     const normalizedUri =
       videoNote.uri.startsWith('file://') ||
       videoNote.uri.startsWith('content://')
@@ -1834,6 +2031,7 @@ export default function ChatScreen({ route }: Props) {
     }
 
     const comment = input.trim();
+    sendingRef.current = 'uploadingVideoNote';
     setSending('uploadingVideoNote');
     setUploadProgress(null);
     setError(null);
@@ -1886,6 +2084,7 @@ export default function ChatScreen({ route }: Props) {
       setError(chatErrorMessage(apiError));
       return false;
     } finally {
+      sendingRef.current = null;
       setSending(null);
       setUploadProgress(null);
     }
@@ -1948,6 +2147,7 @@ export default function ChatScreen({ route }: Props) {
       }
 
       messageActionPendingRef.current = true;
+      sendingRef.current = 'sending';
       setMessageActionPending(true);
       setSending('sending');
       setError(null);
@@ -2029,6 +2229,7 @@ export default function ChatScreen({ route }: Props) {
         setError(chatErrorMessage(apiError));
       } finally {
         messageActionPendingRef.current = false;
+        sendingRef.current = null;
         setMessageActionPending(false);
         setSending(null);
       }
@@ -2040,14 +2241,18 @@ export default function ChatScreen({ route }: Props) {
       return;
     }
 
+    if (sendingRef.current || messageActionPendingRef.current) {
+      return;
+    }
+
     let uploadFailed = false;
-    setSending(
-      pendingVideo
-        ? 'preparingVideo'
-        : pendingImages.length > 0
-        ? 'uploading'
-        : 'sending',
-    );
+    const nextSendingState = pendingVideo
+      ? 'preparingVideo'
+      : pendingImages.length > 0
+      ? 'uploading'
+      : 'sending';
+    sendingRef.current = nextSendingState;
+    setSending(nextSendingState);
     setUploadProgress(
       pendingImages.length > 0
         ? {
@@ -2152,6 +2357,7 @@ export default function ChatScreen({ route }: Props) {
           : message,
       );
     } finally {
+      sendingRef.current = null;
       setSending(null);
       setUploadProgress(null);
     }
@@ -3283,6 +3489,3 @@ function assetToLocalVideo(asset?: Asset): LocalChatVideo | null {
     height: asset.height,
   };
 }
-
-
-

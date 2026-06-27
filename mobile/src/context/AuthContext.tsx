@@ -10,7 +10,12 @@ import React, {
 } from 'react';
 
 import { authApi } from '../api/auth';
-import { ApiError, getApiErrorMessage } from '../api/http';
+import {
+  ApiError,
+  clearSessionCookies,
+  getApiErrorMessage,
+  onAuthInvalid,
+} from '../api/http';
 import type { LoginPayload, RegisterPayload, User } from '../api/types';
 import { userApi } from '../api/users';
 import { chatSocket } from '../api/ws';
@@ -20,6 +25,11 @@ import {
 } from '../bootstrap/postAuthBootstrap';
 import { shutdownCurrentCallForLogout } from './callLifecycle';
 import { revokeRegisteredPushToken } from '../notifications/pushNotifications';
+import { clearActivePushConversation } from '../notifications/activeConversation';
+import { clearPendingIncomingCall } from '../notifications/pendingIncomingCall';
+import { clearPendingOpenedLocalNotifications } from '../notifications/localNotifications';
+import { clearPendingNotificationNavigation } from '../notifications/navigation';
+import { clearPendingPushEvents } from '../notifications/pushEffects';
 import { logDev, warnDev } from '../utils/logger';
 
 type AuthContextValue = {
@@ -41,22 +51,75 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [initializing, setInitializing] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const logoutPromiseRef = useRef<Promise<void> | null>(null);
+  const sessionVersionRef = useRef(0);
+
+  const isCurrentSession = useCallback((version: number) => {
+    return sessionVersionRef.current === version;
+  }, []);
+
+  const cleanupLocalSession = useCallback(
+    async ({
+      reason,
+      logoutFromServer,
+    }: {
+      reason: string;
+      logoutFromServer: boolean;
+    }) => {
+      sessionVersionRef.current += 1;
+      logDev('[SocialMobile] logout reason', { reason });
+
+      await shutdownCurrentCallForLogout().catch(() => undefined);
+      chatSocket.disconnect();
+      clearActivePushConversation();
+      clearPendingNotificationNavigation();
+
+      await revokeRegisteredPushToken().catch(() => undefined);
+      await resetPostAuthBootstrap();
+
+      if (logoutFromServer) {
+        try {
+          await authApi.logout();
+        } catch {
+          await clearSessionCookies().catch(() => undefined);
+        }
+      } else {
+        await clearSessionCookies().catch(() => undefined);
+      }
+
+      await Promise.allSettled([
+        clearPendingPushEvents(),
+        clearPendingIncomingCall(),
+        clearPendingOpenedLocalNotifications(),
+      ]);
+
+      setAuthError(null);
+      setUser(null);
+      setInitializing(false);
+    },
+    [],
+  );
 
   const refreshUser = useCallback(async () => {
+    const version = sessionVersionRef.current;
     const profile = await userApi.getProfile();
+    if (!isCurrentSession(version)) {
+      return;
+    }
     setUser(profile);
     if (profile.id) {
       runPostAuthBootstrap(profile.id).catch(() => undefined);
     }
-  }, []);
+  }, [isCurrentSession]);
 
   useEffect(() => {
     let mounted = true;
 
+    const version = sessionVersionRef.current;
+
     userApi
       .getProfile()
       .then(profile => {
-        if (mounted) {
+        if (mounted && isCurrentSession(version)) {
           setUser(profile);
           if (profile.id) {
             runPostAuthBootstrap(profile.id).catch(() => undefined);
@@ -64,7 +127,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       })
       .catch(error => {
-        if (mounted) {
+        if (mounted && isCurrentSession(version)) {
           if (
             error instanceof ApiError &&
             (error.status === 401 || error.status === 403)
@@ -83,7 +146,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       })
       .finally(() => {
-        if (mounted) {
+        if (mounted && isCurrentSession(version)) {
           setInitializing(false);
         }
       });
@@ -91,37 +154,68 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [isCurrentSession]);
 
-  const login = useCallback(async (payload: LoginPayload) => {
-    setAuthError(null);
-    try {
-      const response = await authApi.login(payload);
-      setUser(response.user);
-      if (response.user.id) {
-        runPostAuthBootstrap(response.user.id).catch(() => undefined);
+  const login = useCallback(
+    async (payload: LoginPayload) => {
+      sessionVersionRef.current += 1;
+      const version = sessionVersionRef.current;
+      setAuthError(null);
+      try {
+        const response = await authApi.login(payload);
+        if (!isCurrentSession(version)) {
+          return;
+        }
+        setUser(response.user);
+        if (response.user.id) {
+          runPostAuthBootstrap(response.user.id).catch(() => undefined);
+        }
+      } catch (error) {
+        const message = getApiErrorMessage(error);
+        setAuthError(message);
+        throw error;
       }
-    } catch (error) {
-      const message = getApiErrorMessage(error);
-      setAuthError(message);
-      throw error;
-    }
-  }, []);
+    },
+    [isCurrentSession],
+  );
 
-  const register = useCallback(async (payload: RegisterPayload) => {
-    setAuthError(null);
-    try {
-      const response = await authApi.register(payload);
-      setUser(response.user);
-      if (response.user.id) {
-        runPostAuthBootstrap(response.user.id).catch(() => undefined);
+  const register = useCallback(
+    async (payload: RegisterPayload) => {
+      sessionVersionRef.current += 1;
+      const version = sessionVersionRef.current;
+      setAuthError(null);
+      try {
+        const response = await authApi.register(payload);
+        if (!isCurrentSession(version)) {
+          return;
+        }
+        setUser(response.user);
+        if (response.user.id) {
+          runPostAuthBootstrap(response.user.id).catch(() => undefined);
+        }
+      } catch (error) {
+        const message = getApiErrorMessage(error);
+        setAuthError(message);
+        throw error;
       }
-    } catch (error) {
-      const message = getApiErrorMessage(error);
-      setAuthError(message);
-      throw error;
-    }
-  }, []);
+    },
+    [isCurrentSession],
+  );
+
+  useEffect(() => {
+    return onAuthInvalid(() => {
+      if (logoutPromiseRef.current) {
+        return;
+      }
+
+      logoutPromiseRef.current = cleanupLocalSession({
+        reason: 'auth_invalid',
+        logoutFromServer: false,
+      }).finally(() => {
+        logoutPromiseRef.current = null;
+      });
+    });
+  }, [cleanupLocalSession]);
 
   const logout = useCallback(async () => {
     if (logoutPromiseRef.current) {
@@ -131,25 +225,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return logoutPromiseRef.current;
     }
 
-    logDev('[SocialMobile] logout reason', { reason: 'manual_logout' });
-    logoutPromiseRef.current = (async () => {
-      await shutdownCurrentCallForLogout().catch(() => undefined);
-      chatSocket.disconnect();
-      await revokeRegisteredPushToken().catch(() => undefined);
-      await resetPostAuthBootstrap();
-      try {
-        await authApi.logout();
-      } catch {
-        // Local session state is cleared even if the server is temporarily unavailable.
-      }
-      setAuthError(null);
-      setUser(null);
-    })().finally(() => {
+    logoutPromiseRef.current = cleanupLocalSession({
+      reason: 'manual_logout',
+      logoutFromServer: true,
+    }).finally(() => {
       logoutPromiseRef.current = null;
     });
 
     return logoutPromiseRef.current;
-  }, []);
+  }, [cleanupLocalSession]);
 
   const sendVerificationEmail = useCallback(() => {
     setAuthError(null);

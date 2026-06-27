@@ -34,37 +34,56 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
   const [chatRefreshVersion, setChatRefreshVersion] = useState(0);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refreshInFlight = useRef<Promise<void> | null>(null);
+  const refreshInFlightUserId = useRef<number | null>(null);
+  const refreshSeq = useRef(0);
   const previousNetworkConnectedRef = useRef(networkConnected);
+  const userId = user?.id ?? null;
 
   const refreshUnreadCount = useCallback(async () => {
-    if (!user) {
+    if (!userId) {
       setUnreadCount(0);
       return;
     }
 
-    if (refreshInFlight.current) {
+    if (refreshInFlight.current && refreshInFlightUserId.current === userId) {
       return refreshInFlight.current;
     }
 
+    const requestSeq = ++refreshSeq.current;
+    refreshInFlightUserId.current = userId;
     setUnreadLoading(true);
     const refresh = messageApi
       .getUnreadCount()
       .then(count => {
-        setUnreadCount(Number(count) || 0);
+        if (
+          refreshSeq.current === requestSeq &&
+          refreshInFlightUserId.current === userId
+        ) {
+          setUnreadCount(Number(count) || 0);
+        }
       })
       .catch(() => {
         // Screen-level API requests show user-facing errors. Unread refresh stays quiet.
       })
       .finally(() => {
-        refreshInFlight.current = null;
-        setUnreadLoading(false);
+        if (refreshInFlight.current === refresh) {
+          refreshInFlight.current = null;
+          refreshInFlightUserId.current = null;
+        }
+        if (refreshSeq.current === requestSeq) {
+          setUnreadLoading(false);
+        }
       });
 
     refreshInFlight.current = refresh;
     return refresh;
-  }, [user]);
+  }, [userId]);
 
   const signalChatDataChanged = useCallback(() => {
+    if (!userId) {
+      return;
+    }
+
     setChatRefreshVersion(value => value + 1);
 
     if (refreshTimer.current) {
@@ -75,20 +94,29 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
       refreshTimer.current = null;
       refreshUnreadCount().catch(() => undefined);
     }, 300);
-  }, [refreshUnreadCount]);
+  }, [refreshUnreadCount, userId]);
 
   useEffect(() => {
-    if (!user) {
+    if (!userId) {
+      refreshSeq.current += 1;
+      refreshInFlight.current = null;
+      refreshInFlightUserId.current = null;
+      if (refreshTimer.current) {
+        clearTimeout(refreshTimer.current);
+        refreshTimer.current = null;
+      }
       setUnreadCount(0);
+      setUnreadLoading(false);
+      setChatRefreshVersion(0);
       return;
     }
 
     chatSocket.recover();
     refreshUnreadCount().catch(() => undefined);
-  }, [refreshUnreadCount, user]);
+  }, [refreshUnreadCount, userId]);
 
   useAppResumeEffect(() => {
-    if (!user) {
+    if (!userId) {
       return;
     }
 
@@ -100,16 +128,16 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
     const wasNetworkConnected = previousNetworkConnectedRef.current;
     previousNetworkConnectedRef.current = networkConnected;
 
-    if (!user || !networkConnected || wasNetworkConnected) {
+    if (!userId || !networkConnected || wasNetworkConnected) {
       return;
     }
 
     chatSocket.recover();
     signalChatDataChanged();
-  }, [networkConnected, signalChatDataChanged, user]);
+  }, [networkConnected, signalChatDataChanged, userId]);
 
   useEffect(() => {
-    if (!user) {
+    if (!userId) {
       return undefined;
     }
 
@@ -131,7 +159,7 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
     return () => {
       unsubscribe();
     };
-  }, [signalChatDataChanged, user]);
+  }, [signalChatDataChanged, userId]);
 
   useEffect(
     () => () => {

@@ -52,6 +52,7 @@ import { TURN_CREDENTIAL, TURN_URLS, TURN_USERNAME } from '../config/env';
 import { useAppLifecycle } from './AppLifecycleContext';
 import { useAuth } from './AuthContext';
 import {
+  clearPendingIncomingCall,
   consumePendingIncomingCall,
   subscribePendingIncomingCall,
   type PendingIncomingCallPush,
@@ -296,7 +297,14 @@ function statusText(status: CallStatus, callType: CallType) {
 const allowedCallTransitions: Record<CallStatus, ReadonlySet<CallStatus>> = {
   idle: new Set(['idle', 'incoming', 'connecting']),
   incoming: new Set(['incoming', 'connecting', 'ended', 'error', 'idle']),
-  connecting: new Set(['connecting', 'ringing', 'active', 'ended', 'error', 'idle']),
+  connecting: new Set([
+    'connecting',
+    'ringing',
+    'active',
+    'ended',
+    'error',
+    'idle',
+  ]),
   ringing: new Set(['ringing', 'active', 'ended', 'error', 'idle']),
   active: new Set(['active', 'reconnecting', 'ended', 'error', 'idle']),
   reconnecting: new Set(['reconnecting', 'active', 'ended', 'error', 'idle']),
@@ -397,31 +405,34 @@ export function CallProvider({ children }: { children: ReactNode }) {
     callTypeRef.current = callType;
   }, [callType]);
 
-  const setCallStatus = useCallback((nextStatus: CallStatus, reason = 'state_update') => {
-    const currentStatus = statusRef.current;
-    if (!allowCallTransition(currentStatus, nextStatus)) {
-      warnDev('[SocialMobile] Invalid call state transition ignored', {
-        from: currentStatus,
-        to: nextStatus,
-        reason,
-        callId: callIdRef.current,
-      });
-      return false;
-    }
+  const setCallStatus = useCallback(
+    (nextStatus: CallStatus, reason = 'state_update') => {
+      const currentStatus = statusRef.current;
+      if (!allowCallTransition(currentStatus, nextStatus)) {
+        warnDev('[SocialMobile] Invalid call state transition ignored', {
+          from: currentStatus,
+          to: nextStatus,
+          reason,
+          callId: callIdRef.current,
+        });
+        return false;
+      }
 
-    if (currentStatus !== nextStatus) {
-      logDev('[SocialMobile] Call state transition', {
-        from: currentStatus,
-        to: nextStatus,
-        reason,
-        callId: callIdRef.current,
-      });
-    }
+      if (currentStatus !== nextStatus) {
+        logDev('[SocialMobile] Call state transition', {
+          from: currentStatus,
+          to: nextStatus,
+          reason,
+          callId: callIdRef.current,
+        });
+      }
 
-    statusRef.current = nextStatus;
-    setStatus(nextStatus);
-    return true;
-  }, []);
+      statusRef.current = nextStatus;
+      setStatus(nextStatus);
+      return true;
+    },
+    [],
+  );
 
   const setCallPeer = useCallback((nextPeerUserId: number | null) => {
     peerUserIdRef.current = nextPeerUserId;
@@ -462,6 +473,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       chatSocket.discardPendingCallEvents(callId);
       cancelIncomingCallNotification(callId).catch(() => undefined);
     }
+    clearPendingIncomingCall().catch(() => undefined);
 
     clearEndTimer();
     closePeerConnection();
@@ -473,6 +485,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     pendingOfferRef.current = null;
     pendingIncomingCallPushRef.current = null;
     pendingIceRef.current = [];
+    seenCallEventsRef.current.clear();
     acceptInFlightRef.current = false;
     iceRecoveryAttemptsRef.current = 0;
     setLocalStream(null);
@@ -505,6 +518,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         chatSocket.discardPendingCallEvents(callId);
         cancelIncomingCallNotification(callId).catch(() => undefined);
       }
+      clearPendingIncomingCall().catch(() => undefined);
 
       if (notifyPeer && targetId && callId) {
         try {
@@ -541,17 +555,30 @@ export function CallProvider({ children }: { children: ReactNode }) {
   );
 
   const loadPeerName = useCallback(
-    async (userId: number, fallback?: string) => {
+    async (userId: number, fallback?: string, expectedCallId?: string) => {
+      const isCurrentPeer = () =>
+        peerUserIdRef.current === userId &&
+        (!expectedCallId || callIdRef.current === expectedCallId) &&
+        statusRef.current !== 'idle' &&
+        statusRef.current !== 'ended' &&
+        statusRef.current !== 'error';
+
       if (fallback) {
-        setPeerName(fallback);
+        if (isCurrentPeer()) {
+          setPeerName(fallback);
+        }
         return;
       }
 
       try {
         const profile = await userApi.getUser(userId);
-        setPeerName(profile.name || 'Пользователь');
+        if (isCurrentPeer()) {
+          setPeerName(profile.name || 'Пользователь');
+        }
       } catch {
-        setPeerName('Пользователь');
+        if (isCurrentPeer()) {
+          setPeerName('Пользователь');
+        }
       }
     },
     [],
@@ -586,7 +613,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
       setCurrentCallType(call.call_type === 'video' ? 'video' : 'audio');
       setError(null);
       setCallStatus('incoming');
-      await loadPeerName(call.caller_id, fallbackName ?? call.caller?.name);
+      await loadPeerName(
+        call.caller_id,
+        fallbackName ?? call.caller?.name,
+        call.call_id,
+      );
     },
     [loadPeerName, setCallPeer, setCallStatus, setCurrentCallType, user?.id],
   );
@@ -857,8 +888,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
         if (isDisconnected && !disconnectTimerRef.current) {
           setCallStatus('reconnecting', 'peer_disconnected');
-          const restartIce = (pc as PeerConnection & { restartIce?: () => void })
-            .restartIce;
+          const restartIce = (
+            pc as PeerConnection & { restartIce?: () => void }
+          ).restartIce;
           if (iceRecoveryAttemptsRef.current < maxIceRecoveryAttempts) {
             iceRecoveryAttemptsRef.current += 1;
             try {
@@ -882,7 +914,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
               pc.connectionState === 'disconnected' ||
               pc.iceConnectionState === 'disconnected';
 
-            if (pcRef.current === pc && callIdRef.current === callId && stillDisconnected) {
+            if (
+              pcRef.current === pc &&
+              callIdRef.current === callId &&
+              stillDisconnected
+            ) {
               if (iceRecoveryAttemptsRef.current < maxIceRecoveryAttempts) {
                 handlePeerStateChange('ice-recovery-timeout');
                 return;
@@ -908,7 +944,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
             setCallStatus('reconnecting', 'peer_failed_recovering');
             iceRecoveryAttemptsRef.current += 1;
             try {
-              (pc as PeerConnection & { restartIce?: () => void }).restartIce?.();
+              (
+                pc as PeerConnection & { restartIce?: () => void }
+              ).restartIce?.();
               logDev('[SocialMobile] ICE restart requested after failure', {
                 callId,
                 attempt: iceRecoveryAttemptsRef.current,
@@ -1434,7 +1472,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
             };
             setCallPeer(fromId);
             setCurrentCallType(nextCallType);
-            loadPeerName(fromId, matchingPushCall?.callerName).catch(
+            loadPeerName(fromId, matchingPushCall?.callerName, callId).catch(
               () => undefined,
             );
             return;
@@ -1476,7 +1514,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
           fromId,
           callType: nextCallType,
         });
-        loadPeerName(fromId, matchingPushCall?.callerName).catch(
+        loadPeerName(fromId, matchingPushCall?.callerName, callId).catch(
           () => undefined,
         );
         return;
@@ -1519,11 +1557,20 @@ export function CallProvider({ children }: { children: ReactNode }) {
         const callId = payload.call_id;
         pc.setRemoteDescription(new RTCSessionDescription(payload.answer))
           .then(async () => {
+            if (pcRef.current !== pc || callIdRef.current !== callId) {
+              return;
+            }
             logPeerState(pc, callId, 'remote-answer-set');
             await flushPendingIce();
+            if (pcRef.current !== pc || callIdRef.current !== callId) {
+              return;
+            }
             setCallStatus('active');
           })
           .catch(callError => {
+            if (pcRef.current !== pc || callIdRef.current !== callId) {
+              return;
+            }
             const message = callErrorMessage(callError);
             showCallError(message);
             finishCall('error', message, true);
@@ -1568,8 +1615,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
           event.type === WS_EVENTS.CALL_BUSY
             ? 'Пользователь занят.'
             : event.type === WS_EVENTS.CALL_TIMEOUT
-              ? 'Звонок не был принят.'
-              : 'Звонок заменен новым вызовом.';
+            ? 'Звонок не был принят.'
+            : 'Звонок заменен новым вызовом.';
         logDev('[SocialMobile] Server terminal call event received', {
           callId: payload.call_id,
           fromId: payload.from_id,
@@ -1579,10 +1626,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      if (
-        event.type === WS_EVENTS.CALL_END ||
-        statusRef.current !== 'active'
-      ) {
+      if (event.type === WS_EVENTS.CALL_END || statusRef.current !== 'active') {
         logDev('[SocialMobile] Remote call ended or rejected', {
           callId: payload.call_id,
           fromId: payload.from_id,

@@ -55,7 +55,10 @@ export function incomingCallFromNotification(
   return {
     callId: notification.callId,
     conversationId: notification.conversationId,
-    callerId: notification.actorId ?? notification.senderId ?? notification.conversationId,
+    callerId:
+      notification.actorId ??
+      notification.senderId ??
+      notification.conversationId,
     callerName: notification.callerName ?? notification.title,
     receivedAt,
     expiresAt: receivedAt + INCOMING_CALL_PUSH_TTL_MS,
@@ -94,6 +97,10 @@ export async function consumePendingIncomingCall(now = Date.now()) {
   } catch {
     return null;
   }
+}
+
+export async function clearPendingIncomingCall() {
+  await AsyncStorage.removeItem(pendingIncomingCallKey);
 }
 
 export function subscribePendingIncomingCall(listener: IncomingCallListener) {

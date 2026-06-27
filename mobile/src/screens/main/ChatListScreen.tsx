@@ -14,7 +14,7 @@ import { MessageCircle, Pin, PinOff, Trash2 } from 'lucide-react-native';
 
 import { getApiErrorMessage } from '../../api/http';
 import { messageApi } from '../../api/messages';
-import type { Conversation } from '../../api/types';
+import type { Conversation } from '@social/shared';
 import {
   EmptyState,
   ErrorBanner,
@@ -65,23 +65,33 @@ export default function ChatListScreen({ navigation }: Props) {
   const [success, setSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loadSeq = useRef(0);
+  const screenActiveRef = useRef(false);
 
   const load = useCallback(
     async (mode: LoadMode = 'refresh') => {
+      const requestSeq = ++loadSeq.current;
       if (mode !== 'silent') {
         setLoading(true);
       }
       setError(null);
       try {
         const nextConversations = await messageApi.getConversations();
+        if (!screenActiveRef.current || loadSeq.current !== requestSeq) {
+          return;
+        }
         setConversations(sortConversations(nextConversations));
         refreshUnreadCount().catch(() => undefined);
       } catch (apiError) {
-        setError(getApiErrorMessage(apiError));
+        if (screenActiveRef.current && loadSeq.current === requestSeq) {
+          setError(getApiErrorMessage(apiError));
+        }
       } finally {
-        setHasLoaded(true);
-        if (mode !== 'silent') {
-          setLoading(false);
+        if (screenActiveRef.current && loadSeq.current === requestSeq) {
+          setHasLoaded(true);
+          if (mode !== 'silent') {
+            setLoading(false);
+          }
         }
       }
     },
@@ -101,13 +111,17 @@ export default function ChatListScreen({ navigation }: Props) {
 
   useFocusEffect(
     useCallback(() => {
+      screenActiveRef.current = true;
       load().catch(() => undefined);
 
       return () => {
+        screenActiveRef.current = false;
+        loadSeq.current += 1;
         if (refreshTimer.current) {
           clearTimeout(refreshTimer.current);
           refreshTimer.current = null;
         }
+        setLoading(false);
       };
     }, [load]),
   );

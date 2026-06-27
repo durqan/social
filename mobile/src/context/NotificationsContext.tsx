@@ -65,6 +65,14 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const refreshInFlight = useRef<Promise<void> | null>(null);
+  const refreshInFlightUserId = useRef<number | null>(null);
+  const refreshSeq = useRef(0);
+  const userId = user?.id ?? null;
+  const currentUserIdRef = useRef(userId);
+
+  useEffect(() => {
+    currentUserIdRef.current = userId;
+  }, [userId]);
 
   const unreadNotificationCount = useMemo(
     () => countUnseenNotificationBadge(notifications),
@@ -72,66 +80,99 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   );
 
   const refreshNotifications = useCallback(async () => {
-    if (!user?.id) {
+    if (!userId) {
       setNotifications([]);
       return;
     }
 
-    if (refreshInFlight.current) {
+    if (refreshInFlight.current && refreshInFlightUserId.current === userId) {
       return refreshInFlight.current;
     }
 
+    const requestSeq = ++refreshSeq.current;
+    refreshInFlightUserId.current = userId;
     setLoading(true);
     setError(null);
     const refresh = notificationsApi
       .getNotifications()
       .then(nextNotifications => {
+        if (
+          refreshSeq.current !== requestSeq ||
+          refreshInFlightUserId.current !== userId
+        ) {
+          return;
+        }
         setNotifications(
           Array.isArray(nextNotifications) ? nextNotifications : [],
         );
       })
       .catch(apiError => {
-        setError(getApiErrorMessage(apiError));
+        if (refreshSeq.current === requestSeq) {
+          setError(getApiErrorMessage(apiError));
+        }
       })
       .finally(() => {
-        refreshInFlight.current = null;
-        setLoading(false);
+        if (refreshInFlight.current === refresh) {
+          refreshInFlight.current = null;
+          refreshInFlightUserId.current = null;
+        }
+        if (refreshSeq.current === requestSeq) {
+          setLoading(false);
+        }
       });
 
     refreshInFlight.current = refresh;
     return refresh;
-  }, [user?.id]);
+  }, [userId]);
 
-  const markAsRead = useCallback(async (notificationId: number) => {
-    await notificationsApi.markAsRead(notificationId);
-    setNotifications(previous =>
-      previous.map(notification =>
-        notification.id === notificationId
-          ? { ...notification, is_read: true, is_seen: true }
-          : notification,
-      ),
-    );
-  }, []);
+  const markAsRead = useCallback(
+    async (notificationId: number) => {
+      const requestUserId = userId;
+      await notificationsApi.markAsRead(notificationId);
+      if (!requestUserId || requestUserId !== currentUserIdRef.current) {
+        return;
+      }
+      setNotifications(previous =>
+        previous.map(notification =>
+          notification.id === notificationId
+            ? { ...notification, is_read: true, is_seen: true }
+            : notification,
+        ),
+      );
+    },
+    [userId],
+  );
 
-  const markAsSeen = useCallback(async (notificationIds: number[]) => {
-    if (notificationIds.length === 0) {
-      return;
-    }
+  const markAsSeen = useCallback(
+    async (notificationIds: number[]) => {
+      if (notificationIds.length === 0) {
+        return;
+      }
 
-    await notificationsApi.markAsSeen(notificationIds);
-    const seenIds = new Set(notificationIds);
-    setNotifications(previous =>
-      previous.map(notification =>
-        seenIds.has(notification.id)
-          ? { ...notification, is_seen: true }
-          : notification,
-      ),
-    );
-  }, []);
+      const requestUserId = userId;
+      await notificationsApi.markAsSeen(notificationIds);
+      if (!requestUserId || requestUserId !== currentUserIdRef.current) {
+        return;
+      }
+      const seenIds = new Set(notificationIds);
+      setNotifications(previous =>
+        previous.map(notification =>
+          seenIds.has(notification.id)
+            ? { ...notification, is_seen: true }
+            : notification,
+        ),
+      );
+    },
+    [userId],
+  );
 
   const markMatchingAsRead = useCallback(
     async (payload: MarkNotificationsReadPayload) => {
+      const requestUserId = userId;
       await notificationsApi.markMatchingAsRead(payload);
+      if (!requestUserId || requestUserId !== currentUserIdRef.current) {
+        return;
+      }
       setNotifications(previous =>
         previous.map(notification => {
           const typeMatches =
@@ -157,7 +198,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
         }),
       );
     },
-    [],
+    [userId],
   );
 
   const markConversationNotificationsRead = useCallback(
@@ -195,7 +236,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   );
 
   useEffect(() => {
-    if (!user?.id) {
+    if (!userId) {
       return;
     }
 
@@ -204,10 +245,10 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
         events.forEach(event => handleNotification(event.notification));
       })
       .catch(() => undefined);
-  }, [handleNotification, resumeCount, user?.id]);
+  }, [handleNotification, resumeCount, userId]);
 
   useEffect(() => {
-    if (!user?.id) {
+    if (!userId) {
       return undefined;
     }
 
@@ -220,7 +261,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
         reader_id?: number;
         conversation_id?: number;
       };
-      if (payload.reader_id !== user.id) {
+      if (payload.reader_id !== userId) {
         return;
       }
 
@@ -229,14 +270,24 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     });
 
     return unsubscribe;
-  }, [markConversationNotificationsRead, refreshNotifications, user?.id]);
+  }, [markConversationNotificationsRead, refreshNotifications, userId]);
 
   useEffect(() => {
+    if (!userId) {
+      refreshSeq.current += 1;
+      refreshInFlight.current = null;
+      refreshInFlightUserId.current = null;
+      setNotifications([]);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
     refreshNotifications().catch(() => undefined);
-  }, [refreshNotifications]);
+  }, [refreshNotifications, userId]);
 
   useEffect(() => {
-    if (!user?.id) {
+    if (!userId) {
       return undefined;
     }
 
@@ -244,7 +295,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     let cleanup: (() => void) | undefined;
 
     initializePushNotifications({
-      userId: user.id,
+      userId,
       onNotification: handleNotification,
       onNotificationOpen: handleNotification,
     }).then(nextCleanup => {
@@ -259,7 +310,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       mounted = false;
       cleanup?.();
     };
-  }, [handleNotification, user?.id]);
+  }, [handleNotification, userId]);
 
   const value = useMemo(
     () => ({

@@ -17,7 +17,7 @@ import {
 } from '../../notifications/pushNotifications';
 import { useTheme, useThemeColors } from '../../theme/ThemeContext';
 import { themeOrder, themes, type ThemeColors, type ThemeId } from '../../theme/themes';
-import { elevation, radius, spacing, typography } from '../../theme/layout';
+import { elevation, spacing, typography } from '../../theme/layout';
 
 type SecurityBusyAction = 'password';
 

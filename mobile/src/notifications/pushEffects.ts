@@ -80,10 +80,7 @@ export function effectsForPushNotification(
   }
 
   if (notification.type === 'incoming_call') {
-    return [
-      { type: 'incoming_call' },
-      { type: 'refresh_notifications' },
-    ];
+    return [{ type: 'incoming_call' }, { type: 'refresh_notifications' }];
   }
 
   if (
@@ -91,10 +88,7 @@ export function effectsForPushNotification(
     notification.type === 'call_rejected' ||
     notification.type === 'call_missed'
   ) {
-    return [
-      { type: 'call_terminal' },
-      { type: 'refresh_notifications' },
-    ];
+    return [{ type: 'call_terminal' }, { type: 'refresh_notifications' }];
   }
 
   return [{ type: 'refresh_unread' }, { type: 'refresh_notifications' }];
@@ -117,7 +111,9 @@ export function applyPushNotificationEffects(
         Promise.resolve(handlers.refreshUnreadCount?.()).catch(() => undefined);
         return;
       case 'refresh_notifications':
-        Promise.resolve(handlers.refreshNotifications?.()).catch(() => undefined);
+        Promise.resolve(handlers.refreshNotifications?.()).catch(
+          () => undefined,
+        );
         return;
       case 'incoming_call':
         rememberPendingIncomingCall(notification).catch(() => undefined);
@@ -174,4 +170,8 @@ export async function drainPendingPushEvents() {
     await AsyncStorage.removeItem(pendingPushEventsKey);
   }
   return events;
+}
+
+export async function clearPendingPushEvents() {
+  await AsyncStorage.removeItem(pendingPushEventsKey);
 }
