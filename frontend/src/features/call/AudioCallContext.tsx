@@ -50,6 +50,7 @@ function isCallId(value: unknown): value is string {
 }
 
 const terminalCallCleanupDelayMs = 1800;
+const callHeartbeatIntervalMs = 15000;
 
 function isTerminalCallStatus(status: CallStatus) {
     return status === 'ended' || status === 'error';
@@ -845,6 +846,24 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
             navigator.serviceWorker?.removeEventListener?.('message', handleServiceWorkerMessage);
         };
     }, [currentUserId, hydrateIncomingCall, navigate]);
+
+    useEffect(() => {
+        if (status !== 'active') {
+            return undefined;
+        }
+
+        const sendHeartbeat = () => {
+            const toId = peerUserIdRef.current;
+            const callId = callIdRef.current;
+            if (toId && callId) {
+                wsService.sendCallHeartbeat(toId, callId);
+            }
+        };
+
+        sendHeartbeat();
+        const heartbeatTimer = window.setInterval(sendHeartbeat, callHeartbeatIntervalMs);
+        return () => window.clearInterval(heartbeatTimer);
+    }, [peerUserIdRef, status, wsService]);
 
     useEffect(() => {
         if (!currentUser && statusRef.current !== 'idle') {

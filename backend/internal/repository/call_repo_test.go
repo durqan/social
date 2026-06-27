@@ -253,6 +253,90 @@ func TestCreateCallOfferRejectsBusyAnsweredSamePair(t *testing.T) {
 	}
 }
 
+func TestCreateCallOfferExpiresStaleAnsweredParticipantBeforeBusyCheck(t *testing.T) {
+	db := newCallRepoTestDB(t)
+	seedCallUsers(t, db, 1, 2, 3)
+
+	staleCall, _, _, err := CreateCallOffer(db, 1, 2, "call-1", models.CallTypeAudio, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := MarkCallAnswered(db, 2, 1, "call-1"); err != nil {
+		t.Fatal(err)
+	} else if !ok {
+		t.Fatal("expected answer transition")
+	}
+
+	staleUpdatedAt := time.Now().Add(-ActiveCallHeartbeatTTL - time.Second)
+	if err := db.Model(&models.CallLog{}).
+		Where("id = ?", staleCall.ID).
+		Update("updated_at", staleUpdatedAt).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	newCall, _, _, err := CreateCallOffer(db, 3, 2, "call-2", models.CallTypeAudio, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if newCall.CallID != "call-2" {
+		t.Fatalf("new call id = %q, want call-2", newCall.CallID)
+	}
+
+	var ended models.CallLog
+	if err := db.First(&ended, staleCall.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if ended.Status != models.CallStatusEnded {
+		t.Fatalf("stale answered call status = %q, want ended", ended.Status)
+	}
+	if ended.EndedAt == nil {
+		t.Fatal("stale answered call should have ended_at")
+	}
+}
+
+func TestMarkCallHeartbeatKeepsAnsweredCallFresh(t *testing.T) {
+	db := newCallRepoTestDB(t)
+	seedCallUsers(t, db, 1, 2, 3)
+
+	call, _, _, err := CreateCallOffer(db, 1, 2, "call-1", models.CallTypeAudio, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := MarkCallAnswered(db, 2, 1, "call-1"); err != nil {
+		t.Fatal(err)
+	} else if !ok {
+		t.Fatal("expected answer transition")
+	}
+
+	staleUpdatedAt := time.Now().Add(-ActiveCallHeartbeatTTL - time.Second)
+	if err := db.Model(&models.CallLog{}).
+		Where("id = ?", call.ID).
+		Update("updated_at", staleUpdatedAt).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if _, ok, err := MarkCallHeartbeat(db, 1, 2, "call-1"); err != nil {
+		t.Fatal(err)
+	} else if !ok {
+		t.Fatal("expected heartbeat to refresh answered call")
+	}
+
+	if _, _, _, err := CreateCallOffer(db, 3, 2, "call-2", models.CallTypeAudio, nil, ""); !errors.Is(err, ErrCallBusy) {
+		t.Fatalf("new offer err = %v, want ErrCallBusy", err)
+	}
+
+	var fresh models.CallLog
+	if err := db.First(&fresh, call.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if fresh.Status != models.CallStatusAnswered {
+		t.Fatalf("fresh heartbeat call status = %q, want answered", fresh.Status)
+	}
+	if !fresh.UpdatedAt.After(staleUpdatedAt) {
+		t.Fatalf("heartbeat did not refresh updated_at: got %s, stale %s", fresh.UpdatedAt, staleUpdatedAt)
+	}
+}
+
 func TestExpireStaleRingingCallsWithResult(t *testing.T) {
 	db := newCallRepoTestDB(t)
 	seedCallUsers(t, db, 1, 2)

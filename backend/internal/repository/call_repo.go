@@ -13,6 +13,7 @@ import (
 )
 
 const ActiveCallRecoveryTTL = 5 * time.Minute
+const ActiveCallHeartbeatTTL = 90 * time.Second
 const MaxStoredIceCandidates = 128
 
 var ErrInvalidCallTransition = errors.New("invalid call transition")
@@ -56,6 +57,9 @@ func CreateCallOffer(db *gorm.DB, callerID, calleeID uint, callID string, callTy
 			return err
 		}
 
+		if _, err := expireStaleAnsweredCallsForUsers(tx, now, callerID, calleeID); err != nil {
+			return err
+		}
 		if err := expireStaleRingingCallsForUsers(tx, now, callerID, calleeID); err != nil {
 			return err
 		}
@@ -208,6 +212,10 @@ func ExpireStaleRingingCallsWithResult(db *gorm.DB) ([]models.CallLog, error) {
 	return expired, nil
 }
 
+func ExpireStaleAnsweredCallsWithResult(db *gorm.DB) ([]models.CallLog, error) {
+	return expireStaleAnsweredCallsForUsers(db, time.Now())
+}
+
 func EndActiveCallsForOfflineUser(db *gorm.DB, userID uint) ([]models.CallLog, error) {
 	if userID == 0 {
 		return nil, nil
@@ -263,6 +271,32 @@ func EndActiveCallsForOfflineUser(db *gorm.DB, userID uint) ([]models.CallLog, e
 		return nil, err
 	}
 	return ended, nil
+}
+
+func MarkCallHeartbeat(db *gorm.DB, actorID, peerID uint, callID string) (models.CallLog, bool, error) {
+	call, err := findCallBetweenUsersByID(db, actorID, peerID, callID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return models.CallLog{}, false, nil
+	}
+	if err != nil {
+		return models.CallLog{}, false, err
+	}
+	if !isCallParticipant(call, actorID) || !isCallParticipant(call, peerID) || call.Status != models.CallStatusAnswered {
+		return call, false, nil
+	}
+
+	now := time.Now()
+	result := db.Model(&models.CallLog{}).
+		Where("id = ? AND status = ?", call.ID, models.CallStatusAnswered).
+		Update("updated_at", now)
+	if result.Error != nil {
+		return call, false, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return call, false, nil
+	}
+	call.UpdatedAt = now
+	return call, true, nil
 }
 
 func DebugCallDump(db *gorm.DB, userID uint, callID string) (models.CallLog, error) {
@@ -505,6 +539,75 @@ func markCallsMissedByID(db *gorm.DB, now time.Time, ids ...uint) error {
 			"status":   models.CallStatusMissed,
 			"ended_at": now,
 		}).Error
+}
+
+func expireStaleAnsweredCallsForUsers(db *gorm.DB, now time.Time, userIDs ...uint) ([]models.CallLog, error) {
+	cutoff := now.Add(-ActiveCallHeartbeatTTL)
+	var stale []models.CallLog
+	ended := make([]models.CallLog, 0)
+
+	err := db.Transaction(func(tx *gorm.DB) error {
+		query := tx.
+			Clauses(clause.Locking{Strength: "UPDATE"}).
+			Preload("Caller").
+			Preload("Callee").
+			Where("status = ?", models.CallStatusAnswered).
+			Where("updated_at < ?", cutoff)
+
+		ids := uniqueNonZeroIDs(userIDs...)
+		if len(ids) > 0 {
+			query = query.Where("(caller_id IN ? OR callee_id IN ?)", ids, ids)
+		}
+
+		if err := query.Find(&stale).Error; err != nil {
+			return err
+		}
+
+		for i := range stale {
+			call := &stale[i]
+			durationSeconds := callDurationSeconds(*call, now)
+			result := tx.Model(&models.CallLog{}).
+				Where("id = ? AND status = ?", call.ID, models.CallStatusAnswered).
+				Where("updated_at < ?", cutoff).
+				Updates(map[string]interface{}{
+					"status":           models.CallStatusEnded,
+					"ended_at":         now,
+					"duration_seconds": durationSeconds,
+				})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				continue
+			}
+			call.Status = models.CallStatusEnded
+			call.EndedAt = &now
+			call.DurationSeconds = durationSeconds
+			ended = append(ended, *call)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return ended, nil
+}
+
+func uniqueNonZeroIDs(userIDs ...uint) []uint {
+	ids := make([]uint, 0, len(userIDs))
+	seen := make(map[uint]struct{}, len(userIDs))
+	for _, userID := range userIDs {
+		if userID == 0 {
+			continue
+		}
+		if _, exists := seen[userID]; exists {
+			continue
+		}
+		seen[userID] = struct{}{}
+		ids = append(ids, userID)
+	}
+	return ids
 }
 
 func activeCallPair(db *gorm.DB, userID1, userID2 uint) *gorm.DB {

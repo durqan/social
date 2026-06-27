@@ -55,6 +55,12 @@ func handleWebSocketMessage(ctx context.Context, userID uint, client *websocketC
 			return
 		}
 		forwardCallEvent(ctx, wsMsg.Type, userID, wsMsg.Payload)
+	case "call:heartbeat":
+		toID, ok := authorizeRealtimePeerEvent(userID, wsMsg.Payload, wsMsg.Type)
+		if !ok {
+			return
+		}
+		handleCallHeartbeat(userID, toID, wsMsg.Payload)
 	default:
 		log.Println("Unknown websocket event:", wsMsg.Type)
 	}
@@ -629,6 +635,39 @@ func emitExpiredCallTimeouts(ctx context.Context, database *gorm.DB) {
 		sendCallStateEvent(ctx, "call:timeout", call.CallerID, call.CallID, call.CallerID, call.CalleeID)
 		enqueueCallStateNotification(database, call.CalleeID, call.CallerID, dto.NotificationTypeCallMissed, call.CallID, conversationIDForCall(call), call.CallType)
 		log.Printf("call state transition: call_id=%s from=ringing to=missed reason=server_timeout caller_id=%d callee_id=%d", call.CallID, call.CallerID, call.CalleeID)
+	}
+
+	staleActive, err := repository.ExpireStaleAnsweredCallsWithResult(database)
+	if err != nil {
+		log.Printf("failed to expire stale active calls: error=%v", err)
+		return
+	}
+	for _, call := range staleActive {
+		sendCallStateEvent(ctx, "call:end", call.CallerID, call.CallID, call.CallerID, call.CalleeID)
+		enqueueCallStateNotification(database, call.CalleeID, call.CallerID, dto.NotificationTypeCallEnded, call.CallID, conversationIDForCall(call), call.CallType)
+		log.Printf("call state transition: call_id=%s from=answered to=ended reason=heartbeat_timeout caller_id=%d callee_id=%d", call.CallID, call.CallerID, call.CalleeID)
+	}
+}
+
+func handleCallHeartbeat(fromID uint, toID uint, payload json.RawMessage) {
+	var callPayload struct {
+		CallID string `json:"call_id"`
+	}
+	if err := json.Unmarshal(payload, &callPayload); err != nil {
+		log.Println("Invalid call heartbeat payload:", err)
+		return
+	}
+
+	callID := strings.TrimSpace(callPayload.CallID)
+	if callID == "" {
+		log.Println("Invalid call heartbeat payload: missing call_id")
+		return
+	}
+
+	if _, ok, err := repository.MarkCallHeartbeat(dbInstance, fromID, toID, callID); err != nil {
+		log.Printf("failed to record call heartbeat: call_id=%s from_id=%d to_id=%d error=%v", callID, fromID, toID, err)
+	} else if !ok {
+		log.Printf("call heartbeat ignored: call_id=%s from_id=%d to_id=%d", callID, fromID, toID)
 	}
 }
 

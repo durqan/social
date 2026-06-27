@@ -81,6 +81,7 @@ class ChatSocket {
     WS_EVENTS.CALL_ICE,
     WS_EVENTS.CALL_END,
     WS_EVENTS.CALL_REJECT,
+    WS_EVENTS.CALL_HEARTBEAT,
   ]);
 
   constructor() {
@@ -312,6 +313,16 @@ class ChatSocket {
     });
     this.callEventSeq.delete(callId);
     return sent;
+  }
+
+  sendCallHeartbeat(toId: number, callId: string) {
+    return this.sendEvent({
+      type: WS_EVENTS.CALL_HEARTBEAT,
+      payload: {
+        to_id: toId,
+        call_id: callId,
+      },
+    });
   }
 
   private sendEventToUser(

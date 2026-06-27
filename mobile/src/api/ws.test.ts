@@ -22,6 +22,7 @@ jest.mock(
       CALL_ICE: 'call:ice',
       CALL_END: 'call:end',
       CALL_REJECT: 'call:reject',
+      CALL_HEARTBEAT: 'call:heartbeat',
     },
   }),
   { virtual: true },

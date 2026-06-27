@@ -116,6 +116,7 @@ type PeerConnectionHandlers = {
 
 const CallContext = createContext<CallContextValue | undefined>(undefined);
 const disconnectedCleanupDelayMs = 10000;
+const callHeartbeatIntervalMs = 15000;
 const maxIceRecoveryAttempts = 2;
 
 function createCallId() {
@@ -1874,6 +1875,24 @@ export function CallProvider({ children }: { children: ReactNode }) {
       }
     });
   }, [hydrateIncomingCall, user?.id]);
+
+  useEffect(() => {
+    if (status !== 'active' && status !== 'reconnecting') {
+      return undefined;
+    }
+
+    const sendHeartbeat = () => {
+      const targetId = peerUserIdRef.current;
+      const callId = callIdRef.current;
+      if (targetId && callId) {
+        chatSocket.sendCallHeartbeat(targetId, callId);
+      }
+    };
+
+    sendHeartbeat();
+    const heartbeatTimer = setInterval(sendHeartbeat, callHeartbeatIntervalMs);
+    return () => clearInterval(heartbeatTimer);
+  }, [status]);
 
   useEffect(() => {
     if (

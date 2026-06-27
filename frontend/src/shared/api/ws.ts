@@ -24,6 +24,7 @@ const callEventTypes: ReadonlySet<string> = new Set([
     WS_EVENTS.CALL_ICE,
     WS_EVENTS.CALL_END,
     WS_EVENTS.CALL_REJECT,
+    WS_EVENTS.CALL_HEARTBEAT,
     WS_EVENTS.CALL_TIMEOUT,
     WS_EVENTS.CALL_BUSY,
     WS_EVENTS.CALL_REPLACED,
@@ -225,6 +226,12 @@ export class WebSocketService {
             ...this.callEventMetadata(WS_EVENTS.CALL_REJECT, callId),
         });
         this.callEventSeq.delete(callId);
+    }
+
+    sendCallHeartbeat(toId: number, callId: string) {
+        this.sendEventToUser(WS_EVENTS.CALL_HEARTBEAT, toId, {
+            call_id: callId,
+        });
     }
 
     discardPendingCallEvents(callId?: string) {

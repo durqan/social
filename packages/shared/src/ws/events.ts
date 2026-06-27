@@ -23,6 +23,7 @@ export const WS_EVENTS = {
   CALL_ICE: "call:ice",
   CALL_END: "call:end",
   CALL_REJECT: "call:reject",
+  CALL_HEARTBEAT: "call:heartbeat",
   CALL_TIMEOUT: "call:timeout",
   CALL_BUSY: "call:busy",
   CALL_REPLACED: "call:replaced",
@@ -205,6 +206,13 @@ export type CallRejectEvent = BaseWsEvent<
     event_seq?: number;
   }
 >;
+export type CallHeartbeatEvent = BaseWsEvent<
+  typeof WS_EVENTS.CALL_HEARTBEAT,
+  {
+    from_id: number;
+    call_id: string;
+  }
+>;
 export type CallTimeoutEvent = BaseWsEvent<
   typeof WS_EVENTS.CALL_TIMEOUT,
   {
@@ -234,6 +242,7 @@ export type WsEvent =
   | CallIceEvent
   | CallEndEvent
   | CallRejectEvent
+  | CallHeartbeatEvent
   | CallTimeoutEvent
   | CallBusyEvent
   | CallReplacedEvent
