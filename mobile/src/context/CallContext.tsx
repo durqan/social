@@ -16,6 +16,7 @@ import {
   Platform,
   Pressable,
   StyleSheet,
+  StatusBar,
   Text,
   View,
 } from 'react-native';
@@ -118,6 +119,10 @@ const CallContext = createContext<CallContextValue | undefined>(undefined);
 const disconnectedCleanupDelayMs = 10000;
 const callHeartbeatIntervalMs = 15000;
 const maxIceRecoveryAttempts = 2;
+const absoluteFillObject =
+  (StyleSheet as typeof StyleSheet & {
+    absoluteFillObject?: typeof StyleSheet.absoluteFill;
+  }).absoluteFillObject ?? StyleSheet.absoluteFill;
 
 function createCallId() {
   return `call-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -383,6 +388,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [microphoneOn, setMicrophoneOn] = useState(true);
   const [cameraOn, setCameraOn] = useState(true);
+  const [frontCamera, setFrontCamera] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const statusRef = useRef(status);
@@ -583,6 +589,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     setRemoteStream(null);
     setMicrophoneOn(true);
     setCameraOn(true);
+    setFrontCamera(true);
     setCurrentCallType('audio');
     setCallPeer(null);
     setPeerName('Пользователь');
@@ -634,6 +641,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       setRemoteStream(null);
       setMicrophoneOn(true);
       setCameraOn(true);
+      setFrontCamera(true);
       setError(message ?? null);
       setCallStatus(nextStatus, 'finish');
       endTimerRef.current = setTimeout(resetCall, 1800);
@@ -895,6 +903,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       setLocalStream(stream);
       setMicrophoneOn(true);
       setCameraOn(videoTracks.length > 0);
+      setFrontCamera(true);
       return stream;
     } catch (streamError) {
       if (stream) {
@@ -1560,7 +1569,13 @@ export function CallProvider({ children }: { children: ReactNode }) {
   }, [cameraOn]);
 
   const switchCamera = useCallback(() => {
-    localStreamRef.current?.getVideoTracks()[0]?._switchCamera();
+    const videoTrack = localStreamRef.current?.getVideoTracks()[0];
+    if (!videoTrack) {
+      return;
+    }
+
+    videoTrack._switchCamera();
+    setFrontCamera(current => !current);
   }, []);
 
   const handleSocketEvent = useCallback(
@@ -1943,6 +1958,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         remoteStream={remoteStream}
         microphoneOn={microphoneOn}
         cameraOn={cameraOn}
+        frontCamera={frontCamera}
         error={error}
         onAccept={acceptCall}
         onReject={rejectCall}
@@ -1963,6 +1979,7 @@ function CallOverlay({
   remoteStream,
   microphoneOn,
   cameraOn,
+  frontCamera,
   error,
   onAccept,
   onReject,
@@ -1978,6 +1995,7 @@ function CallOverlay({
   remoteStream: MediaStream | null;
   microphoneOn: boolean;
   cameraOn: boolean;
+  frontCamera: boolean;
   error: string | null;
   onAccept: () => void;
   onReject: () => void;
@@ -1992,7 +2010,9 @@ function CallOverlay({
     return null;
   }
 
-  const showVideo = callType === 'video' && remoteStream;
+  const isVideoCall = callType === 'video';
+  const showRemoteVideo = isVideoCall && remoteStream;
+  const showVideoPlaceholder = isVideoCall && !remoteStream;
   const showLocalPreview = callType === 'video' && localStream;
   const showActiveControls =
     status === 'connecting' ||
@@ -2000,17 +2020,56 @@ function CallOverlay({
     status === 'active' ||
     status === 'reconnecting';
   const initial = peerName.slice(0, 1).toUpperCase();
+  const showSpinner =
+    status === 'connecting' ||
+    status === 'ringing' ||
+    status === 'reconnecting';
 
   return (
-    <Modal visible animationType="fade" presentationStyle="fullScreen">
+    <Modal
+      visible
+      animationType="fade"
+      presentationStyle="fullScreen"
+      statusBarTranslucent
+      navigationBarTranslucent
+    >
+      <StatusBar hidden animated />
       <View style={styles.callRoot}>
-        <View style={styles.callGlowTop} />
-        <View style={styles.callGlowBottom} />
+        <View style={styles.remoteStage}>
+          {showRemoteVideo ? (
+            <RTCView
+              streamURL={remoteStream.toURL()}
+              style={styles.remoteVideo}
+              objectFit="cover"
+            />
+          ) : null}
+
+          {showVideoPlaceholder ? (
+            <View style={styles.videoPlaceholder}>
+              <Text style={styles.videoPlaceholderText}>Ожидание видео</Text>
+              {showSpinner ? (
+                <ActivityIndicator color="#ffffff" size="small" />
+              ) : null}
+            </View>
+          ) : null}
+
+          {!isVideoCall ? (
+            <View style={styles.audioStage}>
+              <View style={styles.avatarPulse} />
+              <View style={styles.peerAvatar}>
+                <Text style={styles.peerInitial}>{initial}</Text>
+              </View>
+              {showSpinner ? (
+                <ActivityIndicator color="#ffffff" size="large" />
+              ) : null}
+            </View>
+          ) : null}
+        </View>
 
         <View
           style={[
             styles.callHeader,
-            { paddingTop: Math.max(insets.top, 28) + 22 },
+            { top: Math.max(insets.top, 12) + 12 },
           ]}
         >
           <Text style={styles.callName} numberOfLines={1}>
@@ -2021,41 +2080,26 @@ function CallOverlay({
           </Text>
         </View>
 
-        <View style={styles.remoteStage}>
-          {showVideo ? (
+        {showLocalPreview ? (
+          <View
+            style={[
+              styles.localPreview,
+              { top: Math.max(insets.top, 12) + 86 },
+            ]}
+          >
             <RTCView
-              streamURL={remoteStream.toURL()}
-              style={styles.remoteVideo}
+              streamURL={localStream.toURL()}
+              style={styles.localVideo}
+              mirror={frontCamera}
               objectFit="cover"
             />
-          ) : (
-            <View style={styles.audioStage}>
-              <View style={styles.avatarPulse} />
-              <View style={styles.peerAvatar}>
-                <Text style={styles.peerInitial}>{initial}</Text>
-              </View>
-              {status === 'connecting' || status === 'reconnecting' ? (
-                <ActivityIndicator color="#2563eb" size="large" />
-              ) : null}
-            </View>
-          )}
-
-          {showLocalPreview ? (
-            <View style={styles.localPreview}>
-              <RTCView
-                streamURL={localStream.toURL()}
-                style={styles.localVideo}
-                mirror
-                objectFit="cover"
-              />
-            </View>
-          ) : null}
-        </View>
+          </View>
+        ) : null}
 
         <View
           style={[
             styles.callControls,
-            { paddingBottom: Math.max(insets.bottom, 16) + 16 },
+            { bottom: Math.max(insets.bottom, 10) + 10 },
           ]}
         >
           {status === 'incoming' ? (
@@ -2078,38 +2122,35 @@ function CallOverlay({
           ) : null}
 
           {showActiveControls ? (
-            <>
-              <View style={styles.callButtonsRow}>
-                <CallButton
-                  label={microphoneOn ? 'Микрофон' : 'Выкл.'}
-                  icon={microphoneOn ? Mic : MicOff}
-                  muted={!microphoneOn}
-                  onPress={onToggleMicrophone}
-                />
-                {callType === 'video' ? (
-                  <>
-                    <CallButton
-                      label={cameraOn ? 'Камера' : 'Выкл.'}
-                      icon={cameraOn ? Video : VideoOff}
-                      muted={!cameraOn}
-                      onPress={onToggleCamera}
-                    />
-                    <CallButton
-                      label="Сменить"
-                      icon={RotateCcw}
-                      onPress={onSwitchCamera}
-                    />
-                  </>
-                ) : null}
-              </View>
+            <View style={styles.callButtonsRow}>
+              <CallButton
+                label={microphoneOn ? 'Микрофон' : 'Выкл.'}
+                icon={microphoneOn ? Mic : MicOff}
+                muted={!microphoneOn}
+                onPress={onToggleMicrophone}
+              />
+              {callType === 'video' ? (
+                <>
+                  <CallButton
+                    label={cameraOn ? 'Камера' : 'Выкл.'}
+                    icon={cameraOn ? Video : VideoOff}
+                    muted={!cameraOn}
+                    onPress={onToggleCamera}
+                  />
+                  <CallButton
+                    label="Сменить"
+                    icon={RotateCcw}
+                    onPress={onSwitchCamera}
+                  />
+                </>
+              ) : null}
               <CallButton
                 label="Завершить"
                 icon={PhoneOff}
                 danger
-                large
                 onPress={onEnd}
               />
-            </>
+            </View>
           ) : null}
         </View>
       </View>
@@ -2173,48 +2214,45 @@ export function useCall() {
 const styles = StyleSheet.create({
   callRoot: {
     flex: 1,
-    backgroundColor: '#f8fbff',
+    backgroundColor: '#020617',
     overflow: 'hidden',
   },
-  callGlowTop: {
-    position: 'absolute',
-    top: -140,
-    left: -90,
-    width: 280,
-    height: 280,
-    borderRadius: 140,
-    backgroundColor: 'rgba(37, 99, 235, 0.09)',
-  },
-  callGlowBottom: {
-    position: 'absolute',
-    right: -120,
-    bottom: -130,
-    width: 320,
-    height: 320,
-    borderRadius: 160,
-    backgroundColor: 'rgba(14, 165, 233, 0.08)',
-  },
   remoteStage: {
-    flex: 1,
-    position: 'relative',
+    ...absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 24,
+    backgroundColor: '#020617',
   },
   remoteVideo: {
-    ...StyleSheet.absoluteFill,
+    ...absoluteFillObject,
+  },
+  videoPlaceholder: {
+    ...absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 14,
+    backgroundColor: '#020617',
+  },
+  videoPlaceholderText: {
+    color: '#f8fafc',
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: '800',
+    textAlign: 'center',
   },
   audioStage: {
+    ...absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 22,
+    backgroundColor: '#020617',
   },
   avatarPulse: {
     position: 'absolute',
     width: 190,
     height: 190,
     borderRadius: 95,
-    backgroundColor: 'rgba(37, 99, 235, 0.08)',
+    backgroundColor: 'rgba(14, 165, 233, 0.14)',
   },
   peerAvatar: {
     width: 132,
@@ -2240,62 +2278,72 @@ const styles = StyleSheet.create({
   },
   callHeader: {
     position: 'absolute',
-    zIndex: 10,
+    zIndex: 30,
+    elevation: 30,
     left: 24,
     right: 24,
     alignItems: 'center',
     gap: 7,
   },
   callName: {
-    color: '#0f172a',
-    fontSize: 30,
-    lineHeight: 36,
+    color: '#ffffff',
+    fontSize: 24,
+    lineHeight: 30,
     fontWeight: '900',
     textAlign: 'center',
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 8,
   },
   callStatus: {
-    color: '#64748b',
-    fontSize: 17,
-    lineHeight: 23,
+    color: 'rgba(255,255,255,0.82)',
+    fontSize: 15,
+    lineHeight: 20,
     fontWeight: '600',
     textAlign: 'center',
+    textShadowColor: 'rgba(0,0,0,0.45)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 6,
   },
   localPreview: {
     position: 'absolute',
-    right: 20,
-    bottom: 22,
-    width: 118,
-    height: 168,
+    right: 16,
+    width: 112,
+    height: 160,
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#ffffff',
-    borderRadius: 22,
-    backgroundColor: '#e2e8f0',
-    shadowColor: '#64748b',
-    shadowOpacity: 0.26,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.86)',
+    borderRadius: 18,
+    backgroundColor: '#0f172a',
+    shadowColor: '#000000',
+    shadowOpacity: 0.32,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 10 },
-    elevation: 8,
+    zIndex: 25,
+    elevation: 25,
   },
   localVideo: {
-    flex: 1,
+    ...absoluteFillObject,
+    borderRadius: 18,
   },
   callControls: {
+    position: 'absolute',
+    left: 14,
+    right: 14,
     alignItems: 'center',
-    gap: 22,
-    paddingHorizontal: 22,
-    paddingTop: 18,
-    marginHorizontal: 20,
-    marginBottom: 18,
-    borderRadius: 30,
-    backgroundColor: 'rgba(255,255,255,0.92)',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 24,
+    backgroundColor: 'rgba(15,23,42,0.74)',
     borderWidth: 1,
-    borderColor: 'rgba(15,23,42,0.08)',
-    shadowColor: '#94a3b8',
-    shadowOpacity: 0.22,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 12 },
-    elevation: 10,
+    borderColor: 'rgba(255,255,255,0.18)',
+    shadowColor: '#000000',
+    shadowOpacity: 0.3,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    zIndex: 35,
+    elevation: 35,
   },
   incomingControlsRow: {
     width: '100%',
@@ -2304,19 +2352,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   callButtonsRow: {
+    width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 22,
+    justifyContent: 'space-evenly',
+    gap: 10,
   },
   callButtonWrap: {
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
+    minWidth: 64,
   },
   callButton: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
+    width: 54,
+    height: 54,
+    borderRadius: 27,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#ffffff',
@@ -2324,9 +2374,9 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(15,23,42,0.08)',
   },
   callButtonLarge: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 66,
+    height: 66,
+    borderRadius: 33,
   },
   callButtonDanger: {
     backgroundColor: '#ef4444',
@@ -2345,9 +2395,9 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.96 }],
   },
   callButtonText: {
-    color: '#334155',
-    fontSize: 12,
-    lineHeight: 16,
+    color: '#ffffff',
+    fontSize: 11,
+    lineHeight: 14,
     fontWeight: '800',
     textAlign: 'center',
   },
