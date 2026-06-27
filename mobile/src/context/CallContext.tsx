@@ -2041,6 +2041,7 @@ function CallOverlay({
               streamURL={remoteStream.toURL()}
               style={styles.remoteVideo}
               objectFit="cover"
+              zOrder={0}
             />
           ) : null}
 
@@ -2092,6 +2093,7 @@ function CallOverlay({
               style={styles.localVideo}
               mirror={frontCamera}
               objectFit="cover"
+              zOrder={1}
             />
           </View>
         ) : null}
