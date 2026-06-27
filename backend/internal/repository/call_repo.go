@@ -208,6 +208,63 @@ func ExpireStaleRingingCallsWithResult(db *gorm.DB) ([]models.CallLog, error) {
 	return expired, nil
 }
 
+func EndActiveCallsForOfflineUser(db *gorm.DB, userID uint) ([]models.CallLog, error) {
+	if userID == 0 {
+		return nil, nil
+	}
+
+	now := time.Now()
+	var active []models.CallLog
+	ended := make([]models.CallLog, 0)
+	err := db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.
+			Clauses(clause.Locking{Strength: "UPDATE"}).
+			Preload("Caller").
+			Preload("Callee").
+			Where(
+				"(status = ? AND (caller_id = ? OR callee_id = ?)) OR (status = ? AND caller_id = ? AND (expires_at IS NULL OR expires_at > ?))",
+				models.CallStatusAnswered,
+				userID,
+				userID,
+				models.CallStatusRinging,
+				userID,
+				now,
+			).
+			Find(&active).Error; err != nil {
+			return err
+		}
+
+		for _, call := range active {
+			durationSeconds := callDurationSeconds(call, now)
+			result := tx.Model(&models.CallLog{}).
+				Where("id = ?", call.ID).
+				Where("status IN ?", []string{models.CallStatusRinging, models.CallStatusAnswered}).
+				Updates(map[string]interface{}{
+					"status":           models.CallStatusEnded,
+					"ended_at":         now,
+					"duration_seconds": durationSeconds,
+				})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				continue
+			}
+
+			call.Status = models.CallStatusEnded
+			call.EndedAt = &now
+			call.DurationSeconds = durationSeconds
+			ended = append(ended, call)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return ended, nil
+}
+
 func DebugCallDump(db *gorm.DB, userID uint, callID string) (models.CallLog, error) {
 	call, err := FindCallForParticipant(db, userID, callID)
 	if err != nil {
@@ -328,13 +385,7 @@ func MarkCallEnded(db *gorm.DB, actorID, peerID uint, callID string) (models.Cal
 	}
 
 	now := time.Now()
-	durationSeconds := 0
-	if call.AnsweredAt != nil {
-		durationSeconds = int(now.Sub(*call.AnsweredAt).Seconds())
-		if durationSeconds < 0 {
-			durationSeconds = 0
-		}
-	}
+	durationSeconds := callDurationSeconds(call, now)
 
 	result := db.Model(&models.CallLog{}).
 		Where("id = ? AND (caller_id = ? OR callee_id = ?)", call.ID, actorID, actorID).
@@ -491,4 +542,16 @@ func sameCallPair(call models.CallLog, userID1, userID2 uint) bool {
 
 func callExpired(call models.CallLog) bool {
 	return call.ExpiresAt != nil && !call.ExpiresAt.After(time.Now())
+}
+
+func callDurationSeconds(call models.CallLog, endedAt time.Time) int {
+	if call.AnsweredAt == nil {
+		return 0
+	}
+
+	durationSeconds := int(endedAt.Sub(*call.AnsweredAt).Seconds())
+	if durationSeconds < 0 {
+		return 0
+	}
+	return durationSeconds
 }

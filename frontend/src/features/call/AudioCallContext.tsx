@@ -200,6 +200,18 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
         }, terminalCallCleanupDelayMs);
     }, [cleanupCall, cleanupMediaSession, setCallStatus, wsService]);
 
+    const sendCurrentCallEnd = useCallback(() => {
+        const toId = peerUserIdRef.current;
+        const callId = callIdRef.current;
+
+        if (toId && callId && !isTerminalCallStatus(statusRef.current)) {
+            wsService.sendCallEnd(toId, callId);
+            void callService.endCall(callId).catch(error => {
+                console.error('Failed to end interrupted call:', error);
+            });
+        }
+    }, [peerUserIdRef, statusRef, wsService]);
+
     const getLocalStream = useCallback(async (nextCallType: CallType) => {
         if (!localStreamRef.current) {
             const result = await openLocalCallStream(nextCallType);
@@ -264,8 +276,15 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
                     setCallStatus('active');
                 }
 
-                if (state === 'failed' || state === 'closed') {
+                if (state === 'failed') {
+                    sendCurrentCallEnd();
                     cleanupCall();
+                    return;
+                }
+
+                if (state === 'closed') {
+                    cleanupCall();
+                    return;
                 }
 
                 if (state !== 'disconnected' || disconnectTimeoutRef.current) {
@@ -276,6 +295,7 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
                     disconnectTimeoutRef.current = null;
 
                     if (peerConnectionRef.current?.connectionState === 'disconnected') {
+                        sendCurrentCallEnd();
                         cleanupCall();
                     }
                 }, 10000);
@@ -284,7 +304,7 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
 
         peerConnectionRef.current = pc;
         return pc;
-    }, [cleanupCall, setCallStatus, wsService]);
+    }, [cleanupCall, sendCurrentCallEnd, setCallStatus, wsService]);
 
     const loadPeerName = useCallback(async (userId: number, fallback?: string) => {
         if (fallback) {

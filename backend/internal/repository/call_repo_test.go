@@ -353,6 +353,110 @@ func TestFindActiveCallForUserReturnsOutgoingRingingAndAnswered(t *testing.T) {
 	}
 }
 
+func TestEndActiveCallsForOfflineUserEndsAnsweredCall(t *testing.T) {
+	db := newCallRepoTestDB(t)
+	seedCallUsers(t, db, 1, 2, 3)
+
+	call, _, _, err := CreateCallOffer(db, 1, 2, "call-1", models.CallTypeAudio, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := MarkCallAnswered(db, 2, 1, "call-1"); err != nil {
+		t.Fatal(err)
+	} else if !ok {
+		t.Fatal("expected answer transition")
+	}
+
+	answeredAt := time.Now().Add(-3 * time.Second)
+	if err := db.Model(&models.CallLog{}).
+		Where("id = ?", call.ID).
+		Update("answered_at", answeredAt).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	ended, err := EndActiveCallsForOfflineUser(db, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ended) != 1 || ended[0].CallID != "call-1" {
+		t.Fatalf("ended calls = %#v, want call-1", ended)
+	}
+
+	var stored models.CallLog
+	if err := db.First(&stored, call.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.Status != models.CallStatusEnded {
+		t.Fatalf("call status = %q, want ended", stored.Status)
+	}
+	if stored.EndedAt == nil {
+		t.Fatal("offline-ended call should have ended_at")
+	}
+	if stored.DurationSeconds <= 0 {
+		t.Fatalf("duration_seconds = %d, want > 0", stored.DurationSeconds)
+	}
+
+	if _, _, _, err := CreateCallOffer(db, 3, 1, "call-2", models.CallTypeAudio, nil, ""); err != nil {
+		t.Fatalf("new offer after offline cleanup err = %v, want nil", err)
+	}
+}
+
+func TestEndActiveCallsForOfflineUserEndsOutgoingRingingCall(t *testing.T) {
+	db := newCallRepoTestDB(t)
+	seedCallUsers(t, db, 1, 2, 3)
+
+	call, _, _, err := CreateCallOffer(db, 1, 2, "call-1", models.CallTypeAudio, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ended, err := EndActiveCallsForOfflineUser(db, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ended) != 1 || ended[0].CallID != "call-1" {
+		t.Fatalf("ended calls = %#v, want call-1", ended)
+	}
+
+	var stored models.CallLog
+	if err := db.First(&stored, call.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.Status != models.CallStatusEnded {
+		t.Fatalf("outgoing ringing call status = %q, want ended", stored.Status)
+	}
+
+	if _, _, _, err := CreateCallOffer(db, 3, 1, "call-2", models.CallTypeAudio, nil, ""); err != nil {
+		t.Fatalf("new offer after outgoing ringing cleanup err = %v, want nil", err)
+	}
+}
+
+func TestEndActiveCallsForOfflineUserKeepsIncomingRingingCall(t *testing.T) {
+	db := newCallRepoTestDB(t)
+	seedCallUsers(t, db, 1, 2)
+
+	call, _, _, err := CreateCallOffer(db, 2, 1, "call-1", models.CallTypeAudio, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ended, err := EndActiveCallsForOfflineUser(db, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ended) != 0 {
+		t.Fatalf("ended calls = %#v, want none", ended)
+	}
+
+	var stored models.CallLog
+	if err := db.First(&stored, call.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.Status != models.CallStatusRinging {
+		t.Fatalf("incoming ringing call status = %q, want ringing", stored.Status)
+	}
+}
+
 func TestStaleCallIDDoesNotFallbackToLatestActiveCall(t *testing.T) {
 	db := newCallRepoTestDB(t)
 	seedCallUsers(t, db, 1, 2)

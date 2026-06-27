@@ -8,7 +8,9 @@ import (
 	"time"
 
 	"tester/internal/auth"
+	"tester/internal/dto"
 	"tester/internal/middleware"
+	"tester/internal/repository"
 	"tester/internal/services"
 
 	"github.com/coder/websocket"
@@ -145,5 +147,29 @@ func removeWebSocketClient(userID uint, client *websocketClient, reason string) 
 		log.Println("failed to update last_seen_at:", err)
 	}
 
+	endActiveCallsForOfflineUser(userID)
 	broadcastPresence(userID, false, lastSeenAt)
+}
+
+func endActiveCallsForOfflineUser(userID uint) {
+	if dbInstance == nil || userID == 0 {
+		return
+	}
+
+	endedCalls, err := repository.EndActiveCallsForOfflineUser(dbInstance, userID)
+	if err != nil {
+		log.Printf("failed to end active calls for offline user: user_id=%d error=%v", userID, err)
+		return
+	}
+
+	for _, call := range endedCalls {
+		peerID := call.CalleeID
+		if userID == call.CalleeID {
+			peerID = call.CallerID
+		}
+
+		sendCallStateEvent(context.Background(), "call:end", userID, call.CallID, call.CallerID, call.CalleeID)
+		enqueueCallStateNotification(dbInstance, peerID, userID, dto.NotificationTypeCallEnded, call.CallID, conversationIDForCall(call), call.CallType)
+		log.Printf("call state transition: call_id=%s from=active to=ended reason=participant_offline user_id=%d caller_id=%d callee_id=%d", call.CallID, userID, call.CallerID, call.CalleeID)
+	}
 }

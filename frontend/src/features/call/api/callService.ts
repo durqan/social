@@ -37,6 +37,10 @@ type ActiveCallResponse = {
     call: ActiveCall | null;
 };
 
+type CallActionResponse = {
+    ok: boolean;
+};
+
 export const callService = {
     getCall(callId: string): Promise<ActiveCall> {
         return request.get<ActiveCall>(`/calls/${encodeURIComponent(callId)}`);
@@ -46,5 +50,9 @@ export const callService = {
         const query = callId ? `?call_id=${encodeURIComponent(callId)}` : '';
         const response = await request.get<ActiveCallResponse>(`/calls/active${query}`);
         return response.call;
+    },
+
+    endCall(callId: string): Promise<CallActionResponse> {
+        return request.post<CallActionResponse>(`/calls/${encodeURIComponent(callId)}/end`);
     },
 };
