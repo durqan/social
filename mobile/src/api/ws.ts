@@ -142,6 +142,10 @@ class ChatSocket {
   }
 
   recover() {
+    logDev('[SocialMobile] WebSocket reconnect requested', {
+      pendingEvents: this.pendingEvents.length,
+      connected: this.connected,
+    });
     this.reconnectAttempts = 0;
     this.clearReconnectTimer();
     this.connect();
@@ -391,9 +395,20 @@ class ChatSocket {
           socket.close();
           return;
         }
+        const reconnectAttempt = this.reconnectAttempts;
         this.opening = false;
         this.reconnectAttempts = 0;
         this.setConnected(true);
+        logDev(
+          reconnectAttempt > 0
+            ? '[SocialMobile] WebSocket reconnect complete'
+            : '[SocialMobile] WebSocket connected',
+          {
+            generation,
+            pendingEvents: this.pendingEvents.length,
+            reconnectAttempt,
+          },
+        );
         this.syncActiveConversation();
         this.flushPendingEvents();
       };
@@ -406,6 +421,7 @@ class ChatSocket {
         if (!this.isCurrentSocket(socket, generation)) {
           return;
         }
+        warnDev('[SocialMobile] WebSocket error', { generation });
         this.opening = false;
         this.setConnected(false);
       };
@@ -413,6 +429,11 @@ class ChatSocket {
         if (!this.isCurrentSocket(socket, generation)) {
           return;
         }
+        logDev('[SocialMobile] WebSocket closed', {
+          generation,
+          shouldReconnect: this.shouldReconnect,
+          pendingEvents: this.pendingEvents.length,
+        });
         this.opening = false;
         this.ws = null;
         this.setConnected(false);
@@ -555,9 +576,19 @@ class ChatSocket {
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       if (this.shouldReconnect) {
+        logDev('[SocialMobile] WebSocket reconnecting', {
+          attempt: this.reconnectAttempts,
+          pendingEvents: this.pendingEvents.length,
+        });
         this.connect();
       }
     }, delay);
+
+    logDev('[SocialMobile] WebSocket reconnect scheduled', {
+      attempt: this.reconnectAttempts,
+      delay,
+      pendingEvents: this.pendingEvents.length,
+    });
   }
 
   private clearReconnectTimer() {

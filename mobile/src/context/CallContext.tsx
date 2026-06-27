@@ -42,7 +42,11 @@ import {
 } from 'react-native-webrtc';
 import { WS_EVENTS } from '@social/shared';
 
-import { callsApi, type ActiveCall } from '../api/calls';
+import {
+  callsApi,
+  type ActiveCall,
+  type RestoredCallIceCandidate,
+} from '../api/calls';
 import { userApi } from '../api/users';
 import {
   chatSocket,
@@ -344,6 +348,42 @@ function isUsableIceCandidate(
   );
 }
 
+function iceCandidateFromId(candidate: RestoredCallIceCandidate) {
+  if (typeof candidate.from_id === 'number') {
+    return candidate.from_id;
+  }
+  if (typeof candidate.fromId === 'number') {
+    return candidate.fromId;
+  }
+  return undefined;
+}
+
+function iceCandidateDedupKey(
+  candidate: CallIceCandidate,
+  fromId?: number | null,
+) {
+  return [
+    fromId ?? '',
+    candidate.candidate,
+    candidate.sdpMid ?? '',
+    candidate.sdpMLineIndex ?? '',
+  ].join('|');
+}
+
+function withIceCandidateFromId(
+  candidate: CallIceCandidate,
+  fromId: number,
+): RestoredCallIceCandidate {
+  return {
+    ...candidate,
+    from_id: fromId,
+  };
+}
+
+function callPeerId(call: ActiveCall, userId: number) {
+  return call.caller_id === userId ? call.callee_id : call.caller_id;
+}
+
 async function addIceCandidateSafely(
   pc: PeerConnection,
   candidate: CallIceCandidate | null | undefined,
@@ -359,7 +399,7 @@ async function addIceCandidateSafely(
       context,
       ...details,
     });
-    return;
+    return false;
   }
 
   try {
@@ -371,11 +411,20 @@ async function addIceCandidateSafely(
       sdpMLineIndex: candidate.sdpMLineIndex,
     });
     await pc.addIceCandidate(new RTCIceCandidate(candidate));
-    logDev('[SocialMobile] ICE candidate added', {
-      context,
-      ...details,
-      type: iceCandidateType(candidate),
-    });
+    if (context === 'restored') {
+      logDev('[SocialMobile] addIceCandidate restored', {
+        context,
+        ...details,
+        type: iceCandidateType(candidate),
+      });
+    } else {
+      logDev('[SocialMobile] ICE candidate added', {
+        context,
+        ...details,
+        type: iceCandidateType(candidate),
+      });
+    }
+    return true;
   } catch (error) {
     warnDev('[SocialMobile] Failed to add ICE candidate', {
       context,
@@ -383,6 +432,7 @@ async function addIceCandidateSafely(
       error,
       candidate,
     });
+    return false;
   }
 }
 
@@ -551,11 +601,12 @@ export function CallProvider({ children }: { children: ReactNode }) {
   );
   const hydratingCallIdsRef = useRef(new Set<string>());
   const hydratingActiveRef = useRef(false);
-  const pendingIceRef = useRef<CallIceCandidate[]>([]);
+  const pendingIceRef = useRef<RestoredCallIceCandidate[]>([]);
   const outgoingIceBufferRef = useRef(
     new Map<string, BufferedOutgoingIceCandidate[]>(),
   );
   const signalingReadyCallIdsRef = useRef(new Set<string>());
+  const appliedRemoteIceKeysRef = useRef(new Set<string>());
   const seenCallEventsRef = useRef(new Set<string>());
   const startInFlightRef = useRef(false);
   const acceptInFlightRef = useRef(false);
@@ -755,6 +806,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     pendingIceRef.current = [];
     outgoingIceBufferRef.current.clear();
     signalingReadyCallIdsRef.current.clear();
+    appliedRemoteIceKeysRef.current.clear();
     seenCallEventsRef.current.clear();
     startInFlightRef.current = false;
     acceptInFlightRef.current = false;
@@ -811,6 +863,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       pendingIceRef.current = [];
       outgoingIceBufferRef.current.clear();
       signalingReadyCallIdsRef.current.clear();
+      appliedRemoteIceKeysRef.current.clear();
       startInFlightRef.current = false;
       acceptInFlightRef.current = false;
       iceRecoveryAttemptsRef.current = 0;
@@ -862,6 +915,226 @@ export function CallProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const queuePendingIceCandidate = useCallback(
+    (
+      candidate: RestoredCallIceCandidate,
+      fromId: number | undefined,
+      source: string,
+    ) => {
+      const key = iceCandidateDedupKey(candidate, fromId);
+      if (
+        pendingIceRef.current.some(
+          pending =>
+            iceCandidateDedupKey(pending, iceCandidateFromId(pending)) === key,
+        )
+      ) {
+        logDev('[SocialMobile] Duplicate pending ICE candidate ignored', {
+          source,
+          callId: callIdRef.current,
+          pcId: getPeerConnectionId(pcRef.current),
+          fromId,
+          type: iceCandidateType(candidate),
+        });
+        return;
+      }
+
+      pendingIceRef.current.push(candidate);
+      logDev('[SocialMobile] Queuing ICE candidate until remoteDescription', {
+        source,
+        callId: callIdRef.current,
+        pcId: getPeerConnectionId(pcRef.current),
+        fromId,
+        type: iceCandidateType(candidate),
+        bufferedIce: pendingIceRef.current.length,
+      });
+    },
+    [getPeerConnectionId],
+  );
+
+  const flushPendingIce = useCallback(async () => {
+    const pc = pcRef.current;
+    if (!pc?.remoteDescription) {
+      logDev('[SocialMobile] Buffered ICE flush skipped', {
+        callId: callIdRef.current,
+        pcId: getPeerConnectionId(pc),
+        hasPeerConnection: Boolean(pc),
+        hasRemoteDescription: Boolean(pc?.remoteDescription),
+        bufferedIce: pendingIceRef.current.length,
+      });
+      return;
+    }
+
+    const pending = pendingIceRef.current.splice(0);
+    pendingIceRef.current = [];
+    logDev('[SocialMobile] Flushing buffered ICE candidates', {
+      callId: pcCallIdRef.current,
+      pcId: getPeerConnectionId(pc),
+      count: pending.length,
+    });
+    for (const candidate of pending) {
+      const fromId = iceCandidateFromId(candidate);
+      const key = iceCandidateDedupKey(candidate, fromId);
+      if (appliedRemoteIceKeysRef.current.has(key)) {
+        continue;
+      }
+      const added = await addIceCandidateSafely(pc, candidate, 'pending', {
+        callId: pcCallIdRef.current,
+        pcId: getPeerConnectionId(pc),
+        fromId,
+      });
+      if (added) {
+        appliedRemoteIceKeysRef.current.add(key);
+      }
+    }
+  }, [getPeerConnectionId]);
+
+  const applyRestoredIceCandidates = useCallback(
+    async (call: ActiveCall, reason: string) => {
+      const userId = user?.id;
+      if (!userId) {
+        return;
+      }
+
+      const pc = pcRef.current;
+      const peerId = peerUserIdRef.current ?? callPeerId(call, userId);
+      const pcId = getPeerConnectionId(pc);
+      const restoredCandidates = (call.ice_candidates ?? []).filter(
+        candidate => {
+          if (!isUsableIceCandidate(candidate)) {
+            return false;
+          }
+          const fromId = iceCandidateFromId(candidate);
+          if (fromId && fromId === userId) {
+            return false;
+          }
+          if (fromId && peerId && fromId !== peerId) {
+            return false;
+          }
+          return true;
+        },
+      );
+
+      logDev('[SocialMobile] Active call restored ICE candidates', {
+        reason,
+        callId: call.call_id,
+        pcId,
+        totalIce: call.ice_candidates?.length ?? 0,
+        remoteIce: restoredCandidates.length,
+      });
+
+      if (!pc || pcCallIdRef.current !== call.call_id) {
+        logDev('[SocialMobile] Restored ICE skipped without current PC', {
+          reason,
+          callId: call.call_id,
+          pcCallId: pcCallIdRef.current,
+          pcId,
+          remoteIce: restoredCandidates.length,
+        });
+        return;
+      }
+
+      for (const candidate of restoredCandidates) {
+        const fromId = iceCandidateFromId(candidate);
+        const key = iceCandidateDedupKey(candidate, fromId);
+        if (appliedRemoteIceKeysRef.current.has(key)) {
+          continue;
+        }
+        if (!pc.remoteDescription) {
+          queuePendingIceCandidate(candidate, fromId, 'restored');
+          continue;
+        }
+        const added = await addIceCandidateSafely(pc, candidate, 'restored', {
+          callId: call.call_id,
+          pcId,
+          fromId,
+        });
+        if (added) {
+          appliedRemoteIceKeysRef.current.add(key);
+        }
+      }
+    },
+    [getPeerConnectionId, queuePendingIceCandidate, user?.id],
+  );
+
+  const restoreActiveCallState = useCallback(
+    async (call: ActiveCall, reason: string) => {
+      const userId = user?.id;
+      if (!userId || callIdRef.current !== call.call_id) {
+        return false;
+      }
+
+      const peerId = callPeerId(call, userId);
+      const pc = pcRef.current;
+      const pcId = getPeerConnectionId(pc);
+      const restoredIceCount = call.ice_candidates?.length ?? 0;
+
+      logDev('[SocialMobile] Active call restore', {
+        reason,
+        callId: call.call_id,
+        pcId,
+        localStatus: statusRef.current,
+        serverStatus: call.status,
+        peerId,
+        hasOffer: Boolean(call.offer),
+        hasAnswer: Boolean(call.answer),
+        restoredIceCount,
+      });
+
+      if (peerUserIdRef.current !== peerId) {
+        setCallPeer(peerId);
+      }
+      setCurrentCallType(call.call_type === 'video' ? 'video' : 'audio');
+
+      if (
+        call.offer &&
+        call.callee_id === userId &&
+        (statusRef.current === 'incoming' || statusRef.current === 'connecting')
+      ) {
+        pendingOfferRef.current = {
+          fromId: call.caller_id,
+          callId: call.call_id,
+          offer: call.offer,
+          callType: call.call_type === 'video' ? 'video' : 'audio',
+        };
+      }
+
+      if (
+        call.answer &&
+        call.caller_id === userId &&
+        pc &&
+        pcCallIdRef.current === call.call_id &&
+        !pc.remoteDescription
+      ) {
+        logDev('[SocialMobile] Restoring call answer', {
+          callId: call.call_id,
+          pcId,
+          answer: summarizeSdp(call.answer.sdp),
+        });
+        await pc.setRemoteDescription(new RTCSessionDescription(call.answer));
+        if (pcRef.current !== pc || callIdRef.current !== call.call_id) {
+          return false;
+        }
+        logPeerState(pc, call.call_id, 'remote-answer-restored', pcId);
+        await flushPendingIce();
+        if (statusRef.current !== 'active') {
+          setCallStatus('connecting', 'answer_restored_waiting_for_media');
+        }
+      }
+
+      await applyRestoredIceCandidates(call, reason);
+      return true;
+    },
+    [
+      applyRestoredIceCandidates,
+      flushPendingIce,
+      getPeerConnectionId,
+      setCallPeer,
+      setCallStatus,
+      setCurrentCallType,
+      user?.id,
+    ],
+  );
+
   const showHydratedIncomingCall = useCallback(
     async (call: ActiveCall, fallbackName?: string) => {
       if (!shouldShowIncomingServerCall(call, user?.id)) {
@@ -884,6 +1157,14 @@ export function CallProvider({ children }: { children: ReactNode }) {
         callType: call.call_type === 'video' ? 'video' : 'audio',
       };
       pendingIceRef.current = call.ice_candidates ?? [];
+      logDev('[SocialMobile] Incoming active call restored', {
+        callId: call.call_id,
+        pcId: getPeerConnectionId(pcRef.current),
+        hasOffer: Boolean(call.offer),
+        hasAnswer: Boolean(call.answer),
+        restoredIceCount: pendingIceRef.current.length,
+        status: call.status,
+      });
       pendingIncomingCallPushRef.current = null;
       callIdRef.current = call.call_id;
       setCallPeer(call.caller_id);
@@ -897,7 +1178,14 @@ export function CallProvider({ children }: { children: ReactNode }) {
       );
       return true;
     },
-    [loadPeerName, setCallPeer, setCallStatus, setCurrentCallType, user?.id],
+    [
+      getPeerConnectionId,
+      loadPeerName,
+      setCallPeer,
+      setCallStatus,
+      setCurrentCallType,
+      user?.id,
+    ],
   );
 
   const hydrateIncomingCall = useCallback(
@@ -990,7 +1278,14 @@ export function CallProvider({ children }: { children: ReactNode }) {
             status: call.status,
             localStatus: statusRef.current,
             pcId: getPeerConnectionId(pcRef.current),
+            hasOffer: Boolean(call.offer),
+            hasAnswer: Boolean(call.answer),
+            iceCandidates: call.ice_candidates?.length ?? 0,
           });
+          await restoreActiveCallState(
+            call,
+            normalizedCallId ? 'call_id_restore' : 'active_restore',
+          );
           if (
             statusRef.current === 'incoming' &&
             shouldShowIncomingServerCall(call, userId)
@@ -1027,7 +1322,13 @@ export function CallProvider({ children }: { children: ReactNode }) {
         }
       }
     },
-    [finishCall, getPeerConnectionId, showHydratedIncomingCall, user?.id],
+    [
+      finishCall,
+      getPeerConnectionId,
+      restoreActiveCallState,
+      showHydratedIncomingCall,
+      user?.id,
+    ],
   );
 
   const stagePendingIncomingCallPush = useCallback(
@@ -1148,34 +1449,6 @@ export function CallProvider({ children }: { children: ReactNode }) {
     },
     [openLocalStream],
   );
-
-  const flushPendingIce = useCallback(async () => {
-    const pc = pcRef.current;
-    if (!pc?.remoteDescription) {
-      logDev('[SocialMobile] Buffered ICE flush skipped', {
-        callId: callIdRef.current,
-        pcId: getPeerConnectionId(pc),
-        hasPeerConnection: Boolean(pc),
-        hasRemoteDescription: Boolean(pc?.remoteDescription),
-        bufferedIce: pendingIceRef.current.length,
-      });
-      return;
-    }
-
-    const pending = pendingIceRef.current.splice(0);
-    pendingIceRef.current = [];
-    logDev('[SocialMobile] Flushing buffered ICE candidates', {
-      callId: pcCallIdRef.current,
-      pcId: getPeerConnectionId(pc),
-      count: pending.length,
-    });
-    for (const candidate of pending) {
-      await addIceCandidateSafely(pc, candidate, 'pending', {
-        callId: pcCallIdRef.current,
-        pcId: getPeerConnectionId(pc),
-      });
-    }
-  }, [getPeerConnectionId]);
 
   const createPeerConnection = useCallback(
     (toId: number, callId: string) => {
@@ -2197,6 +2470,24 @@ export function CallProvider({ children }: { children: ReactNode }) {
           return;
         }
 
+        const remoteCandidate = withIceCandidateFromId(
+          candidate,
+          payload.from_id,
+        );
+        const candidateKey = iceCandidateDedupKey(
+          remoteCandidate,
+          payload.from_id,
+        );
+        if (appliedRemoteIceKeysRef.current.has(candidateKey)) {
+          logDev('[SocialMobile] Duplicate incoming ICE candidate ignored', {
+            callId: payload.call_id,
+            pcId: getPeerConnectionId(pcRef.current),
+            fromId: payload.from_id,
+            type: iceCandidateType(remoteCandidate),
+          });
+          return;
+        }
+
         const pc = pcRef.current;
         const pcId = getPeerConnectionId(pc);
         if (pc && pcCallIdRef.current !== payload.call_id) {
@@ -2210,25 +2501,21 @@ export function CallProvider({ children }: { children: ReactNode }) {
           return;
         }
         if (!pc?.remoteDescription) {
-          logDev(
-            '[SocialMobile] Queuing ICE candidate until remoteDescription',
-            {
-              callId: payload.call_id,
-              pcId,
-              fromId: payload.from_id,
-              type: iceCandidateType(candidate),
-              bufferedIce: pendingIceRef.current.length + 1,
-            },
-          );
-          pendingIceRef.current.push(candidate);
+          queuePendingIceCandidate(remoteCandidate, payload.from_id, 'live');
           return;
         }
 
-        addIceCandidateSafely(pc, candidate, 'live', {
+        addIceCandidateSafely(pc, remoteCandidate, 'live', {
           callId: payload.call_id,
           pcId,
           fromId: payload.from_id,
-        }).catch(() => undefined);
+        })
+          .then(added => {
+            if (added) {
+              appliedRemoteIceKeysRef.current.add(candidateKey);
+            }
+          })
+          .catch(() => undefined);
         return;
       }
 
@@ -2270,6 +2557,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       flushPendingIce,
       getPeerConnectionId,
       loadPeerName,
+      queuePendingIceCandidate,
       sendTerminalCallAction,
       setCallPeer,
       setCallStatus,
@@ -2331,10 +2619,15 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
     return chatSocket.onStatus(connected => {
       if (connected) {
+        logDev('[SocialMobile] WebSocket connected; restoring active call', {
+          callId: callIdRef.current,
+          pcId: getPeerConnectionId(pcRef.current),
+          status: statusRef.current,
+        });
         hydrateIncomingCall().catch(() => undefined);
       }
     });
-  }, [hydrateIncomingCall, user?.id]);
+  }, [getPeerConnectionId, hydrateIncomingCall, user?.id]);
 
   useEffect(() => {
     if (status !== 'active' && status !== 'reconnecting') {

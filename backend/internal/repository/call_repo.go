@@ -3,6 +3,7 @@ package repository
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -14,7 +15,6 @@ import (
 
 const ActiveCallRecoveryTTL = 5 * time.Minute
 const ActiveCallHeartbeatTTL = 90 * time.Second
-const MaxStoredIceCandidates = 128
 
 var ErrInvalidCallTransition = errors.New("invalid call transition")
 var ErrCallBusy = errors.New("call participant is busy")
@@ -305,6 +305,7 @@ func DebugCallDump(db *gorm.DB, userID uint, callID string) (models.CallLog, err
 		return models.CallLog{}, err
 	}
 	call.OfferPayload = ""
+	call.AnswerPayload = ""
 	call.IceCandidates = ""
 	return call, nil
 }
@@ -338,7 +339,7 @@ func ForceExpireRingingCall(db *gorm.DB, actorID, peerID uint, callID string) (m
 	return call, true, nil
 }
 
-func MarkCallAnswered(db *gorm.DB, actorID, peerID uint, callID string) (models.CallLog, bool, error) {
+func MarkCallAnswered(db *gorm.DB, actorID, peerID uint, callID string, answerPayload ...string) (models.CallLog, bool, error) {
 	call, err := findCallBetweenUsersByID(db, actorID, peerID, callID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return models.CallLog{}, false, nil
@@ -351,13 +352,18 @@ func MarkCallAnswered(db *gorm.DB, actorID, peerID uint, callID string) (models.
 	}
 
 	now := time.Now()
+	updates := map[string]interface{}{
+		"status":      models.CallStatusAnswered,
+		"answered_at": now,
+	}
+	if len(answerPayload) > 0 && strings.TrimSpace(answerPayload[0]) != "" && json.Valid([]byte(answerPayload[0])) {
+		updates["answer_payload"] = answerPayload[0]
+	}
+
 	result := db.Model(&models.CallLog{}).
 		Where("id = ? AND callee_id = ? AND status = ?", call.ID, actorID, models.CallStatusRinging).
 		Where("expires_at IS NULL OR expires_at > ?", now).
-		Updates(map[string]interface{}{
-			"status":      models.CallStatusAnswered,
-			"answered_at": now,
-		})
+		Updates(updates)
 	if result.Error != nil {
 		return call, false, result.Error
 	}
@@ -366,6 +372,9 @@ func MarkCallAnswered(db *gorm.DB, actorID, peerID uint, callID string) (models.
 	}
 	call.Status = models.CallStatusAnswered
 	call.AnsweredAt = &now
+	if answer, ok := updates["answer_payload"].(string); ok {
+		call.AnswerPayload = answer
+	}
 	return call, true, nil
 }
 
@@ -442,7 +451,8 @@ func MarkCallEnded(db *gorm.DB, actorID, peerID uint, callID string) (models.Cal
 }
 
 func AppendCallIceCandidate(db *gorm.DB, fromID, toID uint, callID string, candidatePayload string) (models.CallLog, bool, error) {
-	if strings.TrimSpace(callID) == "" || strings.TrimSpace(candidatePayload) == "" || !json.Valid([]byte(candidatePayload)) {
+	storedCandidate, candidateKey, ok := normalizeStoredIceCandidate(candidatePayload, fromID)
+	if strings.TrimSpace(callID) == "" || !ok {
 		return models.CallLog{}, false, nil
 	}
 
@@ -470,10 +480,12 @@ func AppendCallIceCandidate(db *gorm.DB, fromID, toID uint, callID string, candi
 		if call.IceCandidates != "" {
 			_ = json.Unmarshal([]byte(call.IceCandidates), &candidates)
 		}
-		if len(candidates) >= MaxStoredIceCandidates {
-			return nil
+		for _, candidate := range candidates {
+			if iceCandidateDedupKey(candidate, fromID) == candidateKey {
+				return nil
+			}
 		}
-		candidates = append(candidates, json.RawMessage(candidatePayload))
+		candidates = append(candidates, storedCandidate)
 
 		nextCandidates, err := json.Marshal(candidates)
 		if err != nil {
@@ -500,6 +512,93 @@ func AppendCallIceCandidate(db *gorm.DB, fromID, toID uint, callID string, candi
 		return call, false, err
 	}
 	return call, true, nil
+}
+
+func normalizeStoredIceCandidate(candidatePayload string, fromID uint) (json.RawMessage, string, bool) {
+	if fromID == 0 || strings.TrimSpace(candidatePayload) == "" || !json.Valid([]byte(candidatePayload)) {
+		return nil, "", false
+	}
+
+	var candidate map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(candidatePayload), &candidate); err != nil {
+		return nil, "", false
+	}
+	key := iceCandidateDedupKey(candidate, fromID)
+	if key == "" {
+		return nil, "", false
+	}
+	fromRaw, err := json.Marshal(fromID)
+	if err != nil {
+		return nil, "", false
+	}
+	candidate["from_id"] = fromRaw
+	stored, err := json.Marshal(candidate)
+	if err != nil {
+		return nil, "", false
+	}
+	return stored, key, true
+}
+
+func iceCandidateDedupKey(candidate any, fallbackFromID uint) string {
+	var fields map[string]json.RawMessage
+	switch value := candidate.(type) {
+	case json.RawMessage:
+		if err := json.Unmarshal(value, &fields); err != nil {
+			return ""
+		}
+	case map[string]json.RawMessage:
+		fields = value
+	default:
+		return ""
+	}
+
+	candidateValue := jsonStringField(fields["candidate"])
+	if strings.TrimSpace(candidateValue) == "" {
+		return ""
+	}
+
+	fromID := jsonUintField(fields["from_id"])
+	if fromID == 0 {
+		fromID = fallbackFromID
+	}
+
+	return fmt.Sprintf(
+		"%d|%s|%s|%s",
+		fromID,
+		candidateValue,
+		jsonScalarKeyPart(fields["sdpMid"]),
+		jsonScalarKeyPart(fields["sdpMLineIndex"]),
+	)
+}
+
+func jsonStringField(raw json.RawMessage) string {
+	var value string
+	if len(raw) == 0 || json.Unmarshal(raw, &value) != nil {
+		return ""
+	}
+	return value
+}
+
+func jsonUintField(raw json.RawMessage) uint {
+	if len(raw) == 0 {
+		return 0
+	}
+	var value uint
+	if json.Unmarshal(raw, &value) == nil {
+		return value
+	}
+	return 0
+}
+
+func jsonScalarKeyPart(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	var value any
+	if json.Unmarshal(raw, &value) != nil {
+		return string(raw)
+	}
+	return fmt.Sprint(value)
 }
 
 func expireStaleRingingCallsForUsers(db *gorm.DB, now time.Time, userIDs ...uint) error {

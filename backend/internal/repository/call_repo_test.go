@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -87,7 +88,8 @@ func TestCallAnswerAndEndLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, err := MarkCallAnswered(db, 2, 1, "call-1"); err != nil {
+	answer := `{"type":"answer","sdp":"answer-sdp"}`
+	if _, ok, err := MarkCallAnswered(db, 2, 1, "call-1", answer); err != nil {
 		t.Fatal(err)
 	} else if !ok {
 		t.Fatal("expected answer transition to be forwarded")
@@ -109,6 +111,9 @@ func TestCallAnswerAndEndLifecycle(t *testing.T) {
 	var ended models.CallLog
 	if err := db.First(&ended, call.ID).Error; err != nil {
 		t.Fatal(err)
+	}
+	if ended.AnswerPayload != answer {
+		t.Fatalf("answer payload = %q, want %q", ended.AnswerPayload, answer)
 	}
 	if ended.Status != models.CallStatusEnded {
 		t.Fatalf("call status = %q, want %q", ended.Status, models.CallStatusEnded)
@@ -181,6 +186,51 @@ func TestFindActiveRingingCallForCalleeReturnsRecoveryPayload(t *testing.T) {
 	}
 	if active.IceCandidates == "" {
 		t.Fatal("expected stored ICE candidates")
+	}
+}
+
+func TestAppendCallIceCandidateDedupesByCandidateAndFromID(t *testing.T) {
+	db := newCallRepoTestDB(t)
+	seedCallUsers(t, db, 1, 2)
+
+	if _, _, _, err := CreateCallOffer(db, 1, 2, "call-1", models.CallTypeVideo, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	firstCandidate := `{"candidate":"candidate:1 1 udp 1 127.0.0.1 10000 typ host","sdpMid":"0","sdpMLineIndex":0}`
+	if _, ok, err := AppendCallIceCandidate(db, 1, 2, "call-1", firstCandidate); err != nil {
+		t.Fatal(err)
+	} else if !ok {
+		t.Fatal("expected first ice transition to be forwarded")
+	}
+	if _, ok, err := AppendCallIceCandidate(db, 1, 2, "call-1", firstCandidate); err != nil {
+		t.Fatal(err)
+	} else if !ok {
+		t.Fatal("expected duplicate ice transition to stay forwardable")
+	}
+	if _, ok, err := AppendCallIceCandidate(db, 2, 1, "call-1", firstCandidate); err != nil {
+		t.Fatal(err)
+	} else if !ok {
+		t.Fatal("expected same candidate from peer to be stored separately")
+	}
+
+	active, err := FindCallForParticipant(db, 1, "call-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var candidates []map[string]any
+	if err := json.Unmarshal([]byte(active.IceCandidates), &candidates); err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 2 {
+		t.Fatalf("stored ice candidate count = %d, want 2", len(candidates))
+	}
+	if candidates[0]["from_id"] != float64(1) {
+		t.Fatalf("first from_id = %v, want 1", candidates[0]["from_id"])
+	}
+	if candidates[1]["from_id"] != float64(2) {
+		t.Fatalf("second from_id = %v, want 2", candidates[1]["from_id"])
 	}
 }
 

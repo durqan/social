@@ -24,6 +24,7 @@ type CallLog struct {
 	CallType        string     `json:"call_type" gorm:"type:varchar(20);not null"`
 	Status          string     `json:"status" gorm:"type:varchar(20);not null;index;index:idx_call_logs_caller_callee_status_started,priority:3;index:idx_call_logs_callee_caller_status_started,priority:3"`
 	OfferPayload    string     `json:"-" gorm:"type:text"`
+	AnswerPayload   string     `json:"-" gorm:"type:text"`
 	IceCandidates   string     `json:"-" gorm:"type:text"`
 	StartedAt       time.Time  `json:"started_at" gorm:"not null;index:idx_call_logs_caller_callee_status_started,priority:4,sort:desc;index:idx_call_logs_callee_caller_status_started,priority:4,sort:desc"`
 	ExpiresAt       *time.Time `json:"expires_at,omitempty" gorm:"index"`

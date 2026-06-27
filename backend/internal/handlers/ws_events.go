@@ -563,7 +563,7 @@ func forwardCallEvent(ctx context.Context, eventType string, fromID uint, payloa
 		log.Printf("late or duplicate call event ignored: type=%s call_id=%s from_id=%d", eventType, callID, fromID)
 		return
 	}
-	transition, ok := recordCallEvent(eventType, fromID, toID, callID, callType, callOfferPayload(callPayload), callCandidatePayload(callPayload))
+	transition, ok := recordCallEvent(eventType, fromID, toID, callID, callType, callOfferPayload(callPayload), callAnswerPayload(callPayload), callCandidatePayload(callPayload))
 
 	if !ok {
 		log.Printf("call event ignored before forward: type=%s call_id=%s from_id=%d to_id=%d", eventType, callID, fromID, toID)
@@ -609,17 +609,23 @@ func forwardCallEvent(ctx context.Context, eventType string, fromID uint, payloa
 		return
 	}
 
-	for _, toConn := range clients.getAll(toID) {
+	toConnections := clients.getAll(toID)
+	deliveredCount := 0
+	failedCount := 0
+	for _, toConn := range toConnections {
 		if err := toConn.write(ctx, eventBytes); err != nil {
-			log.Println("Failed to forward call event:", err)
+			failedCount++
+			log.Printf("call event persisted but websocket forward failed: type=%s call_id=%s from_id=%d to_id=%d error=%v", eventType, callID, fromID, toID, err)
+			continue
 		}
+		deliveredCount++
 	}
 	status := transition.Status
 	if status == "" {
 		status = "forwarded_without_state"
 	}
 
-	log.Printf("call event forwarded: type=%s call_id=%s from_id=%d to_id=%d status=%s", eventType, callID, fromID, toID, status)
+	log.Printf("call event persisted: type=%s call_id=%s from_id=%d to_id=%d status=%s websocket_clients=%d delivered=%d failed=%d", eventType, callID, fromID, toID, status, len(toConnections), deliveredCount, failedCount)
 }
 
 func emitExpiredCallTimeouts(ctx context.Context, database *gorm.DB) {
@@ -724,6 +730,14 @@ func callOfferPayload(callPayload map[string]json.RawMessage) string {
 	return string(raw)
 }
 
+func callAnswerPayload(callPayload map[string]json.RawMessage) string {
+	raw, ok := callPayload["answer"]
+	if !ok || len(raw) == 0 {
+		return ""
+	}
+	return string(raw)
+}
+
 func callCandidatePayload(callPayload map[string]json.RawMessage) string {
 	raw, ok := callPayload["candidate"]
 	if !ok || len(raw) == 0 {
@@ -737,7 +751,7 @@ type callTransitionResult struct {
 	Replaced []models.CallLog
 }
 
-func recordCallEvent(eventType string, fromID uint, toID uint, callID string, callType string, offerPayload string, candidatePayload string) (callTransitionResult, bool) {
+func recordCallEvent(eventType string, fromID uint, toID uint, callID string, callType string, offerPayload string, answerPayload string, candidatePayload string) (callTransitionResult, bool) {
 	var transition callTransitionResult
 	if dbInstance == nil {
 		return transition, false
@@ -759,7 +773,7 @@ func recordCallEvent(eventType string, fromID uint, toID uint, callID string, ca
 			transition.CallLog = *created
 		}
 	case "call:answer":
-		transition.CallLog, shouldForward, err = repository.MarkCallAnswered(dbInstance, fromID, toID, callID)
+		transition.CallLog, shouldForward, err = repository.MarkCallAnswered(dbInstance, fromID, toID, callID, answerPayload)
 	case "call:reject":
 		transition.CallLog, shouldForward, err = repository.MarkCallDeclined(dbInstance, fromID, toID, callID)
 	case "call:end":

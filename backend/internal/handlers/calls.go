@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -37,6 +38,7 @@ type callResponse struct {
 	Caller         callUserResponse  `json:"caller"`
 	Callee         callUserResponse  `json:"callee"`
 	Offer          json.RawMessage   `json:"offer,omitempty"`
+	Answer         json.RawMessage   `json:"answer,omitempty"`
 	IceCandidates  []json.RawMessage `json:"ice_candidates,omitempty"`
 }
 
@@ -82,6 +84,7 @@ func GetActiveCall(database *gorm.DB) gin.HandlerFunc {
 				jsonError(c, http.StatusInternalServerError, "failed to get call")
 				return
 			}
+			logActiveCallRestore(userID, call)
 			c.JSON(http.StatusOK, gin.H{"call": callToResponse(call)})
 			return
 		}
@@ -96,6 +99,7 @@ func GetActiveCall(database *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
+		logActiveCallRestore(userID, call)
 		c.JSON(http.StatusOK, gin.H{"call": callToResponse(call)})
 	}
 }
@@ -288,6 +292,9 @@ func callToResponse(call models.CallLog) callResponse {
 	if call.OfferPayload != "" && json.Valid([]byte(call.OfferPayload)) {
 		response.Offer = json.RawMessage(call.OfferPayload)
 	}
+	if call.AnswerPayload != "" && json.Valid([]byte(call.AnswerPayload)) {
+		response.Answer = json.RawMessage(call.AnswerPayload)
+	}
 	if call.IceCandidates != "" {
 		var candidates []json.RawMessage
 		if err := json.Unmarshal([]byte(call.IceCandidates), &candidates); err == nil {
@@ -296,4 +303,24 @@ func callToResponse(call models.CallLog) callResponse {
 	}
 
 	return response
+}
+
+func logActiveCallRestore(userID uint, call models.CallLog) {
+	iceCount := 0
+	if call.IceCandidates != "" {
+		var candidates []json.RawMessage
+		if err := json.Unmarshal([]byte(call.IceCandidates), &candidates); err == nil {
+			iceCount = len(candidates)
+		}
+	}
+
+	log.Printf(
+		"active call restore: user_id=%d call_id=%s status=%s has_offer=%t has_answer=%t ice_count=%d",
+		userID,
+		call.CallID,
+		call.Status,
+		call.OfferPayload != "",
+		call.AnswerPayload != "",
+		iceCount,
+	)
 }

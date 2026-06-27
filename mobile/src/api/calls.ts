@@ -18,6 +18,11 @@ export type CallUser = {
   avatar?: string;
 };
 
+export type RestoredCallIceCandidate = CallIceCandidate & {
+  from_id?: number;
+  fromId?: number;
+};
+
 export type ActiveCall = {
   call_id: string;
   conversation_id?: number;
@@ -31,7 +36,8 @@ export type ActiveCall = {
   caller?: CallUser;
   callee?: CallUser;
   offer?: CallSessionDescription;
-  ice_candidates?: CallIceCandidate[];
+  answer?: CallSessionDescription;
+  ice_candidates?: RestoredCallIceCandidate[];
 };
 
 type ActiveCallResponse = {
