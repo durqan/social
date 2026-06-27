@@ -9,6 +9,7 @@ import (
 	"tester/internal/models"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const ActiveCallRecoveryTTL = 5 * time.Minute
@@ -45,33 +46,46 @@ func CreateCallOffer(db *gorm.DB, callerID, calleeID uint, callID string, callTy
 				return ErrInvalidCallTransition
 			}
 			if call.ExpiresAt != nil && !call.ExpiresAt.After(now) {
+				_ = markCallsMissedByID(tx, now, call.ID)
 				shouldForward = false
 				return ErrInvalidCallTransition
 			}
+			shouldForward = false
 			return nil
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
 
-		var busyCount int64
-		if err := tx.Model(&models.CallLog{}).
-			Where("(caller_id = ? OR callee_id = ? OR caller_id = ? OR callee_id = ?)", callerID, callerID, calleeID, calleeID).
-			Where("status IN ?", []string{models.CallStatusRinging, models.CallStatusAnswered}).
-			Where("NOT ((caller_id = ? AND callee_id = ?) OR (caller_id = ? AND callee_id = ?))", callerID, calleeID, calleeID, callerID).
-			Count(&busyCount).Error; err != nil {
+		if err := expireStaleRingingCallsForUsers(tx, now, callerID, calleeID); err != nil {
 			return err
 		}
-		if busyCount > 0 {
+
+		var active []models.CallLog
+		if err := tx.Model(&models.CallLog{}).
+			Where("(caller_id IN ? OR callee_id IN ?)", []uint{callerID, calleeID}, []uint{callerID, calleeID}).
+			Where("status = ? OR (status = ? AND (expires_at IS NULL OR expires_at > ?))", models.CallStatusAnswered, models.CallStatusRinging, now).
+			Find(&active).Error; err != nil {
+			return err
+		}
+
+		for _, existing := range active {
+			if existing.Status == models.CallStatusAnswered {
+				shouldForward = false
+				return ErrCallBusy
+			}
+			if existing.CallID == callID {
+				shouldForward = false
+				return ErrInvalidCallTransition
+			}
+			if sameCallPair(existing, callerID, calleeID) && existing.Status == models.CallStatusRinging {
+				replaced = append(replaced, existing)
+				continue
+			}
+
 			shouldForward = false
 			return ErrCallBusy
 		}
 
-		if err := activeCallPair(tx, callerID, calleeID).
-			Where("status = ?", models.CallStatusRinging).
-			Where("call_id <> ?", callID).
-			Find(&replaced).Error; err != nil {
-			return err
-		}
 		for _, previous := range replaced {
 			if err := tx.Model(&models.CallLog{}).
 				Where("id = ? AND status = ?", previous.ID, models.CallStatusRinging).
@@ -131,6 +145,23 @@ func FindActiveRingingCallForCallee(db *gorm.DB, calleeID uint) (models.CallLog,
 		Preload("Callee").
 		Where("callee_id = ? AND status = ?", calleeID, models.CallStatusRinging).
 		Where("expires_at IS NULL OR expires_at > ?", now).
+		Order("started_at DESC, id DESC").
+		First(&call).Error
+	return call, err
+}
+
+func FindActiveCallForUser(db *gorm.DB, userID uint) (models.CallLog, error) {
+	if userID == 0 {
+		return models.CallLog{}, gorm.ErrRecordNotFound
+	}
+
+	now := time.Now()
+	var call models.CallLog
+	err := db.
+		Preload("Caller").
+		Preload("Callee").
+		Where("(caller_id = ? OR callee_id = ?)", userID, userID).
+		Where("status = ? OR (status = ? AND (expires_at IS NULL OR expires_at > ?))", models.CallStatusAnswered, models.CallStatusRinging, now).
 		Order("started_at DESC, id DESC").
 		First(&call).Error
 	return call, err
@@ -231,6 +262,7 @@ func MarkCallAnswered(db *gorm.DB, actorID, peerID uint, callID string) (models.
 	now := time.Now()
 	result := db.Model(&models.CallLog{}).
 		Where("id = ? AND callee_id = ? AND status = ?", call.ID, actorID, models.CallStatusRinging).
+		Where("expires_at IS NULL OR expires_at > ?", now).
 		Updates(map[string]interface{}{
 			"status":      models.CallStatusAnswered,
 			"answered_at": now,
@@ -241,6 +273,8 @@ func MarkCallAnswered(db *gorm.DB, actorID, peerID uint, callID string) (models.
 	if result.RowsAffected == 0 {
 		return call, false, nil
 	}
+	call.Status = models.CallStatusAnswered
+	call.AnsweredAt = &now
 	return call, true, nil
 }
 
@@ -259,6 +293,7 @@ func MarkCallDeclined(db *gorm.DB, actorID, peerID uint, callID string) (models.
 	now := time.Now()
 	result := db.Model(&models.CallLog{}).
 		Where("id = ? AND callee_id = ? AND status = ?", call.ID, actorID, models.CallStatusRinging).
+		Where("expires_at IS NULL OR expires_at > ?", now).
 		Updates(map[string]interface{}{
 			"status":   models.CallStatusDeclined,
 			"ended_at": now,
@@ -269,6 +304,8 @@ func MarkCallDeclined(db *gorm.DB, actorID, peerID uint, callID string) (models.
 	if result.RowsAffected == 0 {
 		return call, false, nil
 	}
+	call.Status = models.CallStatusDeclined
+	call.EndedAt = &now
 	return call, true, nil
 }
 
@@ -313,6 +350,9 @@ func MarkCallEnded(db *gorm.DB, actorID, peerID uint, callID string) (models.Cal
 	if result.RowsAffected == 0 {
 		return call, false, nil
 	}
+	call.Status = models.CallStatusEnded
+	call.EndedAt = &now
+	call.DurationSeconds = durationSeconds
 	return call, true, nil
 }
 
@@ -321,44 +361,99 @@ func AppendCallIceCandidate(db *gorm.DB, fromID, toID uint, callID string, candi
 		return models.CallLog{}, false, nil
 	}
 
-	call, err := findCallBetweenUsersByID(db, fromID, toID, callID)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return models.CallLog{}, false, nil
-	}
-	if err != nil {
-		return models.CallLog{}, false, err
-	}
-	if !isCallParticipant(call, fromID) || !isCallParticipant(call, toID) {
+	var call models.CallLog
+	err := db.Transaction(func(tx *gorm.DB) error {
+		var err error
+		call, err = findCallBetweenUsersByID(tx.Clauses(clause.Locking{Strength: "UPDATE"}), fromID, toID, callID)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return gorm.ErrRecordNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if !isCallParticipant(call, fromID) || !isCallParticipant(call, toID) {
+			return ErrInvalidCallTransition
+		}
+		if call.Status != models.CallStatusRinging && call.Status != models.CallStatusAnswered {
+			return ErrInvalidCallTransition
+		}
+		if call.Status == models.CallStatusRinging && callExpired(call) {
+			return ErrInvalidCallTransition
+		}
+
+		var candidates []json.RawMessage
+		if call.IceCandidates != "" {
+			_ = json.Unmarshal([]byte(call.IceCandidates), &candidates)
+		}
+		if len(candidates) >= MaxStoredIceCandidates {
+			return nil
+		}
+		candidates = append(candidates, json.RawMessage(candidatePayload))
+
+		nextCandidates, err := json.Marshal(candidates)
+		if err != nil {
+			return err
+		}
+
+		result := tx.Model(&models.CallLog{}).
+			Where("id = ?", call.ID).
+			Where("status IN ?", []string{models.CallStatusRinging, models.CallStatusAnswered}).
+			Update("ice_candidates", string(nextCandidates))
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return ErrInvalidCallTransition
+		}
+		call.IceCandidates = string(nextCandidates)
+		return nil
+	})
+	if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, ErrInvalidCallTransition) {
 		return call, false, nil
 	}
-	if call.Status != models.CallStatusRinging && call.Status != models.CallStatusAnswered {
-		return call, false, nil
-	}
-	if call.Status == models.CallStatusRinging && callExpired(call) {
-		return call, false, nil
-	}
-
-	var candidates []json.RawMessage
-	if call.IceCandidates != "" {
-		_ = json.Unmarshal([]byte(call.IceCandidates), &candidates)
-	}
-	if len(candidates) >= MaxStoredIceCandidates {
-		return call, true, nil
-	}
-	candidates = append(candidates, json.RawMessage(candidatePayload))
-
-	nextCandidates, err := json.Marshal(candidates)
-	if err != nil {
-		return call, false, err
-	}
-
-	err = db.Model(&models.CallLog{}).
-		Where("id = ?", call.ID).
-		Update("ice_candidates", string(nextCandidates)).Error
 	if err != nil {
 		return call, false, err
 	}
 	return call, true, nil
+}
+
+func expireStaleRingingCallsForUsers(db *gorm.DB, now time.Time, userIDs ...uint) error {
+	ids := make([]uint, 0, len(userIDs))
+	seen := make(map[uint]struct{}, len(userIDs))
+	for _, userID := range userIDs {
+		if userID == 0 {
+			continue
+		}
+		if _, exists := seen[userID]; exists {
+			continue
+		}
+		seen[userID] = struct{}{}
+		ids = append(ids, userID)
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+
+	return db.Model(&models.CallLog{}).
+		Where("(caller_id IN ? OR callee_id IN ?)", ids, ids).
+		Where("status = ?", models.CallStatusRinging).
+		Where("expires_at IS NOT NULL AND expires_at <= ?", now).
+		Updates(map[string]interface{}{
+			"status":   models.CallStatusMissed,
+			"ended_at": now,
+		}).Error
+}
+
+func markCallsMissedByID(db *gorm.DB, now time.Time, ids ...uint) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	return db.Model(&models.CallLog{}).
+		Where("id IN ? AND status = ?", ids, models.CallStatusRinging).
+		Updates(map[string]interface{}{
+			"status":   models.CallStatusMissed,
+			"ended_at": now,
+		}).Error
 }
 
 func activeCallPair(db *gorm.DB, userID1, userID2 uint) *gorm.DB {
@@ -387,6 +482,11 @@ func findCallBetweenUsersByID(db *gorm.DB, actorID, peerID uint, callID string) 
 
 func isCallParticipant(call models.CallLog, userID uint) bool {
 	return userID != 0 && (call.CallerID == userID || call.CalleeID == userID)
+}
+
+func sameCallPair(call models.CallLog, userID1, userID2 uint) bool {
+	return (call.CallerID == userID1 && call.CalleeID == userID2) ||
+		(call.CallerID == userID2 && call.CalleeID == userID1)
 }
 
 func callExpired(call models.CallLog) bool {

@@ -16,7 +16,9 @@ type MockMessaging = jest.MockedFunction<() => typeof mockMessagingInstance> & {
   };
 };
 
-const mockMessaging = jest.fn(() => mockMessagingInstance) as unknown as MockMessaging;
+const mockMessaging = jest.fn(
+  () => mockMessagingInstance,
+) as unknown as MockMessaging;
 mockMessaging.AuthorizationStatus = {
   AUTHORIZED: 1,
   PROVISIONAL: 2,
@@ -46,6 +48,7 @@ const mockLocalNotifications = {
     INCOMING_CALLS: 'incoming_calls',
   },
   displayForegroundNotification: jest.fn(),
+  cancelIncomingCallNotification: jest.fn(),
   openLocalNotificationSettings: jest.fn(),
   registerLocalNotificationBackgroundHandler: jest.fn(),
   registerLocalNotificationOpenHandlers: jest.fn(),
@@ -54,6 +57,9 @@ const mockPushEffects = {
   applyPushNotificationEffects: jest.fn(),
   enqueuePendingPushEvent: jest.fn(),
 };
+const mockPendingIncomingCall = {
+  rememberTerminalIncomingCall: jest.fn(),
+};
 
 function mockNumberFromValue(value: unknown) {
   const parsed = Number(value);
@@ -61,22 +67,29 @@ function mockNumberFromValue(value: unknown) {
 }
 
 jest.mock('@react-native-firebase/messaging', () => mockMessaging);
-jest.mock('@social/shared', () => ({
-  normalizeNotificationData: jest.fn(data => ({
-    type: data?.type ?? 'system',
-    actorId: mockNumberFromValue(data?.actor_id ?? data?.actorId),
-    senderId: mockNumberFromValue(data?.sender_id ?? data?.senderId),
-    conversationId: mockNumberFromValue(data?.conversation_id ?? data?.conversationId),
-    callId: data?.call_id ?? data?.callId,
-    syncAction: data?.sync_action ?? data?.syncAction,
-    url: data?.url,
-  })),
-}), { virtual: true });
+jest.mock(
+  '@social/shared',
+  () => ({
+    normalizeNotificationData: jest.fn(data => ({
+      type: data?.type ?? 'system',
+      actorId: mockNumberFromValue(data?.actor_id ?? data?.actorId),
+      senderId: mockNumberFromValue(data?.sender_id ?? data?.senderId),
+      conversationId: mockNumberFromValue(
+        data?.conversation_id ?? data?.conversationId,
+      ),
+      callId: data?.call_id ?? data?.callId,
+      syncAction: data?.sync_action ?? data?.syncAction,
+      url: data?.url,
+    })),
+  }),
+  { virtual: true },
+);
 jest.mock('react-native', () => ({
   Platform: {
     OS: 'android',
     Version: 33,
-    select: (values: Record<string, unknown>) => values.android ?? values.default,
+    select: (values: Record<string, unknown>) =>
+      values.android ?? values.default,
   },
   PermissionsAndroid: mockPermissionsAndroid,
 }));
@@ -88,6 +101,7 @@ jest.mock('../api/notifications', () => ({
 }));
 jest.mock('./localNotifications', () => mockLocalNotifications);
 jest.mock('./pushEffects', () => mockPushEffects);
+jest.mock('./pendingIncomingCall', () => mockPendingIncomingCall);
 jest.mock('../utils/logger', () => ({
   logDev: jest.fn(),
   warnDev: jest.fn(),
@@ -101,7 +115,9 @@ describe('mobile push notifications', () => {
     mockPermissionsAndroid.request.mockResolvedValue(
       mockPermissionsAndroid.RESULTS.GRANTED,
     );
-    mockMessagingInstance.registerDeviceForRemoteMessages.mockResolvedValue(undefined);
+    mockMessagingInstance.registerDeviceForRemoteMessages.mockResolvedValue(
+      undefined,
+    );
     mockMessagingInstance.requestPermission.mockResolvedValue(
       mockMessaging.AuthorizationStatus.AUTHORIZED,
     );
@@ -110,18 +126,35 @@ describe('mobile push notifications', () => {
     mockMessagingInstance.onMessage.mockReturnValue(jest.fn());
     mockMessagingInstance.onNotificationOpenedApp.mockReturnValue(jest.fn());
     mockMessagingInstance.getInitialNotification.mockResolvedValue(null);
-    mockNotificationsApi.registerMobilePushToken.mockResolvedValue({ status: 'registered' });
-    mockNotificationsApi.revokeMobilePushToken.mockResolvedValue({ status: 'revoked' });
-    mockLocalNotifications.displayForegroundNotification.mockResolvedValue(true);
-    mockLocalNotifications.openLocalNotificationSettings.mockResolvedValue(undefined);
+    mockNotificationsApi.registerMobilePushToken.mockResolvedValue({
+      status: 'registered',
+    });
+    mockNotificationsApi.revokeMobilePushToken.mockResolvedValue({
+      status: 'revoked',
+    });
+    mockLocalNotifications.displayForegroundNotification.mockResolvedValue(
+      true,
+    );
+    mockLocalNotifications.cancelIncomingCallNotification.mockResolvedValue(
+      undefined,
+    );
+    mockLocalNotifications.openLocalNotificationSettings.mockResolvedValue(
+      undefined,
+    );
     mockLocalNotifications.registerLocalNotificationOpenHandlers.mockReturnValue(
       mockLocalNotificationCleanup,
     );
     mockPushEffects.enqueuePendingPushEvent.mockResolvedValue(null);
+    mockPendingIncomingCall.rememberTerminalIncomingCall.mockResolvedValue(
+      undefined,
+    );
   });
 
   it('registers FCM token for the current session', async () => {
-    const { beginMobilePushSession, ensureMobilePushReady } = require('./pushNotifications');
+    const {
+      beginMobilePushSession,
+      ensureMobilePushReady,
+    } = require('./pushNotifications');
 
     await expect(
       ensureMobilePushReady(beginMobilePushSession(10)),
@@ -140,7 +173,10 @@ describe('mobile push notifications', () => {
       mockPermissionsAndroid.RESULTS.DENIED,
     );
 
-    const { beginMobilePushSession, ensureMobilePushReady } = require('./pushNotifications');
+    const {
+      beginMobilePushSession,
+      ensureMobilePushReady,
+    } = require('./pushNotifications');
 
     await expect(
       ensureMobilePushReady(beginMobilePushSession(11)),
@@ -163,8 +199,12 @@ describe('mobile push notifications', () => {
       onNotificationOpen: jest.fn(),
     });
 
-    expect(mockMessagingInstance.onNotificationOpenedApp).toHaveBeenCalledTimes(1);
-    expect(mockMessagingInstance.getInitialNotification).toHaveBeenCalledTimes(1);
+    expect(mockMessagingInstance.onNotificationOpenedApp).toHaveBeenCalledTimes(
+      1,
+    );
+    expect(mockMessagingInstance.getInitialNotification).toHaveBeenCalledTimes(
+      1,
+    );
     expect(mockMessagingInstance.onMessage).toHaveBeenCalledTimes(1);
     expect(
       mockLocalNotifications.registerLocalNotificationOpenHandlers,
@@ -197,7 +237,9 @@ describe('mobile push notifications', () => {
       },
     });
 
-    expect(mockLocalNotifications.displayForegroundNotification).toHaveBeenCalledWith(
+    expect(
+      mockLocalNotifications.displayForegroundNotification,
+    ).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'message_received',
         conversationId: 42,
@@ -209,9 +251,11 @@ describe('mobile push notifications', () => {
 
   it('background notification sync is stored as a pending push event', async () => {
     let backgroundHandler: ((message: unknown) => Promise<void>) | undefined;
-    mockMessagingInstance.setBackgroundMessageHandler.mockImplementation(handler => {
-      backgroundHandler = handler;
-    });
+    mockMessagingInstance.setBackgroundMessageHandler.mockImplementation(
+      handler => {
+        backgroundHandler = handler;
+      },
+    );
 
     const { registerBackgroundMessageHandler } = require('./pushNotifications');
     registerBackgroundMessageHandler();
@@ -234,7 +278,11 @@ describe('mobile push notifications', () => {
   });
 
   it('logout revokes the active registered token', async () => {
-    const { beginMobilePushSession, ensureMobilePushReady, revokeRegisteredPushToken } = require('./pushNotifications');
+    const {
+      beginMobilePushSession,
+      ensureMobilePushReady,
+      revokeRegisteredPushToken,
+    } = require('./pushNotifications');
 
     await ensureMobilePushReady(beginMobilePushSession(12));
     await revokeRegisteredPushToken();

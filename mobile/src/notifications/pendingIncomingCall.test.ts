@@ -1,7 +1,9 @@
 const mockStorage = new Map<string, string>();
 
 jest.mock('@react-native-async-storage/async-storage', () => ({
-  getItem: jest.fn((key: string) => Promise.resolve(mockStorage.get(key) ?? null)),
+  getItem: jest.fn((key: string) =>
+    Promise.resolve(mockStorage.get(key) ?? null),
+  ),
   setItem: jest.fn((key: string, value: string) => {
     mockStorage.set(key, value);
     return Promise.resolve();
@@ -35,7 +37,9 @@ describe('pending incoming call push', () => {
       url: `/users/10/chat/5?incomingCall=1&callId=call-1&ts=${now}`,
     };
 
-    expect(incomingCallFromNotification(notification, now + 1000)).toMatchObject({
+    expect(
+      incomingCallFromNotification(notification, now + 1000),
+    ).toMatchObject({
       callId: 'call-1',
       callerId: 5,
       callerName: 'Alice',
@@ -43,22 +47,80 @@ describe('pending incoming call push', () => {
     });
 
     await rememberPendingIncomingCall(notification, now + 1000);
-    await expect(consumePendingIncomingCall(now + 1000)).resolves.toMatchObject({
-      callId: 'call-1',
-      callerId: 5,
-    });
+    await expect(consumePendingIncomingCall(now + 1000)).resolves.toMatchObject(
+      {
+        callId: 'call-1',
+        callerId: 5,
+      },
+    );
   });
 
   it('drops stale incoming call payloads', async () => {
     const { incomingCallFromNotification } = require('./pendingIncomingCall');
     const now = 1_000_000;
 
-    expect(incomingCallFromNotification({
+    expect(
+      incomingCallFromNotification(
+        {
+          type: 'incoming_call',
+          callId: 'old-call',
+          actorId: 5,
+          url: `/users/10/chat/5?incomingCall=1&callId=old-call&ts=${
+            now - 120_000
+          }`,
+        },
+        now,
+      ),
+    ).toBeNull();
+  });
+
+  it('does not resurrect a call after a terminal event tombstone', async () => {
+    const {
+      consumePendingIncomingCall,
+      rememberPendingIncomingCall,
+      rememberTerminalIncomingCall,
+    } = require('./pendingIncomingCall');
+    const now = 1_000_000;
+    const notification = {
       type: 'incoming_call',
-      callId: 'old-call',
+      callId: 'call-ended',
       actorId: 5,
-      url: `/users/10/chat/5?incomingCall=1&callId=old-call&ts=${now - 120_000}`,
-    }, now)).toBeNull();
+      conversationId: 5,
+      title: 'Alice',
+      url: `/users/10/chat/5?incomingCall=1&callId=call-ended&ts=${now}`,
+    };
+
+    await rememberTerminalIncomingCall('call-ended', now);
+    await expect(
+      rememberPendingIncomingCall(notification, now + 1000),
+    ).resolves.toBeNull();
+    await expect(consumePendingIncomingCall(now + 1000)).resolves.toBeNull();
+  });
+
+  it('clears only the matching pending call when terminal arrives', async () => {
+    const {
+      consumePendingIncomingCall,
+      rememberPendingIncomingCall,
+      rememberTerminalIncomingCall,
+    } = require('./pendingIncomingCall');
+    const now = 1_000_000;
+
+    await rememberPendingIncomingCall(
+      {
+        type: 'incoming_call',
+        callId: 'call-live',
+        actorId: 5,
+        url: `/users/10/chat/5?incomingCall=1&callId=call-live&ts=${now}`,
+      },
+      now,
+    );
+    await rememberTerminalIncomingCall('call-other', now + 1000);
+
+    await expect(consumePendingIncomingCall(now + 2000)).resolves.toMatchObject(
+      {
+        callId: 'call-live',
+      },
+    );
   });
 });
 

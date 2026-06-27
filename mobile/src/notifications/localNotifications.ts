@@ -9,6 +9,7 @@ import { Platform } from 'react-native';
 
 import { getActivePushConversation } from './activeConversation';
 import { enqueuePendingPushEvent } from './pushEffects';
+import { rememberTerminalIncomingCall } from './pendingIncomingCall';
 import {
   normalizeNotificationData,
   type MobileNotificationData,
@@ -310,6 +311,9 @@ async function rejectIncomingCallFromNotification(
   if (!notification.callId) {
     return;
   }
+  await rememberTerminalIncomingCall(notification.callId).catch(
+    () => undefined,
+  );
   const { callsApi } = await import('../api/calls');
   await callsApi.rejectCall(notification.callId).catch(() => undefined);
 }
@@ -327,12 +331,18 @@ async function acceptIncomingCallFromNotification(
     const { callsApi } = await import('../api/calls');
     const call = await callsApi.acceptCallIntent(notification.callId);
     if (!call || call.status !== 'ringing') {
+      await rememberTerminalIncomingCall(notification.callId).catch(
+        () => undefined,
+      );
       await cancelIncomingCallNotification(notification.callId).catch(
         () => undefined,
       );
       return;
     }
   } catch {
+    await rememberTerminalIncomingCall(notification.callId).catch(
+      () => undefined,
+    );
     await cancelIncomingCallNotification(notification.callId).catch(
       () => undefined,
     );
@@ -422,10 +432,16 @@ export function registerLocalNotificationBackgroundHandler() {
         const { callsApi } = await import('../api/calls');
         const call = await callsApi.acceptCallIntent(notification.callId);
         if (!call || call.status !== 'ringing') {
+          await rememberTerminalIncomingCall(notification.callId).catch(
+            () => undefined,
+          );
           await cancelIncomingCallNotification(notification.callId);
           return;
         }
       } catch {
+        await rememberTerminalIncomingCall(notification.callId).catch(
+          () => undefined,
+        );
         await cancelIncomingCallNotification(notification.callId);
         return;
       }

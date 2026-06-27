@@ -27,10 +27,8 @@ type WSMessage struct {
 
 var callEventOrder = struct {
 	sync.Mutex
-	lastSeq map[string]int64
 	seenIDs map[string]time.Time
 }{
-	lastSeq: make(map[string]int64),
 	seenIDs: make(map[string]time.Time),
 }
 
@@ -562,23 +560,8 @@ func forwardCallEvent(ctx context.Context, eventType string, fromID uint, payloa
 	transition, ok := recordCallEvent(eventType, fromID, toID, callID, callType, callOfferPayload(callPayload), callCandidatePayload(callPayload))
 
 	if !ok {
-		if eventType != "call:ice" {
-			log.Printf("call event ignored before forward: type=%s call_id=%s from_id=%d to_id=%d", eventType, callID, fromID, toID)
-			return
-		}
-
-		log.Printf(
-			"call ICE state not ready, forwarding anyway: call_id=%s from_id=%d to_id=%d",
-			callID, fromID, toID,
-		)
-
-		transition.CallLog = models.CallLog{
-			CallID:   callID,
-			CallerID: fromID,
-			CalleeID: toID,
-			CallType: callType,
-			Status:   "ringing",
-		}
+		log.Printf("call event ignored before forward: type=%s call_id=%s from_id=%d to_id=%d", eventType, callID, fromID, toID)
+		return
 	}
 	for _, replaced := range transition.Replaced {
 		sendCallStateEvent(ctx, "call:replaced", fromID, replaced.CallID, replaced.CallerID, replaced.CalleeID)
@@ -659,11 +642,6 @@ func acceptCallEventOrder(fromID uint, callID string, payload map[string]json.Ra
 		_ = json.Unmarshal(raw, &eventID)
 		eventID = strings.TrimSpace(eventID)
 	}
-	var seq int64
-	if raw, ok := payload["event_seq"]; ok {
-		_ = json.Unmarshal(raw, &seq)
-	}
-
 	callEventOrder.Lock()
 	defer callEventOrder.Unlock()
 
@@ -674,13 +652,6 @@ func acceptCallEventOrder(fromID uint, callID string, payload map[string]json.Ra
 			return false
 		}
 		callEventOrder.seenIDs[key] = now
-	}
-	if seq > 0 {
-		key := fmt.Sprintf("%s:%d", callID, fromID)
-		if last := callEventOrder.lastSeq[key]; seq <= last {
-			return false
-		}
-		callEventOrder.lastSeq[key] = seq
 	}
 	if len(callEventOrder.seenIDs) > 10000 {
 		cutoff := now.Add(-10 * time.Minute)

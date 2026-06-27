@@ -86,7 +86,7 @@ func GetActiveCall(database *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		call, err := repository.FindActiveRingingCallForCallee(database, userID)
+		call, err := repository.FindActiveCallForUser(database, userID)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusOK, gin.H{"call": nil})
 			return

@@ -26,6 +26,7 @@ import {
   replaceMobilePushToken,
   type MobilePushTokenPayload,
 } from './tokenRegistration';
+import { rememberTerminalIncomingCall } from './pendingIncomingCall';
 
 export { MOBILE_NOTIFICATION_CHANNELS };
 
@@ -179,10 +180,15 @@ function isCallTerminalNotification(notification: MobileNotificationData) {
   );
 }
 
-async function applyCallTerminalNotification(notification: MobileNotificationData) {
+async function applyCallTerminalNotification(
+  notification: MobileNotificationData,
+) {
   if (!isCallTerminalNotification(notification)) {
     return;
   }
+  await rememberTerminalIncomingCall(notification.callId).catch(error => {
+    warnDev('[SocialMobile] stale call tombstone failed', error);
+  });
   await cancelIncomingCallNotification(notification.callId).catch(error => {
     warnDev('[SocialMobile] stale call notification cancel failed', error);
   });

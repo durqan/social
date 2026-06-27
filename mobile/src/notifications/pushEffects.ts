@@ -1,7 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import type { MobileNotificationData } from './types';
-import { rememberPendingIncomingCall } from './pendingIncomingCall';
+import {
+  rememberPendingIncomingCall,
+  rememberTerminalIncomingCall,
+} from './pendingIncomingCall';
 
 const pendingPushEventsKey = '@social/pending-push-events:v1';
 const maxPendingPushEvents = 25;
@@ -119,6 +122,9 @@ export function applyPushNotificationEffects(
         rememberPendingIncomingCall(notification).catch(() => undefined);
         return;
       case 'call_terminal':
+        rememberTerminalIncomingCall(notification.callId).catch(
+          () => undefined,
+        );
         return;
     }
   });
@@ -159,6 +165,12 @@ export async function enqueuePendingPushEvent(
 
   if (notification.type === 'incoming_call') {
     await rememberPendingIncomingCall(notification, now);
+  } else if (
+    notification.type === 'call_ended' ||
+    notification.type === 'call_rejected' ||
+    notification.type === 'call_missed'
+  ) {
+    await rememberTerminalIncomingCall(notification.callId, now);
   }
 
   return nextEvent;

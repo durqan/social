@@ -227,6 +227,32 @@ func TestCreateCallOfferRejectsBusyParticipant(t *testing.T) {
 	}
 }
 
+func TestCreateCallOfferRejectsBusyAnsweredSamePair(t *testing.T) {
+	db := newCallRepoTestDB(t)
+	seedCallUsers(t, db, 1, 2)
+
+	if _, _, _, err := CreateCallOffer(db, 1, 2, "call-1", models.CallTypeAudio, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := MarkCallAnswered(db, 2, 1, "call-1"); err != nil {
+		t.Fatal(err)
+	} else if !ok {
+		t.Fatal("expected answer transition")
+	}
+
+	if _, _, _, err := CreateCallOffer(db, 1, 2, "call-2", models.CallTypeAudio, nil, ""); !errors.Is(err, ErrCallBusy) {
+		t.Fatalf("second same-pair offer err = %v, want ErrCallBusy", err)
+	}
+
+	var count int64
+	if err := db.Model(&models.CallLog{}).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("call_logs count = %d, want 1", count)
+	}
+}
+
 func TestExpireStaleRingingCallsWithResult(t *testing.T) {
 	db := newCallRepoTestDB(t)
 	seedCallUsers(t, db, 1, 2)
@@ -251,6 +277,79 @@ func TestExpireStaleRingingCallsWithResult(t *testing.T) {
 	}
 	if expired[0].Status != models.CallStatusMissed {
 		t.Fatalf("expired status = %q, want missed", expired[0].Status)
+	}
+}
+
+func TestExpiredCallCannotBeAnswered(t *testing.T) {
+	db := newCallRepoTestDB(t)
+	seedCallUsers(t, db, 1, 2)
+
+	call, _, _, err := CreateCallOffer(db, 1, 2, "call-1", models.CallTypeAudio, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expiredAt := time.Now().Add(-time.Second)
+	if err := db.Model(&models.CallLog{}).
+		Where("id = ?", call.ID).
+		Update("expires_at", expiredAt).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if _, ok, err := MarkCallAnswered(db, 2, 1, "call-1"); err != nil {
+		t.Fatal(err)
+	} else if ok {
+		t.Fatal("expired answer should not be forwarded")
+	}
+
+	var unchanged models.CallLog
+	if err := db.First(&unchanged, call.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if unchanged.Status != models.CallStatusRinging {
+		t.Fatalf("expired answer changed status to %q", unchanged.Status)
+	}
+}
+
+func TestFindActiveCallForUserReturnsOutgoingRingingAndAnswered(t *testing.T) {
+	db := newCallRepoTestDB(t)
+	seedCallUsers(t, db, 1, 2)
+
+	if _, _, _, err := CreateCallOffer(db, 1, 2, "call-1", models.CallTypeAudio, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	outgoing, err := FindActiveCallForUser(db, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outgoing.CallID != "call-1" || outgoing.Status != models.CallStatusRinging {
+		t.Fatalf("caller active call = %s/%s, want call-1/ringing", outgoing.CallID, outgoing.Status)
+	}
+
+	if _, ok, err := MarkCallAnswered(db, 2, 1, "call-1"); err != nil {
+		t.Fatal(err)
+	} else if !ok {
+		t.Fatal("expected answer transition")
+	}
+
+	for _, userID := range []uint{1, 2} {
+		active, err := FindActiveCallForUser(db, userID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if active.CallID != "call-1" || active.Status != models.CallStatusAnswered {
+			t.Fatalf("user %d active call = %s/%s, want call-1/answered", userID, active.CallID, active.Status)
+		}
+	}
+
+	if _, ok, err := MarkCallEnded(db, 1, 2, "call-1"); err != nil {
+		t.Fatal(err)
+	} else if !ok {
+		t.Fatal("expected end transition")
+	}
+
+	if _, err := FindActiveCallForUser(db, 1); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("ended call active lookup err = %v, want record not found", err)
 	}
 }
 
