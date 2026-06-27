@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"tester/internal/dto"
 	"tester/internal/middleware"
 	"tester/internal/models"
 	"tester/internal/repository"
@@ -565,7 +566,7 @@ func forwardCallEvent(ctx context.Context, eventType string, fromID uint, payloa
 	}
 	for _, replaced := range transition.Replaced {
 		sendCallStateEvent(ctx, "call:replaced", fromID, replaced.CallID, replaced.CallerID, replaced.CalleeID)
-		enqueueCallStateNotification(dbInstance, replaced.CalleeID, replaced.CallerID, "call_ended", replaced.CallID, conversationIDForCall(replaced), replaced.CallType)
+		enqueueCallStateNotification(dbInstance, replaced.CalleeID, replaced.CallerID, dto.NotificationTypeCallEnded, replaced.CallID, conversationIDForCall(replaced), replaced.CallType)
 		log.Printf("call state transition: call_id=%s from=ringing to=replaced reason=new_offer caller_id=%d callee_id=%d", replaced.CallID, replaced.CallerID, replaced.CalleeID)
 	}
 
@@ -586,10 +587,10 @@ func forwardCallEvent(ctx context.Context, eventType string, fromID uint, payloa
 		go enqueueIncomingCallNotification(dbInstance, toID, fromID, callID, fromID, transition.CallType)
 	}
 	if eventType == "call:end" {
-		go enqueueCallStateNotification(dbInstance, toID, fromID, "call_ended", callID, fromID, transition.CallType)
+		go enqueueCallStateNotification(dbInstance, toID, fromID, dto.NotificationTypeCallEnded, callID, fromID, transition.CallType)
 	}
 	if eventType == "call:reject" {
-		go enqueueCallStateNotification(dbInstance, toID, fromID, "call_rejected", callID, fromID, transition.CallType)
+		go enqueueCallStateNotification(dbInstance, toID, fromID, dto.NotificationTypeCallRejected, callID, fromID, transition.CallType)
 	}
 
 	// Why we send push even if the user has active WS connections:
@@ -642,7 +643,7 @@ func emitExpiredCallTimeouts(ctx context.Context, database *gorm.DB) {
 	}
 	for _, call := range expired {
 		sendCallStateEvent(ctx, "call:timeout", call.CallerID, call.CallID, call.CallerID, call.CalleeID)
-		enqueueCallStateNotification(database, call.CalleeID, call.CallerID, "call_missed", call.CallID, conversationIDForCall(call), call.CallType)
+		enqueueCallStateNotification(database, call.CalleeID, call.CallerID, dto.NotificationTypeCallMissed, call.CallID, conversationIDForCall(call), call.CallType)
 		log.Printf("call state transition: call_id=%s from=ringing to=missed reason=server_timeout caller_id=%d callee_id=%d", call.CallID, call.CallerID, call.CalleeID)
 	}
 }

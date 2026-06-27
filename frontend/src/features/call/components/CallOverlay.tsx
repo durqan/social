@@ -44,6 +44,14 @@ const statusText = (status: CallStatus, callType: CallType) => {
         return callType === 'video' ? 'Видеозвонок идет' : 'Аудиозвонок идет';
     }
 
+    if (status === 'ended') {
+        return 'Звонок завершен';
+    }
+
+    if (status === 'error') {
+        return 'Звонок завершен с ошибкой';
+    }
+
     return '';
 };
 
@@ -125,7 +133,8 @@ export function CallOverlay({
     }
 
     const expandedVideo = isExpanded && callType === 'video';
-    const showCallControls = status !== 'incoming';
+    const terminalState = status === 'ended' || status === 'error';
+    const showCallControls = status !== 'incoming' && !terminalState;
     const showCameraControls = callType === 'video' && hasLocalVideo;
     const videoTileClass = isExpanded
         ? 'absolute right-3 top-3 h-28 w-20 overflow-hidden rounded-lg border border-white/30 bg-gray-800 shadow sm:h-36 sm:w-56'
@@ -134,7 +143,7 @@ export function CallOverlay({
         ? () => onOpenPeerProfile(peerUserId)
         : undefined;
 
-    const controls = status === 'incoming' ? (
+    const controls = terminalState ? null : status === 'incoming' ? (
         <>
             <ControlButton icon="phone" label="Принять звонок" tone="success" onClick={onAccept} />
             <ControlButton icon="phoneOff" label="Отклонить звонок" tone="danger" onClick={onReject} />
@@ -266,7 +275,7 @@ export function CallOverlay({
                         )}
                     </div>
 
-                    {!showCallControls && (
+                    {!showCallControls && controls && (
                         <div className="flex flex-shrink-0 justify-end gap-2">
                             {controls}
                         </div>

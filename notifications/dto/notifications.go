@@ -18,7 +18,7 @@ type CreateNotificationReq struct {
 	ActorID     uint   `json:"actor_id"`
 	Type        string `json:"type"`
 	EntityID    uint   `json:"entity_id"`
-	// CallID and ConversationID are populated for incoming_call.
+	// CallID and ConversationID are populated for call notifications.
 	// ConversationID is the peer user id (from the recipient's point of view, the person to open chat with).
 	CallID         string `json:"call_id,omitempty"`
 	ConversationID uint   `json:"conversation_id,omitempty"`

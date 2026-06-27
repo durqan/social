@@ -23,6 +23,9 @@ const ignoredEvents: ReadonlySet<WsEvent['type']> = new Set([
     WS_EVENTS.CALL_ICE,
     WS_EVENTS.CALL_END,
     WS_EVENTS.CALL_REJECT,
+    WS_EVENTS.CALL_TIMEOUT,
+    WS_EVENTS.CALL_BUSY,
+    WS_EVENTS.CALL_REPLACED,
     WS_EVENTS.PRESENCE_UPDATE,
 ]);
 

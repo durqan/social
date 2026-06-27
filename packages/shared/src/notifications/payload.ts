@@ -1,4 +1,4 @@
-export const NOTIFICATION_TYPES = {
+export const BACKEND_NOTIFICATION_TYPES = {
   MESSAGE_RECEIVED: 'message_received',
   FRIEND_REQUEST: 'friend_request',
   FRIEND_ACCEPTED: 'friend_accepted',
@@ -8,6 +8,10 @@ export const NOTIFICATION_TYPES = {
   CALL_ENDED: 'call_ended',
   CALL_REJECTED: 'call_rejected',
   CALL_MISSED: 'call_missed',
+} as const;
+
+export const NOTIFICATION_TYPES = {
+  ...BACKEND_NOTIFICATION_TYPES,
   NOTIFICATION_SYNC: 'notification_sync',
   SYSTEM: 'system',
 } as const;
@@ -18,6 +22,9 @@ export const NOTIFICATION_SYNC_ACTIONS = {
 
 export type NotificationType =
   (typeof NOTIFICATION_TYPES)[keyof typeof NOTIFICATION_TYPES];
+
+export type BackendNotificationType =
+  (typeof BACKEND_NOTIFICATION_TYPES)[keyof typeof BACKEND_NOTIFICATION_TYPES];
 
 export type PushNotificationData = {
   type: NotificationType | string;

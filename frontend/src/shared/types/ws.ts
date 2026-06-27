@@ -28,6 +28,8 @@ export type CallOfferEvent = BaseWsEvent<
     {
         from_id: number;
         call_id: string;
+        event_id?: string;
+        event_seq?: number;
         call_type?: 'audio' | 'video';
         offer: RTCSessionDescriptionInit;
     }
@@ -38,6 +40,8 @@ export type CallAnswerEvent = BaseWsEvent<
     {
         from_id: number;
         call_id: string;
+        event_id?: string;
+        event_seq?: number;
         answer: RTCSessionDescriptionInit;
     }
 >;
@@ -47,6 +51,8 @@ export type CallIceEvent = BaseWsEvent<
     {
         from_id: number;
         call_id: string;
+        event_id?: string;
+        event_seq?: number;
         candidate: RTCIceCandidateInit;
     }
 >;
@@ -56,11 +62,39 @@ export type CallEndEvent = BaseWsEvent<
     {
         from_id: number;
         call_id: string;
+        event_id?: string;
+        event_seq?: number;
     }
 >;
 
 export type CallRejectEvent = BaseWsEvent<
     typeof WS_EVENTS.CALL_REJECT,
+    {
+        from_id: number;
+        call_id: string;
+        event_id?: string;
+        event_seq?: number;
+    }
+>;
+
+export type CallTimeoutEvent = BaseWsEvent<
+    typeof WS_EVENTS.CALL_TIMEOUT,
+    {
+        from_id: number;
+        call_id: string;
+    }
+>;
+
+export type CallBusyEvent = BaseWsEvent<
+    typeof WS_EVENTS.CALL_BUSY,
+    {
+        from_id: number;
+        call_id: string;
+    }
+>;
+
+export type CallReplacedEvent = BaseWsEvent<
+    typeof WS_EVENTS.CALL_REPLACED,
     {
         from_id: number;
         call_id: string;
@@ -73,4 +107,7 @@ export type WsEvent =
     | CallAnswerEvent
     | CallIceEvent
     | CallEndEvent
-    | CallRejectEvent;
+    | CallRejectEvent
+    | CallTimeoutEvent
+    | CallBusyEvent
+    | CallReplacedEvent;

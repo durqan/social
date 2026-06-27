@@ -49,6 +49,27 @@ function isCallId(value: unknown): value is string {
     return typeof value === 'string' && value.length > 0;
 }
 
+const terminalCallCleanupDelayMs = 1800;
+
+function isTerminalCallStatus(status: CallStatus) {
+    return status === 'ended' || status === 'error';
+}
+
+function terminalCallMessage(type: string) {
+    switch (type) {
+        case WS_EVENTS.CALL_REJECT:
+            return 'Звонок отклонен.';
+        case WS_EVENTS.CALL_TIMEOUT:
+            return 'Звонок не был принят.';
+        case WS_EVENTS.CALL_BUSY:
+            return 'Пользователь занят.';
+        case WS_EVENTS.CALL_REPLACED:
+            return 'Звонок заменен новым вызовом.';
+        default:
+            return 'Звонок завершен.';
+    }
+}
+
 export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
     const navigate = useNavigate();
     const location = useLocation();
@@ -83,6 +104,7 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
     const hydratingActiveRef = useRef(false);
     const pendingIceRef = useRef<RTCIceCandidateInit[]>([]);
     const disconnectTimeoutRef = useRef<number | null>(null);
+    const terminalCleanupTimerRef = useRef<number | null>(null);
 
     const stopLocalStream = useCallback(() => {
         stopMediaStream(localStreamRef.current);
@@ -122,6 +144,11 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
     const cleanupCall = useCallback(() => {
         const callId = callIdRef.current;
 
+        if (terminalCleanupTimerRef.current) {
+            window.clearTimeout(terminalCleanupTimerRef.current);
+            terminalCleanupTimerRef.current = null;
+        }
+
         if (callId) {
             wsService.discardPendingCallEvents(callId);
         }
@@ -137,6 +164,7 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
         setCameraFacingMode('user');
         setIsCallChatOpen(false);
         setCallChatUnread(0);
+        setError(null);
         setCallStatus('idle');
     }, [
         cleanupMediaSession,
@@ -150,6 +178,27 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
         setIsMicrophoneOn,
         wsService,
     ]);
+
+    const finishCall = useCallback((message: string, nextStatus: CallStatus = 'ended') => {
+        const callId = callIdRef.current;
+
+        if (terminalCleanupTimerRef.current) {
+            window.clearTimeout(terminalCleanupTimerRef.current);
+            terminalCleanupTimerRef.current = null;
+        }
+
+        if (callId) {
+            wsService.discardPendingCallEvents(callId);
+        }
+
+        cleanupMediaSession();
+        setError(message);
+        setCallStatus(nextStatus);
+        terminalCleanupTimerRef.current = window.setTimeout(() => {
+            terminalCleanupTimerRef.current = null;
+            cleanupCall();
+        }, terminalCallCleanupDelayMs);
+    }, [cleanupCall, cleanupMediaSession, setCallStatus, wsService]);
 
     const getLocalStream = useCallback(async (nextCallType: CallType) => {
         if (!localStreamRef.current) {
@@ -638,10 +687,23 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
 
                     if (fromId === peerUserIdRef.current) {
                         if (event.type === WS_EVENTS.CALL_END || statusRef.current !== 'active') {
-                            cleanupCall();
+                            finishCall(terminalCallMessage(event.type));
                         }
                     }
 
+                    return;
+                }
+
+                case WS_EVENTS.CALL_TIMEOUT:
+                case WS_EVENTS.CALL_BUSY:
+                case WS_EVENTS.CALL_REPLACED: {
+                    const { call_id: callId } = event.payload;
+
+                    if (!isCallId(callId) || callId !== callIdRef.current) {
+                        return;
+                    }
+
+                    finishCall(terminalCallMessage(event.type));
                     return;
                 }
 
@@ -650,6 +712,7 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
 
                     if (
                         statusRef.current !== 'idle' &&
+                        !isTerminalCallStatus(statusRef.current) &&
                         !isCallChatOpenRef.current &&
                         message.from_id === peerUserIdRef.current &&
                         message.to_id === currentUser?.id
@@ -674,6 +737,7 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
         cleanupCall,
         callChatUnreadRef,
         currentUser?.id,
+        finishCall,
         flushPendingIce,
         isCallChatOpenRef,
         loadPeerName,
@@ -766,7 +830,7 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
         if (!currentUser && statusRef.current !== 'idle') {
             const toId = peerUserIdRef.current;
             const callId = callIdRef.current;
-            if (toId && callId) {
+            if (toId && callId && !isTerminalCallStatus(statusRef.current)) {
                 wsService.sendCallEnd(toId, callId);
             }
 
@@ -803,7 +867,7 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
 
             const toId = peerUserIdRef.current;
             const callId = callIdRef.current;
-            if (toId && callId) {
+            if (toId && callId && !isTerminalCallStatus(statusRef.current)) {
                 wsService.sendCallEnd(toId, callId);
             }
 

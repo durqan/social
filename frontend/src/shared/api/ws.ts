@@ -24,7 +24,16 @@ const callEventTypes: ReadonlySet<string> = new Set([
     WS_EVENTS.CALL_ICE,
     WS_EVENTS.CALL_END,
     WS_EVENTS.CALL_REJECT,
+    WS_EVENTS.CALL_TIMEOUT,
+    WS_EVENTS.CALL_BUSY,
+    WS_EVENTS.CALL_REPLACED,
 ]);
+
+function createEventId(type: string, callId: string) {
+    const nonce = globalThis.crypto?.randomUUID?.() ??
+        `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    return `${type}:${callId}:${nonce}`;
+}
 
 function attachmentForTransport(attachment: MessageAttachment): MessageAttachment {
     return {
@@ -63,6 +72,7 @@ export class WebSocketService {
     private activeConversationId: number | null = null;
     private hasConnected = false;
     private reconnectAttempts = 0;
+    private callEventSeq = new Map<string, number>();
 
     connect() {
         this.shouldReconnect = true;
@@ -180,6 +190,7 @@ export class WebSocketService {
         this.sendEventToUser(WS_EVENTS.CALL_OFFER, toId, {
             call_id: callId,
             call_type: callType,
+            ...this.callEventMetadata(WS_EVENTS.CALL_OFFER, callId),
             offer,
         });
     }
@@ -188,6 +199,7 @@ export class WebSocketService {
         this.sendEventToUser(WS_EVENTS.CALL_ANSWER, toId, {
             answer,
             call_id: callId,
+            ...this.callEventMetadata(WS_EVENTS.CALL_ANSWER, callId),
         });
     }
 
@@ -195,15 +207,24 @@ export class WebSocketService {
         this.sendEventToUser(WS_EVENTS.CALL_ICE, toId, {
             candidate,
             call_id: callId,
+            ...this.callEventMetadata(WS_EVENTS.CALL_ICE, callId),
         });
     }
 
     sendCallEnd(toId: number, callId: string) {
-        this.sendEventToUser(WS_EVENTS.CALL_END, toId, { call_id: callId });
+        this.sendEventToUser(WS_EVENTS.CALL_END, toId, {
+            call_id: callId,
+            ...this.callEventMetadata(WS_EVENTS.CALL_END, callId),
+        });
+        this.callEventSeq.delete(callId);
     }
 
     sendCallReject(toId: number, callId: string) {
-        this.sendEventToUser(WS_EVENTS.CALL_REJECT, toId, { call_id: callId });
+        this.sendEventToUser(WS_EVENTS.CALL_REJECT, toId, {
+            call_id: callId,
+            ...this.callEventMetadata(WS_EVENTS.CALL_REJECT, callId),
+        });
+        this.callEventSeq.delete(callId);
     }
 
     discardPendingCallEvents(callId?: string) {
@@ -214,6 +235,11 @@ export class WebSocketService {
 
             return callId ? getEventCallId(event) !== callId : false;
         });
+        if (callId) {
+            this.callEventSeq.delete(callId);
+        } else {
+            this.callEventSeq.clear();
+        }
     }
 
     disconnect() {
@@ -225,6 +251,7 @@ export class WebSocketService {
         this.pendingEvents = [];
         this.hasConnected = false;
         this.reconnectAttempts = 0;
+        this.callEventSeq.clear();
         this.ws?.close();
         this.ws = null;
     }
@@ -286,6 +313,19 @@ export class WebSocketService {
                 ...payload,
             },
         }, queueIfClosed);
+    }
+
+    private nextCallEventSeq(callId: string) {
+        const next = (this.callEventSeq.get(callId) ?? 0) + 1;
+        this.callEventSeq.set(callId, next);
+        return next;
+    }
+
+    private callEventMetadata(type: string, callId: string) {
+        return {
+            event_id: createEventId(type, callId),
+            event_seq: this.nextCallEventSeq(callId),
+        };
     }
 
     private scheduleReconnect() {

@@ -54,7 +54,9 @@ func registerCallRoutes(router *gin.Engine, database *gorm.DB) {
 	calls.POST("/:callId/accept", middleware.RateLimitMiddleware(30, time.Minute), handlers.AcceptCallIntent(database))
 	calls.POST("/:callId/reject", middleware.RateLimitMiddleware(30, time.Minute), handlers.RejectCall(database))
 	calls.POST("/:callId/end", middleware.RateLimitMiddleware(30, time.Minute), handlers.EndCall(database))
-	calls.GET("/:callId/debug", handlers.DebugCall(database))
+	if gin.Mode() != gin.ReleaseMode {
+		calls.GET("/:callId/debug", handlers.DebugCall(database))
+	}
 	calls.GET("/:callId", handlers.GetCall(database))
 }
 

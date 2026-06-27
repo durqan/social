@@ -337,7 +337,10 @@ func validateNotificationReq(req dto.CreateNotificationReq) error {
 		dto.NotificationTypeFriendRequest,
 		dto.NotificationTypeFriendAccepted,
 		dto.NotificationTypeMessage,
-		dto.NotificationTypeIncomingCall:
+		dto.NotificationTypeIncomingCall,
+		dto.NotificationTypeCallEnded,
+		dto.NotificationTypeCallRejected,
+		dto.NotificationTypeCallMissed:
 		return nil
 	default:
 		return fmt.Errorf("unsupported notification type %q", req.Type)

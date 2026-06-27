@@ -214,6 +214,9 @@ export const useChatWebSocket = ({
                 case WS_EVENTS.CALL_ICE:
                 case WS_EVENTS.CALL_END:
                 case WS_EVENTS.CALL_REJECT:
+                case WS_EVENTS.CALL_TIMEOUT:
+                case WS_EVENTS.CALL_BUSY:
+                case WS_EVENTS.CALL_REPLACED:
                 case WS_EVENTS.PRESENCE_UPDATE:
                 case WS_EVENTS.FRIEND_REQUEST:
                 case WS_EVENTS.FRIEND_ACCEPTED:

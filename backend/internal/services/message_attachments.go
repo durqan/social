@@ -13,7 +13,6 @@ import (
 	"mime"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -97,8 +96,6 @@ var allowedChatVideoNoteTypes = map[string]struct {
 	"video/webm": {extension: ".webm", contentType: "video/webm"},
 	"video/mp4":  {extension: ".mp4", contentType: "video/mp4"},
 }
-
-var generatedUploadFilenamePattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(jpg|jpeg|png|webp|gif|webm|ogg|mp4|mov|mp3|m4a|wav|pdf|txt|doc|docx|xls|xlsx|zip|json|csv|bin)$`)
 
 func ChatImageExtension(contentType string) (string, bool) {
 	ext, ok := allowedChatImageTypes[contentType]
@@ -514,7 +511,7 @@ func ChatUploadOwnedBy(filename string, userID uint) bool {
 		return true
 	}
 	if cache.Redis == nil {
-		return generatedUploadFilenamePattern.MatchString(filename)
+		return false
 	}
 	value, err := cache.Redis.Client.Get(cache.Redis.Ctx, chatUploadOwnerKey(filename)).Result()
 	if err != nil {

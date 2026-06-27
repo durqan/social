@@ -4,6 +4,8 @@ import (
 	"errors"
 	"testing"
 
+	"notifications/dto"
+
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
@@ -46,6 +48,37 @@ func TestConsumeDeliveriesReturnsStoppedWhenChannelCloses(t *testing.T) {
 	err := consumeDeliveries(nil, deliveries, nil, nil)
 	if !errors.Is(err, ErrConsumerStopped) {
 		t.Fatalf("consumeDeliveries() error = %v, want %v", err, ErrConsumerStopped)
+	}
+}
+
+func TestValidateNotificationReqAcceptsAllBackendNotificationTypes(t *testing.T) {
+	types := []string{
+		dto.NotificationTypePostLiked,
+		dto.NotificationTypeCommentCreated,
+		dto.NotificationTypeFriendRequest,
+		dto.NotificationTypeFriendAccepted,
+		dto.NotificationTypeMessage,
+		dto.NotificationTypeIncomingCall,
+		dto.NotificationTypeCallEnded,
+		dto.NotificationTypeCallRejected,
+		dto.NotificationTypeCallMissed,
+	}
+
+	for _, notificationType := range types {
+		t.Run(notificationType, func(t *testing.T) {
+			err := validateNotificationReq(dto.CreateNotificationReq{
+				RecipientID:    1,
+				ActorID:        2,
+				Type:           notificationType,
+				EntityID:       3,
+				CallID:         "call-1",
+				ConversationID: 2,
+				CallType:       "audio",
+			})
+			if err != nil {
+				t.Fatalf("validateNotificationReq() error = %v", err)
+			}
+		})
 	}
 }
 
