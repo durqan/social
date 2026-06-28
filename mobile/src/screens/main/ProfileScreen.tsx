@@ -214,6 +214,7 @@ export default function ProfileScreen() {
       contentContainerStyle={styles.screenContent}
     >
       <View style={styles.profileTopCard}>
+        <View pointerEvents="none" style={styles.profileCover} />
         <Pressable
           accessibilityRole="button"
           style={styles.mainAvatar}
@@ -499,8 +500,18 @@ const createStyles = (colors: ThemeColors) =>
       borderRadius: 28,
       backgroundColor: colors.surface,
       padding: spacing.xl,
+      overflow: 'hidden',
       shadowColor: colors.shadow,
       ...(colors.isDark ? elevation.none : elevation.card),
+    },
+    profileCover: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      height: 94,
+      backgroundColor: colors.profileCover,
+      opacity: colors.isDark ? 0.28 : 0.52,
     },
     mainAvatar: {
       width: 88,
@@ -517,6 +528,7 @@ const createStyles = (colors: ThemeColors) =>
       shadowRadius: 16,
       shadowOffset: { width: 0, height: 8 },
       elevation: 4,
+      zIndex: 1,
     },
     mainAvatarImage: { width: 88, height: 88 },
     mainAvatarText: { color: colors.accent, fontSize: 34, fontWeight: '900' },
@@ -538,12 +550,14 @@ const createStyles = (colors: ThemeColors) =>
       ...typography.h3,
       color: colors.text,
       textAlign: 'center',
+      zIndex: 1,
     },
     onlineRow: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 6,
       marginTop: 4,
+      zIndex: 1,
     },
     onlineDot: {
       width: 7,
@@ -563,6 +577,7 @@ const createStyles = (colors: ThemeColors) =>
       paddingHorizontal: 14,
       paddingVertical: 9,
       backgroundColor: colors.accentSoft,
+      zIndex: 1,
     },
     changePhotoText: { color: colors.accent, fontSize: 13, fontWeight: '900' },
     card: {
@@ -572,6 +587,11 @@ const createStyles = (colors: ThemeColors) =>
       backgroundColor: colors.card,
       padding: spacing.lg,
       gap: spacing.md,
+      shadowColor: colors.shadow,
+      shadowOpacity: colors.isDark ? 0 : 0.06,
+      shadowRadius: 14,
+      shadowOffset: { width: 0, height: 8 },
+      elevation: colors.isDark ? 0 : 1,
     },
     cardHeaderRow: {
       flexDirection: 'row',
@@ -612,6 +632,11 @@ const createStyles = (colors: ThemeColors) =>
       backgroundColor: colors.surfaceMuted,
       borderWidth: 1,
       borderColor: colors.border,
+      shadowColor: colors.shadow,
+      shadowOpacity: colors.isDark ? 0 : 0.06,
+      shadowRadius: 14,
+      shadowOffset: { width: 0, height: 7 },
+      elevation: colors.isDark ? 0 : 1,
     },
     gridLineVertical: {
       position: 'absolute',
@@ -703,6 +728,11 @@ const createStyles = (colors: ThemeColors) =>
       backgroundColor: colors.card,
       padding: spacing.md,
       gap: 7,
+      shadowColor: colors.shadow,
+      shadowOpacity: colors.isDark ? 0 : 0.05,
+      shadowRadius: 12,
+      shadowOffset: { width: 0, height: 7 },
+      elevation: colors.isDark ? 0 : 1,
     },
     infoIcon: {
       width: 34,

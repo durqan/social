@@ -170,6 +170,7 @@ export default function UserProfileScreen({ navigation, route }: Props) {
         ListHeaderComponent={
           <>
             <View style={styles.card}>
+              <View pointerEvents="none" style={styles.profileCover} />
               <View style={styles.avatar}>
                 {avatarUrl ? (
                   <Image
@@ -282,6 +283,16 @@ const createStyles = (colors: ThemeColors) =>
       backgroundColor: colors.surface,
       padding: spacing.xl,
       gap: spacing.sm,
+      overflow: 'hidden',
+    },
+    profileCover: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      height: 88,
+      backgroundColor: colors.profileCover,
+      opacity: colors.isDark ? 0.28 : 0.5,
     },
     avatar: {
       width: 82,
@@ -293,6 +304,7 @@ const createStyles = (colors: ThemeColors) =>
       backgroundColor: colors.accentSoft,
       borderWidth: 2,
       borderColor: colors.borderStrong,
+      zIndex: 1,
     },
     avatarImage: {
       width: 82,
@@ -306,10 +318,12 @@ const createStyles = (colors: ThemeColors) =>
     name: {
       ...typography.h2,
       color: colors.text,
+      zIndex: 1,
     },
     email: {
       ...typography.body,
       color: colors.muted,
+      zIndex: 1,
     },
     infoCard: {
       borderWidth: 1,

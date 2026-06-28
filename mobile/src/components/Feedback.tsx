@@ -15,6 +15,7 @@ export function ErrorBanner({ message }: { message?: string | null }) {
 
   return (
     <View style={styles.errorBox}>
+      <View style={[styles.bannerMarker, styles.errorMarker]} />
       <Text style={styles.errorText}>{message}</Text>
     </View>
   );
@@ -30,6 +31,7 @@ export function SuccessBanner({ message }: { message?: string | null }) {
 
   return (
     <View style={styles.successBox}>
+      <View style={[styles.bannerMarker, styles.successMarker]} />
       <Text style={styles.successText}>{message}</Text>
     </View>
   );
@@ -74,6 +76,9 @@ export function LoadingState({ text }: { text: string }) {
 const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     errorBox: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
       borderWidth: 1,
       borderColor: 'rgba(255,59,48,0.18)',
       borderRadius: radius.xl,
@@ -81,11 +86,15 @@ const createStyles = (colors: ThemeColors) =>
       padding: spacing.md,
     },
     errorText: {
+      flex: 1,
       color: colors.danger,
       ...typography.caption,
       fontWeight: '700',
     },
     successBox: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
       borderWidth: 1,
       borderColor: 'rgba(33,166,122,0.18)',
       borderRadius: radius.xl,
@@ -93,9 +102,21 @@ const createStyles = (colors: ThemeColors) =>
       padding: spacing.md,
     },
     successText: {
+      flex: 1,
       color: colors.success,
       ...typography.caption,
       fontWeight: '700',
+    },
+    bannerMarker: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+    },
+    errorMarker: {
+      backgroundColor: colors.danger,
+    },
+    successMarker: {
+      backgroundColor: colors.success,
     },
     noticeBox: {
       borderWidth: 1,
@@ -119,10 +140,15 @@ const createStyles = (colors: ThemeColors) =>
       borderWidth: 1,
       borderColor: colors.border,
       borderRadius: radius.xl,
-      backgroundColor: colors.card,
+      backgroundColor: colors.surface,
       paddingHorizontal: spacing.lg,
       paddingVertical: spacing.xxl,
       gap: spacing.xs,
+      shadowColor: colors.shadow,
+      shadowOpacity: colors.isDark ? 0 : 0.06,
+      shadowRadius: 16,
+      shadowOffset: { width: 0, height: 8 },
+      elevation: colors.isDark ? 0 : 1,
     },
     emptyTitle: {
       color: colors.text,
@@ -141,9 +167,14 @@ const createStyles = (colors: ThemeColors) =>
       borderWidth: 1,
       borderColor: colors.border,
       borderRadius: radius.xl,
-      backgroundColor: colors.card,
+      backgroundColor: colors.surface,
       padding: spacing.xl,
       gap: spacing.sm,
+      shadowColor: colors.shadow,
+      shadowOpacity: colors.isDark ? 0 : 0.06,
+      shadowRadius: 16,
+      shadowOffset: { width: 0, height: 8 },
+      elevation: colors.isDark ? 0 : 1,
     },
     loadingText: {
       color: colors.muted,

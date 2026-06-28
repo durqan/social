@@ -98,7 +98,7 @@ const createStyles = (colors: ThemeColors) =>
       elevation: colors.isDark ? 0 : 3,
     },
     secondary: {
-      backgroundColor: colors.surface,
+      backgroundColor: colors.cardMuted,
       borderColor: colors.border,
     },
     danger: {
@@ -106,7 +106,7 @@ const createStyles = (colors: ThemeColors) =>
       borderColor: colors.danger,
     },
     ghost: {
-      backgroundColor: colors.accentSoft,
+      backgroundColor: 'transparent',
       borderColor: colors.accentBorder,
     },
     disabled: {
@@ -137,6 +137,6 @@ const createStyles = (colors: ThemeColors) =>
       color: colors.white,
     },
     ghostText: {
-      color: colors.text,
+      color: colors.accentStrong,
     },
   });

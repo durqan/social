@@ -231,18 +231,17 @@ function TabIcon({
   focused: boolean;
 }) {
   const colors = useThemeColors();
+  const styles = createStyles(colors);
+  const iconColor = focused ? colors.white : color;
 
   return (
     <View
       style={[
         stylesStatic.tabIconShell,
-        focused && {
-          backgroundColor: colors.selected,
-          borderColor: colors.accentBorder,
-        },
+        focused && styles.tabIconShellActive,
       ]}
     >
-      <Icon color={color} size={20} strokeWidth={focused ? 2.6 : 2.2} />
+      <Icon color={iconColor} size={20} strokeWidth={focused ? 2.7 : 2.2} />
     </View>
   );
 }
@@ -478,6 +477,7 @@ const createStyles = (colors: ThemeColors) =>
     headerTitle: {
       ...typography.h3,
       color: colors.text,
+      fontWeight: '800',
     },
     tabBar: {
       position: 'absolute',
@@ -504,7 +504,7 @@ const createStyles = (colors: ThemeColors) =>
       fontSize: 10,
       lineHeight: 12,
       fontWeight: '900',
-      marginTop: 2,
+      marginTop: 3,
     },
     tabBarBadge: {
       minWidth: 18,
@@ -514,6 +514,15 @@ const createStyles = (colors: ThemeColors) =>
       color: colors.white,
       fontSize: 10,
       fontWeight: '900',
+    },
+    tabIconShellActive: {
+      backgroundColor: colors.accent,
+      borderColor: colors.accent,
+      shadowColor: colors.accent,
+      shadowOpacity: colors.isDark ? 0 : 0.22,
+      shadowRadius: 10,
+      shadowOffset: { width: 0, height: 5 },
+      elevation: colors.isDark ? 0 : 3,
     },
     loading: {
       flex: 1,

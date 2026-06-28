@@ -100,6 +100,7 @@ export default function SettingsScreen() {
   return (
     <Screen contentContainerStyle={styles.screenContent}>
       <View style={styles.accountCard}>
+        <View pointerEvents="none" style={styles.accountAccent} />
         <View style={styles.accountAvatar}>
           <Text style={styles.accountAvatarText}>{(user?.name || user?.email || '?').slice(0, 1).toUpperCase()}</Text>
         </View>
@@ -216,10 +217,12 @@ const createStyles = (colors: ThemeColors) =>
       backgroundColor: colors.surface,
       padding: spacing.lg,
       gap: spacing.md,
+      overflow: 'hidden',
       shadowColor: colors.shadow,
       ...(colors.isDark ? elevation.none : elevation.card),
     },
-    accountAvatar: { width: 54, height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentSoft },
+    accountAccent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 5, backgroundColor: colors.accent },
+    accountAvatar: { width: 54, height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentSoft, borderWidth: 2, borderColor: colors.white },
     accountAvatarText: { color: colors.accent, fontSize: 23, fontWeight: '900' },
     accountInfo: { flex: 1, minWidth: 0 },
     accountTitle: { ...typography.h3, color: colors.text },
@@ -249,6 +252,6 @@ const createStyles = (colors: ThemeColors) =>
     themeMeta: { flex: 1, minWidth: 0 },
     themeName: { color: colors.text, fontSize: 14, lineHeight: 18, fontWeight: '900' },
     themeDescription: { marginTop: 2, color: colors.muted, fontSize: 12, lineHeight: 16 },
-    themeCheck: { width: 14, height: 14, borderRadius: 7, backgroundColor: colors.border },
-    themeCheckSelected: { backgroundColor: colors.accent },
+    themeCheck: { width: 18, height: 18, borderRadius: 9, borderWidth: 2, borderColor: colors.border, backgroundColor: colors.surface },
+    themeCheckSelected: { borderColor: colors.accent, backgroundColor: colors.accent },
   });

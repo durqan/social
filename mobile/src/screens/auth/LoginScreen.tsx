@@ -122,6 +122,13 @@ const createStyles = (colors: ThemeColors) =>
       justifyContent: 'center',
       backgroundColor: colors.accent,
       marginBottom: spacing.xs,
+      borderWidth: 5,
+      borderColor: colors.accentSoft,
+      shadowColor: colors.accent,
+      shadowOpacity: colors.isDark ? 0 : 0.24,
+      shadowRadius: 18,
+      shadowOffset: { width: 0, height: 9 },
+      elevation: colors.isDark ? 0 : 3,
     },
     title: {
       ...typography.h1,

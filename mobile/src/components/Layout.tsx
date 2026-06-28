@@ -71,6 +71,7 @@ export function HeroCard({
   const styles = createStyles(colors);
   return (
     <Card style={styles.hero}>
+      <View pointerEvents="none" style={styles.heroAccentLine} />
       {kicker ? <Text style={styles.kicker}>{kicker}</Text> : null}
       <Text style={styles.heroTitle}>{title}</Text>
       {subtitle ? <Text style={styles.heroSubtitle}>{subtitle}</Text> : null}
@@ -136,6 +137,16 @@ const createStyles = (colors: ThemeColors) =>
       overflow: 'hidden',
       borderColor: colors.accentBorder,
       backgroundColor: colors.surface,
+      position: 'relative',
+    },
+    heroAccentLine: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      height: 4,
+      backgroundColor: colors.accent,
+      opacity: 0.72,
     },
     kicker: {
       ...typography.caption,
@@ -144,17 +155,22 @@ const createStyles = (colors: ThemeColors) =>
       textTransform: 'uppercase',
     },
     heroTitle: { ...typography.h1, color: colors.text },
-    heroSubtitle: { ...typography.body, color: colors.muted },
+    heroSubtitle: { ...typography.body, color: colors.muted, maxWidth: '92%' },
     tile: {
       flexBasis: '47%',
       flexGrow: 1,
-      minHeight: 88,
+      minHeight: 94,
       borderWidth: 1,
       borderColor: colors.border,
       borderRadius: radius.xl,
       backgroundColor: colors.card,
       padding: spacing.md,
       gap: spacing.sm,
+      shadowColor: colors.shadow,
+      shadowOpacity: colors.isDark ? 0 : 0.06,
+      shadowRadius: 14,
+      shadowOffset: { width: 0, height: 8 },
+      elevation: colors.isDark ? 0 : 1,
     },
     pressed: { backgroundColor: colors.pressed, transform: [{ scale: 0.99 }] },
     tileIcon: {
