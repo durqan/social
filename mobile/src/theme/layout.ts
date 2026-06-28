@@ -16,14 +16,94 @@ export const spacing = {
   xxl: 32,
 } as const;
 
-export const typography = {
-  h1: { fontSize: 30, lineHeight: 36, fontWeight: '800' as const },
-  h2: { fontSize: 22, lineHeight: 28, fontWeight: '800' as const },
-  h3: { fontSize: 17, lineHeight: 23, fontWeight: '700' as const },
-  body: { fontSize: 15, lineHeight: 22 },
-  caption: { fontSize: 13, lineHeight: 18 },
-  tiny: { fontSize: 11, lineHeight: 14 },
+export type TextSizeId = 'compact' | 'standard' | 'large';
+
+export const textSizeOrder: TextSizeId[] = ['compact', 'standard', 'large'];
+
+export const textSizeOptions: Record<
+  TextSizeId,
+  { label: string; description: string; scale: number }
+> = {
+  compact: {
+    label: 'Компактно',
+    description: 'Больше контента на экране',
+    scale: 0.94,
+  },
+  standard: {
+    label: 'Обычно',
+    description: 'Баланс размера и плотности',
+    scale: 1,
+  },
+  large: {
+    label: 'Крупно',
+    description: 'Удобнее для чтения',
+    scale: 1.08,
+  },
+};
+
+const baseTypography = {
+  h1: { fontSize: 27, lineHeight: 33, fontWeight: '800' as const },
+  h2: { fontSize: 20, lineHeight: 26, fontWeight: '800' as const },
+  h3: { fontSize: 16, lineHeight: 22, fontWeight: '700' as const },
+  body: { fontSize: 14, lineHeight: 20 },
+  caption: { fontSize: 12, lineHeight: 16 },
+  tiny: { fontSize: 10, lineHeight: 13 },
 } as const;
+
+function scaleValue(value: number, scale: number) {
+  return Math.max(10, Math.round(value * scale));
+}
+
+export function createTypography(scale = 1) {
+  return {
+    h1: {
+      ...baseTypography.h1,
+      fontSize: scaleValue(baseTypography.h1.fontSize, scale),
+      lineHeight: scaleValue(baseTypography.h1.lineHeight, scale),
+    },
+    h2: {
+      ...baseTypography.h2,
+      fontSize: scaleValue(baseTypography.h2.fontSize, scale),
+      lineHeight: scaleValue(baseTypography.h2.lineHeight, scale),
+    },
+    h3: {
+      ...baseTypography.h3,
+      fontSize: scaleValue(baseTypography.h3.fontSize, scale),
+      lineHeight: scaleValue(baseTypography.h3.lineHeight, scale),
+    },
+    body: {
+      ...baseTypography.body,
+      fontSize: scaleValue(baseTypography.body.fontSize, scale),
+      lineHeight: scaleValue(baseTypography.body.lineHeight, scale),
+    },
+    caption: {
+      ...baseTypography.caption,
+      fontSize: scaleValue(baseTypography.caption.fontSize, scale),
+      lineHeight: scaleValue(baseTypography.caption.lineHeight, scale),
+    },
+    tiny: {
+      ...baseTypography.tiny,
+      fontSize: scaleValue(baseTypography.tiny.fontSize, scale),
+      lineHeight: scaleValue(baseTypography.tiny.lineHeight, scale),
+    },
+  };
+}
+
+export type AppTypography = ReturnType<typeof createTypography>;
+
+export const typography = createTypography();
+
+export function applyTypographyScale(scale: number) {
+  Object.assign(typography, createTypography(scale));
+}
+
+export function isTextSizeId(
+  value: string | null | undefined,
+): value is TextSizeId {
+  return Boolean(
+    value && Object.prototype.hasOwnProperty.call(textSizeOptions, value),
+  );
+}
 
 export const elevation = {
   none: {

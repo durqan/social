@@ -6,6 +6,7 @@ import { Video as VideoIcon } from 'lucide-react-native';
 import { assetURL } from '../../../config/env';
 import type { Message } from '../../../api/types';
 import type { ThemeColors } from '../../../theme/themes';
+import { useTheme } from '../../../theme/ThemeContext';
 import { formatDateTime, formatDuration } from '../../../utils/format';
 import { createChatThemeStyles, styles } from './chatStyles';
 import {
@@ -30,9 +31,10 @@ function LinkPreviewCard({
   onImport: () => void;
   themeColors: ThemeColors;
 }) {
+  const { textSizeId } = useTheme();
   const themed = useMemo(
-    () => createChatThemeStyles(themeColors),
-    [themeColors],
+    () => createChatThemeStyles(themeColors, textSizeId),
+    [textSizeId, themeColors],
   );
   const preview = message.link_preview;
   if (!preview) {
@@ -235,6 +237,7 @@ export const MessageBubble = React.memo(function MessageBubble({
             selectable
             style={[
               styles.messageText,
+              themed.messageBodyText,
               outgoing ? themed.outgoingMessageText : themed.messageText,
             ]}
           >

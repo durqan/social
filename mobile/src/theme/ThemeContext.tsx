@@ -16,13 +16,23 @@ import {
   type ThemeColors,
   type ThemeId,
 } from './themes';
+import {
+  applyTypographyScale,
+  isTextSizeId,
+  textSizeOptions,
+  type TextSizeId,
+} from './layout';
 
 const themeStorageKey = 'social.mobile.theme';
+const textSizeStorageKey = 'social.mobile.text_size';
+const defaultTextSizeId: TextSizeId = 'standard';
 
 type ThemeContextValue = {
   themeId: ThemeId;
   colors: ThemeColors;
   setThemeId: (themeId: ThemeId) => void;
+  textSizeId: TextSizeId;
+  setTextSizeId: (textSizeId: TextSizeId) => void;
 };
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
@@ -33,12 +43,17 @@ function initialThemeId(): ThemeId {
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [themeId, setThemeId] = useState<ThemeId>(initialThemeId);
+  const [textSizeId, setTextSizeId] =
+    useState<TextSizeId>(defaultTextSizeId);
 
   useEffect(() => {
     let mounted = true;
 
-    AsyncStorage.getItem(themeStorageKey)
-      .then(storedThemeId => {
+    Promise.all([
+      AsyncStorage.getItem(themeStorageKey),
+      AsyncStorage.getItem(textSizeStorageKey),
+    ])
+      .then(([storedThemeId, storedTextSizeId]) => {
         if (!mounted) {
           return;
         }
@@ -47,6 +62,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
           setThemeId(themes[storedThemeId].isDark ? defaultThemeId : storedThemeId);
         } else if (storedThemeId) {
           AsyncStorage.removeItem(themeStorageKey).catch(() => undefined);
+        }
+
+        if (isTextSizeId(storedTextSizeId)) {
+          setTextSizeId(storedTextSizeId);
+        } else if (storedTextSizeId) {
+          AsyncStorage.removeItem(textSizeStorageKey).catch(() => undefined);
         }
       })
       .catch(() => undefined);
@@ -61,13 +82,24 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     AsyncStorage.setItem(themeStorageKey, nextThemeId).catch(() => undefined);
   }, []);
 
+  const persistTextSizeId = useCallback((nextTextSizeId: TextSizeId) => {
+    setTextSizeId(nextTextSizeId);
+    AsyncStorage.setItem(textSizeStorageKey, nextTextSizeId).catch(
+      () => undefined,
+    );
+  }, []);
+
+  applyTypographyScale(textSizeOptions[textSizeId].scale);
+
   const value = useMemo(
     () => ({
       themeId,
       colors: themes[themeId],
       setThemeId: persistThemeId,
+      textSizeId,
+      setTextSizeId: persistTextSizeId,
     }),
-    [persistThemeId, themeId],
+    [persistTextSizeId, persistThemeId, textSizeId, themeId],
   );
 
   return (

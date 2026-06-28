@@ -1,11 +1,23 @@
 import { StyleSheet } from 'react-native';
 
 import { colors } from '../../../theme/colors';
-import { radius, spacing, typography } from '../../../theme/layout';
+import {
+  createTypography,
+  radius,
+  spacing,
+  textSizeOptions,
+  typography,
+  type TextSizeId,
+} from '../../../theme/layout';
 import type { ThemeColors } from '../../../theme/themes';
 
-export const createChatThemeStyles = (theme: ThemeColors) =>
-  StyleSheet.create({
+export const createChatThemeStyles = (
+  theme: ThemeColors,
+  textSizeId: TextSizeId = 'standard',
+) => {
+  const scaledTypography = createTypography(textSizeOptions[textSizeId].scale);
+
+  return StyleSheet.create({
     card: {
       backgroundColor: theme.card,
       borderColor: theme.border,
@@ -48,8 +60,16 @@ export const createChatThemeStyles = (theme: ThemeColors) =>
     messageText: {
       color: theme.messageOtherText,
     },
+    messageBodyText: {
+      fontSize: scaledTypography.body.fontSize + 1,
+      lineHeight: scaledTypography.body.lineHeight + 1,
+    },
     outgoingMessageText: {
       color: theme.messageOwnText,
+    },
+    composerInputText: {
+      fontSize: scaledTypography.body.fontSize,
+      lineHeight: scaledTypography.body.lineHeight,
     },
     outgoingAccentText: {
       color: theme.messageOwnText,
@@ -155,6 +175,7 @@ export const createChatThemeStyles = (theme: ThemeColors) =>
       color: theme.white,
     },
   });
+};
 
 export const styles = StyleSheet.create({
   container: {

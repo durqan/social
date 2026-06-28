@@ -93,7 +93,7 @@ import { useAppLifecycle } from '../../context/AppLifecycleContext';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationsContext';
 import { useUnread } from '../../context/UnreadContext';
-import { useThemeColors } from '../../theme/ThemeContext';
+import { useTheme, useThemeColors } from '../../theme/ThemeContext';
 import { formatDuration } from '../../utils/format';
 import { useAppResumeEffect } from '../../utils/useAppResumeEffect';
 import type { ChatStackParamList } from '../../navigation/types';
@@ -256,12 +256,13 @@ function chatErrorMessage(error: unknown) {
 
 export default function ChatScreen({ route }: Props) {
   const { user } = useAuth();
+  const { textSizeId } = useTheme();
   const themeColors = useThemeColors();
   const windowDimensions = useWindowDimensions();
   const safeAreaInsets = useSafeAreaInsets();
   const themed = useMemo(
-    () => createChatThemeStyles(themeColors),
-    [themeColors],
+    () => createChatThemeStyles(themeColors, textSizeId),
+    [textSizeId, themeColors],
   );
   const isFocused = useIsFocused();
   const { isForeground, networkConnected } = useAppLifecycle();
@@ -3340,7 +3341,12 @@ export default function ChatScreen({ route }: Props) {
               maxLength={1000}
               editable={!sending && !recording && !recordingBusy}
               textAlignVertical="top"
-              style={[styles.input, themed.text, { height: inputHeight }]}
+              style={[
+                styles.input,
+                themed.text,
+                themed.composerInputText,
+                { height: inputHeight },
+              ]}
             />
             <Pressable
               accessibilityRole="button"

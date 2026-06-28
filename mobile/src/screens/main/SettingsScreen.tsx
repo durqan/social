@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Bell, ChevronRight, KeyRound, Lock, LogOut, MonitorSmartphone, Palette, ShieldCheck } from 'lucide-react-native';
+import { Bell, ChevronRight, KeyRound, Lock, LogOut, MonitorSmartphone, Palette, ShieldCheck, Type } from 'lucide-react-native';
 
 import { getApiErrorMessage } from '../../api/http';
 import { userApi } from '../../api/users';
@@ -17,7 +17,7 @@ import {
 } from '../../notifications/pushNotifications';
 import { useTheme, useThemeColors } from '../../theme/ThemeContext';
 import { themeOrder, themes, type ThemeColors, type ThemeId } from '../../theme/themes';
-import { elevation, spacing, typography } from '../../theme/layout';
+import { elevation, spacing, textSizeOptions, textSizeOrder, typography, type TextSizeId } from '../../theme/layout';
 
 type SecurityBusyAction = 'password';
 
@@ -25,7 +25,7 @@ type SettingsIcon = React.ComponentType<{ color?: string; size?: number; strokeW
 
 export default function SettingsScreen() {
   const { logout, user } = useAuth();
-  const { themeId, setThemeId } = useTheme();
+  const { themeId, setThemeId, textSizeId, setTextSizeId } = useTheme();
   const colors = useThemeColors();
   const styles = createStyles(colors);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -156,6 +156,21 @@ export default function SettingsScreen() {
 
       <View style={styles.card}>
         <View style={styles.cardHeader}>
+          <View style={styles.headerIcon}><Type color={colors.accent} size={20} strokeWidth={2.5} /></View>
+          <View style={styles.headerTextBlock}>
+            <Text style={styles.title}>Размер текста</Text>
+            <Text style={styles.text}>Настройте плотность интерфейса</Text>
+          </View>
+        </View>
+        <View style={styles.textSizeGrid}>
+          {textSizeOrder.map(nextTextSizeId => (
+            <TextSizeOption key={nextTextSizeId} textSizeId={nextTextSizeId} selected={textSizeId === nextTextSizeId} onPress={() => setTextSizeId(nextTextSizeId)} />
+          ))}
+        </View>
+      </View>
+
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
           <View style={styles.headerIcon}><Palette color={colors.accent} size={20} strokeWidth={2.5} /></View>
           <View style={styles.headerTextBlock}>
             <Text style={styles.title}>Тема оформления</Text>
@@ -169,6 +184,20 @@ export default function SettingsScreen() {
         </View>
       </View>
     </Screen>
+  );
+}
+
+function TextSizeOption({ textSizeId, selected, onPress }: { textSizeId: TextSizeId; selected: boolean; onPress: () => void }) {
+  const colors = useThemeColors();
+  const styles = createStyles(colors);
+  const option = textSizeOptions[textSizeId];
+  const sampleSize = textSizeId === 'compact' ? 16 : textSizeId === 'large' ? 21 : 18;
+  return (
+    <Pressable accessibilityRole="button" accessibilityState={{ selected }} style={({ pressed }) => [styles.textSizeOption, selected && styles.textSizeOptionSelected, pressed && styles.themeOptionPressed]} onPress={onPress}>
+      <Text style={[styles.textSizeSample, { fontSize: sampleSize, lineHeight: sampleSize + 4 }]}>Aa</Text>
+      <Text style={styles.textSizeName}>{option.label}</Text>
+      <Text style={styles.textSizeDescription} numberOfLines={2}>{option.description}</Text>
+    </Pressable>
   );
 }
 
@@ -243,6 +272,12 @@ const createStyles = (colors: ThemeColors) =>
     rowRightText: { color: colors.accent, fontSize: 14, fontWeight: '900' },
     passwordBox: { gap: spacing.sm, borderWidth: 1, borderColor: colors.border, borderRadius: 22, padding: spacing.md, backgroundColor: colors.card },
     primaryButton: { borderRadius: 18 },
+    textSizeGrid: { flexDirection: 'row', gap: spacing.sm },
+    textSizeOption: { flex: 1, minHeight: 104, alignItems: 'center', justifyContent: 'center', gap: 4, borderWidth: 1, borderColor: colors.border, borderRadius: 22, backgroundColor: colors.cardMuted, padding: spacing.sm },
+    textSizeOptionSelected: { borderColor: colors.accentBorder, backgroundColor: colors.selected },
+    textSizeSample: { color: colors.text, fontWeight: '900' },
+    textSizeName: { color: colors.text, fontSize: 13, lineHeight: 17, fontWeight: '900', textAlign: 'center' },
+    textSizeDescription: { color: colors.muted, fontSize: 10, lineHeight: 13, textAlign: 'center' },
     themeGrid: { gap: spacing.sm },
     themeOption: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: spacing.md, borderWidth: 1, borderColor: colors.border, borderRadius: 22, backgroundColor: colors.cardMuted, padding: spacing.md },
     themeOptionSelected: { borderColor: colors.accentBorder, backgroundColor: colors.selected },
