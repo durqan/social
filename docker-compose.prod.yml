@@ -266,7 +266,7 @@ services:
         --no-multicast-peers
         --no-cli
         --relay-ip=0.0.0.0
-        $${TURN_EXTERNAL_IP:+--external-ip=$${TURN_EXTERNAL_IP}}
+        --external-ip=$${TURN_EXTERNAL_IP}
     networks:
       - social_network
 
