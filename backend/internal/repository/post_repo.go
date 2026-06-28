@@ -20,6 +20,18 @@ func GetPostsByUser(db *gorm.DB, userID uint) ([]models.Post, error) {
 	return posts, err
 }
 
+func GetPostsByUserPage(db *gorm.DB, userID uint, limit int, offset int) ([]models.Post, error) {
+	var posts []models.Post
+	err := db.Preload("User").
+		Where("user_id = ?", userID).
+		Order("created_at DESC").
+		Limit(limit).
+		Offset(offset).
+		Find(&posts).Error
+
+	return posts, err
+}
+
 func GetPostByID(db *gorm.DB, postID uint) (models.Post, error) {
 	var post models.Post
 	err := db.Preload("User").First(&post, postID).Error

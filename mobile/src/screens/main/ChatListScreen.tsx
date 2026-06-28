@@ -67,26 +67,38 @@ export default function ChatListScreen({ navigation }: Props) {
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadSeq = useRef(0);
   const screenActiveRef = useRef(false);
+  const loadAbortRef = useRef<AbortController | null>(null);
 
   const load = useCallback(
     async (mode: LoadMode = 'refresh') => {
       const requestSeq = ++loadSeq.current;
+      loadAbortRef.current?.abort();
+      const controller = new AbortController();
+      loadAbortRef.current = controller;
       if (mode !== 'silent') {
         setLoading(true);
       }
       setError(null);
       try {
-        const nextConversations = await messageApi.getConversations();
+        const nextConversations = await messageApi.getConversations({
+          signal: controller.signal,
+        });
         if (!screenActiveRef.current || loadSeq.current !== requestSeq) {
           return;
         }
         setConversations(sortConversations(nextConversations));
         refreshUnreadCount().catch(() => undefined);
       } catch (apiError) {
+        if ((apiError as Error)?.message === 'request aborted') {
+          return;
+        }
         if (screenActiveRef.current && loadSeq.current === requestSeq) {
           setError(getApiErrorMessage(apiError));
         }
       } finally {
+        if (loadAbortRef.current === controller) {
+          loadAbortRef.current = null;
+        }
         if (screenActiveRef.current && loadSeq.current === requestSeq) {
           setHasLoaded(true);
           if (mode !== 'silent') {
@@ -121,6 +133,8 @@ export default function ChatListScreen({ navigation }: Props) {
           clearTimeout(refreshTimer.current);
           refreshTimer.current = null;
         }
+        loadAbortRef.current?.abort();
+        loadAbortRef.current = null;
         setLoading(false);
       };
     }, [load]),
@@ -292,6 +306,11 @@ export default function ChatListScreen({ navigation }: Props) {
             </Pressable>
           );
         }}
+        initialNumToRender={10}
+        windowSize={7}
+        maxToRenderPerBatch={8}
+        updateCellsBatchingPeriod={60}
+        removeClippedSubviews
       />
 
       <ConversationActionSheet

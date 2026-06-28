@@ -40,6 +40,7 @@ import {
   type MediaStream,
   type MediaStreamTrack,
 } from 'react-native-webrtc';
+import NetInfo from '@react-native-community/netinfo';
 import { WS_EVENTS } from '@social/shared';
 
 import {
@@ -133,15 +134,40 @@ type PeerConnectionHandlers = {
   onicegatheringstatechange?: ((event: unknown) => void) | null;
   onsignalingstatechange?: ((event: unknown) => void) | null;
 };
+type VideoQualityProfileName = 'low' | 'medium' | 'high';
+type VideoQualityProfile = {
+  name: VideoQualityProfileName;
+  width: number;
+  height: number;
+  frameRate: number;
+};
+type ConstraintCapableTrack = MediaStreamTrack & {
+  applyConstraints?: (
+    constraints: ReturnType<typeof videoConstraints>,
+  ) => Promise<void>;
+};
 
 const CallContext = createContext<CallContextValue | undefined>(undefined);
 const disconnectedCleanupDelayMs = 10000;
 const callHeartbeatIntervalMs = 15000;
 const maxIceRecoveryAttempts = 2;
+const videoQualityProfiles = {
+  low: { name: 'low', width: 426, height: 240, frameRate: 15 },
+  medium: { name: 'medium', width: 640, height: 360, frameRate: 30 },
+  high: { name: 'high', width: 1280, height: 720, frameRate: 60 },
+} satisfies Record<VideoQualityProfileName, VideoQualityProfile>;
+const highFallbackProfile: VideoQualityProfile = {
+  name: 'high',
+  width: 1280,
+  height: 720,
+  frameRate: 30,
+};
 const absoluteFillObject =
-  (StyleSheet as typeof StyleSheet & {
-    absoluteFillObject?: typeof StyleSheet.absoluteFill;
-  }).absoluteFillObject ?? StyleSheet.absoluteFill;
+  (
+    StyleSheet as typeof StyleSheet & {
+      absoluteFillObject?: typeof StyleSheet.absoluteFill;
+    }
+  ).absoluteFillObject ?? StyleSheet.absoluteFill;
 
 function createCallId() {
   return `call-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -191,6 +217,58 @@ function iceServers() {
   }
 
   return servers;
+}
+
+async function initialVideoQualityProfile(networkConnected: boolean) {
+  if (!networkConnected) {
+    return videoQualityProfiles.low;
+  }
+
+  try {
+    const state = await NetInfo.fetch();
+    if (state.type === 'cellular') {
+      const generation = state.details?.cellularGeneration;
+      if (generation === '2g' || generation === '3g') {
+        return videoQualityProfiles.low;
+      }
+      if (generation === '4g' || generation === '5g') {
+        return Platform.OS === 'android' && Number(Platform.Version) < 26
+          ? videoQualityProfiles.medium
+          : videoQualityProfiles.high;
+      }
+      return videoQualityProfiles.medium;
+    }
+  } catch {
+    return videoQualityProfiles.medium;
+  }
+
+  return Platform.OS === 'android' && Number(Platform.Version) < 26
+    ? videoQualityProfiles.medium
+    : videoQualityProfiles.high;
+}
+
+function videoProfileFallbackChain(profile: VideoQualityProfile) {
+  if (profile.name === 'high') {
+    return [
+      videoQualityProfiles.high,
+      highFallbackProfile,
+      videoQualityProfiles.medium,
+      videoQualityProfiles.low,
+    ];
+  }
+  if (profile.name === 'medium') {
+    return [videoQualityProfiles.medium, videoQualityProfiles.low];
+  }
+  return [videoQualityProfiles.low];
+}
+
+function videoConstraints(profile: VideoQualityProfile) {
+  return {
+    facingMode: 'user',
+    width: profile.width,
+    height: profile.height,
+    frameRate: profile.frameRate,
+  };
 }
 
 async function requestCallPermissions(callType: CallType) {
@@ -299,8 +377,7 @@ function summarizeSdp(sdp?: string | null): SdpSummary {
       present: Boolean(videoSection),
       direction: videoDirection as SdpMediaSummary['direction'],
     },
-    hasSendrecv:
-      audioDirection === 'sendrecv' || videoDirection === 'sendrecv',
+    hasSendrecv: audioDirection === 'sendrecv' || videoDirection === 'sendrecv',
   };
 }
 
@@ -569,7 +646,7 @@ function callErrorMessage(error: unknown) {
 
 export function CallProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
-  const { appState, resumeCount } = useAppLifecycle();
+  const { appState, networkConnected, resumeCount } = useAppLifecycle();
   const [status, setStatus] = useState<CallStatus>('idle');
   const [callType, setCallType] = useState<CallType>('audio');
   const [peerUserId, setPeerUserId] = useState<number | null>(null);
@@ -584,6 +661,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const statusRef = useRef(status);
   const peerUserIdRef = useRef(peerUserId);
   const callTypeRef = useRef(callType);
+  const networkConnectedRef = useRef(networkConnected);
+  const localVideoProfileRef = useRef<VideoQualityProfileName | null>(null);
   const pcRef = useRef<PeerConnection | null>(null);
   const pcCallIdRef = useRef<string | null>(null);
   const pcIdsRef = useRef(new WeakMap<PeerConnection, number>());
@@ -627,6 +706,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     callTypeRef.current = callType;
   }, [callType]);
+
+  useEffect(() => {
+    networkConnectedRef.current = networkConnected;
+  }, [networkConnected]);
 
   const setCallStatus = useCallback(
     (nextStatus: CallStatus, reason = 'state_update') => {
@@ -766,22 +849,25 @@ export function CallProvider({ children }: { children: ReactNode }) {
     [getPeerConnectionId],
   );
 
-  const markCallSignalingReady = useCallback((callId: string, toId: number) => {
-    signalingReadyCallIdsRef.current.add(callId);
-    const buffered = outgoingIceBufferRef.current.get(callId) ?? [];
-    outgoingIceBufferRef.current.delete(callId);
-    logDev('[SocialMobile] Call signaling ready; flushing outgoing ICE', {
-      callId,
-      pcId: getPeerConnectionId(pcRef.current),
-      bufferedIce: buffered.length,
-    });
-    buffered.forEach(item => {
-      const targetId = item.toId || toId;
-      if (callIdRef.current === callId) {
-        chatSocket.sendCallIce(targetId, item.candidate, callId);
-      }
-    });
-  }, [getPeerConnectionId]);
+  const markCallSignalingReady = useCallback(
+    (callId: string, toId: number) => {
+      signalingReadyCallIdsRef.current.add(callId);
+      const buffered = outgoingIceBufferRef.current.get(callId) ?? [];
+      outgoingIceBufferRef.current.delete(callId);
+      logDev('[SocialMobile] Call signaling ready; flushing outgoing ICE', {
+        callId,
+        pcId: getPeerConnectionId(pcRef.current),
+        bufferedIce: buffered.length,
+      });
+      buffered.forEach(item => {
+        const targetId = item.toId || toId;
+        if (callIdRef.current === callId) {
+          chatSocket.sendCallIce(targetId, item.candidate, callId);
+        }
+      });
+    },
+    [getPeerConnectionId],
+  );
 
   const resetCall = useCallback(() => {
     const callId = callIdRef.current;
@@ -796,6 +882,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     closePeerConnection();
     stopStream(localStreamRef.current);
     localStreamRef.current = null;
+    localVideoProfileRef.current = null;
     stopStream(remoteStreamRef.current);
     remoteStreamRef.current = null;
     callIdRef.current = null;
@@ -853,6 +940,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       closePeerConnection();
       stopStream(localStreamRef.current);
       localStreamRef.current = null;
+      localVideoProfileRef.current = null;
       stopStream(remoteStreamRef.current);
       remoteStreamRef.current = null;
       callIdRef.current = null;
@@ -1364,24 +1452,42 @@ export function CallProvider({ children }: { children: ReactNode }) {
     }
 
     let stream: MediaStream | null = null;
+    let selectedProfile: VideoQualityProfile | null = null;
     try {
-      logDev('[SocialMobile] getUserMedia requested for call', {
-        callType: nextCallType,
-        audio: true,
-        video: nextCallType === 'video',
-      });
-      stream = await mediaDevices.getUserMedia({
-        audio: true,
-        video:
-          nextCallType === 'video'
-            ? {
-                facingMode: 'user',
-                width: 1280,
-                height: 720,
-                frameRate: 30,
-              }
-            : false,
-      });
+      if (nextCallType === 'video') {
+        const initialProfile = await initialVideoQualityProfile(
+          networkConnectedRef.current,
+        );
+        let lastVideoError: unknown = null;
+        for (const profile of videoProfileFallbackChain(initialProfile)) {
+          try {
+            logDev('[SocialMobile] getUserMedia requested for video call', {
+              profile,
+            });
+            stream = await mediaDevices.getUserMedia({
+              audio: true,
+              video: videoConstraints(profile),
+            });
+            selectedProfile = profile;
+            break;
+          } catch (profileError) {
+            lastVideoError = profileError;
+            warnDev('[SocialMobile] Video profile failed, trying fallback', {
+              profile,
+              error: profileError,
+            });
+          }
+        }
+        if (!stream) {
+          throw lastVideoError || new Error('call video track missing');
+        }
+      } else {
+        logDev('[SocialMobile] getUserMedia requested for audio call');
+        stream = await mediaDevices.getUserMedia({
+          audio: true,
+          video: false,
+        });
+      }
 
       const audioTracks = stream.getAudioTracks();
       const videoTracks = stream.getVideoTracks();
@@ -1408,6 +1514,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       });
 
       localStreamRef.current = stream;
+      localVideoProfileRef.current = selectedProfile?.name ?? null;
       setLocalStream(stream);
       setMicrophoneOn(true);
       setCameraOn(videoTracks.length > 0);
@@ -1448,6 +1555,39 @@ export function CallProvider({ children }: { children: ReactNode }) {
       }
     },
     [openLocalStream],
+  );
+
+  const applyLocalVideoProfile = useCallback(
+    async (profile: VideoQualityProfile) => {
+      if (callTypeRef.current !== 'video') {
+        return false;
+      }
+
+      const track = localStreamRef.current?.getVideoTracks()[0] as
+        | ConstraintCapableTrack
+        | undefined;
+      if (!track || track.readyState === 'ended' || !track.applyConstraints) {
+        return false;
+      }
+
+      try {
+        await track.applyConstraints(videoConstraints(profile));
+        localVideoProfileRef.current = profile.name;
+        logDev('[SocialMobile] Local video profile applied', {
+          profile,
+          callId: callIdRef.current,
+        });
+        return true;
+      } catch (profileError) {
+        warnDev('[SocialMobile] Failed to apply local video profile', {
+          profile,
+          callId: callIdRef.current,
+          error: profileError,
+        });
+        return false;
+      }
+    },
+    [],
   );
 
   const createPeerConnection = useCallback(
@@ -1605,6 +1745,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
         if (isDisconnected && !disconnectTimerRef.current) {
           setCallStatus('reconnecting', 'peer_disconnected');
+          if (callTypeRef.current === 'video') {
+            applyLocalVideoProfile(videoQualityProfiles.low).catch(
+              () => undefined,
+            );
+          }
           const restartIce = (
             pc as PeerConnection & { restartIce?: () => void }
           ).restartIce;
@@ -1773,6 +1918,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     [
       clearDisconnectTimer,
       closePeerConnection,
+      applyLocalVideoProfile,
       finishCall,
       getPeerConnectionId,
       sendOrBufferOutgoingIce,
@@ -1829,6 +1975,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
             stopStream(stream);
             if (localStreamRef.current === stream) {
               localStreamRef.current = null;
+              localVideoProfileRef.current = null;
               setLocalStream(null);
             }
           }
@@ -2011,6 +2158,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         stopStream(stream);
         if (localStreamRef.current === stream) {
           localStreamRef.current = null;
+          localVideoProfileRef.current = null;
           setLocalStream(null);
         }
       }
@@ -2649,6 +2797,58 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (
+      status !== 'active' ||
+      callType !== 'video' ||
+      appState !== 'active' ||
+      !networkConnected ||
+      localVideoProfileRef.current === 'high'
+    ) {
+      return undefined;
+    }
+
+    const upgradeTimer = setTimeout(() => {
+      if (
+        statusRef.current !== 'active' ||
+        callTypeRef.current !== 'video' ||
+        appState !== 'active' ||
+        !networkConnectedRef.current ||
+        localVideoProfileRef.current === 'high'
+      ) {
+        return;
+      }
+
+      initialVideoQualityProfile(networkConnectedRef.current)
+        .then(async profile => {
+          if (profile.name !== 'high') {
+            return;
+          }
+          const highApplied = await applyLocalVideoProfile(
+            videoQualityProfiles.high,
+          );
+          if (!highApplied) {
+            await applyLocalVideoProfile(highFallbackProfile);
+          }
+        })
+        .catch(() => undefined);
+    }, 20000);
+
+    return () => clearTimeout(upgradeTimer);
+  }, [appState, applyLocalVideoProfile, callType, networkConnected, status]);
+
+  useEffect(() => {
+    if (
+      (status !== 'active' && status !== 'reconnecting') ||
+      callType !== 'video' ||
+      networkConnected
+    ) {
+      return;
+    }
+
+    applyLocalVideoProfile(videoQualityProfiles.low).catch(() => undefined);
+  }, [applyLocalVideoProfile, callType, networkConnected, status]);
+
+  useEffect(() => {
+    if (
       Platform.OS !== 'android' ||
       appState === 'active' ||
       callTypeRef.current !== 'video' ||
@@ -2806,10 +3006,7 @@ function CallOverlay({
         </View>
 
         <View
-          style={[
-            styles.callHeader,
-            { top: Math.max(insets.top, 12) + 12 },
-          ]}
+          style={[styles.callHeader, { top: Math.max(insets.top, 12) + 12 }]}
         >
           <Text style={styles.callName} numberOfLines={1}>
             {peerName}

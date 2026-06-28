@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"fmt"
 	"tester/internal/dto"
 	"tester/internal/models"
 	"tester/internal/repository"
@@ -209,5 +210,31 @@ func GetFriendshipStatus(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		c.JSON(200, gin.H{"status": status})
+	}
+}
+
+func GetFriendshipStatuses(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		currentUserID, ok := authenticatedUserID(c)
+		if !ok {
+			return
+		}
+		userIDs, ok := uintIDsQuery(c, "ids", 100)
+		if !ok {
+			return
+		}
+
+		statuses, err := repository.GetFriendshipStatuses(db, currentUserID, userIDs)
+		if err != nil {
+			c.JSON(500, gin.H{"error": "failed to get friendship status"})
+			return
+		}
+
+		response := make(map[string]string, len(statuses))
+		for userID, status := range statuses {
+			response[fmt.Sprintf("%d", userID)] = status
+		}
+
+		c.JSON(200, gin.H{"statuses": response})
 	}
 }

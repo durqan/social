@@ -79,30 +79,49 @@ export default function UserSearchScreen({ navigation }: Props) {
     }
 
     let active = true;
+    const controller = new AbortController();
     const timer = setTimeout(async () => {
       setLoading(true);
       setError(null);
       setSuccess(null);
       try {
-        const users = (await userApi.searchUsers(trimmed)).filter(
-          item => item.id !== currentUser?.id,
-        );
+        const users = (
+          await userApi.searchUsers(trimmed, {
+            signal: controller.signal,
+          })
+        ).filter(item => item.id !== currentUser?.id);
         if (!active) {
           return;
         }
 
         setResults(users);
-        const nextStatuses: Record<number, FriendshipStatus> = {};
-        await Promise.all(
-          users.map(async item => {
-            if (!item.id) {
-              return;
-            }
-            nextStatuses[item.id] = await friendsApi.getFriendshipStatus(
-              item.id,
+        const userIds = users
+          .map(item => item.id)
+          .filter((id): id is number => Boolean(id));
+        const batchStatuses = await friendsApi
+          .getFriendshipStatuses(userIds, {
+            signal: controller.signal,
+          })
+          .catch(async () => {
+            const fallbackStatuses: Record<string, FriendshipStatus> = {};
+            await Promise.all(
+              userIds.map(async userId => {
+                try {
+                  fallbackStatuses[userId] =
+                    await friendsApi.getFriendshipStatus(userId, {
+                      signal: controller.signal,
+                    });
+                } catch {
+                  fallbackStatuses[userId] = 'none';
+                }
+              }),
             );
-          }),
-        );
+            return fallbackStatuses;
+          });
+        const nextStatuses: Record<number, FriendshipStatus> = {};
+        Object.entries(batchStatuses).forEach(([userId, status]) => {
+          nextStatuses[Number(userId)] = status as FriendshipStatus;
+        });
         if (active) {
           setStatuses(nextStatuses);
         }
@@ -119,6 +138,7 @@ export default function UserSearchScreen({ navigation }: Props) {
 
     return () => {
       active = false;
+      controller.abort();
       clearTimeout(timer);
     };
   }, [currentUser?.id, query, refreshVersion]);
@@ -228,6 +248,11 @@ export default function UserSearchScreen({ navigation }: Props) {
             onProfile={() => openProfile(item)}
           />
         )}
+        initialNumToRender={8}
+        windowSize={7}
+        maxToRenderPerBatch={8}
+        updateCellsBatchingPeriod={60}
+        removeClippedSubviews
       />
     </Screen>
   );

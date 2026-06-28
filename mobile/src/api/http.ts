@@ -1,18 +1,36 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
 import CookieManager from '@preeternal/react-native-cookie-manager';
 
 import { API_BASE_URL, apiURL } from '../config/env';
 import { logDev } from '../utils/logger';
 
 type HTTPMethod = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
+export type ApiErrorKind =
+  | 'timeout'
+  | 'offline'
+  | 'aborted'
+  | 'client'
+  | 'server'
+  | 'network';
 
 type RequestOptions = {
   method?: HTTPMethod;
   body?: unknown;
   headers?: Record<string, string>;
   retry?: boolean;
+  signal?: AbortSignal;
+  timeoutMs?: number;
+  cacheKey?: string;
+  allowStaleOnError?: boolean;
 };
 
 const unsafeMethods = new Set<HTTPMethod>(['POST', 'PATCH', 'PUT', 'DELETE']);
+const defaultRequestTimeoutMs = 12000;
+const defaultRetryCount = 2;
+const retryBaseDelayMs = 450;
+const retryJitterMs = 180;
+const cacheStoragePrefix = '@social/api-cache:v1:';
 
 let csrfRefresh: Promise<string> | null = null;
 let sessionRefresh: Promise<void> | null = null;
@@ -21,13 +39,238 @@ const authInvalidHandlers = new Set<(error: unknown) => void>();
 export class ApiError extends Error {
   status: number;
   details?: unknown;
+  kind: ApiErrorKind;
 
-  constructor(status: number, message: string, details?: unknown) {
+  constructor(
+    status: number,
+    message: string,
+    details?: unknown,
+    kind: ApiErrorKind = status >= 500 ? 'server' : 'client',
+  ) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.details = details;
+    this.kind = kind;
   }
+}
+
+export type ApiResponseMeta<T> = {
+  data: T;
+  fromCache: boolean;
+  stale: boolean;
+};
+
+type CachedApiResponse<T> = {
+  data: T;
+  cachedAt: number;
+};
+
+type FetchPolicyOptions = {
+  method?: HTTPMethod;
+  signal?: AbortSignal;
+  timeoutMs?: number;
+  retryCount?: number;
+};
+
+function cacheStorageKey(cacheKey: string) {
+  return `${cacheStoragePrefix}${cacheKey}`;
+}
+
+export function apiCacheKey(scope: string, key: string) {
+  return `${scope}:${key}`;
+}
+
+export async function readCachedApiData<T>(cacheKey?: string) {
+  if (!cacheKey) {
+    return null;
+  }
+
+  try {
+    const raw = await AsyncStorage.getItem(cacheStorageKey(cacheKey));
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as CachedApiResponse<T>;
+    if (!parsed || typeof parsed.cachedAt !== 'number') {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export async function writeCachedApiData<T>(
+  cacheKey: string | undefined,
+  data: T,
+) {
+  if (!cacheKey) {
+    return;
+  }
+
+  try {
+    await AsyncStorage.setItem(
+      cacheStorageKey(cacheKey),
+      JSON.stringify({
+        data,
+        cachedAt: Date.now(),
+      } satisfies CachedApiResponse<T>),
+    );
+  } catch {
+    // Cache writes are best-effort and must not fail the user action.
+  }
+}
+
+async function isNetworkOffline() {
+  const state = await NetInfo.fetch();
+  return state.isConnected === false || state.isInternetReachable === false;
+}
+
+function shouldUseStaleCache(error: unknown) {
+  return (
+    error instanceof ApiError &&
+    (error.kind === 'offline' ||
+      error.kind === 'timeout' ||
+      error.kind === 'network' ||
+      error.kind === 'server')
+  );
+}
+
+function classifyStatus(status: number): ApiErrorKind {
+  if (status >= 500) {
+    return 'server';
+  }
+  return 'client';
+}
+
+function abortErrorKind(
+  externalSignal: AbortSignal | undefined,
+  timedOut: boolean,
+): ApiErrorKind {
+  if (externalSignal?.aborted) {
+    return 'aborted';
+  }
+  return timedOut ? 'timeout' : 'network';
+}
+
+function abortErrorMessage(kind: ApiErrorKind) {
+  if (kind === 'timeout') {
+    return 'request timeout';
+  }
+  if (kind === 'aborted') {
+    return 'request aborted';
+  }
+  if (kind === 'offline') {
+    return 'network offline';
+  }
+  return 'network request failed';
+}
+
+function delay(ms: number) {
+  return new Promise<void>(resolve => setTimeout(resolve, ms));
+}
+
+function retryDelay(attempt: number) {
+  return (
+    retryBaseDelayMs * 2 ** attempt + Math.floor(Math.random() * retryJitterMs)
+  );
+}
+
+async function fetchOnceWithTimeout(
+  url: string,
+  init: RequestInit,
+  signal: AbortSignal | undefined,
+  timeoutMs: number,
+) {
+  const controller = new AbortController();
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  const abortFromExternalSignal = () => controller.abort();
+
+  if (signal?.aborted) {
+    clearTimeout(timeout);
+    throw new ApiError(0, 'request aborted', undefined, 'aborted');
+  }
+
+  signal?.addEventListener('abort', abortFromExternalSignal, { once: true });
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    const kind = abortErrorKind(signal, timedOut);
+    if (controller.signal.aborted || signal?.aborted) {
+      throw new ApiError(0, abortErrorMessage(kind), undefined, kind);
+    }
+    throw new ApiError(
+      0,
+      error instanceof Error ? error.message : 'network request failed',
+      error,
+      'network',
+    );
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener('abort', abortFromExternalSignal);
+  }
+}
+
+export async function fetchWithNetworkPolicy(
+  url: string,
+  init: RequestInit = {},
+  options: FetchPolicyOptions = {},
+) {
+  const method =
+    options.method ?? ((init.method as HTTPMethod | undefined) || 'GET');
+  const retryCount =
+    method === 'GET' ? options.retryCount ?? defaultRetryCount : 0;
+
+  if (unsafeMethods.has(method) && (await isNetworkOffline())) {
+    throw new ApiError(0, 'network offline', undefined, 'offline');
+  }
+
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt <= retryCount; attempt += 1) {
+    if (method === 'GET' && attempt === 0 && (await isNetworkOffline())) {
+      throw new ApiError(0, 'network offline', undefined, 'offline');
+    }
+
+    try {
+      const response = await fetchOnceWithTimeout(
+        url,
+        {
+          ...init,
+          method,
+        },
+        options.signal,
+        options.timeoutMs ?? defaultRequestTimeoutMs,
+      );
+
+      if (method === 'GET' && response.status >= 500 && attempt < retryCount) {
+        await delay(retryDelay(attempt));
+        continue;
+      }
+
+      return response;
+    } catch (error) {
+      lastError = error;
+      if (
+        !(error instanceof ApiError) ||
+        error.kind === 'aborted' ||
+        method !== 'GET' ||
+        attempt >= retryCount
+      ) {
+        throw error;
+      }
+      await delay(retryDelay(attempt));
+    }
+  }
+
+  throw lastError;
 }
 
 function decodeCookieValue(value: string) {
@@ -79,9 +322,15 @@ export async function ensureCSRFToken() {
     return existingToken;
   }
 
-  csrfRefresh ??= fetch(apiURL('/auth/csrf'), {
-    credentials: 'include',
-  })
+  csrfRefresh ??= fetchWithNetworkPolicy(
+    apiURL('/auth/csrf'),
+    {
+      credentials: 'include',
+    },
+    {
+      method: 'GET',
+    },
+  )
     .then(async response => {
       if (!response.ok) {
         throw new ApiError(response.status, 'Не удалось получить CSRF token');
@@ -150,6 +399,7 @@ async function buildApiError(response: Response) {
     response.status,
     errorMessageFromPayload(payload, `HTTP ${response.status}`),
     payload,
+    classifyStatus(response.status),
   );
 }
 
@@ -162,14 +412,20 @@ export async function refreshSession() {
   logDev('[SocialMobile] auth refresh started');
   sessionRefresh = ensureCSRFToken()
     .then(token =>
-      fetch(apiURL('/auth/refresh'), {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          Accept: 'application/json',
-          'X-CSRF-Token': token,
+      fetchWithNetworkPolicy(
+        apiURL('/auth/refresh'),
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            Accept: 'application/json',
+            'X-CSRF-Token': token,
+          },
         },
-      }),
+        {
+          method: 'POST',
+        },
+      ),
     )
     .then(async response => {
       if (!response.ok) {
@@ -195,12 +451,36 @@ export async function apiRequest<T>(
   path: string,
   options: RequestOptions = {},
 ): Promise<T> {
+  return (await apiRequestMeta<T>(path, options)).data;
+}
+
+export async function apiRequestMeta<T>(
+  path: string,
+  options: RequestOptions = {},
+): Promise<ApiResponseMeta<T>> {
   const method = options.method ?? 'GET';
+  const cacheKey = method === 'GET' ? options.cacheKey : undefined;
   const headers: Record<string, string> = {
     Accept: 'application/json',
     ...options.headers,
   };
   let body: string | FormData | undefined;
+
+  if (unsafeMethods.has(method) && (await isNetworkOffline())) {
+    throw new ApiError(0, 'network offline', undefined, 'offline');
+  }
+
+  if (method === 'GET' && cacheKey && (await isNetworkOffline())) {
+    const cached = await readCachedApiData<T>(cacheKey);
+    if (cached) {
+      return {
+        data: cached.data,
+        fromCache: true,
+        stale: true,
+      };
+    }
+    throw new ApiError(0, 'network offline', undefined, 'offline');
+  }
 
   if (unsafeMethods.has(method)) {
     headers['X-CSRF-Token'] = await ensureCSRFToken();
@@ -213,18 +493,46 @@ export async function apiRequest<T>(
     body = JSON.stringify(options.body);
   }
 
-  const response = await fetch(apiURL(path), {
-    method,
-    headers,
-    body,
-    credentials: 'include',
-  });
+  let response: Response;
+  try {
+    response = await fetchWithNetworkPolicy(
+      apiURL(path),
+      {
+        method,
+        headers,
+        body,
+        credentials: 'include',
+      },
+      {
+        method,
+        signal: options.signal,
+        timeoutMs: options.timeoutMs,
+      },
+    );
+  } catch (error) {
+    if (
+      method === 'GET' &&
+      cacheKey &&
+      options.allowStaleOnError !== false &&
+      shouldUseStaleCache(error)
+    ) {
+      const cached = await readCachedApiData<T>(cacheKey);
+      if (cached) {
+        return {
+          data: cached.data,
+          fromCache: true,
+          stale: true,
+        };
+      }
+    }
+    throw error;
+  }
 
   if (response.status === 401 && !options.retry && !shouldSkipRefresh(path)) {
     logDev('[SocialMobile] request 401', { path, method });
     try {
       await refreshSession();
-      return apiRequest<T>(path, {
+      return apiRequestMeta<T>(path, {
         ...options,
         retry: true,
       });
@@ -240,15 +548,40 @@ export async function apiRequest<T>(
   }
 
   if (!response.ok) {
-    throw await buildApiError(response);
+    const error = await buildApiError(response);
+    if (
+      method === 'GET' &&
+      cacheKey &&
+      options.allowStaleOnError !== false &&
+      shouldUseStaleCache(error)
+    ) {
+      const cached = await readCachedApiData<T>(cacheKey);
+      if (cached) {
+        return {
+          data: cached.data,
+          fromCache: true,
+          stale: true,
+        };
+      }
+    }
+    throw error;
   }
 
   if (response.status === 204) {
-    return undefined as T;
+    return {
+      data: undefined as T,
+      fromCache: false,
+      stale: false,
+    };
   }
 
   const payload = await readResponseBody(response);
-  return payload as T;
+  await writeCachedApiData(cacheKey, payload as T);
+  return {
+    data: payload as T,
+    fromCache: false,
+    stale: false,
+  };
 }
 
 export function toQueryString(
@@ -286,6 +619,11 @@ export function getApiErrorMessage(error: unknown) {
       'Не удалось подтвердить сессию. Повторите запрос',
     'network request failed':
       'Не удалось подключиться к серверу. Проверьте интернет или попробуйте позже.',
+    'network offline':
+      'Нет подключения к интернету. Данные обновятся после восстановления сети.',
+    'request timeout':
+      'Сервер отвечает слишком долго. Проверьте интернет или попробуйте позже.',
+    'request aborted': 'Запрос отменен.',
     'failed to fetch':
       'Не удалось подключиться к серверу. Проверьте интернет или попробуйте позже.',
     'load failed':

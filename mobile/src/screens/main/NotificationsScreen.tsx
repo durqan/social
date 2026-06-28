@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import {
   useFocusEffect,
@@ -112,6 +112,7 @@ export default function NotificationsScreen() {
   } = useNotifications();
   const [actors, setActors] = useState<Record<number, User>>({});
   const [hasLoaded, setHasLoaded] = useState(false);
+  const actorBatchInFlight = useRef(new Set<string>());
 
   const loadNotifications = useCallback(async () => {
     try {
@@ -148,30 +149,45 @@ export default function NotificationsScreen() {
       return;
     }
 
-    let active = true;
-    Promise.all(
-      missingActorIds.map(async actorId => {
-        try {
-          return [actorId, await userApi.getUser(actorId)] as const;
-        } catch {
-          return null;
-        }
-      }),
-    ).then(entries => {
-      if (!active) {
-        return;
-      }
+    const batchKey = missingActorIds.join(',');
+    if (actorBatchInFlight.current.has(batchKey)) {
+      return;
+    }
 
-      setActors(previous => {
-        const nextActors = { ...previous };
-        entries.forEach(entry => {
-          if (entry) {
-            nextActors[entry[0]] = entry[1];
-          }
+    let active = true;
+    actorBatchInFlight.current.add(batchKey);
+    userApi
+      .getUsersBatch(missingActorIds)
+      .then(users => users.map(user => [user.id, user] as const))
+      .catch(() =>
+        Promise.all(
+          missingActorIds.map(async actorId => {
+            try {
+              return [actorId, await userApi.getUser(actorId)] as const;
+            } catch {
+              return null;
+            }
+          }),
+        ),
+      )
+      .then(entries => {
+        if (!active) {
+          return;
+        }
+
+        setActors(previous => {
+          const nextActors = { ...previous };
+          entries.forEach(entry => {
+            if (entry?.[0]) {
+              nextActors[entry[0]] = entry[1];
+            }
+          });
+          return nextActors;
         });
-        return nextActors;
+      })
+      .finally(() => {
+        actorBatchInFlight.current.delete(batchKey);
       });
-    });
 
     return () => {
       active = false;
@@ -295,6 +311,11 @@ export default function NotificationsScreen() {
             </Pressable>
           );
         }}
+        initialNumToRender={10}
+        windowSize={7}
+        maxToRenderPerBatch={8}
+        updateCellsBatchingPeriod={60}
+        removeClippedSubviews
       />
     </Screen>
   );

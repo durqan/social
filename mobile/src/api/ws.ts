@@ -61,6 +61,11 @@ class ChatSocket {
   private readonly maxReconnectAttempts = 8;
   private readonly minReconnectDelay = 1000;
   private readonly maxReconnectDelay = 30000;
+  private readonly maxPendingNonCallEvents = 50;
+  private readonly defaultNonCallEventQueueTtlMs = 10 * 60 * 1000;
+  private readonly readReceiptQueueTtlMs = 5 * 60 * 1000;
+  private readonly ephemeralQueueTtlMs = 15000;
+  private readonly presenceQueueTtlMs = 30000;
   private ws: WebSocket | null = null;
   private socketGeneration = 0;
   private handlers = new Set<WsHandler>();
@@ -455,10 +460,7 @@ class ChatSocket {
         return false;
       }
 
-      this.pendingEvents.push({
-        ...event,
-        queuedAt: Date.now(),
-      });
+      this.queuePendingEvent(event);
       this.logSocketSend(event, 'queued');
       this.connect();
       return false;
@@ -475,10 +477,7 @@ class ChatSocket {
         error,
       });
       if (queueIfClosed) {
-        this.pendingEvents.push({
-          ...event,
-          queuedAt: Date.now(),
-        });
+        this.queuePendingEvent(event);
       }
       this.connect();
       return false;
@@ -521,10 +520,11 @@ class ChatSocket {
 
     const now = Date.now();
     const events = this.pendingEvents.splice(0).filter(event => {
-      return (
-        !this.isCallEvent(event) ||
-        now - event.queuedAt <= this.callEventQueueTtlMs
-      );
+      const fresh = now - event.queuedAt <= this.eventQueueTtl(event);
+      if (!fresh) {
+        this.logPendingDrop(event, 'expired');
+      }
+      return fresh;
     });
 
     events.forEach(({ queuedAt: _queuedAt, ...event }) => {
@@ -609,6 +609,112 @@ class ChatSocket {
 
   private isCallEvent(event: OutgoingEvent) {
     return this.callEventTypes.has(event.type);
+  }
+
+  private queuePendingEvent(event: OutgoingEvent) {
+    this.dropExpiredPendingEvents();
+
+    const dedupeKey = this.pendingDedupeKey(event);
+    if (dedupeKey) {
+      this.pendingEvents = this.pendingEvents.filter(queued => {
+        const keep = this.pendingDedupeKey(queued) !== dedupeKey;
+        if (!keep) {
+          this.logPendingDrop(queued, 'deduped');
+        }
+        return keep;
+      });
+    }
+
+    this.pendingEvents.push({
+      ...event,
+      queuedAt: Date.now(),
+    });
+    this.enforcePendingQueueLimit();
+  }
+
+  private dropExpiredPendingEvents() {
+    const now = Date.now();
+    this.pendingEvents = this.pendingEvents.filter(event => {
+      const fresh = now - event.queuedAt <= this.eventQueueTtl(event);
+      if (!fresh) {
+        this.logPendingDrop(event, 'expired');
+      }
+      return fresh;
+    });
+  }
+
+  private enforcePendingQueueLimit() {
+    const nonCallCount = this.pendingEvents.filter(
+      event => !this.isCallEvent(event),
+    ).length;
+    if (nonCallCount <= this.maxPendingNonCallEvents) {
+      return;
+    }
+
+    let toDrop = nonCallCount - this.maxPendingNonCallEvents;
+    this.pendingEvents = this.pendingEvents.filter(event => {
+      if (toDrop <= 0 || this.isCallEvent(event)) {
+        return true;
+      }
+      toDrop -= 1;
+      this.logPendingDrop(event, 'queue_limit');
+      return false;
+    });
+  }
+
+  private eventQueueTtl(event: OutgoingEvent) {
+    if (this.isCallEvent(event)) {
+      return this.callEventQueueTtlMs;
+    }
+    if (
+      event.type === WS_EVENTS.TYPING_START ||
+      event.type === WS_EVENTS.TYPING_STOP
+    ) {
+      return this.ephemeralQueueTtlMs;
+    }
+    if (
+      event.type === WS_EVENTS.CONVERSATION_ACTIVE ||
+      event.type === WS_EVENTS.CONVERSATION_INACTIVE
+    ) {
+      return this.presenceQueueTtlMs;
+    }
+    if (event.type === WS_EVENTS.MESSAGE_READ) {
+      return this.readReceiptQueueTtlMs;
+    }
+    return this.defaultNonCallEventQueueTtlMs;
+  }
+
+  private pendingDedupeKey(event: OutgoingEvent) {
+    if (!event.payload || typeof event.payload !== 'object') {
+      return null;
+    }
+
+    const payload = event.payload as Record<string, unknown>;
+    if (
+      event.type === WS_EVENTS.TYPING_START ||
+      event.type === WS_EVENTS.TYPING_STOP
+    ) {
+      return `typing:${payload.to_id ?? 'unknown'}`;
+    }
+    if (event.type === WS_EVENTS.MESSAGE_READ) {
+      return `read:${payload.to_id ?? payload.conversation_id ?? 'unknown'}`;
+    }
+    if (
+      event.type === WS_EVENTS.CONVERSATION_ACTIVE ||
+      event.type === WS_EVENTS.CONVERSATION_INACTIVE
+    ) {
+      return `conversation-presence:${payload.conversation_id ?? 'unknown'}`;
+    }
+    return null;
+  }
+
+  private logPendingDrop(event: OutgoingEvent, reason: string) {
+    logDev('[SocialMobile] WebSocket pending event dropped', {
+      type: event.type,
+      reason,
+      callId: this.eventCallId(event),
+      pendingEvents: this.pendingEvents.length,
+    });
   }
 
   private eventCallId(event: OutgoingEvent) {

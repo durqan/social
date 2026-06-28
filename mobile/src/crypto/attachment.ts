@@ -1,5 +1,5 @@
 import type { Message, MessageAttachment } from '../api/types';
-import { getCookieHeader } from '../api/http';
+import { fetchWithNetworkPolicy, getCookieHeader } from '../api/http';
 import { assetURL } from '../config/env';
 import {
   base64ToBytes,
@@ -65,10 +65,36 @@ export type EncryptedAttachmentUpload = {
   previewUri: string;
 };
 
+const maxE2EEInMemoryAttachmentBytes = 32 * 1024 * 1024;
+let attachmentCryptoQueue: Promise<void> = Promise.resolve();
+
+function runAttachmentCrypto<T>(task: () => Promise<T>): Promise<T> {
+  const run = attachmentCryptoQueue.then(task, task);
+  attachmentCryptoQueue = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
+function assertInMemoryAttachmentSize(
+  size: number | undefined,
+  fileType: AttachmentFileType,
+) {
+  if (size && size > maxE2EEInMemoryAttachmentBytes) {
+    throw new Error(
+      `E2EE ${fileType} attachment is too large for safe on-device processing`,
+    );
+  }
+}
+
 export function isEncryptedAttachment(
   attachment?: Pick<
     MessageAttachment,
-    'encryption_version' | 'encrypted_file_key' | 'file_nonce' | 'encrypted_metadata'
+    | 'encryption_version'
+    | 'encrypted_file_key'
+    | 'file_nonce'
+    | 'encrypted_metadata'
   > | null,
 ) {
   return Boolean(
@@ -95,76 +121,95 @@ export async function encryptAttachmentForUpload({
   senderBundle: LocalE2EEKeyBundle;
   recipientPublicKeyBase64: string;
 }): Promise<EncryptedAttachmentUpload> {
-  const subtle = getSubtleCrypto();
-  const fileBytes = await readSourceBytes(source.uri);
-  const fileKey = await subtle.generateKey(
-    { name: 'AES-GCM', length: 256 },
-    true,
-    ['encrypt', 'decrypt'],
-  );
-  const fileNonce = randomNonce();
-  const metadataNonce = randomNonce();
-  const fileAAD = attachmentFileAAD(senderUserId, recipientUserId, fileType);
-  const metadataAAD = attachmentMetadataAAD(senderUserId, recipientUserId, fileType);
-  const encryptedBytes = await subtle.encrypt(
-    { name: 'AES-GCM', iv: toArrayBuffer(fileNonce), additionalData: toArrayBuffer(fileAAD) },
-    fileKey,
-    toArrayBuffer(fileBytes),
-  );
-  const metadata: AttachmentPlainMetadata = {
-    filename: source.fileName || defaultAttachmentFilename(fileType),
-    mimeType: source.type || 'application/octet-stream',
-    size: source.fileSize ?? fileBytes.byteLength,
-    fileType,
-    width: source.width,
-    height: source.height,
-    durationSeconds: source.durationSeconds,
-  };
-  const encryptedMetadata = await subtle.encrypt(
-    { name: 'AES-GCM', iv: toArrayBuffer(metadataNonce), additionalData: toArrayBuffer(metadataAAD) },
-    fileKey,
-    toArrayBuffer(utf8ToBytes(JSON.stringify(metadata))),
-  );
-  const rawFileKey = await subtle.exportKey('raw', fileKey);
-  const recipientPublicKey = await importPublicKey(recipientPublicKeyBase64);
-  const senderWrappedKey = await subtle.encrypt(
-    { name: 'RSA-OAEP' },
-    senderBundle.publicKey,
-    rawFileKey,
-  );
-  const recipientWrappedKey = await subtle.encrypt(
-    { name: 'RSA-OAEP' },
-    recipientPublicKey,
-    rawFileKey,
-  );
-  const keyEnvelope: EncryptedAttachmentKeyEnvelope = {
-    version: 1,
-    keyAlg: 'RSA-OAEP-SHA-256',
-    keys: {
-      [String(senderUserId)]: bytesToBase64(senderWrappedKey),
-      [String(recipientUserId)]: bytesToBase64(recipientWrappedKey),
-    },
-  };
-  const metadataEnvelope: EncryptedAttachmentMetadataEnvelope = {
-    version: 1,
-    alg: 'AES-256-GCM',
-    nonce: bytesToBase64(metadataNonce),
-    data: bytesToBase64(encryptedMetadata),
-  };
+  return runAttachmentCrypto(async () => {
+    assertInMemoryAttachmentSize(source.fileSize, fileType);
+    const subtle = getSubtleCrypto();
+    const fileBytes = await readSourceBytes(source.uri);
+    assertInMemoryAttachmentSize(fileBytes.byteLength, fileType);
+    const fileKey = await subtle.generateKey(
+      { name: 'AES-GCM', length: 256 },
+      true,
+      ['encrypt', 'decrypt'],
+    );
+    const fileNonce = randomNonce();
+    const metadataNonce = randomNonce();
+    const fileAAD = attachmentFileAAD(senderUserId, recipientUserId, fileType);
+    const metadataAAD = attachmentMetadataAAD(
+      senderUserId,
+      recipientUserId,
+      fileType,
+    );
+    const encryptedBytes = await subtle.encrypt(
+      {
+        name: 'AES-GCM',
+        iv: toArrayBuffer(fileNonce),
+        additionalData: toArrayBuffer(fileAAD),
+      },
+      fileKey,
+      toArrayBuffer(fileBytes),
+    );
+    const metadata: AttachmentPlainMetadata = {
+      filename: source.fileName || defaultAttachmentFilename(fileType),
+      mimeType: source.type || 'application/octet-stream',
+      size: source.fileSize ?? fileBytes.byteLength,
+      fileType,
+      width: source.width,
+      height: source.height,
+      durationSeconds: source.durationSeconds,
+    };
+    const encryptedMetadata = await subtle.encrypt(
+      {
+        name: 'AES-GCM',
+        iv: toArrayBuffer(metadataNonce),
+        additionalData: toArrayBuffer(metadataAAD),
+      },
+      fileKey,
+      toArrayBuffer(utf8ToBytes(JSON.stringify(metadata))),
+    );
+    const rawFileKey = await subtle.exportKey('raw', fileKey);
+    const recipientPublicKey = await importPublicKey(recipientPublicKeyBase64);
+    const senderWrappedKey = await subtle.encrypt(
+      { name: 'RSA-OAEP' },
+      senderBundle.publicKey,
+      rawFileKey,
+    );
+    const recipientWrappedKey = await subtle.encrypt(
+      { name: 'RSA-OAEP' },
+      recipientPublicKey,
+      rawFileKey,
+    );
+    const keyEnvelope: EncryptedAttachmentKeyEnvelope = {
+      version: 1,
+      keyAlg: 'RSA-OAEP-SHA-256',
+      keys: {
+        [String(senderUserId)]: bytesToBase64(senderWrappedKey),
+        [String(recipientUserId)]: bytesToBase64(recipientWrappedKey),
+      },
+    };
+    const metadataEnvelope: EncryptedAttachmentMetadataEnvelope = {
+      version: 1,
+      alg: 'AES-256-GCM',
+      nonce: bytesToBase64(metadataNonce),
+      data: bytesToBase64(encryptedMetadata),
+    };
 
-  return {
-    encryptedUri: dataUriFromBytes('application/octet-stream', encryptedBytes),
-    encryptedFileName: 'attachment.bin',
-    encryptedSize: encryptedBytes.byteLength,
-    fields: {
-      encryption_version: 1,
-      encrypted_file_key: JSON.stringify(keyEnvelope),
-      file_nonce: bytesToBase64(fileNonce),
-      encrypted_metadata: JSON.stringify(metadataEnvelope),
-    },
-    metadata,
-    previewUri: source.uri,
-  };
+    return {
+      encryptedUri: dataUriFromBytes(
+        'application/octet-stream',
+        encryptedBytes,
+      ),
+      encryptedFileName: 'attachment.bin',
+      encryptedSize: encryptedBytes.byteLength,
+      fields: {
+        encryption_version: 1,
+        encrypted_file_key: JSON.stringify(keyEnvelope),
+        file_nonce: bytesToBase64(fileNonce),
+        encrypted_metadata: JSON.stringify(metadataEnvelope),
+      },
+      metadata,
+      previewUri: source.uri,
+    };
+  });
 }
 
 export function withDecryptedAttachmentPreview(
@@ -194,44 +239,62 @@ export async function decryptAttachmentForDisplay(
   currentUserId: number,
   bundle: LocalE2EEKeyBundle,
 ): Promise<MessageAttachment> {
-  if (!isEncryptedAttachment(attachment)) {
-    return attachment;
-  }
-  if (attachment.decrypted_file_url && !attachment.decryption_error) {
-    return attachment;
-  }
+  return runAttachmentCrypto(async () => {
+    if (!isEncryptedAttachment(attachment)) {
+      return attachment;
+    }
+    if (attachment.decrypted_file_url && !attachment.decryption_error) {
+      return attachment;
+    }
 
-  const subtle = getSubtleCrypto();
-  const fileKey = await unwrapAttachmentFileKey(attachment, currentUserId, bundle);
-  const fileResponse = await fetchWithCookies(assetURL(attachment.file_url));
-  if (!fileResponse.ok) {
-    throw new Error('Failed to load encrypted attachment');
-  }
-  const encryptedBytes = await fileResponse.arrayBuffer();
-  const fileType = attachment.file_type;
-  const metadata = await decryptAttachmentMetadata(message, attachment, fileKey, fileType);
-  const plaintextBytes = await subtle.decrypt(
-    {
-      name: 'AES-GCM',
-      iv: toArrayBuffer(base64ToBytes(attachment.file_nonce || '')),
-      additionalData: toArrayBuffer(attachmentFileAAD(message.from_id, message.to_id, fileType)),
-    },
-    fileKey,
-    encryptedBytes,
-  );
+    const fileType = attachment.file_type;
+    assertInMemoryAttachmentSize(
+      attachment.size || attachment.original_size,
+      fileType,
+    );
+    const subtle = getSubtleCrypto();
+    const fileKey = await unwrapAttachmentFileKey(
+      attachment,
+      currentUserId,
+      bundle,
+    );
+    const fileResponse = await fetchWithCookies(assetURL(attachment.file_url));
+    if (!fileResponse.ok) {
+      throw new Error('Failed to load encrypted attachment');
+    }
+    const encryptedBytes = await fileResponse.arrayBuffer();
+    assertInMemoryAttachmentSize(encryptedBytes.byteLength, fileType);
+    const metadata = await decryptAttachmentMetadata(
+      message,
+      attachment,
+      fileKey,
+      fileType,
+    );
+    const plaintextBytes = await subtle.decrypt(
+      {
+        name: 'AES-GCM',
+        iv: toArrayBuffer(base64ToBytes(attachment.file_nonce || '')),
+        additionalData: toArrayBuffer(
+          attachmentFileAAD(message.from_id, message.to_id, fileType),
+        ),
+      },
+      fileKey,
+      encryptedBytes,
+    );
 
-  return {
-    ...attachment,
-    decrypted_file_url: dataUriFromBytes(metadata.mimeType, plaintextBytes),
-    original_mime_type: metadata.mimeType,
-    original_filename: metadata.filename,
-    original_size: metadata.size,
-    width: attachment.width ?? metadata.width,
-    height: attachment.height ?? metadata.height,
-    duration_seconds: attachment.duration_seconds ?? metadata.durationSeconds,
-    duration: attachment.duration ?? metadata.durationSeconds,
-    decryption_error: false,
-  };
+    return {
+      ...attachment,
+      decrypted_file_url: dataUriFromBytes(metadata.mimeType, plaintextBytes),
+      original_mime_type: metadata.mimeType,
+      original_filename: metadata.filename,
+      original_size: metadata.size,
+      width: attachment.width ?? metadata.width,
+      height: attachment.height ?? metadata.height,
+      duration_seconds: attachment.duration_seconds ?? metadata.durationSeconds,
+      duration: attachment.duration ?? metadata.durationSeconds,
+      decryption_error: false,
+    };
+  });
 }
 
 export async function localSourceFromAttachment(
@@ -240,8 +303,11 @@ export async function localSourceFromAttachment(
   if (attachment.decrypted_file_url && !attachment.decryption_error) {
     return {
       uri: attachment.decrypted_file_url,
-      type: attachment.original_mime_type || fallbackMimeType(attachment.file_type),
-      fileName: attachment.original_filename || defaultAttachmentFilename(attachment.file_type),
+      type:
+        attachment.original_mime_type || fallbackMimeType(attachment.file_type),
+      fileName:
+        attachment.original_filename ||
+        defaultAttachmentFilename(attachment.file_type),
       fileSize: attachment.original_size || attachment.size,
       width: attachment.width,
       height: attachment.height,
@@ -255,8 +321,11 @@ export async function localSourceFromAttachment(
 
   return {
     uri: assetURL(attachment.file_url),
-    type: attachment.original_mime_type || fallbackMimeType(attachment.file_type),
-    fileName: attachment.original_filename || defaultAttachmentFilename(attachment.file_type),
+    type:
+      attachment.original_mime_type || fallbackMimeType(attachment.file_type),
+    fileName:
+      attachment.original_filename ||
+      defaultAttachmentFilename(attachment.file_type),
     fileSize: attachment.original_size || attachment.size,
     width: attachment.width,
     height: attachment.height,
@@ -279,7 +348,9 @@ async function unwrapAttachmentFileKey(
     bundle.privateKey,
     toArrayBuffer(base64ToBytes(wrappedKey)),
   );
-  return getSubtleCrypto().importKey('raw', rawFileKey, 'AES-GCM', false, ['decrypt']);
+  return getSubtleCrypto().importKey('raw', rawFileKey, 'AES-GCM', false, [
+    'decrypt',
+  ]);
 }
 
 async function decryptAttachmentMetadata(
@@ -293,12 +364,16 @@ async function decryptAttachmentMetadata(
     {
       name: 'AES-GCM',
       iv: toArrayBuffer(base64ToBytes(envelope.nonce)),
-      additionalData: toArrayBuffer(attachmentMetadataAAD(message.from_id, message.to_id, fileType)),
+      additionalData: toArrayBuffer(
+        attachmentMetadataAAD(message.from_id, message.to_id, fileType),
+      ),
     },
     fileKey,
     toArrayBuffer(base64ToBytes(envelope.data)),
   );
-  const metadata = JSON.parse(bytesToUtf8(plaintext)) as Partial<AttachmentPlainMetadata>;
+  const metadata = JSON.parse(
+    bytesToUtf8(plaintext),
+  ) as Partial<AttachmentPlainMetadata>;
   if (!metadata.mimeType || !metadata.filename || !metadata.fileType) {
     throw new Error('Invalid encrypted attachment metadata');
   }
@@ -318,20 +393,41 @@ function parseKeyEnvelope(value: string): EncryptedAttachmentKeyEnvelope {
   return parsed as EncryptedAttachmentKeyEnvelope;
 }
 
-function parseMetadataEnvelope(value: string): EncryptedAttachmentMetadataEnvelope {
-  const parsed = JSON.parse(value) as Partial<EncryptedAttachmentMetadataEnvelope>;
-  if (parsed.version !== 1 || parsed.alg !== 'AES-256-GCM' || !parsed.nonce || !parsed.data) {
+function parseMetadataEnvelope(
+  value: string,
+): EncryptedAttachmentMetadataEnvelope {
+  const parsed = JSON.parse(
+    value,
+  ) as Partial<EncryptedAttachmentMetadataEnvelope>;
+  if (
+    parsed.version !== 1 ||
+    parsed.alg !== 'AES-256-GCM' ||
+    !parsed.nonce ||
+    !parsed.data
+  ) {
     throw new Error('Invalid encrypted attachment metadata envelope');
   }
   return parsed as EncryptedAttachmentMetadataEnvelope;
 }
 
-function attachmentFileAAD(fromId: number, toId: number, fileType: AttachmentFileType) {
-  return utf8ToBytes(`social:e2ee:attachment:file:v1:${fromId}:${toId}:${fileType}`);
+function attachmentFileAAD(
+  fromId: number,
+  toId: number,
+  fileType: AttachmentFileType,
+) {
+  return utf8ToBytes(
+    `social:e2ee:attachment:file:v1:${fromId}:${toId}:${fileType}`,
+  );
 }
 
-function attachmentMetadataAAD(fromId: number, toId: number, fileType: AttachmentFileType) {
-  return utf8ToBytes(`social:e2ee:attachment:metadata:v1:${fromId}:${toId}:${fileType}`);
+function attachmentMetadataAAD(
+  fromId: number,
+  toId: number,
+  fileType: AttachmentFileType,
+) {
+  return utf8ToBytes(
+    `social:e2ee:attachment:metadata:v1:${fromId}:${toId}:${fileType}`,
+  );
 }
 
 function defaultAttachmentFilename(fileType: AttachmentFileType) {
@@ -378,9 +474,13 @@ async function readSourceBytes(uri: string) {
     return dataBytes;
   }
 
-  const response = uri.startsWith('http://') || uri.startsWith('https://')
-    ? await fetchWithCookies(uri)
-    : await fetch(uri);
+  const response =
+    uri.startsWith('http://') || uri.startsWith('https://')
+      ? await fetchWithCookies(uri)
+      : await fetchWithNetworkPolicy(uri, undefined, {
+          method: 'GET',
+          timeoutMs: 20000,
+        });
   if (!response.ok) {
     throw new Error('Failed to read attachment source');
   }
@@ -389,7 +489,14 @@ async function readSourceBytes(uri: string) {
 
 async function fetchWithCookies(url: string) {
   const cookieHeader = await getCookieHeader();
-  return fetch(url, {
-    headers: cookieHeader ? { Cookie: cookieHeader } : undefined,
-  });
+  return fetchWithNetworkPolicy(
+    url,
+    {
+      headers: cookieHeader ? { Cookie: cookieHeader } : undefined,
+    },
+    {
+      method: 'GET',
+      timeoutMs: 20000,
+    },
+  );
 }

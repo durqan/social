@@ -143,7 +143,7 @@ function LinkPreviewCard({
   );
 }
 
-export function MessageBubble({
+export const MessageBubble = React.memo(function MessageBubble({
   message,
   outgoing,
   onImagePress,
@@ -530,7 +530,7 @@ export function MessageBubble({
       </View>
     </Pressable>
   );
-}
+});
 
 export function VideoNoteAttachment({
   url,
@@ -576,27 +576,33 @@ export function VideoNoteAttachment({
           playing && themed.videoNoteOrbitActive,
         ]}
       >
-        <Video
-          source={{ uri: url }}
-          style={[styles.videoNoteVideo, themed.surfaceMuted]}
-          paused={!playing}
-          repeat={false}
-          resizeMode="cover"
-          muted={false}
-          onLoad={data => {
-            setLoadedDuration(data.duration || duration || 0);
-          }}
-          onProgress={data => {
-            setPosition(data.currentTime || 0);
-          }}
-          onEnd={() => {
-            setPlaying(false);
-            setPosition(0);
-          }}
-          onError={() => {
-            setPlaying(false);
-          }}
-        />
+        {playing ? (
+          <Video
+            source={{ uri: url }}
+            style={[styles.videoNoteVideo, themed.surfaceMuted]}
+            paused={false}
+            repeat={false}
+            resizeMode="cover"
+            muted={false}
+            onLoad={data => {
+              setLoadedDuration(data.duration || duration || 0);
+            }}
+            onProgress={data => {
+              setPosition(data.currentTime || 0);
+            }}
+            onEnd={() => {
+              setPlaying(false);
+              setPosition(0);
+            }}
+            onError={() => {
+              setPlaying(false);
+            }}
+          />
+        ) : (
+          <View style={[styles.videoNoteVideo, styles.videoNotePlaceholder]}>
+            <VideoIcon size={28} color={themeColors.white} />
+          </View>
+        )}
         <View
           style={[styles.videoNoteGlassButton, themed.videoNoteGlassButton]}
         >
@@ -620,4 +626,3 @@ export function VideoNoteAttachment({
     </Pressable>
   );
 }
-

@@ -522,6 +522,11 @@ export const styles = StyleSheet.create({
     borderRadius: 50,
     backgroundColor: colors.surfaceMuted,
   },
+  videoNotePlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent,
+  },
   videoNoteGlassButton: {
     position: 'absolute',
     width: 38,

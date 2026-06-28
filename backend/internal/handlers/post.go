@@ -8,10 +8,39 @@ import (
 	"gorm.io/gorm"
 )
 
+type paginatedPostsResponse struct {
+	Posts      []PostResponse `json:"posts"`
+	HasMore    bool           `json:"has_more"`
+	NextOffset int            `json:"next_offset"`
+}
+
 func GetPosts(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		currentUserID, ok := authenticatedUserID(c)
 		if !ok {
+			return
+		}
+
+		limit, offset, paginated, ok := paginationQuery(c)
+		if !ok {
+			return
+		}
+
+		if paginated {
+			posts, err := repository.GetPostsByUserPage(db, currentUserID, limit+1, offset)
+			if err != nil {
+				c.JSON(500, gin.H{"error": "failed to fetch posts"})
+				return
+			}
+			hasMore := len(posts) > limit
+			if hasMore {
+				posts = posts[:limit]
+			}
+			c.JSON(200, paginatedPostsResponse{
+				Posts:      buildPostResponses(db, posts, currentUserID),
+				HasMore:    hasMore,
+				NextOffset: offset + len(posts),
+			})
 			return
 		}
 
@@ -38,6 +67,29 @@ func GetPostsByUserID(db *gorm.DB) gin.HandlerFunc {
 
 		if _, err := repository.GetUserById(db, profileUserID); err != nil {
 			c.JSON(404, gin.H{"error": "user not found"})
+			return
+		}
+
+		limit, offset, paginated, ok := paginationQuery(c)
+		if !ok {
+			return
+		}
+
+		if paginated {
+			posts, err := repository.GetPostsByUserPage(db, profileUserID, limit+1, offset)
+			if err != nil {
+				c.JSON(500, gin.H{"error": "failed to fetch posts"})
+				return
+			}
+			hasMore := len(posts) > limit
+			if hasMore {
+				posts = posts[:limit]
+			}
+			c.JSON(200, paginatedPostsResponse{
+				Posts:      buildPostResponses(db, posts, currentUserID),
+				HasMore:    hasMore,
+				NextOffset: offset + len(posts),
+			})
 			return
 		}
 

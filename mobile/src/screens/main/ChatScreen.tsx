@@ -246,6 +246,9 @@ function chatErrorMessage(error: unknown) {
     ) {
       return 'Не удалось отправить сообщение.';
     }
+    if (error.message.includes('too large for safe on-device processing')) {
+      return 'Вложение слишком большое для безопасной E2EE-обработки на устройстве. Выберите файл меньшего размера.';
+    }
   }
 
   return getApiErrorMessage(error);
@@ -305,6 +308,8 @@ export default function ChatScreen({ route }: Props) {
   const chatSessionSeqRef = useRef(0);
   const loadMessagesSeqRef = useRef(0);
   const loadPinnedSeqRef = useRef(0);
+  const loadMessagesAbortRef = useRef<AbortController | null>(null);
+  const loadPinnedAbortRef = useRef<AbortController | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [inputHeight, setInputHeight] = useState(COMPOSER_INPUT_MIN_HEIGHT);
@@ -405,7 +410,7 @@ export default function ChatScreen({ route }: Props) {
       loadMessagesSeqRef.current += 1;
       loadPinnedSeqRef.current += 1;
     };
-  }, []);
+  }, [playingVoiceUrlRef, previewPlayingRef]);
 
   useEffect(() => {
     chatSessionSeqRef.current += 1;
@@ -916,6 +921,9 @@ export default function ChatScreen({ route }: Props) {
     async (mode: LoadMode = 'initial') => {
       const sessionSeq = chatSessionSeqRef.current;
       const requestSeq = ++loadMessagesSeqRef.current;
+      loadMessagesAbortRef.current?.abort();
+      const controller = new AbortController();
+      loadMessagesAbortRef.current = controller;
       const showInitialLoading = mode === 'initial' && !hasLoadedRef.current;
 
       if (showInitialLoading) {
@@ -927,9 +935,15 @@ export default function ChatScreen({ route }: Props) {
 
       setError(null);
       try {
-        const response = await messageApi.getMessagesWith(otherUserId, {
-          limit: MESSAGE_PAGE_SIZE,
-        });
+        const response = await messageApi.getMessagesWith(
+          otherUserId,
+          {
+            limit: MESSAGE_PAGE_SIZE,
+          },
+          {
+            signal: controller.signal,
+          },
+        );
         const shouldInitialScroll =
           mode === 'initial' &&
           (!hasLoadedRef.current || messagesRef.current.length === 0);
@@ -960,6 +974,9 @@ export default function ChatScreen({ route }: Props) {
 
         markConversationRead().catch(() => undefined);
       } catch (apiError) {
+        if ((apiError as Error)?.message === 'request aborted') {
+          return;
+        }
         if (
           isCurrentChatSession(sessionSeq) &&
           loadMessagesSeqRef.current === requestSeq
@@ -967,6 +984,9 @@ export default function ChatScreen({ route }: Props) {
           setError(getApiErrorMessage(apiError));
         }
       } finally {
+        if (loadMessagesAbortRef.current === controller) {
+          loadMessagesAbortRef.current = null;
+        }
         if (
           isCurrentChatSession(sessionSeq) &&
           loadMessagesSeqRef.current === requestSeq
@@ -1094,8 +1114,13 @@ export default function ChatScreen({ route }: Props) {
   const loadPinnedMessage = useCallback(async () => {
     const sessionSeq = chatSessionSeqRef.current;
     const requestSeq = ++loadPinnedSeqRef.current;
+    loadPinnedAbortRef.current?.abort();
+    const controller = new AbortController();
+    loadPinnedAbortRef.current = controller;
     try {
-      const pin = await messageApi.getPinnedMessage(otherUserId);
+      const pin = await messageApi.getPinnedMessage(otherUserId, {
+        signal: controller.signal,
+      });
       const displayPin = pin?.message
         ? {
             ...pin,
@@ -1109,12 +1134,19 @@ export default function ChatScreen({ route }: Props) {
         return;
       }
       setPinnedMessage(displayPin);
-    } catch {
+    } catch (apiError) {
+      if ((apiError as Error)?.message === 'request aborted') {
+        return;
+      }
       if (
         isCurrentChatSession(sessionSeq) &&
         loadPinnedSeqRef.current === requestSeq
       ) {
         setPinnedMessage(null);
+      }
+    } finally {
+      if (loadPinnedAbortRef.current === controller) {
+        loadPinnedAbortRef.current = null;
       }
     }
   }, [decryptIncomingMessage, isCurrentChatSession, otherUserId]);
@@ -1123,6 +1155,12 @@ export default function ChatScreen({ route }: Props) {
     useCallback(() => {
       loadMessages().catch(() => undefined);
       loadPinnedMessage().catch(() => undefined);
+      return () => {
+        loadMessagesAbortRef.current?.abort();
+        loadMessagesAbortRef.current = null;
+        loadPinnedAbortRef.current?.abort();
+        loadPinnedAbortRef.current = null;
+      };
     }, [loadMessages, loadPinnedMessage]),
   );
 
@@ -2371,40 +2409,16 @@ export default function ChatScreen({ route }: Props) {
     setPendingVideo(null);
   }
 
-  async function importLinkPreviewVideo(message: Message) {
-    if (
-      !message.link_preview ||
-      message.link_preview.status === 'importing' ||
-      message.link_preview.status === 'ready'
-    ) {
-      return;
-    }
+  const importLinkPreviewVideo = useCallback(
+    async (message: Message) => {
+      if (
+        !message.link_preview ||
+        message.link_preview.status === 'importing' ||
+        message.link_preview.status === 'ready'
+      ) {
+        return;
+      }
 
-    setMessages(previous =>
-      previous.map(item =>
-        item.id === message.id && item.link_preview
-          ? {
-              ...item,
-              link_preview: {
-                ...item.link_preview,
-                status: 'importing',
-                import_error: null,
-              },
-            }
-          : item,
-      ),
-    );
-
-    try {
-      const updated = await messageApi.importLinkPreviewVideo(message.id);
-      const displayMessage = await decryptIncomingMessage(updated);
-      setMessages(previous =>
-        previous.map(item =>
-          item.id === displayMessage.id ? displayMessage : item,
-        ),
-      );
-    } catch (apiError) {
-      setError(chatErrorMessage(apiError));
       setMessages(previous =>
         previous.map(item =>
           item.id === message.id && item.link_preview
@@ -2412,15 +2426,42 @@ export default function ChatScreen({ route }: Props) {
                 ...item,
                 link_preview: {
                   ...item.link_preview,
-                  status: 'failed',
-                  import_error: 'Не удалось сохранить видео',
+                  status: 'importing',
+                  import_error: null,
                 },
               }
             : item,
         ),
       );
-    }
-  }
+
+      try {
+        const updated = await messageApi.importLinkPreviewVideo(message.id);
+        const displayMessage = await decryptIncomingMessage(updated);
+        setMessages(previous =>
+          previous.map(item =>
+            item.id === displayMessage.id ? displayMessage : item,
+          ),
+        );
+      } catch (apiError) {
+        setError(chatErrorMessage(apiError));
+        setMessages(previous =>
+          previous.map(item =>
+            item.id === message.id && item.link_preview
+              ? {
+                  ...item,
+                  link_preview: {
+                    ...item.link_preview,
+                    status: 'failed',
+                    import_error: 'Не удалось сохранить видео',
+                  },
+                }
+              : item,
+          ),
+        );
+      }
+    },
+    [decryptIncomingMessage],
+  );
 
   function stopLocalTyping() {
     if (typingStopTimerRef.current) {
@@ -2571,7 +2612,7 @@ export default function ChatScreen({ route }: Props) {
     setCopyNotice(notice);
   }
 
-  async function toggleVoicePlayback(url: string) {
+  const toggleVoicePlayback = useCallback(async (url: string) => {
     try {
       // Stop preview if active (mutual exclusive)
       if (previewPlayingRef.current) {
@@ -2609,7 +2650,7 @@ export default function ChatScreen({ route }: Props) {
       setPlayingVoiceUrl(null);
       setError(getApiErrorMessage(apiError));
     }
-  }
+  }, [playingVoiceUrlRef, previewPlayingRef]);
 
   async function deleteSelectedMessage(
     message: Message,
@@ -2824,9 +2865,9 @@ export default function ChatScreen({ route }: Props) {
     }
   }
 
-  function openMessageActions(message: Message) {
+  const openMessageActions = useCallback((message: Message) => {
     setSelectedMessage(message);
-  }
+  }, []);
 
   const trimmedInput = input.trim();
   const showComposerSendButton =
@@ -2841,6 +2882,33 @@ export default function ChatScreen({ route }: Props) {
       : 'Видео-сообщение. Нажмите, чтобы выбрать микрофон, удерживайте для записи';
   const composerMediaDisabled =
     Boolean(sending) || Boolean(editingMessage) || recordingBusy;
+  const messageKeyExtractor = useCallback(
+    (item: Message) => String(item.id),
+    [],
+  );
+  const renderMessageItem = useCallback(
+    ({ item }: { item: Message }) => (
+      <MessageBubble
+        message={item}
+        outgoing={item.from_id === user?.id}
+        onImagePress={setSelectedImageUrl}
+        onVideoPress={setSelectedVideoUrl}
+        onImportLinkPreviewVideo={importLinkPreviewVideo}
+        onVoicePress={toggleVoicePlayback}
+        playingVoiceUrl={playingVoiceUrl}
+        onLongPress={() => openMessageActions(item)}
+        themeColors={themeColors}
+      />
+    ),
+    [
+      importLinkPreviewVideo,
+      openMessageActions,
+      playingVoiceUrl,
+      themeColors,
+      toggleVoicePlayback,
+      user?.id,
+    ],
+  );
 
   return (
     <Screen
@@ -2890,7 +2958,7 @@ export default function ChatScreen({ route }: Props) {
           ref={listRef}
           style={styles.messageListContainer}
           data={messages}
-          keyExtractor={item => String(item.id)}
+          keyExtractor={messageKeyExtractor}
           refreshing={refreshing}
           onRefresh={() => loadMessages('refresh')}
           keyboardShouldPersistTaps="handled"
@@ -2901,19 +2969,13 @@ export default function ChatScreen({ route }: Props) {
           }
           onScroll={handleMessagesScroll}
           scrollEventThrottle={SCROLL_EVENT_THROTTLE_MS}
-          renderItem={({ item }) => (
-            <MessageBubble
-              message={item}
-              outgoing={item.from_id === user?.id}
-              onImagePress={setSelectedImageUrl}
-              onVideoPress={setSelectedVideoUrl}
-              onImportLinkPreviewVideo={importLinkPreviewVideo}
-              onVoicePress={url => toggleVoicePlayback(url)}
-              playingVoiceUrl={playingVoiceUrl}
-              onLongPress={() => openMessageActions(item)}
-              themeColors={themeColors}
-            />
-          )}
+          renderItem={renderMessageItem}
+          extraData={{ playingVoiceUrl, themeColors, userId: user?.id }}
+          initialNumToRender={12}
+          windowSize={7}
+          maxToRenderPerBatch={8}
+          updateCellsBatchingPeriod={50}
+          removeClippedSubviews={Platform.OS === 'android'}
           contentContainerStyle={[
             styles.messageList,
             messages.length === 0 && styles.emptyMessageList,

@@ -1,9 +1,20 @@
-import { apiRequest } from './http';
+import { apiCacheKey, apiRequest, apiRequestMeta, toQueryString } from './http';
 import type { Comment, Post } from './types';
 
 type LikeResponse = {
   is_liked: boolean;
   likes_count: number;
+};
+
+export type PaginatedPosts = {
+  posts: Post[];
+  has_more: boolean;
+  next_offset?: number;
+  stale?: boolean;
+};
+
+type ApiCallOptions = {
+  signal?: AbortSignal;
 };
 
 function normalizePost(post: Post): Post {
@@ -49,10 +60,55 @@ function normalizeComment(comment: Comment): Comment {
 }
 
 export const postApi = {
-  async getPosts(userId?: number) {
+  async getPosts(userId?: number, options?: ApiCallOptions) {
+    const page = await this.getPostsPage(userId, undefined, options);
+    return page.posts;
+  },
+
+  async getPostsPage(
+    userId?: number,
+    params?: {
+      limit?: number;
+      offset?: number;
+    },
+    options?: ApiCallOptions,
+  ): Promise<PaginatedPosts> {
     const path = userId ? `/posts/user/${userId}` : '/posts';
-    const posts = await apiRequest<Post[]>(path);
-    return Array.isArray(posts) ? posts.map(normalizePost) : [];
+    const query = params ? toQueryString(params) : '';
+    const offset = params?.offset ?? 0;
+    const limit = params?.limit ?? 20;
+    const cacheKey = apiCacheKey(
+      'wall-feed',
+      `${userId ?? 'me'}:${offset}:${limit}`,
+    );
+    const result = await apiRequestMeta<Post[] | PaginatedPosts>(
+      `${path}${query}`,
+      {
+        cacheKey,
+        signal: options?.signal,
+      },
+    );
+    const response = result.data;
+
+    if (Array.isArray(response)) {
+      const posts = response.map(normalizePost);
+      return {
+        posts,
+        has_more: false,
+        next_offset: posts.length,
+        stale: result.stale,
+      };
+    }
+
+    const posts = Array.isArray(response.posts)
+      ? response.posts.map(normalizePost)
+      : [];
+    return {
+      posts,
+      has_more: response.has_more !== false,
+      next_offset: response.next_offset ?? offset + posts.length,
+      stale: result.stale,
+    };
   },
 
   async createPost(content: string) {

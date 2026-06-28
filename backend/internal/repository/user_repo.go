@@ -23,6 +23,12 @@ func GetUserById(db *gorm.DB, userId uint) (models.User, error) {
 	return user, result.Error
 }
 
+func GetUsersByIDs(db *gorm.DB, userIDs []uint) ([]models.User, error) {
+	var users []models.User
+	result := db.Where("id IN ?", userIDs).Find(&users)
+	return users, result.Error
+}
+
 func GetUserByEmail(db *gorm.DB, email string) (models.User, error) {
 	var user models.User
 	result := db.Where("email = ?", email).First(&user)

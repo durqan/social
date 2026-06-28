@@ -160,89 +160,101 @@ export default function UserProfileScreen({ navigation, route }: Props) {
   const avatarUrl = buildAvatarUrl(profile);
 
   return (
-    <Screen>
-      <View style={styles.card}>
-        <View style={styles.avatar}>
-          {avatarUrl ? (
-            <Image
-              source={{ uri: avatarUrl }}
-              style={[
-                styles.avatarImage,
-                avatarImageStyle({
-                  size: 82,
-                  positionX: profile.avatarPositionX,
-                  positionY: profile.avatarPositionY,
-                  scale: profile.avatarScale,
-                }),
-              ]}
-            />
-          ) : (
-            <Text style={styles.avatarText}>
-              {(profile.name || '?').slice(0, 1).toUpperCase()}
-            </Text>
-          )}
-        </View>
-        <Text style={styles.name}>{profile.name || 'Без имени'}</Text>
-        {profile.email ? (
-          <Text style={styles.email}>{profile.email}</Text>
-        ) : null}
-      </View>
-
-      <ErrorBanner message={error} />
-      <SuccessBanner message={success} />
-
-      <View style={styles.infoCard}>
-        <InfoRow label="О себе" value={profile.bio || 'Пока не заполнено'} />
-        {profile.age ? (
-          <InfoRow label="Возраст" value={String(profile.age)} />
-        ) : null}
-        <InfoRow
-          label="В аккаунте с"
-          value={formatDateTime(profile.createdAt ?? profile.created_at)}
-        />
-      </View>
-
-      {!isCurrentUser && status === 'accepted' ? (
-        <AppButton title="Написать" icon={MessageCircle} onPress={openChat} />
-      ) : null}
-      {!isCurrentUser && status === 'none' ? (
-        <AppButton
-          title="Добавить в друзья"
-          icon={UserPlus}
-          loading={busy}
-          onPress={handleAddFriend}
-        />
-      ) : null}
-      {!isCurrentUser && status === 'pending' ? (
-        <View style={styles.notice}>
-          <Text style={styles.noticeText}>Заявка в друзья уже отправлена.</Text>
-        </View>
-      ) : null}
-      {!isCurrentUser && status !== 'blocked' ? (
-        <AppButton
-          title="Заблокировать"
-          variant="danger"
-          icon={Ban}
-          loading={busy}
-          onPress={handleBlockUser}
-        />
-      ) : null}
-      {!isCurrentUser && status === 'blocked' ? (
-        <AppButton
-          title="Разблокировать"
-          variant="secondary"
-          icon={RotateCcw}
-          loading={busy}
-          onPress={handleUnblockUser}
-        />
-      ) : null}
-
+    <Screen scroll={false} padded={false}>
       <WallFeed
         currentUser={currentUser}
         userId={profile.id}
         isOwner={isCurrentUser}
         emailVerified={isEmailVerified(currentUser)}
         onOpenUser={openWallUser}
+        ListHeaderComponent={
+          <>
+            <View style={styles.card}>
+              <View style={styles.avatar}>
+                {avatarUrl ? (
+                  <Image
+                    source={{ uri: avatarUrl }}
+                    style={[
+                      styles.avatarImage,
+                      avatarImageStyle({
+                        size: 82,
+                        positionX: profile.avatarPositionX,
+                        positionY: profile.avatarPositionY,
+                        scale: profile.avatarScale,
+                      }),
+                    ]}
+                  />
+                ) : (
+                  <Text style={styles.avatarText}>
+                    {(profile.name || '?').slice(0, 1).toUpperCase()}
+                  </Text>
+                )}
+              </View>
+              <Text style={styles.name}>{profile.name || 'Без имени'}</Text>
+              {profile.email ? (
+                <Text style={styles.email}>{profile.email}</Text>
+              ) : null}
+            </View>
+
+            <ErrorBanner message={error} />
+            <SuccessBanner message={success} />
+
+            <View style={styles.infoCard}>
+              <InfoRow
+                label="О себе"
+                value={profile.bio || 'Пока не заполнено'}
+              />
+              {profile.age ? (
+                <InfoRow label="Возраст" value={String(profile.age)} />
+              ) : null}
+              <InfoRow
+                label="В аккаунте с"
+                value={formatDateTime(profile.createdAt ?? profile.created_at)}
+              />
+            </View>
+
+            {!isCurrentUser && status === 'accepted' ? (
+              <AppButton
+                title="Написать"
+                icon={MessageCircle}
+                onPress={openChat}
+              />
+            ) : null}
+            {!isCurrentUser && status === 'none' ? (
+              <AppButton
+                title="Добавить в друзья"
+                icon={UserPlus}
+                loading={busy}
+                onPress={handleAddFriend}
+              />
+            ) : null}
+            {!isCurrentUser && status === 'pending' ? (
+              <View style={styles.notice}>
+                <Text style={styles.noticeText}>
+                  Заявка в друзья уже отправлена.
+                </Text>
+              </View>
+            ) : null}
+            {!isCurrentUser && status !== 'blocked' ? (
+              <AppButton
+                title="Заблокировать"
+                variant="danger"
+                icon={Ban}
+                loading={busy}
+                onPress={handleBlockUser}
+              />
+            ) : null}
+            {!isCurrentUser && status === 'blocked' ? (
+              <AppButton
+                title="Разблокировать"
+                variant="secondary"
+                icon={RotateCcw}
+                loading={busy}
+                onPress={handleUnblockUser}
+              />
+            ) : null}
+          </>
+        }
       />
     </Screen>
   );

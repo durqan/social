@@ -47,7 +47,6 @@ export default function HomeScreen() {
   const colors = useThemeColors();
   const styles = createStyles(colors);
   const emailVerified = isEmailVerified(user);
-  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -63,15 +62,6 @@ export default function HomeScreen() {
       setError(getApiErrorMessage(apiError));
     }
   }, [emailVerified, refreshUnreadCount, refreshUser]);
-
-  const handleRefresh = useCallback(async () => {
-    setRefreshing(true);
-    try {
-      await load();
-    } finally {
-      setRefreshing(false);
-    }
-  }, [load]);
 
   useFocusEffect(
     useCallback(() => {
@@ -100,75 +90,75 @@ export default function HomeScreen() {
   }
 
   return (
-    <Screen
-      contentContainerStyle={styles.content}
-      refreshing={refreshing}
-      scroll
-      style={styles.screen}
-      onRefresh={handleRefresh}
-    >
-      <HeroCard
-        kicker="Главная"
-        title={`Привет, ${user?.name || user?.email || 'друг'}`}
-        subtitle="Лента, быстрые действия и статус аккаунта в одном месте."
+    <Screen padded={false} scroll={false} style={styles.screen}>
+      <WallFeed
+        currentUser={user}
+        userId={user?.id}
+        isOwner
+        emailVerified={emailVerified}
+        onOpenUser={openWallUser}
+        ListHeaderComponent={
+          <>
+            <HeroCard
+              kicker="Главная"
+              title={`Привет, ${user?.name || user?.email || 'друг'}`}
+              subtitle="Лента, быстрые действия и статус аккаунта в одном месте."
+            />
+
+            <ErrorBanner message={error} />
+            {!emailVerified ? <EmailVerificationNotice /> : null}
+
+            <Section title="Сводка" subtitle="Самое важное сейчас">
+              <View style={styles.grid}>
+                <Card style={styles.statCard}>
+                  <Text style={styles.statValue}>{unreadCount}</Text>
+                  <Text style={styles.statLabel}>непрочитанных сообщений</Text>
+                </Card>
+                <Card style={styles.statCard}>
+                  <Text style={styles.statValue}>
+                    {emailVerified ? 'Готов' : 'Ждет'}
+                  </Text>
+                  <Text style={styles.statLabel}>статус email</Text>
+                </Card>
+              </View>
+            </Section>
+
+            <Section
+              title="Быстрый доступ"
+              subtitle="Частые действия в один тап"
+            >
+              <View style={styles.quickGrid}>
+                <ActionTile
+                  title="Профиль"
+                  text="Данные аккаунта"
+                  icon={UserRound}
+                  onPress={() => navigation.navigate('Profile')}
+                />
+                <ActionTile
+                  title="Друзья"
+                  text="Список и заявки"
+                  icon={UsersRound}
+                  onPress={() => navigation.navigate('Friends')}
+                />
+                <ActionTile
+                  title="Чаты"
+                  text="Сообщения"
+                  icon={MessageCircle}
+                  onPress={() =>
+                    navigation.navigate('Chats', { screen: 'ChatList' })
+                  }
+                />
+                <ActionTile
+                  title="Настройки"
+                  text="Тема и выход"
+                  icon={Settings}
+                  onPress={() => navigation.navigate('Settings')}
+                />
+              </View>
+            </Section>
+          </>
+        }
       />
-
-      <ErrorBanner message={error} />
-      {!emailVerified ? <EmailVerificationNotice /> : null}
-
-      <Section title="Сводка" subtitle="Самое важное сейчас">
-        <View style={styles.grid}>
-          <Card style={styles.statCard}>
-            <Text style={styles.statValue}>{unreadCount}</Text>
-            <Text style={styles.statLabel}>непрочитанных сообщений</Text>
-          </Card>
-          <Card style={styles.statCard}>
-            <Text style={styles.statValue}>
-              {emailVerified ? 'Готов' : 'Ждет'}
-            </Text>
-            <Text style={styles.statLabel}>статус email</Text>
-          </Card>
-        </View>
-      </Section>
-
-      <Section title="Быстрый доступ" subtitle="Частые действия в один тап">
-        <View style={styles.quickGrid}>
-          <ActionTile
-            title="Профиль"
-            text="Данные аккаунта"
-            icon={UserRound}
-            onPress={() => navigation.navigate('Profile')}
-          />
-          <ActionTile
-            title="Друзья"
-            text="Список и заявки"
-            icon={UsersRound}
-            onPress={() => navigation.navigate('Friends')}
-          />
-          <ActionTile
-            title="Чаты"
-            text="Сообщения"
-            icon={MessageCircle}
-            onPress={() => navigation.navigate('Chats', { screen: 'ChatList' })}
-          />
-          <ActionTile
-            title="Настройки"
-            text="Тема и выход"
-            icon={Settings}
-            onPress={() => navigation.navigate('Settings')}
-          />
-        </View>
-      </Section>
-
-      <Section title="Лента" subtitle="Публикации и активность">
-        <WallFeed
-          currentUser={user}
-          userId={user?.id}
-          isOwner
-          emailVerified={emailVerified}
-          onOpenUser={openWallUser}
-        />
-      </Section>
     </Screen>
   );
 }

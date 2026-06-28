@@ -91,6 +91,7 @@ func registerUserRoutes(router *gin.Engine, database *gorm.DB) {
 
 	users.GET("", middleware.CacheMiddleware(5*time.Minute), handlers.GetUsers(database))
 	users.GET("/profile", middleware.CacheMiddleware(2*time.Minute), handlers.GetProfile(database))
+	users.GET("/batch", middleware.CacheMiddleware(5*time.Minute), handlers.GetUsersBatch(database))
 	users.GET("/search", middleware.CacheMiddleware(3*time.Minute), handlers.SearchUsersByNameOrEmail(database))
 	registerFriendRoutes(users, database)
 
@@ -106,6 +107,7 @@ func registerFriendRoutes(users *gin.RouterGroup, database *gorm.DB) {
 	friends := users.Group("/friends")
 	friends.GET("/list", middleware.CacheMiddleware(3*time.Minute), handlers.GetFriendsList(database))
 	friends.GET("/requests", middleware.CacheMiddleware(time.Minute), handlers.GetFriendRequests(database))
+	friends.GET("/status", middleware.CacheMiddleware(time.Minute), handlers.GetFriendshipStatuses(database))
 	friends.GET("/status/:id", handlers.GetFriendshipStatus(database))
 	friends.POST("/request/:id", middleware.RequireVerifiedEmail(database), middleware.RateLimitMiddleware(20, time.Hour), handlers.SendFriendRequest(database))
 	friends.PATCH("/:id/accept", handlers.AcceptFriendRequest(database))

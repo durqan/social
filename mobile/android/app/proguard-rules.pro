@@ -8,3 +8,32 @@
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
 # Add any project specific keep options here:
+
+# React Native modules are reached through reflection and codegen.
+-keep class com.facebook.react.** { *; }
+-keep class com.facebook.jni.** { *; }
+-keep class com.facebook.hermes.** { *; }
+-keepclassmembers class * {
+    @com.facebook.react.bridge.ReactMethod <methods>;
+}
+-dontwarn com.facebook.react.**
+-dontwarn com.facebook.hermes.**
+
+# WebRTC calls need native peer connection, media constraints and track classes.
+-keep class org.webrtc.** { *; }
+-dontwarn org.webrtc.**
+
+# Push, notifications and native RN modules publish consumer rules, but these
+# keeps make release minification conservative for the current critical paths.
+-keep class io.invertase.firebase.** { *; }
+-keep class app.notifee.** { *; }
+-keep class com.reactnativecommunity.netinfo.** { *; }
+-keep class com.reactnativecommunity.asyncstorage.** { *; }
+-keep class com.imagepicker.** { *; }
+-keep class com.brentvatne.** { *; }
+-dontwarn io.invertase.firebase.**
+-dontwarn app.notifee.**
+-dontwarn com.reactnativecommunity.netinfo.**
+-dontwarn com.reactnativecommunity.asyncstorage.**
+-dontwarn com.imagepicker.**
+-dontwarn com.brentvatne.**

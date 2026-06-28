@@ -31,6 +31,32 @@ func GetFriendshipStatus(db *gorm.DB, userID, friendID uint) (string, error) {
 	return friendship.Status, nil
 }
 
+func GetFriendshipStatuses(db *gorm.DB, userID uint, friendIDs []uint) (map[uint]string, error) {
+	statuses := make(map[uint]string, len(friendIDs))
+	for _, friendID := range friendIDs {
+		statuses[friendID] = "none"
+	}
+
+	var friendships []models.Friendship
+	err := db.Where(
+		"(user_id = ? AND friend_id IN ?) OR (friend_id = ? AND user_id IN ?)",
+		userID, friendIDs, userID, friendIDs,
+	).Find(&friendships).Error
+	if err != nil {
+		return nil, err
+	}
+
+	for _, friendship := range friendships {
+		targetID := friendship.FriendID
+		if targetID == userID {
+			targetID = friendship.UserID
+		}
+		statuses[targetID] = friendship.Status
+	}
+
+	return statuses, nil
+}
+
 func GetFriendsList(db *gorm.DB, userID uint) ([]models.User, error) {
 	var friends []models.User
 	err := db.Table("users").

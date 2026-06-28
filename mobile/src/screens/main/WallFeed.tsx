@@ -1,6 +1,8 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useRef, useState, type ReactNode } from 'react';
 import {
+  ActivityIndicator,
   Alert,
+  FlatList,
   Image,
   Pressable,
   StyleSheet,
@@ -36,7 +38,8 @@ import { formatDateTime } from '../../utils/format';
 import { useAppResumeEffect } from '../../utils/useAppResumeEffect';
 
 const maxPostLength = 500;
-type LoadMode = 'initial' | 'silent';
+const POST_PAGE_SIZE = 20;
+type LoadMode = 'initial' | 'refresh' | 'silent' | 'more';
 
 type WallFeedProps = {
   currentUser: User | null;
@@ -44,6 +47,7 @@ type WallFeedProps = {
   isOwner?: boolean;
   emailVerified: boolean;
   onOpenUser?: (user: PostUser) => void;
+  ListHeaderComponent?: ReactNode;
 };
 
 export function WallFeed({
@@ -52,6 +56,7 @@ export function WallFeed({
   isOwner = true,
   emailVerified,
   onOpenUser,
+  ListHeaderComponent,
 }: WallFeedProps) {
   const isFocused = useIsFocused();
   const colors = useThemeColors();
@@ -61,6 +66,14 @@ export function WallFeed({
   const [loading, setLoading] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
   const hasLoadedRef = useRef(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [stale, setStale] = useState(false);
+  const hasMoreRef = useRef(false);
+  const nextOffsetRef = useRef(0);
+  const loadSeqRef = useRef(0);
+  const loadAbortRef = useRef<AbortController | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [draft, setDraft] = useState('');
   const [editingPostId, setEditingPostId] = useState<number | null>(null);
@@ -75,33 +88,93 @@ export function WallFeed({
   const [busyCommentId, setBusyCommentId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const abortCurrentLoad = useCallback(() => {
+    loadAbortRef.current?.abort();
+    loadAbortRef.current = null;
+  }, []);
+
   const loadPosts = useCallback(
     async (mode: LoadMode = 'initial') => {
+      if (mode === 'more') {
+        if (loadingMore || !hasMoreRef.current) {
+          return;
+        }
+      } else {
+        abortCurrentLoad();
+      }
+
+      const controller = new AbortController();
+      loadAbortRef.current = controller;
+      const requestSeq = ++loadSeqRef.current;
       const showInitialLoading = mode === 'initial' && !hasLoadedRef.current;
 
       if (showInitialLoading) {
         setLoading(true);
       }
+      if (mode === 'refresh') {
+        setRefreshing(true);
+      }
+      if (mode === 'more') {
+        setLoadingMore(true);
+      }
       setError(null);
       try {
-        const nextPosts = await postApi.getPosts(userId);
-        setPosts(nextPosts);
+        const offset = mode === 'more' ? nextOffsetRef.current : 0;
+        const page = await postApi.getPostsPage(
+          userId,
+          {
+            limit: POST_PAGE_SIZE,
+            offset,
+          },
+          {
+            signal: controller.signal,
+          },
+        );
+        if (loadSeqRef.current !== requestSeq) {
+          return;
+        }
+        setStale(Boolean(page.stale));
+        hasMoreRef.current = page.has_more;
+        nextOffsetRef.current = page.next_offset ?? offset + page.posts.length;
+        setHasMore(page.has_more);
+        setPosts(previous => {
+          if (mode !== 'more') {
+            return page.posts;
+          }
+          const existingIds = new Set(previous.map(post => post.id));
+          const newPosts = page.posts.filter(post => !existingIds.has(post.id));
+          return newPosts.length ? [...previous, ...newPosts] : previous;
+        });
         if (isOwner) {
           markMatchingAsRead({
             types: ['post_liked', 'comment_created'],
           }).catch(() => undefined);
         }
       } catch (apiError) {
+        if ((apiError as Error)?.message === 'request aborted') {
+          return;
+        }
         setError(getApiErrorMessage(apiError));
       } finally {
-        hasLoadedRef.current = true;
-        setHasLoaded(true);
-        if (showInitialLoading) {
-          setLoading(false);
+        if (loadSeqRef.current === requestSeq) {
+          hasLoadedRef.current = true;
+          setHasLoaded(true);
+          if (showInitialLoading) {
+            setLoading(false);
+          }
+          if (mode === 'refresh') {
+            setRefreshing(false);
+          }
+          if (mode === 'more') {
+            setLoadingMore(false);
+          }
+          if (loadAbortRef.current === controller) {
+            loadAbortRef.current = null;
+          }
         }
       }
     },
-    [isOwner, markMatchingAsRead, userId],
+    [abortCurrentLoad, isOwner, loadingMore, markMatchingAsRead, userId],
   );
 
   useFocusEffect(
@@ -109,7 +182,10 @@ export function WallFeed({
       loadPosts(hasLoadedRef.current ? 'silent' : 'initial').catch(
         () => undefined,
       );
-    }, [loadPosts]),
+      return () => {
+        abortCurrentLoad();
+      };
+    }, [abortCurrentLoad, loadPosts]),
   );
 
   useAppResumeEffect(() => {
@@ -149,7 +225,6 @@ export function WallFeed({
       const post = await postApi.createPost(content);
       setPosts(previous => [post, ...previous]);
       setDraft('');
-      loadPosts('silent').catch(() => undefined);
     } catch (apiError) {
       setError(getApiErrorMessage(apiError));
     } finally {
@@ -172,7 +247,6 @@ export function WallFeed({
       );
       setEditingPostId(null);
       setEditDraft('');
-      loadPosts('silent').catch(() => undefined);
     } catch (apiError) {
       setError(getApiErrorMessage(apiError));
     } finally {
@@ -204,7 +278,6 @@ export function WallFeed({
         delete next[postId];
         return next;
       });
-      loadPosts('silent').catch(() => undefined);
     } catch (apiError) {
       setError(getApiErrorMessage(apiError));
     } finally {
@@ -310,7 +383,6 @@ export function WallFeed({
         ),
       );
       setCommentDraft(previous => ({ ...previous, [postId]: '' }));
-      loadPosts('silent').catch(() => undefined);
     } catch (apiError) {
       setError(getApiErrorMessage(apiError));
     } finally {
@@ -323,13 +395,214 @@ export function WallFeed({
     setEditDraft(post.content);
   }
 
-  if (loading && !hasLoaded) {
-    return <LoadingState text="Загружаем стену" />;
-  }
+  const renderPost = ({ item: post }: { item: Post }) => (
+    <View style={styles.postCard}>
+      <View style={styles.postHeader}>
+        <Pressable
+          style={styles.author}
+          onPress={() => onOpenUser?.(post.user)}
+        >
+          <PostAvatar user={post.user} colors={colors} />
+          <View style={styles.authorMeta}>
+            <Text style={styles.authorName} numberOfLines={1}>
+              {post.user?.name || 'Пользователь'}
+            </Text>
+            <Text style={styles.postDate}>
+              {formatDateTime(post.created_at)}
+            </Text>
+          </View>
+        </Pressable>
 
-  return (
-    <View style={styles.wrapper}>
+        {currentUser?.id === post.user?.id ? (
+          <View style={styles.postActions}>
+            <IconButton
+              icon={Pencil}
+              label="Редактировать пост"
+              size="sm"
+              variant="ghost"
+              disabled={busyPostId === post.id}
+              onPress={() => startEditing(post)}
+            />
+            <IconButton
+              icon={Trash2}
+              label="Удалить пост"
+              size="sm"
+              variant="danger"
+              disabled={busyPostId === post.id}
+              onPress={() => requestDeletePost(post)}
+            />
+          </View>
+        ) : null}
+      </View>
+
+      {editingPostId === post.id ? (
+        <View style={styles.editBox}>
+          <TextInput
+            value={editDraft}
+            onChangeText={setEditDraft}
+            placeholder="Текст поста"
+            placeholderTextColor={colors.soft}
+            multiline
+            maxLength={maxPostLength}
+            style={styles.editInput}
+          />
+          <View style={styles.editActions}>
+            <AppButton
+              title="Сохранить"
+              loading={busyPostId === post.id}
+              disabled={!editDraft.trim()}
+              onPress={() => savePost(post.id)}
+              style={styles.editButton}
+            />
+            <AppButton
+              title="Отмена"
+              variant="secondary"
+              onPress={() => {
+                setEditingPostId(null);
+                setEditDraft('');
+              }}
+              style={styles.editButton}
+            />
+          </View>
+        </View>
+      ) : (
+        <Text style={styles.postContent}>{post.content}</Text>
+      )}
+
+      <View style={styles.reactions}>
+        <Pressable
+          accessibilityRole="button"
+          style={({ pressed }) => [
+            styles.reactionButton,
+            post.is_liked && styles.reactionButtonActive,
+            pressed && styles.reactionButtonPressed,
+          ]}
+          onPress={() => togglePostLike(post.id)}
+        >
+          <Heart
+            color={post.is_liked ? colors.accentStrong : colors.muted}
+            fill={post.is_liked ? colors.accentStrong : 'transparent'}
+            size={16}
+            strokeWidth={2.2}
+          />
+          <Text
+            style={[
+              styles.reactionText,
+              post.is_liked && styles.reactionTextActive,
+            ]}
+          >
+            {post.likes_count}
+          </Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          style={({ pressed }) => [
+            styles.reactionButton,
+            openCommentsId === post.id && styles.reactionButtonActive,
+            pressed && styles.reactionButtonPressed,
+          ]}
+          onPress={() => {
+            toggleComments(post.id).catch(() => undefined);
+          }}
+        >
+          <MessageCircle
+            color={
+              openCommentsId === post.id ? colors.accentStrong : colors.muted
+            }
+            size={16}
+            strokeWidth={2.2}
+          />
+          <Text
+            style={[
+              styles.reactionText,
+              openCommentsId === post.id && styles.reactionTextActive,
+            ]}
+          >
+            {post.comments_count}
+          </Text>
+        </Pressable>
+      </View>
+
+      {openCommentsId === post.id ? (
+        <View style={styles.comments}>
+          {commentsLoading[post.id] ? (
+            <LoadingState text="Загружаем комментарии" />
+          ) : comments[post.id]?.length ? (
+            comments[post.id].map(comment => (
+              <View key={comment.id} style={styles.commentRow}>
+                <PostAvatar user={comment.user} colors={colors} small />
+                <View style={styles.commentBody}>
+                  <Text style={styles.commentAuthor}>
+                    {comment.user?.name || 'Пользователь'}
+                  </Text>
+                  <Text style={styles.commentText}>{comment.content}</Text>
+                  <View style={styles.commentFooter}>
+                    <Text style={styles.commentDate}>
+                      {formatDateTime(comment.created_at)}
+                    </Text>
+                    <Pressable
+                      accessibilityRole="button"
+                      disabled={busyCommentId === comment.id}
+                      onPress={() => toggleCommentLike(post.id, comment.id)}
+                    >
+                      <Text
+                        style={[
+                          styles.commentLike,
+                          comment.is_liked && styles.commentLikeActive,
+                        ]}
+                      >
+                        {comment.is_liked ? '♥' : '♡'} {comment.likes_count}
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
+              </View>
+            ))
+          ) : (
+            <Text style={styles.noComments}>Комментариев пока нет.</Text>
+          )}
+
+          <View style={styles.commentComposer}>
+            <TextInput
+              value={commentDraft[post.id] || ''}
+              onChangeText={content =>
+                setCommentDraft(previous => ({
+                  ...previous,
+                  [post.id]: content,
+                }))
+              }
+              placeholder="Написать комментарий..."
+              placeholderTextColor={colors.soft}
+              multiline
+              maxLength={maxPostLength}
+              style={styles.commentInput}
+            />
+            <IconButton
+              icon={Send}
+              label="Отправить комментарий"
+              variant="primary"
+              loading={busyPostId === post.id}
+              disabled={!commentDraft[post.id]?.trim()}
+              onPress={() => createComment(post.id)}
+              style={styles.commentSend}
+            />
+          </View>
+        </View>
+      ) : null}
+    </View>
+  );
+
+  const header = (
+    <View style={styles.headerContent}>
+      {ListHeaderComponent}
       <ErrorBanner message={error} />
+      {stale ? (
+        <View style={styles.staleNotice}>
+          <Text style={styles.staleNoticeText}>
+            Показаны сохраненные данные. Обновим, когда сеть станет стабильной.
+          </Text>
+        </View>
+      ) : null}
 
       {isOwner ? (
         <View style={styles.composer}>
@@ -358,222 +631,54 @@ export function WallFeed({
       ) : null}
 
       <Text style={styles.sectionTitle}>Стена</Text>
-
-      {posts.length === 0 ? (
-        <EmptyState
-          title="Пока нет постов"
-          text={
-            isOwner
-              ? 'Опубликуйте первую запись на своей стене.'
-              : 'У пользователя пока нет записей.'
-          }
-        />
-      ) : (
-        posts.map(post => (
-          <View key={post.id} style={styles.postCard}>
-            <View style={styles.postHeader}>
-              <Pressable
-                style={styles.author}
-                onPress={() => onOpenUser?.(post.user)}
-              >
-                <PostAvatar user={post.user} colors={colors} />
-                <View style={styles.authorMeta}>
-                  <Text style={styles.authorName} numberOfLines={1}>
-                    {post.user?.name || 'Пользователь'}
-                  </Text>
-                  <Text style={styles.postDate}>
-                    {formatDateTime(post.created_at)}
-                  </Text>
-                </View>
-              </Pressable>
-
-              {currentUser?.id === post.user?.id ? (
-                <View style={styles.postActions}>
-                  <IconButton
-                    icon={Pencil}
-                    label="Редактировать пост"
-                    size="sm"
-                    variant="ghost"
-                    disabled={busyPostId === post.id}
-                    onPress={() => startEditing(post)}
-                  />
-                  <IconButton
-                    icon={Trash2}
-                    label="Удалить пост"
-                    size="sm"
-                    variant="danger"
-                    disabled={busyPostId === post.id}
-                    onPress={() => requestDeletePost(post)}
-                  />
-                </View>
-              ) : null}
-            </View>
-
-            {editingPostId === post.id ? (
-              <View style={styles.editBox}>
-                <TextInput
-                  value={editDraft}
-                  onChangeText={setEditDraft}
-                  placeholder="Текст поста"
-                  placeholderTextColor={colors.soft}
-                  multiline
-                  maxLength={maxPostLength}
-                  style={styles.editInput}
-                />
-                <View style={styles.editActions}>
-                  <AppButton
-                    title="Сохранить"
-                    loading={busyPostId === post.id}
-                    disabled={!editDraft.trim()}
-                    onPress={() => savePost(post.id)}
-                    style={styles.editButton}
-                  />
-                  <AppButton
-                    title="Отмена"
-                    variant="secondary"
-                    onPress={() => {
-                      setEditingPostId(null);
-                      setEditDraft('');
-                    }}
-                    style={styles.editButton}
-                  />
-                </View>
-              </View>
-            ) : (
-              <Text style={styles.postContent}>{post.content}</Text>
-            )}
-
-            <View style={styles.reactions}>
-              <Pressable
-                accessibilityRole="button"
-                style={({ pressed }) => [
-                  styles.reactionButton,
-                  post.is_liked && styles.reactionButtonActive,
-                  pressed && styles.reactionButtonPressed,
-                ]}
-                onPress={() => togglePostLike(post.id)}
-              >
-                <Heart
-                  color={post.is_liked ? colors.accentStrong : colors.muted}
-                  fill={post.is_liked ? colors.accentStrong : 'transparent'}
-                  size={16}
-                  strokeWidth={2.2}
-                />
-                <Text
-                  style={[
-                    styles.reactionText,
-                    post.is_liked && styles.reactionTextActive,
-                  ]}
-                >
-                  {post.likes_count}
-                </Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                style={({ pressed }) => [
-                  styles.reactionButton,
-                  openCommentsId === post.id && styles.reactionButtonActive,
-                  pressed && styles.reactionButtonPressed,
-                ]}
-                onPress={() => {
-                  toggleComments(post.id).catch(() => undefined);
-                }}
-              >
-                <MessageCircle
-                  color={
-                    openCommentsId === post.id
-                      ? colors.accentStrong
-                      : colors.muted
-                  }
-                  size={16}
-                  strokeWidth={2.2}
-                />
-                <Text
-                  style={[
-                    styles.reactionText,
-                    openCommentsId === post.id && styles.reactionTextActive,
-                  ]}
-                >
-                  {post.comments_count}
-                </Text>
-              </Pressable>
-            </View>
-
-            {openCommentsId === post.id ? (
-              <View style={styles.comments}>
-                {commentsLoading[post.id] ? (
-                  <LoadingState text="Загружаем комментарии" />
-                ) : comments[post.id]?.length ? (
-                  comments[post.id].map(comment => (
-                    <View key={comment.id} style={styles.commentRow}>
-                      <PostAvatar user={comment.user} colors={colors} small />
-                      <View style={styles.commentBody}>
-                        <Text style={styles.commentAuthor}>
-                          {comment.user?.name || 'Пользователь'}
-                        </Text>
-                        <Text style={styles.commentText}>
-                          {comment.content}
-                        </Text>
-                        <View style={styles.commentFooter}>
-                          <Text style={styles.commentDate}>
-                            {formatDateTime(comment.created_at)}
-                          </Text>
-                          <Pressable
-                            accessibilityRole="button"
-                            disabled={busyCommentId === comment.id}
-                            onPress={() =>
-                              toggleCommentLike(post.id, comment.id)
-                            }
-                          >
-                            <Text
-                              style={[
-                                styles.commentLike,
-                                comment.is_liked && styles.commentLikeActive,
-                              ]}
-                            >
-                              {comment.is_liked ? '♥' : '♡'}{' '}
-                              {comment.likes_count}
-                            </Text>
-                          </Pressable>
-                        </View>
-                      </View>
-                    </View>
-                  ))
-                ) : (
-                  <Text style={styles.noComments}>Комментариев пока нет.</Text>
-                )}
-
-                <View style={styles.commentComposer}>
-                  <TextInput
-                    value={commentDraft[post.id] || ''}
-                    onChangeText={content =>
-                      setCommentDraft(previous => ({
-                        ...previous,
-                        [post.id]: content,
-                      }))
-                    }
-                    placeholder="Написать комментарий..."
-                    placeholderTextColor={colors.soft}
-                    multiline
-                    maxLength={maxPostLength}
-                    style={styles.commentInput}
-                  />
-                  <IconButton
-                    icon={Send}
-                    label="Отправить комментарий"
-                    variant="primary"
-                    loading={busyPostId === post.id}
-                    disabled={!commentDraft[post.id]?.trim()}
-                    onPress={() => createComment(post.id)}
-                    style={styles.commentSend}
-                  />
-                </View>
-              </View>
-            ) : null}
-          </View>
-        ))
-      )}
+      {loading && !hasLoaded ? <LoadingState text="Загружаем стену" /> : null}
     </View>
+  );
+
+  return (
+    <FlatList
+      data={posts}
+      keyExtractor={item => String(item.id)}
+      renderItem={renderPost}
+      ListHeaderComponent={header}
+      ListEmptyComponent={
+        loading && !hasLoaded ? null : (
+          <EmptyState
+            title="Пока нет постов"
+            text={
+              isOwner
+                ? 'Опубликуйте первую запись на своей стене.'
+                : 'У пользователя пока нет записей.'
+            }
+          />
+        )
+      }
+      ListFooterComponent={
+        loadingMore ? (
+          <View style={styles.loadingMore}>
+            <ActivityIndicator color={colors.accent} />
+          </View>
+        ) : null
+      }
+      contentContainerStyle={[
+        styles.wrapper,
+        posts.length === 0 && styles.emptyWrapper,
+      ]}
+      refreshing={refreshing}
+      onRefresh={() => loadPosts('refresh')}
+      onEndReached={() => {
+        if (hasMore && !loadingMore) {
+          loadPosts('more').catch(() => undefined);
+        }
+      }}
+      onEndReachedThreshold={0.4}
+      initialNumToRender={6}
+      windowSize={7}
+      maxToRenderPerBatch={6}
+      updateCellsBatchingPeriod={60}
+      removeClippedSubviews
+      keyboardShouldPersistTaps="handled"
+    />
   );
 }
 
@@ -623,7 +728,33 @@ function PostAvatar({
 const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     wrapper: {
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.lg,
+      paddingBottom: 124,
       gap: spacing.md,
+    },
+    emptyWrapper: {
+      flexGrow: 1,
+    },
+    headerContent: {
+      gap: spacing.md,
+    },
+    staleNotice: {
+      borderWidth: 1,
+      borderColor: colors.accentBorder,
+      borderRadius: radius.md,
+      backgroundColor: colors.accentSoft,
+      padding: spacing.md,
+    },
+    staleNoticeText: {
+      ...typography.caption,
+      color: colors.accentStrong,
+      fontWeight: '700',
+    },
+    loadingMore: {
+      minHeight: 56,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     composer: {
       borderWidth: 1,

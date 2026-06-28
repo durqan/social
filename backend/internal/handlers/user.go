@@ -48,6 +48,23 @@ func GetUser(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
+func GetUsersBatch(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ids, ok := uintIDsQuery(c, "ids", 100)
+		if !ok {
+			return
+		}
+
+		users, err := repository.GetUsersByIDs(db, ids)
+		if err != nil {
+			c.JSON(500, gin.H{"error": "failed to fetch users"})
+			return
+		}
+
+		c.JSON(200, dto.ToPublicUserResponses(users))
+	}
+}
+
 func GetProfile(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID, ok := authenticatedUserID(c)

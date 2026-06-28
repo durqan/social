@@ -12,7 +12,7 @@ import {
 import { formatDuration } from '@social/shared';
 import type { EncryptedAttachmentFields } from '../crypto/attachment';
 import type { EncryptedMessagePayload } from '../crypto/encryptMessage';
-import { apiRequest, toQueryString } from './http';
+import { apiCacheKey, apiRequest, toQueryString } from './http';
 import type {
   Conversation,
   Message,
@@ -88,6 +88,9 @@ type EncryptedForwardPayload = Partial<EncryptedMessagePayload> & {
 };
 
 export type MessageDeleteMode = 'for_me' | 'for_everyone';
+type ApiCallOptions = {
+  signal?: AbortSignal;
+};
 
 function appendUploadFile(
   formData: FormData,
@@ -177,7 +180,12 @@ export function validateLocalChatVideo(video: LocalChatVideo) {
 }
 
 export function validateLocalVoiceMessage(voice: LocalVoiceMessage) {
-  const allowedVoiceMimeTypes = ['audio/webm', 'audio/mp4', 'audio/m4a', 'audio/aac'];
+  const allowedVoiceMimeTypes = [
+    'audio/webm',
+    'audio/mp4',
+    'audio/m4a',
+    'audio/aac',
+  ];
 
   if (!allowedVoiceMimeTypes.includes(voice.type)) {
     return 'Поддерживаются только голосовые сообщения WebM';
@@ -192,14 +200,20 @@ export function validateLocalVoiceMessage(voice: LocalVoiceMessage) {
   }
 
   if (voice.durationSeconds > CHAT_VOICE_MAX_DURATION_SECONDS) {
-    return `Голосовое сообщение должно быть не длиннее ${formatDuration(CHAT_VOICE_MAX_DURATION_SECONDS)}`;
+    return `Голосовое сообщение должно быть не длиннее ${formatDuration(
+      CHAT_VOICE_MAX_DURATION_SECONDS,
+    )}`;
   }
 
   return null;
 }
 
-export function validateLocalVideoNoteMessage(videoNote: LocalVideoNoteMessage) {
-  if (!(CHAT_VIDEO_NOTE_MIME_TYPES as readonly string[]).includes(videoNote.type)) {
+export function validateLocalVideoNoteMessage(
+  videoNote: LocalVideoNoteMessage,
+) {
+  if (
+    !(CHAT_VIDEO_NOTE_MIME_TYPES as readonly string[]).includes(videoNote.type)
+  ) {
     return 'Видео-сообщение должно быть в формате WebM или MP4';
   }
 
@@ -212,7 +226,9 @@ export function validateLocalVideoNoteMessage(videoNote: LocalVideoNoteMessage) 
   }
 
   if (videoNote.durationSeconds > CHAT_VIDEO_NOTE_MAX_DURATION_SECONDS) {
-    return `Видео-сообщение должно быть не длиннее ${formatDuration(CHAT_VIDEO_NOTE_MAX_DURATION_SECONDS)}`;
+    return `Видео-сообщение должно быть не длиннее ${formatDuration(
+      CHAT_VIDEO_NOTE_MAX_DURATION_SECONDS,
+    )}`;
   }
 
   return null;
@@ -240,23 +256,32 @@ function normalizeConversation(conversation: Conversation): Conversation {
 }
 
 export const messageApi = {
-  async getConversations() {
-    const conversations = await apiRequest<Conversation[]>('/conversations');
+  async getConversations(options?: ApiCallOptions) {
+    const conversations = await apiRequest<Conversation[]>('/conversations', {
+      cacheKey: apiCacheKey('chat-list', 'conversations'),
+      signal: options?.signal,
+    });
     return Array.isArray(conversations)
       ? conversations.map(normalizeConversation)
       : [];
   },
 
   async pinConversation(conversationId: number) {
-    await apiRequest<{ message: string }>(`/conversations/${conversationId}/pin`, {
-      method: 'POST',
-    });
+    await apiRequest<{ message: string }>(
+      `/conversations/${conversationId}/pin`,
+      {
+        method: 'POST',
+      },
+    );
   },
 
   async unpinConversation(conversationId: number) {
-    await apiRequest<{ message: string }>(`/conversations/${conversationId}/pin`, {
-      method: 'DELETE',
-    });
+    await apiRequest<{ message: string }>(
+      `/conversations/${conversationId}/pin`,
+      {
+        method: 'DELETE',
+      },
+    );
   },
 
   async getMessagesWith(
@@ -265,10 +290,14 @@ export const messageApi = {
       before?: number;
       limit?: number;
     },
+    options?: ApiCallOptions,
   ) {
     const query = params ? toQueryString(params) : '';
     const response = await apiRequest<PaginatedMessages>(
       `/messages/with/${userId}${query}`,
+      {
+        signal: options?.signal,
+      },
     );
 
     return {
@@ -321,8 +350,14 @@ export const messageApi = {
     if ('height' in video && video.height) {
       formData.append('height', String(video.height));
     }
-    if ('fileSize' in video && video.fileSize && video.fileSize > CHAT_VIDEO_MAX_BYTES) {
-      throw new Error('Видео слишком большое после сжатия. Попробуйте выбрать более короткий ролик.');
+    if (
+      'fileSize' in video &&
+      video.fileSize &&
+      video.fileSize > CHAT_VIDEO_MAX_BYTES
+    ) {
+      throw new Error(
+        'Видео слишком большое после сжатия. Попробуйте выбрать более короткий ролик.',
+      );
     }
 
     return apiRequest<MessageAttachment>('/messages/upload', {
@@ -332,9 +367,12 @@ export const messageApi = {
   },
 
   async importLinkPreviewVideo(messageId: number) {
-    return apiRequest<Message>(`/messages/${messageId}/link-preview/import-video`, {
-      method: 'POST',
-    });
+    return apiRequest<Message>(
+      `/messages/${messageId}/link-preview/import-video`,
+      {
+        method: 'POST',
+      },
+    );
   },
 
   async uploadVoice(
@@ -416,9 +454,12 @@ export const messageApi = {
     return response.messages || [];
   },
 
-  async getPinnedMessage(conversationId: number) {
+  async getPinnedMessage(conversationId: number, options?: ApiCallOptions) {
     const response = await apiRequest<{ pinned_message: PinnedMessage | null }>(
       `/conversations/${conversationId}/pinned-message`,
+      {
+        signal: options?.signal,
+      },
     );
     return response.pinned_message ?? null;
   },
