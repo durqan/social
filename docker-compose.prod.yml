@@ -251,22 +251,22 @@ services:
     entrypoint: /bin/sh
     command:
       - -c
-      - >
-        exec turnserver
-        -n
-        --log-file=stdout
-        --listening-port=3478
-        --min-port=49160
-        --max-port=49200
-        --realm="$${TURN_REALM}"
-        --server-name="$${TURN_REALM}"
-        --lt-cred-mech
-        --user="$${TURN_USERNAME}:$${TURN_PASSWORD}"
-        --fingerprint
-        --no-multicast-peers
-        --no-cli
-        --relay-ip=0.0.0.0
-        --external-ip=$${TURN_EXTERNAL_IP}
+      - |
+        exec turnserver \
+        -n \
+        --log-file=stdout \
+        --listening-port=3478 \
+        --min-port=49160 \
+        --max-port=49200 \
+        --realm="$$TURN_REALM" \
+        --server-name="$$TURN_REALM" \
+        --lt-cred-mech \
+        --user="$$TURN_USERNAME:$$TURN_PASSWORD" \
+        --fingerprint \
+        --no-multicast-peers \
+        --no-cli \
+        --relay-ip=0.0.0.0 \
+        --external-ip=$$TURN_EXTERNAL_IP
     networks:
       - social_network
 
