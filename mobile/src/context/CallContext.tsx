@@ -536,15 +536,17 @@ function logIceServers(
     callId: string,
     pcId?: number | null,
 ) {
-    logDev('[SocialMobile] Creating call peer connection', {
+    console.log('[SocialMobile] ICE config before pc', JSON.stringify({
         callId,
         pcId,
         iceServers: servers.map(server => ({
             urls: server.urls,
             hasUsername: Boolean(server.username),
+            usernameLen: server.username?.length ?? 0,
             hasCredential: Boolean(server.credential),
+            credentialLen: server.credential?.length ?? 0,
         })),
-    });
+    }));
 }
 
 function statusText(status: CallStatus, callType: CallType) {
@@ -1703,6 +1705,8 @@ export function CallProvider({children}: { children: ReactNode }) {
 
                 try {
                     const payload = candidate.toJSON();
+                    console.log('[SocialMobile] ICE candidate raw', payload.candidate);
+                    console.log('[SocialMobile] ICE candidate type', iceCandidateType(payload));
                     if (!isUsableIceCandidate(payload)) {
                         logDev('[SocialMobile] Skipping empty outgoing ICE candidate', {
                             callId,
