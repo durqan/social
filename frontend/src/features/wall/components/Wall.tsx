@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate, useOutletContext } from 'react-router-dom';
 
 import { postService } from "@/features/wall/api/postService.js";
@@ -12,10 +12,21 @@ import { Spinner } from "@/shared/ui/Spinner.js";
 import { PostCard } from "@/features/wall/components/PostCard.js";
 import { PostComposer } from "@/features/wall/components/PostComposer.js";
 
+const wallPageSize = 20;
+
+const isAbortError = (error: unknown) => {
+    return error instanceof Error && (
+        error.name === 'AbortError' ||
+        error.name === 'CanceledError' ||
+        ('code' in error && error.code === 'ERR_CANCELED')
+    );
+};
+
 function Wall() {
     const navigate = useNavigate();
     const dialog = useAppDialog();
     const { user, isOwner, currentUser } = useOutletContext<ProfileContextType>();
+    const userId = user?.id;
     const [posts, setPosts] = useState<Post[]>([]);
     const [newPostContent, setNewPostContent] = useState('');
     const [loading, setLoading] = useState(true);
@@ -25,10 +36,11 @@ function Wall() {
     const [openCommentsId, setOpenCommentsId] = useState<number | null>(null);
     const [comments, setComments] = useState<Record<number, Comment[]>>({});
     const [newComment, setNewComment] = useState<Record<number, string>>({});
-
-    useEffect(() => {
-        fetchPosts();
-    }, [user?.id]);
+    const [hasMore, setHasMore] = useState(false);
+    const [loadingMore, setLoadingMore] = useState(false);
+    const [errorMessage, setErrorMessage] = useState('');
+    const loadAbortRef = useRef<AbortController | null>(null);
+    const nextOffsetRef = useRef(0);
 
     useEffect(() => {
         if (!isOwner || !currentUser?.id) {
@@ -50,20 +62,69 @@ function Wall() {
             });
     }, [currentUser?.id, isOwner]);
 
-    const fetchPosts = async () => {
-        if (!user?.id) {
+    const fetchPosts = useCallback(async (mode: 'replace' | 'more' = 'replace') => {
+        if (!userId) {
+            setPosts([]);
+            setHasMore(false);
+            nextOffsetRef.current = 0;
             setLoading(false);
             return;
         }
 
-        try {
-            setPosts(await postService.getPosts(user.id));
-        } catch (err) {
-            console.error(err);
-        } finally {
-            setLoading(false);
+        const offset = mode === 'more' ? nextOffsetRef.current : 0;
+        if (mode === 'replace') {
+            loadAbortRef.current?.abort();
         }
-    };
+        const controller = new AbortController();
+        loadAbortRef.current = controller;
+        setErrorMessage('');
+        if (mode === 'more') {
+            setLoadingMore(true);
+        } else {
+            setLoading(true);
+        }
+
+        try {
+            const page = await postService.getPostsPage(userId, {
+                limit: wallPageSize,
+                offset,
+            }, {
+                signal: controller.signal,
+            });
+            setPosts(prev => {
+                if (mode !== 'more') {
+                    return page.posts;
+                }
+                const existingIds = new Set(prev.map(post => post.id));
+                const nextPosts = page.posts.filter(post => !existingIds.has(post.id));
+                return nextPosts.length ? [...prev, ...nextPosts] : prev;
+            });
+            setHasMore(page.has_more);
+            nextOffsetRef.current = page.next_offset ?? offset + page.posts.length;
+        } catch (err) {
+            if (isAbortError(err)) {
+                return;
+            }
+            console.error(err);
+            setErrorMessage('Не удалось загрузить стену');
+        } finally {
+            if (loadAbortRef.current === controller) {
+                loadAbortRef.current = null;
+            }
+            if (mode === 'more') {
+                setLoadingMore(false);
+            } else {
+                setLoading(false);
+            }
+        }
+    }, [userId]);
+
+    useEffect(() => {
+        fetchPosts();
+        return () => {
+            loadAbortRef.current?.abort();
+        };
+    }, [fetchPosts]);
 
     const fetchComments = async (postId: number) => {
         try {
@@ -223,6 +284,11 @@ function Wall() {
             )}
 
             <div className="space-y-3 sm:space-y-4">
+                {errorMessage && (
+                    <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                        {errorMessage}
+                    </div>
+                )}
                 {posts.length === 0 ? (
                     <div className="app-card p-6 text-center text-gray-500 sm:p-8">
                         Пока нет постов.
@@ -251,6 +317,18 @@ function Wall() {
                             onOpenUser={openUserProfile}
                         />
                     ))
+                )}
+                {hasMore && (
+                    <div className="flex justify-center py-2">
+                        <button
+                            type="button"
+                            className="rounded-xl bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-200 disabled:cursor-wait disabled:opacity-60"
+                            disabled={loadingMore}
+                            onClick={() => fetchPosts('more')}
+                        >
+                            {loadingMore ? 'Загрузка...' : 'Показать еще'}
+                        </button>
+                    </div>
                 )}
             </div>
         </div>

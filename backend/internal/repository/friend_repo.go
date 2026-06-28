@@ -60,7 +60,7 @@ func GetFriendshipStatuses(db *gorm.DB, userID uint, friendIDs []uint) (map[uint
 func GetFriendsList(db *gorm.DB, userID uint) ([]models.User, error) {
 	var friends []models.User
 	err := db.Table("users").
-		Select("users.*").
+		Select(qualifiedPublicUserColumns("users")).
 		Joins("JOIN friendships ON (friendships.user_id = users.id AND friendships.friend_id = ?) OR (friendships.friend_id = users.id AND friendships.user_id = ?)", userID, userID).
 		Where("friendships.status = ?", "accepted").
 		Find(&friends).Error
@@ -69,8 +69,8 @@ func GetFriendsList(db *gorm.DB, userID uint) ([]models.User, error) {
 
 func GetFriendRequests(db *gorm.DB, userID uint) ([]models.Friendship, error) {
 	var requests []models.Friendship
-	err := db.Preload("User").
-		Preload("Friend").
+	err := db.Preload("User", preloadPublicUser).
+		Preload("Friend", preloadPublicUser).
 		Where("friend_id = ? AND status = ?", userID, "pending").
 		Find(&requests).Error
 	return requests, err

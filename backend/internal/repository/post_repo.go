@@ -12,7 +12,7 @@ func CreatePost(db *gorm.DB, post *models.Post) error {
 
 func GetPostsByUser(db *gorm.DB, userID uint) ([]models.Post, error) {
 	var posts []models.Post
-	err := db.Preload("User").
+	err := db.Preload("User", preloadPublicUser).
 		Where("user_id = ?", userID).
 		Order("created_at DESC").
 		Find(&posts).Error
@@ -22,7 +22,7 @@ func GetPostsByUser(db *gorm.DB, userID uint) ([]models.Post, error) {
 
 func GetPostsByUserPage(db *gorm.DB, userID uint, limit int, offset int) ([]models.Post, error) {
 	var posts []models.Post
-	err := db.Preload("User").
+	err := db.Preload("User", preloadPublicUser).
 		Where("user_id = ?", userID).
 		Order("created_at DESC").
 		Limit(limit).
@@ -34,7 +34,7 @@ func GetPostsByUserPage(db *gorm.DB, userID uint, limit int, offset int) ([]mode
 
 func GetPostByID(db *gorm.DB, postID uint) (models.Post, error) {
 	var post models.Post
-	err := db.Preload("User").First(&post, postID).Error
+	err := db.Preload("User", preloadPublicUser).First(&post, postID).Error
 	return post, err
 }
 
@@ -99,7 +99,7 @@ func TogglePostLike(db *gorm.DB, postID, userID uint) (bool, error) {
 
 func GetCommentsByPostID(db *gorm.DB, postID uint) ([]models.Comment, error) {
 	var comments []models.Comment
-	err := db.Preload("User").
+	err := db.Preload("User", preloadPublicUser).
 		Where("post_id = ?", postID).
 		Order("created_at ASC").
 		Find(&comments).Error

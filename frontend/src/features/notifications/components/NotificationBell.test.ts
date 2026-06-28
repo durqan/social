@@ -35,10 +35,10 @@ describe("NotificationBell notification display", () => {
     );
 
     expect(countUnseenNotificationBadge(notifications)).toBe(251);
-    expect(getNotificationTitle(notifications[0], "Анна")).toBe(
+    expect(getNotificationTitle(notifications[0]!, "Анна")).toBe(
       "Анна написал(а) вам",
     );
-    expect(getNotificationTitle(notifications[0], "Анна")).not.toContain(
+    expect(getNotificationTitle(notifications[0]!, "Анна")).not.toContain(
       "новых сообщений",
     );
   });

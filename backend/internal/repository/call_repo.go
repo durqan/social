@@ -129,8 +129,8 @@ func FindCallForParticipant(db *gorm.DB, userID uint, callID string) (models.Cal
 
 	var call models.CallLog
 	err := db.
-		Preload("Caller").
-		Preload("Callee").
+		Preload("Caller", preloadPublicUser).
+		Preload("Callee", preloadPublicUser).
 		Where("call_id = ? AND (caller_id = ? OR callee_id = ?)", strings.TrimSpace(callID), userID, userID).
 		Order("started_at DESC, id DESC").
 		First(&call).Error
@@ -145,8 +145,8 @@ func FindActiveRingingCallForCallee(db *gorm.DB, calleeID uint) (models.CallLog,
 	now := time.Now()
 	var call models.CallLog
 	err := db.
-		Preload("Caller").
-		Preload("Callee").
+		Preload("Caller", preloadPublicUser).
+		Preload("Callee", preloadPublicUser).
 		Where("callee_id = ? AND status = ?", calleeID, models.CallStatusRinging).
 		Where("expires_at IS NULL OR expires_at > ?", now).
 		Order("started_at DESC, id DESC").
@@ -162,8 +162,8 @@ func FindActiveCallForUser(db *gorm.DB, userID uint) (models.CallLog, error) {
 	now := time.Now()
 	var call models.CallLog
 	err := db.
-		Preload("Caller").
-		Preload("Callee").
+		Preload("Caller", preloadPublicUser).
+		Preload("Callee", preloadPublicUser).
 		Where("(caller_id = ? OR callee_id = ?)", userID, userID).
 		Where("status = ? OR (status = ? AND (expires_at IS NULL OR expires_at > ?))", models.CallStatusAnswered, models.CallStatusRinging, now).
 		Order("started_at DESC, id DESC").
@@ -181,8 +181,8 @@ func ExpireStaleRingingCallsWithResult(db *gorm.DB) ([]models.CallLog, error) {
 	var expired []models.CallLog
 	err := db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.
-			Preload("Caller").
-			Preload("Callee").
+			Preload("Caller", preloadPublicUser).
+			Preload("Callee", preloadPublicUser).
 			Where("status = ?", models.CallStatusRinging).
 			Where("expires_at IS NOT NULL AND expires_at <= ?", now).
 			Find(&expired).Error; err != nil {
@@ -227,8 +227,8 @@ func EndActiveCallsForOfflineUser(db *gorm.DB, userID uint) ([]models.CallLog, e
 	err := db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.
 			Clauses(clause.Locking{Strength: "UPDATE"}).
-			Preload("Caller").
-			Preload("Callee").
+			Preload("Caller", preloadPublicUser).
+			Preload("Callee", preloadPublicUser).
 			Where(
 				"(status = ? AND (caller_id = ? OR callee_id = ?)) OR (status = ? AND caller_id = ? AND (expires_at IS NULL OR expires_at > ?))",
 				models.CallStatusAnswered,
@@ -648,8 +648,8 @@ func expireStaleAnsweredCallsForUsers(db *gorm.DB, now time.Time, userIDs ...uin
 	err := db.Transaction(func(tx *gorm.DB) error {
 		query := tx.
 			Clauses(clause.Locking{Strength: "UPDATE"}).
-			Preload("Caller").
-			Preload("Callee").
+			Preload("Caller", preloadPublicUser).
+			Preload("Callee", preloadPublicUser).
 			Where("status = ?", models.CallStatusAnswered).
 			Where("updated_at < ?", cutoff)
 

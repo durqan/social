@@ -27,13 +27,13 @@ func CreateMessageAttachments(db *gorm.DB, attachments []models.MessageAttachmen
 
 func preloadMessageRelations(db *gorm.DB) *gorm.DB {
 	query := db.
-		Preload("From").
-		Preload("To").
+		Preload("From", preloadPublicUser).
+		Preload("To", preloadPublicUser).
 		Preload("Attachments").
-		Preload("ReplyToMessage.From").
+		Preload("ReplyToMessage.From", preloadPublicUser).
 		Preload("ReplyToMessage.Attachments").
-		Preload("ForwardedFromUser").
-		Preload("ForwardedFromMessage.From").
+		Preload("ForwardedFromUser", preloadPublicUser).
+		Preload("ForwardedFromMessage.From", preloadPublicUser).
 		Preload("ForwardedFromMessage.Attachments")
 	if messageLinkPreviewTableExists(db) {
 		query = query.
@@ -46,15 +46,15 @@ func preloadMessageRelations(db *gorm.DB) *gorm.DB {
 
 func preloadPinnedMessageRelations(db *gorm.DB) *gorm.DB {
 	query := db.
-		Preload("Message.From").
-		Preload("Message.To").
+		Preload("Message.From", preloadPublicUser).
+		Preload("Message.To", preloadPublicUser).
 		Preload("Message.Attachments").
-		Preload("Message.ReplyToMessage.From").
+		Preload("Message.ReplyToMessage.From", preloadPublicUser).
 		Preload("Message.ReplyToMessage.Attachments").
-		Preload("Message.ForwardedFromUser").
-		Preload("Message.ForwardedFromMessage.From").
+		Preload("Message.ForwardedFromUser", preloadPublicUser).
+		Preload("Message.ForwardedFromMessage.From", preloadPublicUser).
 		Preload("Message.ForwardedFromMessage.Attachments").
-		Preload("PinnedBy")
+		Preload("PinnedBy", preloadPublicUser)
 	if messageLinkPreviewTableExists(db) {
 		query = query.
 			Preload("Message.LinkPreview").

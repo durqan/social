@@ -416,23 +416,36 @@ export function NotificationBell({
 
     let cancelled = false;
 
-    missingActorIds.forEach((actorID) => {
-      userService
-        .getUser(actorID)
-        .then((user) => {
-          if (cancelled) {
-            return;
-          }
+    userService
+      .getUsersBatch(missingActorIds)
+      .then((users) => users.map((user) => [user.id, user] as const))
+      .catch(() =>
+        Promise.all(
+          missingActorIds.map(async (actorID) => {
+            try {
+              return [actorID, await userService.getUser(actorID)] as const;
+            } catch (error) {
+              console.error("Ошибка загрузки автора уведомления:", error);
+              return null;
+            }
+          }),
+        ),
+      )
+      .then((entries) => {
+        if (cancelled) {
+          return;
+        }
 
-          setActorNames((prev) => ({
-            ...prev,
-            [actorID]: user.name || fallbackActorName,
-          }));
-        })
-        .catch((error) => {
-          console.error("Ошибка загрузки автора уведомления:", error);
+        setActorNames((prev) => {
+          const nextNames = { ...prev };
+          entries.forEach((entry) => {
+            if (entry?.[0]) {
+              nextNames[entry[0]] = entry[1].name || fallbackActorName;
+            }
+          });
+          return nextNames;
         });
-    });
+      });
 
     return () => {
       cancelled = true;

@@ -3,6 +3,7 @@ import { request } from "@/shared/api/axios.js";
 import type { SocialNotification } from "@/shared/types/domain.js";
 
 const notificationsBaseURL = (import.meta.env.VITE_NOTIFICATIONS_URL || '/notifications-api').replace(/\/$/, '');
+const notificationsRequestTimeoutMs = 10000;
 
 export type PushSubscriptionPayload = {
     endpoint: string;
@@ -27,18 +28,40 @@ export const showMessageNotification = (name: string, content: string) => {
 };
 
 const requestNotifications = async <T>(path: string, init?: RequestInit, retry = true): Promise<T> => {
-    const response = await fetch(`${notificationsBaseURL}${path}`, {
-        ...init,
-        credentials: 'include',
-    });
-    if (response.status === 401 && retry) {
-        await request.post('/auth/refresh');
-        return requestNotifications<T>(path, init, false);
+    const controller = new AbortController();
+    const externalSignal = init?.signal;
+    const timeout = window.setTimeout(() => controller.abort(), notificationsRequestTimeoutMs);
+    const abortFromExternalSignal = () => controller.abort();
+
+    if (externalSignal?.aborted) {
+        controller.abort();
+    } else {
+        externalSignal?.addEventListener('abort', abortFromExternalSignal, { once: true });
     }
-    if (!response.ok) {
-        throw new Error(`Notifications request failed: ${response.status}`);
+
+    try {
+        const { signal: _signal, ...requestInit } = init || {};
+        void _signal;
+        const response = await fetch(`${notificationsBaseURL}${path}`, {
+            ...requestInit,
+            credentials: 'include',
+            signal: controller.signal,
+        });
+        if (response.status === 401 && retry) {
+            await request.post('/auth/refresh');
+            return requestNotifications<T>(path, init, false);
+        }
+        if (!response.ok) {
+            throw new Error(`Notifications request failed: ${response.status}`);
+        }
+        if (response.status === 204) {
+            return undefined as T;
+        }
+        return response.json() as Promise<T>;
+    } finally {
+        window.clearTimeout(timeout);
+        externalSignal?.removeEventListener('abort', abortFromExternalSignal);
     }
-    return response.json() as Promise<T>;
 };
 
 export const notificationService = {

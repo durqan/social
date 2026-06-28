@@ -22,6 +22,17 @@ export const userService = {
         return normalizeUser(await request.get<User>(`/users/${userId}`));
     },
 
+    async getUsersBatch(userIds: number[]): Promise<User[]> {
+        const ids = Array.from(new Set(userIds.filter(id => id > 0)));
+        if (ids.length === 0) {
+            return [];
+        }
+
+        return (await request.get<User[]>('/users/batch', {
+            params: { ids: ids.join(',') },
+        })).map(normalizeUser);
+    },
+
     async searchUsers(query: string): Promise<User[]> {
         return (await request.get<User[]>('/users/search', { params: { q: query } })).map(normalizeUser);
     },

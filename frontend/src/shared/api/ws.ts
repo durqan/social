@@ -18,6 +18,11 @@ const reconnectBaseDelayMs = 1000;
 const reconnectMaxDelayMs = 30000;
 
 const callEventQueueTtlMs = 30000;
+const defaultEventQueueTtlMs = 10 * 60 * 1000;
+const readReceiptQueueTtlMs = 5 * 60 * 1000;
+const ephemeralQueueTtlMs = 15000;
+const presenceQueueTtlMs = 30000;
+const maxPendingNonCallEvents = 50;
 const callEventTypes: ReadonlySet<string> = new Set([
     WS_EVENTS.CALL_OFFER,
     WS_EVENTS.CALL_ANSWER,
@@ -122,7 +127,13 @@ export class WebSocketService {
             const parsed = this.parseMessage(event.data);
 
             if (parsed) {
-                this.handlers.forEach(handler => handler(parsed));
+                this.handlers.forEach(handler => {
+                    try {
+                        handler(parsed);
+                    } catch (error) {
+                        console.error('WebSocket handler failed:', error);
+                    }
+                });
             }
         };
         this.ws.onclose = () => {
@@ -292,18 +303,19 @@ export class WebSocketService {
 
     private sendEvent(event: OutgoingEvent, queueIfClosed = true) {
         if (this.ws?.readyState === WebSocket.OPEN) {
-            this.ws.send(JSON.stringify(event));
-            return;
+            try {
+                this.ws.send(JSON.stringify(event));
+                return;
+            } catch (error) {
+                console.warn('WebSocket send failed:', error);
+            }
         }
 
         if (!queueIfClosed) {
             return;
         }
 
-        this.pendingEvents.push({
-            ...event,
-            queuedAt: Date.now(),
-        });
+        this.queuePendingEvent(event);
         this.connect();
     }
 
@@ -369,13 +381,71 @@ export class WebSocketService {
         }
 
         const now = Date.now();
-        const events = this.pendingEvents.splice(0).filter(event => (
-            !isCallEvent(event) || now - event.queuedAt <= callEventQueueTtlMs
-        ));
+        const events = this.pendingEvents.splice(0).filter(event => {
+            const fresh = now - event.queuedAt <= eventQueueTtl(event);
+            if (!fresh) {
+                logPendingDrop(event, 'expired');
+            }
+            return fresh;
+        });
 
         events.forEach(({ queuedAt, ...event }) => {
             void queuedAt;
-            this.ws?.send(JSON.stringify(event));
+            try {
+                this.ws?.send(JSON.stringify(event));
+            } catch (error) {
+                console.warn('WebSocket queued send failed:', error);
+                this.queuePendingEvent(event);
+            }
+        });
+    }
+
+    private queuePendingEvent(event: OutgoingEvent) {
+        this.dropExpiredPendingEvents();
+
+        const dedupeKey = pendingDedupeKey(event);
+        if (dedupeKey) {
+            this.pendingEvents = this.pendingEvents.filter(queued => {
+                const keep = pendingDedupeKey(queued) !== dedupeKey;
+                if (!keep) {
+                    logPendingDrop(queued, 'deduped');
+                }
+                return keep;
+            });
+        }
+
+        this.pendingEvents.push({
+            ...event,
+            queuedAt: Date.now(),
+        });
+        this.enforcePendingQueueLimit();
+    }
+
+    private dropExpiredPendingEvents() {
+        const now = Date.now();
+        this.pendingEvents = this.pendingEvents.filter(event => {
+            const fresh = now - event.queuedAt <= eventQueueTtl(event);
+            if (!fresh) {
+                logPendingDrop(event, 'expired');
+            }
+            return fresh;
+        });
+    }
+
+    private enforcePendingQueueLimit() {
+        const nonCallCount = this.pendingEvents.filter(event => !isCallEvent(event)).length;
+        if (nonCallCount <= maxPendingNonCallEvents) {
+            return;
+        }
+
+        let toDrop = nonCallCount - maxPendingNonCallEvents;
+        this.pendingEvents = this.pendingEvents.filter(event => {
+            if (toDrop <= 0 || isCallEvent(event)) {
+                return true;
+            }
+            toDrop -= 1;
+            logPendingDrop(event, 'queue_limit');
+            return false;
         });
     }
 }
@@ -391,4 +461,46 @@ function getEventCallId(event: OutgoingEvent) {
 
     const callId = (event.payload as { call_id?: unknown }).call_id;
     return typeof callId === 'string' ? callId : null;
+}
+
+function eventQueueTtl(event: OutgoingEvent) {
+    if (isCallEvent(event)) {
+        return callEventQueueTtlMs;
+    }
+    if (event.type === WS_EVENTS.TYPING_START || event.type === WS_EVENTS.TYPING_STOP) {
+        return ephemeralQueueTtlMs;
+    }
+    if (event.type === WS_EVENTS.CONVERSATION_ACTIVE || event.type === WS_EVENTS.CONVERSATION_INACTIVE) {
+        return presenceQueueTtlMs;
+    }
+    if (event.type === WS_EVENTS.MESSAGE_READ) {
+        return readReceiptQueueTtlMs;
+    }
+    return defaultEventQueueTtlMs;
+}
+
+function pendingDedupeKey(event: OutgoingEvent) {
+    if (!event.payload || typeof event.payload !== 'object') {
+        return null;
+    }
+
+    const payload = event.payload as Record<string, unknown>;
+    if (event.type === WS_EVENTS.TYPING_START || event.type === WS_EVENTS.TYPING_STOP) {
+        return `typing:${payload.to_id ?? 'unknown'}`;
+    }
+    if (event.type === WS_EVENTS.MESSAGE_READ) {
+        return `read:${payload.to_id ?? payload.conversation_id ?? 'unknown'}`;
+    }
+    if (event.type === WS_EVENTS.CONVERSATION_ACTIVE || event.type === WS_EVENTS.CONVERSATION_INACTIVE) {
+        return `conversation-presence:${payload.conversation_id ?? 'unknown'}`;
+    }
+    return null;
+}
+
+function logPendingDrop(event: OutgoingEvent, reason: string) {
+    console.info('WebSocket pending event dropped:', {
+        type: event.type,
+        reason,
+        callId: getEventCallId(event),
+    });
 }

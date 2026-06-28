@@ -13,7 +13,7 @@ func CreateUser(db *gorm.DB, user *models.User) error {
 
 func GetAllUsers(db *gorm.DB) ([]models.User, error) {
 	var users []models.User
-	result := db.Find(&users)
+	result := db.Select(publicUserColumns).Find(&users)
 	return users, result.Error
 }
 
@@ -25,7 +25,7 @@ func GetUserById(db *gorm.DB, userId uint) (models.User, error) {
 
 func GetUsersByIDs(db *gorm.DB, userIDs []uint) ([]models.User, error) {
 	var users []models.User
-	result := db.Where("id IN ?", userIDs).Find(&users)
+	result := db.Select(publicUserColumns).Where("id IN ?", userIDs).Find(&users)
 	return users, result.Error
 }
 
@@ -73,9 +73,10 @@ func ChangePassword(db *gorm.DB, userId uint, hashedPassword string) error {
 
 func GetUsersByEmailOrName(db *gorm.DB, query string) ([]models.User, error) {
 	var users []models.User
-	err := db.Where("name ILIKE ? OR email ILIKE ?",
-		"%"+query+"%",
-		"%"+query+"%").
+	err := db.Select(publicUserColumns).
+		Where("name ILIKE ? OR email ILIKE ?",
+			"%"+query+"%",
+			"%"+query+"%").
 		Limit(20).
 		Find(&users).Error
 	return users, err
