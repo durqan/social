@@ -51,19 +51,20 @@ export function TextField({ label, error, style, ...props }: TextFieldProps) {
 const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     wrapper: {
-      gap: spacing.xs,
+      gap: 6,
     },
     label: {
       ...typography.caption,
       color: colors.muted,
-      fontWeight: '800',
+      fontWeight: '700',
+      paddingHorizontal: 2,
     },
     input: {
-      minHeight: 50,
+      minHeight: 52,
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: radius.lg,
-      paddingHorizontal: spacing.md,
+      borderRadius: radius.xl,
+      paddingHorizontal: spacing.lg,
       paddingVertical: spacing.sm,
       backgroundColor: colors.input,
       color: colors.text,
@@ -73,9 +74,9 @@ const createStyles = (colors: ThemeColors) =>
       borderColor: colors.accentBorder,
       backgroundColor: colors.inputFocus,
       shadowColor: colors.accent,
-      shadowOpacity: colors.isDark ? 0 : 0.12,
-      shadowRadius: 10,
-      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: colors.isDark ? 0 : 0.1,
+      shadowRadius: 16,
+      shadowOffset: { width: 0, height: 8 },
     },
     inputError: {
       borderColor: colors.danger,

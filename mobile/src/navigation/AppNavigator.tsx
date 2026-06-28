@@ -305,8 +305,8 @@ function MainTabsNavigator() {
   const tabBarStyle = [
     styles.tabBar,
     {
-      height: 70 + insets.bottom,
-      paddingBottom: Math.max(insets.bottom, 10),
+      height: 66 + insets.bottom,
+      paddingBottom: Math.max(insets.bottom, 9),
     },
   ];
   const hiddenTabBarStyle = { display: 'none' as const };
@@ -470,7 +470,7 @@ const createStyles = (colors: ThemeColors) =>
       textAlign: 'center',
     },
     header: {
-      backgroundColor: colors.background,
+      backgroundColor: colors.surface,
       borderBottomWidth: 0,
       shadowOpacity: 0,
       elevation: 0,
@@ -481,15 +481,15 @@ const createStyles = (colors: ThemeColors) =>
     },
     tabBar: {
       position: 'absolute',
-      left: 12,
-      right: 12,
+      left: 14,
+      right: 14,
       bottom: 8,
       borderTopWidth: 0,
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: 26,
+      borderRadius: 30,
       backgroundColor: colors.surface,
-      paddingTop: 8,
+      paddingTop: 7,
       shadowColor: colors.shadow,
       ...(colors.isDark ? elevation.none : elevation.bar),
     },
@@ -503,7 +503,7 @@ const createStyles = (colors: ThemeColors) =>
     tabBarLabel: {
       fontSize: 10,
       lineHeight: 12,
-      fontWeight: '800',
+      fontWeight: '900',
       marginTop: 2,
     },
     tabBarBadge: {
@@ -540,9 +540,9 @@ const stylesStatic = StyleSheet.create({
     borderRadius: 19,
   },
   tabIconShell: {
-    width: 36,
+    width: 38,
     height: 32,
-    borderRadius: 16,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: 'transparent',
     alignItems: 'center',

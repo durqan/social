@@ -120,7 +120,7 @@ const createStyles = (colors: ThemeColors) =>
     card: {
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: radius.lg,
+      borderRadius: radius.xl,
       backgroundColor: colors.card,
       padding: spacing.lg,
       shadowColor: colors.shadow,
@@ -135,6 +135,7 @@ const createStyles = (colors: ThemeColors) =>
       padding: spacing.xl,
       overflow: 'hidden',
       borderColor: colors.accentBorder,
+      backgroundColor: colors.surface,
     },
     kicker: {
       ...typography.caption,
@@ -150,7 +151,7 @@ const createStyles = (colors: ThemeColors) =>
       minHeight: 88,
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: radius.lg,
+      borderRadius: radius.xl,
       backgroundColor: colors.card,
       padding: spacing.md,
       gap: spacing.sm,

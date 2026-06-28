@@ -75,8 +75,8 @@ const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     errorBox: {
       borderWidth: 1,
-      borderColor: colors.dangerSoft,
-      borderRadius: radius.lg,
+      borderColor: 'rgba(255,59,48,0.18)',
+      borderRadius: radius.xl,
       backgroundColor: colors.dangerSoft,
       padding: spacing.md,
     },
@@ -87,8 +87,8 @@ const createStyles = (colors: ThemeColors) =>
     },
     successBox: {
       borderWidth: 1,
-      borderColor: colors.successSoft,
-      borderRadius: radius.lg,
+      borderColor: 'rgba(33,166,122,0.18)',
+      borderRadius: radius.xl,
       backgroundColor: colors.successSoft,
       padding: spacing.md,
     },
@@ -100,7 +100,7 @@ const createStyles = (colors: ThemeColors) =>
     noticeBox: {
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: radius.lg,
+      borderRadius: radius.xl,
       backgroundColor: colors.card,
       padding: spacing.md,
       gap: spacing.xs,
@@ -118,7 +118,7 @@ const createStyles = (colors: ThemeColors) =>
       alignItems: 'center',
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: radius.lg,
+      borderRadius: radius.xl,
       backgroundColor: colors.card,
       paddingHorizontal: spacing.lg,
       paddingVertical: spacing.xxl,
@@ -140,7 +140,7 @@ const createStyles = (colors: ThemeColors) =>
       justifyContent: 'center',
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: radius.lg,
+      borderRadius: radius.xl,
       backgroundColor: colors.card,
       padding: spacing.xl,
       gap: spacing.sm,

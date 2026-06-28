@@ -10,7 +10,7 @@ import { TextField } from '../../components/TextField';
 import { useAuth } from '../../context/AuthContext';
 import { useThemeColors } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/themes';
-import { radius, spacing, typography } from '../../theme/layout';
+import { spacing, typography } from '../../theme/layout';
 import type { AuthStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
@@ -104,15 +104,20 @@ const createStyles = (colors: ThemeColors) =>
     card: {
       borderWidth: 1,
       borderColor: colors.accentBorder,
-      borderRadius: radius.lg,
-      backgroundColor: colors.card,
+      borderRadius: 28,
+      backgroundColor: colors.surface,
       padding: spacing.xl,
       gap: spacing.md,
+      shadowColor: colors.shadow,
+      shadowOpacity: colors.isDark ? 0 : 0.12,
+      shadowRadius: 28,
+      shadowOffset: { width: 0, height: 16 },
+      elevation: colors.isDark ? 0 : 3,
     },
     brandMark: {
-      width: 54,
-      height: 54,
-      borderRadius: radius.lg,
+      width: 58,
+      height: 58,
+      borderRadius: 29,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: colors.accent,

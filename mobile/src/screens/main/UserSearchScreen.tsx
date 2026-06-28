@@ -351,9 +351,9 @@ const createStyles = (colors: ThemeColors) =>
     },
     listContent: {
       paddingHorizontal: spacing.lg,
-      paddingTop: spacing.lg,
+      paddingTop: spacing.sm,
       paddingBottom: 124,
-      gap: spacing.sm,
+      gap: 0,
     },
     emptyListContent: {
       flexGrow: 1,
@@ -362,11 +362,13 @@ const createStyles = (colors: ThemeColors) =>
     row: {
       flexDirection: 'row',
       alignItems: 'center',
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: radius.md,
-      backgroundColor: colors.card,
-      padding: spacing.md,
+      borderWidth: 0,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+      borderRadius: 0,
+      backgroundColor: 'transparent',
+      paddingHorizontal: spacing.xs,
+      paddingVertical: 12,
       gap: spacing.md,
     },
     avatar: {
@@ -376,7 +378,9 @@ const createStyles = (colors: ThemeColors) =>
       alignItems: 'center',
       justifyContent: 'center',
       overflow: 'hidden',
-      backgroundColor: colors.surfaceMuted,
+      backgroundColor: colors.accentSoft,
+      borderWidth: 1,
+      borderColor: colors.border,
     },
     avatarImage: {
       width: 44,
@@ -411,7 +415,7 @@ const createStyles = (colors: ThemeColors) =>
     statusPill: {
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: radius.md,
+      borderRadius: radius.pill,
       backgroundColor: colors.surfaceMuted,
       paddingHorizontal: spacing.sm,
       paddingVertical: spacing.sm,

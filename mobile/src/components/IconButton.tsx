@@ -95,28 +95,28 @@ const createStyles = (colors: ThemeColors) =>
     sm: {
       width: 36,
       height: 36,
-      borderRadius: radius.md,
+      borderRadius: radius.pill,
     },
     md: {
       width: 44,
       height: 44,
-      borderRadius: radius.lg,
+      borderRadius: radius.pill,
     },
     lg: {
       width: 52,
       height: 52,
-      borderRadius: radius.lg,
+      borderRadius: radius.pill,
     },
     primary: {
       backgroundColor: colors.accent,
       borderColor: colors.accent,
     },
     secondary: {
-      backgroundColor: colors.surfaceMuted,
+      backgroundColor: colors.surface,
       borderColor: colors.border,
     },
     ghost: {
-      backgroundColor: 'transparent',
+      backgroundColor: colors.cardMuted,
       borderColor: colors.border,
     },
     danger: {

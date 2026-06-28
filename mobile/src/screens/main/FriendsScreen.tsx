@@ -371,8 +371,8 @@ const createStyles = (colors: ThemeColors) =>
     listCard: {
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: radius.md,
-      backgroundColor: colors.card,
+      borderRadius: radius.xl,
+      backgroundColor: colors.surface,
       overflow: 'hidden',
     },
     requestRow: {
@@ -398,7 +398,7 @@ const createStyles = (colors: ThemeColors) =>
       alignItems: 'center',
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: radius.md,
+      borderRadius: radius.xl,
       backgroundColor: colors.card,
       padding: spacing.md,
       gap: spacing.md,
@@ -411,8 +411,10 @@ const createStyles = (colors: ThemeColors) =>
       flexShrink: 0,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: colors.surfaceMuted,
+      backgroundColor: colors.accentSoft,
       overflow: 'hidden',
+      borderWidth: 1,
+      borderColor: colors.border,
     },
     avatarImage: {
       width: 44,

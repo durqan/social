@@ -278,8 +278,8 @@ const createStyles = (colors: ThemeColors) =>
       alignItems: 'center',
       borderWidth: 1,
       borderColor: colors.accentBorder,
-      borderRadius: radius.lg,
-      backgroundColor: colors.card,
+      borderRadius: radius.xl,
+      backgroundColor: colors.surface,
       padding: spacing.xl,
       gap: spacing.sm,
     },
@@ -314,7 +314,7 @@ const createStyles = (colors: ThemeColors) =>
     infoCard: {
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: radius.lg,
+      borderRadius: radius.xl,
       backgroundColor: colors.card,
       overflow: 'hidden',
     },
@@ -337,7 +337,7 @@ const createStyles = (colors: ThemeColors) =>
     notice: {
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: radius.lg,
+      borderRadius: radius.xl,
       backgroundColor: colors.card,
       padding: spacing.md,
     },
