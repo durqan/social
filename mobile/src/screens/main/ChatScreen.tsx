@@ -154,6 +154,9 @@ const COMPOSER_INPUT_MAX_HEIGHT = 136;
 const KEYBOARD_INSET_UPDATE_DELAY_MS = 80;
 const MESSAGE_PAGE_SIZE = 50;
 const LOAD_OLDER_THRESHOLD = 56;
+const SCROLL_TO_LATEST_RETRY_DELAY_MS = 80;
+const SCROLL_TO_LATEST_SETTLE_DELAY_MS = 120;
+const SCROLL_TO_LATEST_MAX_ATTEMPTS = 12;
 const COPY_NOTICE_TIMEOUT_MS = 1600;
 const REMOTE_TYPING_TIMEOUT_MS = 2200;
 const LOCAL_TYPING_STOP_DELAY_MS = 1400;
@@ -280,6 +283,8 @@ export default function ChatScreen({ route }: Props) {
   const scrollToEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const scrollToLatestAttemptCountRef = useRef(0);
+  const messageListContentHeightRef = useRef(0);
   const draftRef = useRef<{
     input: string;
     pendingImages: LocalChatImage[];
@@ -419,12 +424,22 @@ export default function ChatScreen({ route }: Props) {
     loadPinnedSeqRef.current += 1;
     hasLoadedRef.current = false;
     isLoadingOlderRef.current = false;
+    pendingScrollToLatestReasonRef.current = null;
+    isInitialScrollPendingRef.current = false;
+    isUserNearBottomRef.current = true;
+    scrollToLatestAttemptCountRef.current = 0;
+    messageListContentHeightRef.current = 0;
+    if (scrollToEndTimerRef.current) {
+      clearTimeout(scrollToEndTimerRef.current);
+      scrollToEndTimerRef.current = null;
+    }
     setMessages([]);
     setHasLoaded(false);
     setHasMore(true);
     setLoading(false);
     setRefreshing(false);
     setLoadingOlder(false);
+    setMaintainScrollPositionEnabled(false);
     setPinnedMessage(null);
     setSelectedMessage(null);
     setEditingMessage(null);
@@ -579,6 +594,40 @@ export default function ChatScreen({ route }: Props) {
         scrollToEndTimerRef.current = null;
       }
 
+      const finishScroll = () => {
+        pendingScrollToLatestReasonRef.current = null;
+        isInitialScrollPendingRef.current = false;
+        isUserNearBottomRef.current = true;
+        scrollToLatestAttemptCountRef.current = 0;
+        setMaintainScrollPositionEnabled(true);
+      };
+
+      const scheduleRetry = () => {
+        if (
+          scrollToLatestAttemptCountRef.current >=
+          SCROLL_TO_LATEST_MAX_ATTEMPTS
+        ) {
+          finishScroll();
+          return;
+        }
+
+        scrollToLatestAttemptCountRef.current += 1;
+        scrollToEndTimerRef.current = setTimeout(() => {
+          scrollToEndTimerRef.current = null;
+          scrollToLatestMessage(animated);
+        }, SCROLL_TO_LATEST_RETRY_DELAY_MS);
+      };
+
+      const list = listRef.current;
+      const contentIsMeasured =
+        messagesRef.current.length === 0 ||
+        messageListContentHeightRef.current > 0;
+
+      if (!list || !contentIsMeasured) {
+        scheduleRetry();
+        return;
+      }
+
       const scroll = () => {
         listRef.current?.scrollToEnd({ animated });
       };
@@ -587,14 +636,11 @@ export default function ChatScreen({ route }: Props) {
       scrollToEndTimerRef.current = setTimeout(() => {
         scroll();
         requestAnimationFrame(scroll);
-        pendingScrollToLatestReasonRef.current = null;
-        isInitialScrollPendingRef.current = false;
-        isUserNearBottomRef.current = true;
+        finishScroll();
         scrollToEndTimerRef.current = null;
-        setMaintainScrollPositionEnabled(true);
-      }, 120);
+      }, SCROLL_TO_LATEST_SETTLE_DELAY_MS);
     },
-    [],
+    [messagesRef],
   );
 
   const requestScrollToLatest = useCallback(
@@ -960,6 +1006,8 @@ export default function ChatScreen({ route }: Props) {
         pendingScrollToLatestReasonRef.current = shouldInitialScroll
           ? 'initial_load'
           : null;
+        scrollToLatestAttemptCountRef.current = 0;
+        messageListContentHeightRef.current = 0;
         setMaintainScrollPositionEnabled(!shouldInitialScroll);
         hasMoreRef.current = response.has_more;
         setHasMore(response.has_more);
@@ -1023,6 +1071,8 @@ export default function ChatScreen({ route }: Props) {
       isLoadingOlderRef.current ||
       !hasMoreRef.current ||
       !oldestMessage ||
+      isInitialScrollPendingRef.current ||
+      pendingScrollToLatestReasonRef.current === 'initial_load' ||
       refreshing
     ) {
       return;
@@ -1081,6 +1131,10 @@ export default function ChatScreen({ route }: Props) {
 
   const handleMessagesScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (isInitialScrollPendingRef.current) {
+        return;
+      }
+
       const { contentOffset, contentSize, layoutMeasurement } =
         event.nativeEvent;
       const distanceFromBottom =
@@ -1096,11 +1150,28 @@ export default function ChatScreen({ route }: Props) {
     [loadOlderMessages],
   );
 
-  const handleMessageListContentSizeChange = useCallback(() => {
-    if (pendingScrollToLatestReasonRef.current && !isLoadingOlderRef.current) {
-      scrollToLatestMessage();
-    }
-  }, [scrollToLatestMessage]);
+  const handleMessageListLayout = useCallback(
+    () => {
+      if (pendingScrollToLatestReasonRef.current && !isLoadingOlderRef.current) {
+        scrollToLatestMessage(
+          pendingScrollToLatestReasonRef.current !== 'initial_load',
+        );
+      }
+    },
+    [scrollToLatestMessage],
+  );
+
+  const handleMessageListContentSizeChange = useCallback(
+    (_contentWidth: number, contentHeight: number) => {
+      messageListContentHeightRef.current = contentHeight;
+      if (pendingScrollToLatestReasonRef.current && !isLoadingOlderRef.current) {
+        scrollToLatestMessage(
+          pendingScrollToLatestReasonRef.current !== 'initial_load',
+        );
+      }
+    },
+    [scrollToLatestMessage],
+  );
 
   useEffect(() => {
     if (
@@ -2977,6 +3048,7 @@ export default function ChatScreen({ route }: Props) {
           maxToRenderPerBatch={8}
           updateCellsBatchingPeriod={50}
           removeClippedSubviews={Platform.OS === 'android'}
+          onLayout={handleMessageListLayout}
           contentContainerStyle={[
             styles.messageList,
             messages.length === 0 && styles.emptyMessageList,
