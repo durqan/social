@@ -30,6 +30,8 @@ import {
     RotateCcw,
     Video,
     VideoOff,
+    Volume2,
+    VolumeOff,
 } from 'lucide-react-native';
 import {
     MediaStream as WebRTCMediaStream,
@@ -107,7 +109,8 @@ type BufferedOutgoingIceCandidate = {
 };
 
 type NativeCallAudioSession = {
-    setCallActive: () => void;
+    setCallActive: (speakerphoneOn: boolean) => void;
+    setSpeakerphoneOn?: (speakerphoneOn: boolean) => void;
     clearCallActive: () => void;
 };
 
@@ -163,40 +166,44 @@ const disconnectedCleanupDelayMs = 10000;
 const callHeartbeatIntervalMs = 15000;
 const maxIceRecoveryAttempts = 2;
 const callAudioConstraints = {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
     googEchoCancellation: true,
     googNoiseSuppression: true,
     googAutoGainControl: true,
     googHighpassFilter: true,
 } as unknown as CallMediaConstraints['audio'];
+const audioSenderMaxBitrate = 64000;
 const videoQualityProfiles = {
     low: {
         name: 'low',
         width: 426,
         height: 240,
         frameRate: 15,
-        sender: {maxBitrate: 350000, maxFramerate: 15},
+        sender: {maxBitrate: 300000, maxFramerate: 15},
     },
     medium: {
         name: 'medium',
-        width: 960,
-        height: 540,
-        frameRate: 30,
-        sender: {maxBitrate: 1200000, maxFramerate: 30},
+        width: 854,
+        height: 480,
+        frameRate: 24,
+        sender: {maxBitrate: 900000, maxFramerate: 24},
     },
     high: {
         name: 'high',
-        width: 1920,
-        height: 1080,
+        width: 1280,
+        height: 720,
         frameRate: 30,
-        sender: {maxBitrate: 3200000, maxFramerate: 30},
+        sender: {maxBitrate: 1800000, maxFramerate: 30},
     },
 } satisfies Record<VideoQualityProfileName, VideoQualityProfile>;
 const highFallbackProfile: VideoQualityProfile = {
     name: 'high',
-    width: 1280,
-    height: 720,
+    width: 960,
+    height: 540,
     frameRate: 30,
-    sender: {maxBitrate: 2400000, maxFramerate: 30},
+    sender: {maxBitrate: 1200000, maxFramerate: 30},
 };
 const absoluteFillObject =
     (
@@ -208,14 +215,14 @@ const nativeCallAudioSession = (
     NativeModules as {CallAudioSession?: NativeCallAudioSession}
 ).CallAudioSession;
 
-function setNativeCallSessionActive(active: boolean) {
+function setNativeCallSessionActive(active: boolean, speakerphoneOn = false) {
     if (Platform.OS !== 'android') {
         return;
     }
 
     try {
         if (active) {
-            nativeCallAudioSession?.setCallActive();
+            nativeCallAudioSession?.setCallActive(speakerphoneOn);
         } else {
             nativeCallAudioSession?.clearCallActive();
         }
@@ -225,6 +232,10 @@ function setNativeCallSessionActive(active: boolean) {
             error: nativeError,
         });
     }
+}
+
+function defaultSpeakerphoneForCallType(callType: CallType) {
+    return callType === 'video';
 }
 
 function createCallId() {
@@ -675,6 +686,43 @@ async function applyVideoSenderQuality(
     }
 }
 
+async function applyAudioSenderQuality(
+    pc: PeerConnection | null,
+    callId?: string | null,
+    pcId?: number | null,
+) {
+    if (!pc) {
+        return;
+    }
+
+    const sender = pc.getSenders().find(item => item.track?.kind === 'audio');
+    if (!sender) {
+        return;
+    }
+
+    try {
+        const parameters = sender.getParameters();
+        if (parameters.encodings.length === 0) {
+            return;
+        }
+        parameters.encodings.forEach(encoding => {
+            encoding.maxBitrate = audioSenderMaxBitrate;
+        });
+        await sender.setParameters(parameters);
+        logDev('[SocialMobile] Audio sender quality applied', {
+            callId,
+            pcId,
+            maxBitrate: audioSenderMaxBitrate,
+        });
+    } catch (qualityError) {
+        warnDev('[SocialMobile] Failed to apply audio sender quality', {
+            callId,
+            pcId,
+            error: qualityError,
+        });
+    }
+}
+
 function statusText(status: CallStatus, callType: CallType) {
     if (status === 'incoming') {
         return callType === 'video' ? 'Входящий видеозвонок' : 'Входящий звонок';
@@ -783,12 +831,14 @@ export function CallProvider({children}: { children: ReactNode }) {
     const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
     const [microphoneOn, setMicrophoneOn] = useState(true);
     const [cameraOn, setCameraOn] = useState(true);
+    const [speakerphoneOn, setSpeakerphoneOn] = useState(false);
     const [frontCamera, setFrontCamera] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
     const statusRef = useRef(status);
     const peerUserIdRef = useRef(peerUserId);
     const callTypeRef = useRef(callType);
+    const speakerphoneOnRef = useRef(speakerphoneOn);
     const networkConnectedRef = useRef(networkConnected);
     const localVideoProfileRef = useRef<VideoQualityProfile | null>(null);
     const pcRef = useRef<PeerConnection | null>(null);
@@ -836,6 +886,10 @@ export function CallProvider({children}: { children: ReactNode }) {
     }, [callType]);
 
     useEffect(() => {
+        speakerphoneOnRef.current = speakerphoneOn;
+    }, [speakerphoneOn]);
+
+    useEffect(() => {
         networkConnectedRef.current = networkConnected;
     }, [networkConnected]);
 
@@ -843,8 +897,8 @@ export function CallProvider({children}: { children: ReactNode }) {
         status !== 'idle' && status !== 'ended' && status !== 'error';
 
     useEffect(() => {
-        setNativeCallSessionActive(callSessionActive);
-    }, [appState, callSessionActive, status]);
+        setNativeCallSessionActive(callSessionActive, speakerphoneOn);
+    }, [appState, callSessionActive, speakerphoneOn, status]);
 
     useEffect(() => {
         return () => {
@@ -890,6 +944,16 @@ export function CallProvider({children}: { children: ReactNode }) {
         callTypeRef.current = nextCallType;
         setCallType(nextCallType);
     }, []);
+
+    const setDefaultSpeakerphoneForCallType = useCallback(
+        (nextCallType: CallType) => {
+            const nextSpeakerphoneOn =
+                defaultSpeakerphoneForCallType(nextCallType);
+            speakerphoneOnRef.current = nextSpeakerphoneOn;
+            setSpeakerphoneOn(nextSpeakerphoneOn);
+        },
+        [],
+    );
 
     const clearEndTimer = useCallback(() => {
         if (endTimerRef.current) {
@@ -1043,6 +1107,8 @@ export function CallProvider({children}: { children: ReactNode }) {
         setRemoteStream(null);
         setMicrophoneOn(true);
         setCameraOn(true);
+        speakerphoneOnRef.current = false;
+        setSpeakerphoneOn(false);
         setFrontCamera(true);
         setCurrentCallType('audio');
         setCallPeer(null);
@@ -1100,6 +1166,8 @@ export function CallProvider({children}: { children: ReactNode }) {
             setRemoteStream(null);
             setMicrophoneOn(true);
             setCameraOn(true);
+            speakerphoneOnRef.current = false;
+            setSpeakerphoneOn(false);
             setFrontCamera(true);
             setError(message ?? null);
             setCallStatus(nextStatus, 'finish');
@@ -1312,7 +1380,14 @@ export function CallProvider({children}: { children: ReactNode }) {
             if (peerUserIdRef.current !== peerId) {
                 setCallPeer(peerId);
             }
-            setCurrentCallType(call.call_type === 'video' ? 'video' : 'audio');
+            const restoredCallType = call.call_type === 'video' ? 'video' : 'audio';
+            setCurrentCallType(restoredCallType);
+            if (
+                statusRef.current !== 'active' &&
+                statusRef.current !== 'reconnecting'
+            ) {
+                setDefaultSpeakerphoneForCallType(restoredCallType);
+            }
 
             if (
                 call.offer &&
@@ -1360,6 +1435,7 @@ export function CallProvider({children}: { children: ReactNode }) {
             setCallPeer,
             setCallStatus,
             setCurrentCallType,
+            setDefaultSpeakerphoneForCallType,
             user?.id,
         ],
     );
@@ -1397,7 +1473,9 @@ export function CallProvider({children}: { children: ReactNode }) {
             pendingIncomingCallPushRef.current = null;
             callIdRef.current = call.call_id;
             setCallPeer(call.caller_id);
-            setCurrentCallType(call.call_type === 'video' ? 'video' : 'audio');
+            const restoredCallType = call.call_type === 'video' ? 'video' : 'audio';
+            setCurrentCallType(restoredCallType);
+            setDefaultSpeakerphoneForCallType(restoredCallType);
             setError(null);
             setCallStatus('incoming');
             await loadPeerName(
@@ -1413,6 +1491,7 @@ export function CallProvider({children}: { children: ReactNode }) {
             setCallPeer,
             setCallStatus,
             setCurrentCallType,
+            setDefaultSpeakerphoneForCallType,
             user?.id,
         ],
     );
@@ -2130,6 +2209,7 @@ export function CallProvider({children}: { children: ReactNode }) {
             setCallPeer(toId);
             setPeerName(name || 'Пользователь');
             setCurrentCallType(nextCallType);
+            setDefaultSpeakerphoneForCallType(nextCallType);
             setCallStatus('connecting');
 
             try {
@@ -2169,6 +2249,7 @@ export function CallProvider({children}: { children: ReactNode }) {
                     return;
                 }
                 setCurrentCallType(effectiveCallType);
+                setDefaultSpeakerphoneForCallType(effectiveCallType);
 
                 const pc = createPeerConnection(toId, callId);
                 if (!isCurrentStart()) {
@@ -2196,6 +2277,7 @@ export function CallProvider({children}: { children: ReactNode }) {
                     callId,
                     pcId,
                 );
+                await applyAudioSenderQuality(pc, callId, pcId);
 
                 const offer = sessionDescriptionForSignal(
                     (await pc.createOffer()) as CallSessionDescription,
@@ -2284,6 +2366,7 @@ export function CallProvider({children}: { children: ReactNode }) {
             setCallPeer,
             setCallStatus,
             setCurrentCallType,
+            setDefaultSpeakerphoneForCallType,
             user?.id,
         ],
     );
@@ -2362,6 +2445,7 @@ export function CallProvider({children}: { children: ReactNode }) {
             const opened = await openLocalStreamWithFallback(pendingOffer.callType);
             stream = opened.stream;
             setCurrentCallType(opened.callType);
+            setDefaultSpeakerphoneForCallType(opened.callType);
             if (!isCurrentAccept()) {
                 cleanupStaleAccept();
                 return;
@@ -2391,6 +2475,11 @@ export function CallProvider({children}: { children: ReactNode }) {
             await applyVideoSenderQuality(
                 activePc,
                 localVideoProfileRef.current,
+                pendingOffer.callId,
+                pcId,
+            );
+            await applyAudioSenderQuality(
+                activePc,
                 pendingOffer.callId,
                 pcId,
             );
@@ -2500,6 +2589,7 @@ export function CallProvider({children}: { children: ReactNode }) {
         sendTerminalCallAction,
         setCurrentCallType,
         setCallStatus,
+        setDefaultSpeakerphoneForCallType,
         user?.id,
     ]);
 
@@ -2570,6 +2660,22 @@ export function CallProvider({children}: { children: ReactNode }) {
         });
         setCameraOn(next);
     }, [cameraOn]);
+
+    const toggleSpeakerphone = useCallback(() => {
+        setSpeakerphoneOn(current => {
+            const next = !current;
+            speakerphoneOnRef.current = next;
+            try {
+                nativeCallAudioSession?.setSpeakerphoneOn?.(next);
+            } catch (nativeError) {
+                warnDev('[SocialMobile] Failed to toggle call speakerphone', {
+                    speakerphoneOn: next,
+                    error: nativeError,
+                });
+            }
+            return next;
+        });
+    }, []);
 
     const switchCamera = useCallback(() => {
         const videoTrack = localStreamRef.current?.getVideoTracks()[0];
@@ -2656,6 +2762,7 @@ export function CallProvider({children}: { children: ReactNode }) {
                         };
                         setCallPeer(fromId);
                         setCurrentCallType(nextCallType);
+                        setDefaultSpeakerphoneForCallType(nextCallType);
                         loadPeerName(fromId, matchingPushCall?.callerName, callId).catch(
                             () => undefined,
                         );
@@ -2688,6 +2795,7 @@ export function CallProvider({children}: { children: ReactNode }) {
                 callIdRef.current = callId;
                 setCallPeer(fromId);
                 setCurrentCallType(nextCallType);
+                setDefaultSpeakerphoneForCallType(nextCallType);
                 setCallStatus('incoming');
                 logDev('[SocialMobile] Incoming call offer received', {
                     callId,
@@ -2911,6 +3019,7 @@ export function CallProvider({children}: { children: ReactNode }) {
             setCallPeer,
             setCallStatus,
             setCurrentCallType,
+            setDefaultSpeakerphoneForCallType,
             user?.id,
         ],
     );
@@ -3070,6 +3179,8 @@ export function CallProvider({children}: { children: ReactNode }) {
             track.enabled = false;
         });
         setCameraOn(false);
+        speakerphoneOnRef.current = false;
+        setSpeakerphoneOn(false);
         setCurrentCallType('audio');
         logDev('[SocialMobile] Video call degraded to audio in background', {
             callId: callIdRef.current,
@@ -3105,6 +3216,7 @@ export function CallProvider({children}: { children: ReactNode }) {
                 remoteStream={remoteStream}
                 microphoneOn={microphoneOn}
                 cameraOn={cameraOn}
+                speakerphoneOn={speakerphoneOn}
                 frontCamera={frontCamera}
                 error={error}
                 onAccept={acceptCall}
@@ -3112,6 +3224,7 @@ export function CallProvider({children}: { children: ReactNode }) {
                 onEnd={endCall}
                 onToggleMicrophone={toggleMicrophone}
                 onToggleCamera={toggleCamera}
+                onToggleSpeakerphone={toggleSpeakerphone}
                 onSwitchCamera={switchCamera}
             />
         </CallContext.Provider>
@@ -3126,6 +3239,7 @@ function CallOverlay({
                        remoteStream,
                        microphoneOn,
                        cameraOn,
+                       speakerphoneOn,
                        frontCamera,
                        error,
                        onAccept,
@@ -3133,6 +3247,7 @@ function CallOverlay({
                        onEnd,
                        onToggleMicrophone,
                        onToggleCamera,
+                       onToggleSpeakerphone,
                        onSwitchCamera,
                      }: {
   status: CallStatus;
@@ -3142,6 +3257,7 @@ function CallOverlay({
   remoteStream: MediaStream | null;
   microphoneOn: boolean;
   cameraOn: boolean;
+  speakerphoneOn: boolean;
   frontCamera: boolean;
   error: string | null;
   onAccept: () => void;
@@ -3149,6 +3265,7 @@ function CallOverlay({
   onEnd: () => void;
   onToggleMicrophone: () => void;
   onToggleCamera: () => void;
+  onToggleSpeakerphone: () => void;
   onSwitchCamera: () => void;
 }) {
   const insets = useSafeAreaInsets();
@@ -3318,6 +3435,15 @@ function CallOverlay({
                       muted={!microphoneOn}
                       onPress={onToggleMicrophone}
                   />
+
+                  {callType === 'audio' ? (
+                      <CallButton
+                          label={speakerphoneOn ? 'Динамик' : 'Телефон'}
+                          icon={speakerphoneOn ? Volume2 : VolumeOff}
+                          muted={!speakerphoneOn}
+                          onPress={onToggleSpeakerphone}
+                      />
+                  ) : null}
 
                   {callType === 'video' ? (
                       <>

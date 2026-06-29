@@ -25,7 +25,7 @@ class CallAudioSessionModule(
   override fun getName(): String = NAME
 
   @ReactMethod
-  fun setCallActive() {
+  fun setCallActive(speakerphoneOn: Boolean) {
     if (!active) {
       savedMode = audioManager.mode
       @Suppress("DEPRECATION")
@@ -39,7 +39,18 @@ class CallAudioSessionModule(
     setKeepScreenOn(true)
     runAudioChange("set call audio route") {
       audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
-      routeToSpeaker()
+      routeAudio(speakerphoneOn)
+    }
+  }
+
+  @ReactMethod
+  fun setSpeakerphoneOn(speakerphoneOn: Boolean) {
+    if (!active) {
+      return
+    }
+
+    runAudioChange("set call speakerphone") {
+      routeAudio(speakerphoneOn)
     }
   }
 
@@ -56,6 +67,14 @@ class CallAudioSessionModule(
     }
   }
 
+  private fun routeAudio(speakerphoneOn: Boolean) {
+    if (speakerphoneOn) {
+      routeToSpeaker()
+    } else {
+      routeToPrivateAudio()
+    }
+  }
+
   private fun routeToSpeaker() {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
       val speaker = audioManager.availableCommunicationDevices.firstOrNull {
@@ -68,6 +87,35 @@ class CallAudioSessionModule(
 
     @Suppress("DEPRECATION")
     audioManager.isSpeakerphoneOn = true
+  }
+
+  private fun routeToPrivateAudio() {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+      val privateDeviceTypes = listOf(
+        AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+        AudioDeviceInfo.TYPE_BLE_HEADSET,
+        AudioDeviceInfo.TYPE_WIRED_HEADSET,
+        AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+        AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
+      )
+      val privateDevice = privateDeviceTypes
+        .asSequence()
+        .mapNotNull { type ->
+          audioManager.availableCommunicationDevices.firstOrNull {
+            it.type == type
+          }
+        }
+        .firstOrNull()
+
+      if (privateDevice != null && audioManager.setCommunicationDevice(privateDevice)) {
+        return
+      }
+
+      audioManager.clearCommunicationDevice()
+    }
+
+    @Suppress("DEPRECATION")
+    audioManager.isSpeakerphoneOn = false
   }
 
   private fun restoreAudioRoute() {
