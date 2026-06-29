@@ -170,6 +170,25 @@ const voiceAudioSet = {
   AudioSamplingRate: 44100,
   AudioEncodingBitRate: 64000,
 } as const;
+const chatPatternMarks: Array<{
+  kind: 'dot' | 'dash';
+  top: `${number}%`;
+  left: `${number}%`;
+}> = [
+  { kind: 'dot', top: '6%', left: '9%' },
+  { kind: 'dash', top: '10%', left: '58%' },
+  { kind: 'dot', top: '16%', left: '82%' },
+  { kind: 'dash', top: '24%', left: '18%' },
+  { kind: 'dot', top: '31%', left: '44%' },
+  { kind: 'dash', top: '38%', left: '74%' },
+  { kind: 'dot', top: '47%', left: '13%' },
+  { kind: 'dash', top: '55%', left: '37%' },
+  { kind: 'dot', top: '63%', left: '88%' },
+  { kind: 'dash', top: '70%', left: '7%' },
+  { kind: 'dot', top: '78%', left: '53%' },
+  { kind: 'dash', top: '86%', left: '79%' },
+  { kind: 'dot', top: '92%', left: '24%' },
+];
 
 function useLatest<T>(value: T) {
   const ref = useRef(value);
@@ -2959,21 +2978,33 @@ export default function ChatScreen({ route }: Props) {
     [],
   );
   const renderMessageItem = useCallback(
-    ({ item }: { item: Message }) => (
-      <MessageBubble
-        message={item}
-        outgoing={item.from_id === user?.id}
-        onImagePress={setSelectedImageUrl}
-        onVideoPress={setSelectedVideoUrl}
-        onImportLinkPreviewVideo={importLinkPreviewVideo}
-        onVoicePress={toggleVoicePlayback}
-        playingVoiceUrl={playingVoiceUrl}
-        onLongPress={() => openMessageActions(item)}
-        themeColors={themeColors}
-      />
-    ),
+    ({ item, index }: { item: Message; index: number }) => {
+      const nextMessage = messages[index + 1];
+      const groupedWithNext = Boolean(
+        nextMessage &&
+          nextMessage.from_id === item.from_id &&
+          new Date(nextMessage.created_at).toDateString() ===
+            new Date(item.created_at).toDateString(),
+      );
+
+      return (
+        <MessageBubble
+          message={item}
+          outgoing={item.from_id === user?.id}
+          onImagePress={setSelectedImageUrl}
+          onVideoPress={setSelectedVideoUrl}
+          onImportLinkPreviewVideo={importLinkPreviewVideo}
+          onVoicePress={toggleVoicePlayback}
+          playingVoiceUrl={playingVoiceUrl}
+          onLongPress={() => openMessageActions(item)}
+          themeColors={themeColors}
+          groupedWithNext={groupedWithNext}
+        />
+      );
+    },
     [
       importLinkPreviewVideo,
+      messages,
       openMessageActions,
       playingVoiceUrl,
       themeColors,
@@ -2987,9 +3018,27 @@ export default function ChatScreen({ route }: Props) {
       scroll={false}
       padded={false}
       avoidKeyboard
-      contentContainerStyle={styles.container}
+      style={themed.chatBackground}
+      contentContainerStyle={[styles.container, themed.chatBackground]}
       onLayout={handleChatLayout}
     >
+      <View pointerEvents="none" style={styles.chatWallpaper}>
+        {chatPatternMarks.map((mark, index) => (
+          <View
+            key={`${mark.kind}-${index}`}
+            style={[
+              mark.kind === 'dot'
+                ? styles.chatPatternDot
+                : styles.chatPatternDash,
+              mark.kind === 'dot'
+                ? themed.chatPatternDot
+                : themed.chatPatternDash,
+              { top: mark.top, left: mark.left },
+            ]}
+          />
+        ))}
+      </View>
+
       <ErrorBanner message={error} />
       <SuccessBanner message={copyNotice} />
 

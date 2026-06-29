@@ -1,5 +1,15 @@
-import React, { useMemo, useState } from 'react';
-import { Image, Linking, Pressable, Text, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  Image,
+  Linking,
+  Pressable,
+  Text,
+  View,
+  type LayoutChangeEvent,
+  type NativeSyntheticEvent,
+  type TextLayoutEventData,
+  useWindowDimensions,
+} from 'react-native';
 import Video from 'react-native-video';
 import { Video as VideoIcon } from 'lucide-react-native';
 
@@ -7,7 +17,7 @@ import { assetURL } from '../../../config/env';
 import type { Message } from '../../../api/types';
 import type { ThemeColors } from '../../../theme/themes';
 import { useTheme } from '../../../theme/ThemeContext';
-import { formatDateTime, formatDuration } from '../../../utils/format';
+import { formatDuration, formatMessageTime } from '../../../utils/format';
 import { createChatThemeStyles, styles } from './chatStyles';
 import {
   formatBytes,
@@ -145,6 +155,89 @@ function LinkPreviewCard({
   );
 }
 
+type MessageStatusKind = 'sent' | 'read';
+
+function outgoingStatus(message: Message, outgoing: boolean): MessageStatusKind | null {
+  if (!outgoing) {
+    return null;
+  }
+
+  return message.is_read ? 'read' : 'sent';
+}
+
+function statusChecks(status: MessageStatusKind | null) {
+  if (!status) {
+    return '';
+  }
+
+  return status === 'read' ? '✓✓' : '✓';
+}
+
+function MessageFooterText({
+  time,
+  status,
+  themeColors,
+}: {
+  time: string;
+  status: MessageStatusKind | null;
+  themeColors: ThemeColors;
+}) {
+  const checks = statusChecks(status);
+  const mutedColor = themeColors.isDark
+    ? 'rgba(226, 232, 240, 0.68)'
+    : 'rgba(86, 102, 91, 0.76)';
+  const readColor = themeColors.isDark ? '#64d2c6' : '#229ed9';
+
+  return (
+    <>
+      <Text style={[styles.messageFooterTime, { color: mutedColor }]}>
+        {time}
+      </Text>
+      {checks ? (
+        <Text
+          style={[
+            styles.messageFooterChecks,
+            { color: status === 'read' ? readColor : mutedColor },
+          ]}
+        >
+          {checks}
+        </Text>
+      ) : null}
+    </>
+  );
+}
+
+function MessageFooterView({
+  time,
+  status,
+  themeColors,
+  onLayout,
+  measureOnly = false,
+}: {
+  time: string;
+  status: MessageStatusKind | null;
+  themeColors: ThemeColors;
+  onLayout?: (event: LayoutChangeEvent) => void;
+  measureOnly?: boolean;
+}) {
+  return (
+    <View
+      pointerEvents="none"
+      style={[
+        styles.messageFooter,
+        measureOnly && styles.messageFooterMeasure,
+      ]}
+      onLayout={onLayout}
+    >
+      <MessageFooterText
+        time={time}
+        status={status}
+        themeColors={themeColors}
+      />
+    </View>
+  );
+}
+
 export const MessageBubble = React.memo(function MessageBubble({
   message,
   outgoing,
@@ -155,6 +248,7 @@ export const MessageBubble = React.memo(function MessageBubble({
   playingVoiceUrl,
   onLongPress,
   themeColors,
+  groupedWithNext = false,
 }: {
   message: Message;
   outgoing: boolean;
@@ -165,20 +259,96 @@ export const MessageBubble = React.memo(function MessageBubble({
   playingVoiceUrl: string | null;
   onLongPress: () => void;
   themeColors: ThemeColors;
+  groupedWithNext?: boolean;
 }) {
   const themed = useMemo(
     () => createChatThemeStyles(themeColors),
     [themeColors],
   );
+  const windowDimensions = useWindowDimensions();
   const displayContent =
     message.content ||
     (message.encryption_version && message.encryption_version > 0
       ? 'Не удалось расшифровать сообщение'
       : '');
+  const footerTime = formatMessageTime(message.created_at);
+  const footerStatus = outgoingStatus(message, outgoing);
+  const hasAttachments = Boolean(message.attachments?.length);
+  const hasBlockContent = Boolean(
+    message.forwarded_from_message_id ||
+      message.reply_to_message_id ||
+      message.link_preview ||
+      hasAttachments,
+  );
+  const textOnlyMessage = Boolean(displayContent) && !hasBlockContent;
+  const [footerWidth, setFooterWidth] = useState(0);
+  const [textMetrics, setTextMetrics] = useState({
+    lineCount: 0,
+    lastLineWidth: 0,
+  });
+  const textHasHardBreak = displayContent.includes('\n');
+  const maxBubbleContentWidth = Math.max(
+    0,
+    (windowDimensions.width - 20) * 0.82 - 28,
+  );
+  const canInlineFooter =
+    textOnlyMessage &&
+    !textHasHardBreak &&
+    textMetrics.lineCount === 1 &&
+    footerWidth > 0 &&
+    textMetrics.lastLineWidth + footerWidth + 12 <=
+      maxBubbleContentWidth;
+  const showFloatingFooter = !canInlineFooter;
+  const trailingTextNeedsFooterReserve = Boolean(displayContent) &&
+    !message.link_preview &&
+    !hasAttachments;
+  const floatingFooterReserveStyle =
+    showFloatingFooter && footerWidth > 0 && trailingTextNeedsFooterReserve
+      ? { paddingRight: Math.max(14, footerWidth + 22) }
+      : null;
+
+  useEffect(() => {
+    setTextMetrics({ lineCount: 0, lastLineWidth: 0 });
+  }, [displayContent]);
+
+  const handleFooterLayout = (event: LayoutChangeEvent) => {
+    const nextWidth = event.nativeEvent.layout.width;
+    setFooterWidth(current =>
+      Math.abs(current - nextWidth) > 0.5 ? nextWidth : current,
+    );
+  };
+
+  const handleTextLayout = (
+    event: NativeSyntheticEvent<TextLayoutEventData>,
+  ) => {
+    if (canInlineFooter) {
+      return;
+    }
+
+    const lines = event.nativeEvent.lines;
+    const lastLine = lines[lines.length - 1];
+    const nextMetrics = {
+      lineCount: lines.length,
+      lastLineWidth: lastLine?.width ?? 0,
+    };
+
+    setTextMetrics(current =>
+      current.lineCount === nextMetrics.lineCount &&
+      Math.abs(current.lastLineWidth - nextMetrics.lastLineWidth) <= 0.5
+        ? current
+        : nextMetrics,
+    );
+  };
 
   return (
     <Pressable
-      style={[styles.bubbleRow, outgoing && styles.bubbleRowOutgoing]}
+      style={[
+        styles.bubbleRow,
+        outgoing && styles.bubbleRowOutgoing,
+        groupedWithNext
+          ? styles.bubbleRowGroupedSpacing
+          : styles.bubbleRowSpacing,
+      ]}
       delayLongPress={280}
       onLongPress={onLongPress}
     >
@@ -187,8 +357,18 @@ export const MessageBubble = React.memo(function MessageBubble({
           styles.bubble,
           outgoing ? styles.outgoing : styles.incoming,
           outgoing ? themed.outgoingBubble : themed.incomingBubble,
+          showFloatingFooter && styles.bubbleWithFloatingFooter,
+          floatingFooterReserveStyle,
         ]}
       >
+        <MessageFooterView
+          time={footerTime}
+          status={footerStatus}
+          themeColors={themeColors}
+          onLayout={handleFooterLayout}
+          measureOnly
+        />
+
         {message.forwarded_from_message_id ? (
           <Text
             style={[
@@ -235,6 +415,7 @@ export const MessageBubble = React.memo(function MessageBubble({
         {displayContent ? (
           <Text
             selectable
+            onTextLayout={handleTextLayout}
             style={[
               styles.messageText,
               themed.messageBodyText,
@@ -261,6 +442,16 @@ export const MessageBubble = React.memo(function MessageBubble({
 
               return part.value;
             })}
+            {canInlineFooter ? (
+              <Text style={styles.messageInlineFooter}>
+                {'  '}
+                <MessageFooterText
+                  time={footerTime}
+                  status={footerStatus}
+                  themeColors={themeColors}
+                />
+              </Text>
+            ) : null}
           </Text>
         ) : null}
 
@@ -517,18 +708,12 @@ export const MessageBubble = React.memo(function MessageBubble({
           );
         })}
 
-        <Text
-          style={[
-            styles.messageDate,
-            outgoing ? themed.outgoingSoftText : themed.softText,
-          ]}
-        >
-          {formatDateTime(message.created_at)}
-        </Text>
-        {outgoing ? (
-          <Text style={[styles.outgoingStatus, themed.outgoingSoftText]}>
-            {message.is_read ? 'Прочитано' : 'Отправлено'}
-          </Text>
+        {showFloatingFooter ? (
+          <MessageFooterView
+            time={footerTime}
+            status={footerStatus}
+            themeColors={themeColors}
+          />
         ) : null}
       </View>
     </Pressable>

@@ -668,8 +668,86 @@ button {
         }
     }
 
+    .chat-wallpaper {
+        isolation: isolate;
+        background: transparent;
+    }
+
+    .chat-wallpaper::before {
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        pointer-events: none;
+        content: "";
+        background-image:
+            radial-gradient(circle at 18px 16px, var(--app-chat-pattern-ink, rgba(69, 80, 64, 0.11)) 0 1px, transparent 1.4px),
+            radial-gradient(circle at 48px 44px, var(--app-chat-pattern-ink, rgba(69, 80, 64, 0.09)) 0 1px, transparent 1.5px),
+            linear-gradient(135deg, transparent 0 47%, var(--app-chat-pattern-line, rgba(69, 80, 64, 0.035)) 47% 49%, transparent 49% 100%),
+            var(--app-chat-bg);
+        background-position: 0 0, 18px 12px, 0 0, 0 0;
+        background-size: 72px 72px, 112px 112px, 150px 150px, auto;
+        opacity: var(--app-chat-pattern-opacity, 0.45);
+    }
+
     .chat-message-bubble {
         transform-origin: center;
+        box-shadow: 0 1px 1px rgba(15, 23, 42, 0.05);
+    }
+
+    .chat-message-bubble--own,
+    .chat-message-bubble--other {
+        min-width: 0;
+    }
+
+    .chat-message-text {
+        margin: 0;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+        line-height: 1.38;
+    }
+
+    .chat-message-text::after {
+        display: block;
+        clear: both;
+        content: "";
+    }
+
+    .chat-message-meta {
+        float: right;
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        margin-top: 0.18em;
+        margin-left: 0.7em;
+        color: var(--app-message-meta);
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+        font-weight: 500;
+        line-height: 1.25;
+        opacity: 0.84;
+        white-space: nowrap;
+    }
+
+    .chat-message-meta--standalone {
+        margin-top: 2px;
+    }
+
+    .chat-message-meta--read .chat-message-meta__checks {
+        color: var(--app-message-meta-read);
+        opacity: 1;
+    }
+
+    .chat-message-meta__checks {
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: -1px;
+        opacity: 0.86;
+    }
+
+    .chat-message-meta-row {
+        display: flow-root;
+        min-height: 14px;
     }
 
     .message-reaction-trigger {

@@ -101,6 +101,45 @@ function previewDomain(raw: string) {
     }
 }
 
+type MessageStatusKind = 'sent' | 'read';
+
+function messageStatus(message: Message, isOwn: boolean): MessageStatusKind | undefined {
+    if (!isOwn) {
+        return undefined;
+    }
+
+    return message.is_read ? 'read' : 'sent';
+}
+
+function statusChecks(status?: MessageStatusKind) {
+    if (!status) {
+        return undefined;
+    }
+
+    return status === 'read' ? '✓✓' : '✓';
+}
+
+function MessageMeta({
+    timestamp,
+    status,
+    standalone = false,
+}: {
+    timestamp: string;
+    status?: MessageStatusKind;
+    standalone?: boolean;
+}) {
+    const checks = statusChecks(status);
+
+    return (
+        <span
+            className={`chat-message-meta ${standalone ? 'chat-message-meta--standalone' : ''} ${status === 'read' ? 'chat-message-meta--read' : ''}`}
+        >
+            <span className="chat-message-meta__time">{timestamp}</span>
+            {checks ? <span className="chat-message-meta__checks">{checks}</span> : null}
+        </span>
+    );
+}
+
 export function LinkPreviewCard({
     preview,
     hasVideo,
@@ -176,6 +215,8 @@ interface ChatMessageProps {
     isOwn: boolean;
     showDate: boolean;
     isFirst: boolean;
+    isGroupedWithPrevious: boolean;
+    isGroupedWithNext: boolean;
     recipientName?: string;
     recipientAvatar?: string | null;
     recipientAvatarPositionX?: number;
@@ -212,6 +253,8 @@ const ChatMessageComponent = ({
                                 isOwn,
                                 showDate,
                                 isFirst,
+                                isGroupedWithPrevious,
+                                isGroupedWithNext,
                                 recipientName,
                                 recipientAvatar,
                                 recipientAvatarPositionX,
@@ -260,7 +303,15 @@ const ChatMessageComponent = ({
         && !failedAttachments.length
         && !message.forwarded_from_message_id
         && !message.reply_to_message_id;
-    const messageStatusLabel = isOwn ? (message.is_read ? '✓✓' : '✓') : undefined;
+    const currentMessageStatus = messageStatus(message, isOwn);
+    const messageStatusLabel = statusChecks(currentMessageStatus);
+    const timestamp = formatTime(message.created_at);
+    const rootSpacingClass = isFirst || showDate
+        ? ''
+        : isGroupedWithPrevious
+            ? 'mt-1'
+            : 'mt-2.5 sm:mt-3';
+    const showIncomingAvatar = !isOwn && !selectionMode && !isGroupedWithNext;
 
     const clearLongPressTimer = () => {
         if (longPressTimer.current) {
@@ -354,7 +405,7 @@ const ChatMessageComponent = ({
         <div
             id={isFirst ? 'msg-first' : `msg-${message.id}`}
             data-chat-message-id={message.id}
-            className={`${isContextActive ? 'relative z-[60]' : ''} select-none [-webkit-touch-callout:none] [-webkit-user-select:none]`}
+            className={`${rootSpacingClass} ${isContextActive ? 'relative z-[60]' : ''} select-none [-webkit-touch-callout:none] [-webkit-user-select:none]`}
             style={{
                 touchAction: 'manipulation',
             }}
@@ -387,19 +438,23 @@ const ChatMessageComponent = ({
                     </div>
                 )}
                 {!isOwn && !selectionMode && (
-                    <Avatar
-                        name={recipientName}
-                        src={recipientAvatar}
-                        positionX={recipientAvatarPositionX}
-                        positionY={recipientAvatarPositionY}
-                        scale={recipientAvatarScale}
-                        size="sm"
-                        className="flex-shrink-0 mr-2"
-                        ariaLabel={`Открыть профиль ${recipientName || 'собеседника'}`}
-                        onClick={onOpenUser ? () => onOpenUser(message.from_id) : undefined}
-                    />
+                    showIncomingAvatar ? (
+                        <Avatar
+                            name={recipientName}
+                            src={recipientAvatar}
+                            positionX={recipientAvatarPositionX}
+                            positionY={recipientAvatarPositionY}
+                            scale={recipientAvatarScale}
+                            size="sm"
+                            className="mr-2 flex-shrink-0 self-end"
+                            ariaLabel={`Открыть профиль ${recipientName || 'собеседника'}`}
+                            onClick={onOpenUser ? () => onOpenUser(message.from_id) : undefined}
+                        />
+                    ) : (
+                        <div className="mr-2 h-8 w-8 flex-shrink-0" aria-hidden="true" />
+                    )
                 )}
-                <div className="relative max-w-[82%] sm:max-w-[70%]">
+                <div className="relative max-w-[82%] sm:max-w-[68%]">
                     {reactionsEnabled && !selectionMode && editingMessageId !== message.id && message.id > 0 && message.id < 10000000 && (
                         <button
                             type="button"
@@ -438,7 +493,7 @@ const ChatMessageComponent = ({
                             onClick={handleMessageClick}
                             className={isPureVideoNoteMessage
                                 ? `chat-message-bubble video-note-message-bubble transition-shadow ${selectionMode ? canSelect ? 'cursor-pointer' : 'opacity-60' : ''} ${isContextActive ? 'rounded-full ring-2 ring-[var(--app-glass-border)]' : ''}`
-                                : `chat-message-bubble rounded-2xl px-3 py-2 transition-shadow sm:px-4 ${selectionMode ? canSelect ? 'cursor-pointer' : 'opacity-60' : ''} ${isContextActive ? 'shadow-2xl ring-2 ring-[var(--app-glass-border)]' : ''} ${isOwn ? 'rounded-br-md border border-[var(--app-message-own-border)] bg-[var(--app-message-own-bg)] text-[var(--app-message-own-text)]' : 'rounded-bl-md border border-[var(--app-message-other-border)] bg-[var(--app-message-other-bg)] text-[var(--app-message-other-text)]'}`}
+                                : `chat-message-bubble ${isOwn ? 'chat-message-bubble--own' : 'chat-message-bubble--other'} rounded-[18px] px-3 py-1.5 transition-shadow sm:px-3.5 ${selectionMode ? canSelect ? 'cursor-pointer' : 'opacity-60' : ''} ${isContextActive ? 'shadow-2xl ring-2 ring-[var(--app-glass-border)]' : ''} ${isOwn ? 'rounded-br-md border border-[var(--app-message-own-border)] bg-[var(--app-message-own-bg)] text-[var(--app-message-own-text)]' : 'rounded-bl-md border border-[var(--app-message-other-border)] bg-[var(--app-message-other-bg)] text-[var(--app-message-other-text)]'}`}
                         >
                             {message.forwarded_from_message_id && (
                                 <div className={`mb-1 text-xs font-medium ${isOwn ? 'text-[var(--app-accent)]' : 'text-[var(--app-text-secondary)]'}`}>
@@ -494,7 +549,7 @@ const ChatMessageComponent = ({
                                             key={attachment.id ?? attachment.file_url}
                                             attachment={attachment}
                                             isOwn={isOwn}
-                                            timestamp={isPureVideoNoteMessage && index === videoNoteAttachments.length - 1 ? formatTime(message.created_at) : undefined}
+                                            timestamp={isPureVideoNoteMessage && index === videoNoteAttachments.length - 1 ? timestamp : undefined}
                                             statusLabel={isPureVideoNoteMessage && index === videoNoteAttachments.length - 1 ? messageStatusLabel : undefined}
                                             selectionMode={selectionMode}
                                             canSelect={canSelect}
@@ -642,15 +697,19 @@ const ChatMessageComponent = ({
                             ) : null}
 
                             {message.content && (
-                                <p className={`text-sm break-words ${message.decryption_error ? 'italic text-red-600' : ''}`}>
+                                <p className={`chat-message-text text-sm ${message.decryption_error ? 'italic text-red-600' : ''}`}>
                                     {linkifyText(message.content)}
+                                    <MessageMeta timestamp={timestamp} status={currentMessageStatus} />
                                 </p>
                             )}
 
-                            {!isPureVideoNoteMessage && (
-                                <div className={`mt-1 text-xs ${isOwn ? 'text-right text-[var(--app-text-secondary)]' : 'text-left text-[var(--app-text-soft)]'}`}>
-                                    {formatTime(message.created_at)}
-                                    {messageStatusLabel && <span className="ml-1">{messageStatusLabel}</span>}
+                            {!message.content && !isPureVideoNoteMessage && (
+                                <div className="chat-message-meta-row">
+                                    <MessageMeta
+                                        timestamp={timestamp}
+                                        status={currentMessageStatus}
+                                        standalone
+                                    />
                                 </div>
                             )}
                         </div>

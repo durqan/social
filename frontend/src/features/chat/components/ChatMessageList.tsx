@@ -553,7 +553,7 @@ export const ChatMessageList = ({
     }, [contextMenu, menuActions.length]);
 
     return (
-        <div ref={containerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto p-3 space-y-3 sm:p-4 sm:space-y-4">
+        <div ref={containerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto p-3 sm:p-4">
             {loadingMore && (
                 <div className="flex justify-center py-2">
                     <Spinner size="sm" />
@@ -568,8 +568,19 @@ export const ChatMessageList = ({
                     const isOwn = msg.from_id === currentUserId;
                     const canSelect = isOwn && msg.id > 0 && msg.id < optimisticMessageFloor;
                     const prevMsg = idx > 0 ? messages[idx - 1] : null;
+                    const nextMsg = idx < messages.length - 1 ? messages[idx + 1] : null;
                     const showDate = !prevMsg || formatDate(msg.created_at) !== formatDate(prevMsg.created_at);
                     const isFirst = idx === 0;
+                    const isGroupedWithPrevious = Boolean(
+                        prevMsg &&
+                        !showDate &&
+                        prevMsg.from_id === msg.from_id
+                    );
+                    const isGroupedWithNext = Boolean(
+                        nextMsg &&
+                        formatDate(msg.created_at) === formatDate(nextMsg.created_at) &&
+                        nextMsg.from_id === msg.from_id
+                    );
 
                     return (
                         <ChatMessage
@@ -578,6 +589,8 @@ export const ChatMessageList = ({
                             isOwn={isOwn}
                             showDate={showDate}
                             isFirst={isFirst}
+                            isGroupedWithPrevious={isGroupedWithPrevious}
+                            isGroupedWithNext={isGroupedWithNext}
                             recipientName={recipientName}
                             recipientAvatar={recipientAvatar}
                             recipientAvatarPositionX={recipientAvatarPositionX}

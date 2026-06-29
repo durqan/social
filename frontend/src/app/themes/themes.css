@@ -634,3 +634,55 @@
 [data-theme="amoled-void"] {
     --app-card-backdrop: none;
 }
+
+:root,
+[data-theme="aurora-glass"],
+[data-theme="classic-light"],
+[data-theme="sakura-dream"],
+[data-theme="green-farm"] {
+    --app-chat-bg: linear-gradient(180deg, #f2eadf 0%, #ebe4d8 100%);
+    --app-chat-pattern-ink: rgba(76, 86, 68, 0.12);
+    --app-chat-pattern-line: rgba(76, 86, 68, 0.04);
+    --app-chat-pattern-opacity: 0.46;
+    --app-message-own-bg: #d9fdd3;
+    --app-message-own-border: rgba(83, 154, 91, 0.2);
+    --app-message-own-text: #173026;
+    --app-message-other-bg: #fffefa;
+    --app-message-other-border: rgba(69, 80, 64, 0.1);
+    --app-message-other-text: #172033;
+    --app-message-meta: rgba(86, 102, 91, 0.78);
+    --app-message-meta-read: #229ed9;
+}
+
+[data-theme="classic-dark"],
+[data-theme="midnight-orchid"],
+[data-theme="neo-tokyo"],
+[data-theme="ember-wasteland"] {
+    --app-chat-bg: linear-gradient(180deg, #111b1c 0%, #0b1112 100%);
+    --app-chat-pattern-ink: rgba(218, 228, 220, 0.09);
+    --app-chat-pattern-line: rgba(218, 228, 220, 0.035);
+    --app-chat-pattern-opacity: 0.38;
+    --app-message-own-bg: #24594f;
+    --app-message-own-border: rgba(83, 190, 155, 0.24);
+    --app-message-own-text: #f5faf7;
+    --app-message-other-bg: #1d2729;
+    --app-message-other-border: rgba(218, 228, 220, 0.1);
+    --app-message-other-text: #f4f7fb;
+    --app-message-meta: rgba(209, 222, 216, 0.72);
+    --app-message-meta-read: #64d2c6;
+}
+
+[data-theme="amoled-void"] {
+    --app-chat-bg: #030706;
+    --app-chat-pattern-ink: rgba(226, 232, 240, 0.06);
+    --app-chat-pattern-line: rgba(226, 232, 240, 0.025);
+    --app-chat-pattern-opacity: 0.32;
+    --app-message-own-bg: #163d37;
+    --app-message-own-border: rgba(83, 190, 155, 0.22);
+    --app-message-own-text: #f8fafc;
+    --app-message-other-bg: #0c1112;
+    --app-message-other-border: rgba(255, 255, 255, 0.1);
+    --app-message-other-text: #f8fafc;
+    --app-message-meta: rgba(203, 213, 225, 0.72);
+    --app-message-meta-read: #64d2c6;
+}

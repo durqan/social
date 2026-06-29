@@ -16,8 +16,40 @@ export const createChatThemeStyles = (
   textSizeId: TextSizeId = 'standard',
 ) => {
   const scaledTypography = createTypography(textSizeOptions[textSizeId].scale);
+  const ownBubbleBg = theme.isDark
+    ? theme.id === 'amoled-void'
+      ? '#163d37'
+      : '#24594f'
+    : '#d9fdd3';
+  const ownBubbleText = theme.isDark ? '#f5faf7' : '#173026';
+  const otherBubbleBg = theme.isDark
+    ? theme.id === 'amoled-void'
+      ? '#0c1112'
+      : '#1d2729'
+    : '#fffefa';
+  const otherBubbleText = theme.isDark ? '#f4f7fb' : '#172033';
+  const otherBubbleBorder = theme.isDark
+    ? 'rgba(218, 228, 220, 0.1)'
+    : 'rgba(69, 80, 64, 0.1)';
 
   return StyleSheet.create({
+    chatBackground: {
+      backgroundColor: theme.isDark
+        ? theme.id === 'amoled-void'
+          ? '#030706'
+          : '#111b1c'
+        : '#f2eadf',
+    },
+    chatPatternDot: {
+      backgroundColor: theme.isDark
+        ? 'rgba(218, 228, 220, 0.09)'
+        : 'rgba(76, 86, 68, 0.12)',
+    },
+    chatPatternDash: {
+      backgroundColor: theme.isDark
+        ? 'rgba(218, 228, 220, 0.045)'
+        : 'rgba(76, 86, 68, 0.05)',
+    },
     card: {
       backgroundColor: theme.card,
       borderColor: theme.border,
@@ -34,6 +66,7 @@ export const createChatThemeStyles = (
     composerDock: {
       backgroundColor: 'transparent',
       borderTopColor: 'transparent',
+      zIndex: 2,
     },
     composerSurface: {
       backgroundColor: theme.surface,
@@ -58,33 +91,33 @@ export const createChatThemeStyles = (
       color: theme.text,
     },
     messageText: {
-      color: theme.messageOtherText,
+      color: otherBubbleText,
     },
     messageBodyText: {
       fontSize: scaledTypography.body.fontSize + 1,
       lineHeight: scaledTypography.body.lineHeight + 1,
     },
     outgoingMessageText: {
-      color: theme.messageOwnText,
+      color: ownBubbleText,
     },
     composerInputText: {
       fontSize: scaledTypography.body.fontSize,
       lineHeight: scaledTypography.body.lineHeight,
     },
     outgoingAccentText: {
-      color: theme.messageOwnText,
+      color: ownBubbleText,
       opacity: 0.9,
     },
     outgoingMutedText: {
-      color: theme.messageOwnText,
+      color: ownBubbleText,
       opacity: 0.78,
     },
     outgoingSoftText: {
-      color: theme.messageOwnText,
+      color: ownBubbleText,
       opacity: 0.68,
     },
     outgoingLink: {
-      color: theme.messageOwnText,
+      color: ownBubbleText,
       textDecorationLine: 'underline',
     },
     mutedText: {
@@ -109,13 +142,15 @@ export const createChatThemeStyles = (
       borderLeftColor: theme.accent,
     },
     incomingBubble: {
-      backgroundColor: theme.messageOtherBg,
-      borderColor: theme.messageOtherBorder,
+      backgroundColor: otherBubbleBg,
+      borderColor: otherBubbleBorder,
     },
     outgoingBubble: {
-      backgroundColor: theme.messageOwnBg,
-      borderColor: theme.messageOwnBorder,
-      borderWidth: 0,
+      backgroundColor: ownBubbleBg,
+      borderColor: theme.isDark
+        ? 'rgba(83, 190, 155, 0.24)'
+        : 'rgba(83, 154, 91, 0.2)',
+      borderWidth: StyleSheet.hairlineWidth,
     },
     replyPreview: {
       backgroundColor: theme.surfaceMuted,
@@ -181,6 +216,31 @@ export const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 0,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  chatWallpaper: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    opacity: 1,
+  },
+  chatPatternDot: {
+    position: 'absolute',
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    opacity: 0.82,
+  },
+  chatPatternDash: {
+    position: 'absolute',
+    width: 24,
+    height: 1,
+    borderRadius: 999,
+    opacity: 0.78,
+    transform: [{ rotate: '-24deg' }],
   },
   loading: {
     flex: 1,
@@ -193,6 +253,7 @@ export const styles = StyleSheet.create({
   },
   messageListContainer: {
     flex: 1,
+    zIndex: 1,
   },
   callActions: {
     display: 'none',
@@ -201,7 +262,6 @@ export const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingTop: spacing.md,
     paddingBottom: 20,
-    gap: 7,
     flexGrow: 1,
   },
   emptyMessageList: {
@@ -211,35 +271,72 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'flex-start',
   },
+  bubbleRowSpacing: {
+    marginBottom: 7,
+  },
+  bubbleRowGroupedSpacing: {
+    marginBottom: 2,
+  },
   bubbleRowOutgoing: {
     justifyContent: 'flex-end',
   },
   bubble: {
-    maxWidth: '84%',
-    borderRadius: 22,
+    maxWidth: '82%',
+    borderRadius: 18,
     paddingHorizontal: 14,
     paddingVertical: 9,
     gap: spacing.xs,
+    position: 'relative',
     shadowColor: colors.shadow,
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.035,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
     elevation: 1,
+  },
+  bubbleWithFloatingFooter: {
+    paddingBottom: 25,
   },
   incoming: {
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    borderBottomLeftRadius: 7,
+    borderBottomLeftRadius: 6,
   },
   outgoing: {
     backgroundColor: colors.accent,
-    borderBottomRightRadius: 7,
+    borderBottomRightRadius: 6,
   },
   messageText: {
     fontSize: 16,
     lineHeight: 22,
     color: colors.text,
+  },
+  messageInlineFooter: {
+    fontSize: 11,
+    lineHeight: 14,
+  },
+  messageFooter: {
+    position: 'absolute',
+    right: 10,
+    bottom: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  messageFooterMeasure: {
+    opacity: 0,
+  },
+  messageFooterTime: {
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '500',
+  },
+  messageFooterChecks: {
+    marginLeft: 1,
+    fontSize: 10,
+    lineHeight: 14,
+    fontWeight: '900',
+    letterSpacing: -1,
   },
   outgoingText: {
     color: colors.white,
@@ -686,6 +783,7 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
+    zIndex: 2,
   },
   pinnedStripe: {
     width: 4,
