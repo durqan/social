@@ -2246,6 +2246,9 @@ export function CallProvider({children}: { children: ReactNode }) {
                 cleanupStaleAccept();
                 return;
             }
+            cancelIncomingCallNotification(pendingOffer.callId).catch(
+                () => undefined,
+            );
             const opened = await openLocalStreamWithFallback(pendingOffer.callType);
             stream = opened.stream;
             setCurrentCallType(opened.callType);

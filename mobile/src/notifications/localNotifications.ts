@@ -1,6 +1,8 @@
 import notifee, {
   AndroidCategory,
+  AndroidFlags,
   AndroidImportance,
+  AndroidLaunchActivityFlag,
   AndroidVisibility,
   EventType,
 } from '@notifee/react-native';
@@ -9,7 +11,10 @@ import { Platform } from 'react-native';
 
 import { getActivePushConversation } from './activeConversation';
 import { enqueuePendingPushEvent } from './pushEffects';
-import { rememberTerminalIncomingCall } from './pendingIncomingCall';
+import {
+  INCOMING_CALL_PUSH_TTL_MS,
+  rememberTerminalIncomingCall,
+} from './pendingIncomingCall';
 import {
   normalizeNotificationData,
   type MobileNotificationData,
@@ -25,6 +30,11 @@ const pendingOpenedLocalNotificationKey =
   '@social/pending-opened-local-notifications:v1';
 
 const incomingCallVibrationPattern = [300, 500, 300, 500, 300, 900];
+const incomingCallLaunchActivityFlags = [
+  AndroidLaunchActivityFlag.NEW_TASK,
+  AndroidLaunchActivityFlag.SINGLE_TOP,
+  AndroidLaunchActivityFlag.CLEAR_TOP,
+];
 
 type LocalNotificationOpenHandler = (
   notification: MobileNotificationData,
@@ -66,6 +76,15 @@ export function shouldDisplayForegroundNotification(
 }
 
 function titleForNotification(notification: MobileNotificationData) {
+  if (notification.type === 'incoming_call') {
+    if (notification.callerName) {
+      return `${notification.callerName} звонит`;
+    }
+    if (notification.body && notification.body !== 'Вам звонит пользователь') {
+      return notification.body;
+    }
+  }
+
   if (notification.title) {
     return notification.title;
   }
@@ -89,6 +108,10 @@ function titleForNotification(notification: MobileNotificationData) {
 }
 
 function bodyForNotification(notification: MobileNotificationData) {
+  if (notification.type === 'incoming_call') {
+    return notification.callType === 'video' ? 'Видеозвонок' : 'Аудиозвонок';
+  }
+
   if (notification.body) {
     return notification.body;
   }
@@ -212,17 +235,25 @@ export async function displayForegroundNotification(
         : AndroidImportance.DEFAULT,
       visibility: incomingCall ? AndroidVisibility.PUBLIC : undefined,
       sound: incomingCall ? 'default' : undefined,
+      loopSound: incomingCall,
+      lightUpScreen: incomingCall,
+      lights: incomingCall ? ['#2563eb', 500, 800] : undefined,
       vibrationPattern: incomingCall ? incomingCallVibrationPattern : undefined,
+      flags: incomingCall ? [AndroidFlags.FLAG_INSISTENT] : undefined,
       ongoing: incomingCall,
       autoCancel: !incomingCall,
       pressAction: {
         id: 'default',
         launchActivity: 'default',
+        launchActivityFlags: incomingCall
+          ? incomingCallLaunchActivityFlags
+          : undefined,
       },
       fullScreenAction: incomingCall
         ? {
             id: 'default',
             launchActivity: 'default',
+            launchActivityFlags: incomingCallLaunchActivityFlags,
           }
         : undefined,
       actions: incomingCall
@@ -239,6 +270,7 @@ export async function displayForegroundNotification(
         : undefined,
       timestamp: notification.timestamp,
       showTimestamp: Boolean(notification.timestamp),
+      timeoutAfter: incomingCall ? INCOMING_CALL_PUSH_TTL_MS : undefined,
     },
   });
 

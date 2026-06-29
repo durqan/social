@@ -17,9 +17,20 @@ jest.mock('@notifee/react-native', () => ({
     MESSAGE: 'msg',
     SOCIAL: 'social',
   },
+  AndroidFlags: {
+    FLAG_INSISTENT: 4,
+  },
   AndroidImportance: {
     DEFAULT: 3,
     HIGH: 4,
+  },
+  AndroidLaunchActivityFlag: {
+    SINGLE_TOP: 1,
+    NEW_TASK: 2,
+    CLEAR_TOP: 4,
+  },
+  AndroidVisibility: {
+    PUBLIC: 1,
   },
   EventType: {
     ACTION_PRESS: 2,
@@ -89,6 +100,47 @@ describe('local notifications', () => {
         android: expect.objectContaining({
           channelId: 'messages',
           smallIcon: 'ic_stat_social_notification',
+        }),
+      }),
+    );
+  });
+
+  it('displays incoming calls as full-screen call notifications', async () => {
+    const { displayForegroundNotification } = require('./localNotifications');
+
+    await expect(displayForegroundNotification({
+      type: 'incoming_call',
+      callId: 'call-1',
+      callType: 'video',
+      body: 'Alice звонит вам',
+      timestamp: 1000,
+    })).resolves.toBe(true);
+
+    expect(mockNotifee.displayNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Alice звонит вам',
+        body: 'Видеозвонок',
+        android: expect.objectContaining({
+          channelId: 'incoming_calls',
+          category: 'call',
+          importance: 4,
+          visibility: 1,
+          lightUpScreen: true,
+          loopSound: true,
+          ongoing: true,
+          autoCancel: false,
+          fullScreenAction: expect.objectContaining({
+            id: 'default',
+            launchActivity: 'default',
+            launchActivityFlags: [2, 1, 4],
+          }),
+          pressAction: expect.objectContaining({
+            launchActivityFlags: [2, 1, 4],
+          }),
+          actions: expect.arrayContaining([
+            expect.objectContaining({ title: 'Ответить' }),
+            expect.objectContaining({ title: 'Отклонить' }),
+          ]),
         }),
       }),
     );
