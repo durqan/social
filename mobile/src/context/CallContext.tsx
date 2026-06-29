@@ -146,27 +146,57 @@ type VideoQualityProfile = {
     width: number;
     height: number;
     frameRate: number;
+    sender: {
+        maxBitrate: number;
+        maxFramerate: number;
+    };
 };
 type ConstraintCapableTrack = MediaStreamTrack & {
     applyConstraints?: (
         constraints: ReturnType<typeof videoConstraints>,
     ) => Promise<void>;
 };
+type CallMediaConstraints = Parameters<typeof mediaDevices.getUserMedia>[0];
 
 const CallContext = createContext<CallContextValue | undefined>(undefined);
 const disconnectedCleanupDelayMs = 10000;
 const callHeartbeatIntervalMs = 15000;
 const maxIceRecoveryAttempts = 2;
+const callAudioConstraints = {
+    googEchoCancellation: true,
+    googNoiseSuppression: true,
+    googAutoGainControl: true,
+    googHighpassFilter: true,
+} as unknown as CallMediaConstraints['audio'];
 const videoQualityProfiles = {
-    low: {name: 'low', width: 426, height: 240, frameRate: 15},
-    medium: {name: 'medium', width: 640, height: 360, frameRate: 30},
-    high: {name: 'high', width: 1280, height: 720, frameRate: 60},
+    low: {
+        name: 'low',
+        width: 426,
+        height: 240,
+        frameRate: 15,
+        sender: {maxBitrate: 350000, maxFramerate: 15},
+    },
+    medium: {
+        name: 'medium',
+        width: 960,
+        height: 540,
+        frameRate: 30,
+        sender: {maxBitrate: 1200000, maxFramerate: 30},
+    },
+    high: {
+        name: 'high',
+        width: 1920,
+        height: 1080,
+        frameRate: 30,
+        sender: {maxBitrate: 3200000, maxFramerate: 30},
+    },
 } satisfies Record<VideoQualityProfileName, VideoQualityProfile>;
 const highFallbackProfile: VideoQualityProfile = {
     name: 'high',
     width: 1280,
     height: 720,
     frameRate: 30,
+    sender: {maxBitrate: 2400000, maxFramerate: 30},
 };
 const absoluteFillObject =
     (
@@ -259,10 +289,13 @@ async function initialVideoQualityProfile(networkConnected: boolean) {
             if (generation === '2g' || generation === '3g') {
                 return videoQualityProfiles.low;
             }
-            if (generation === '4g' || generation === '5g') {
+            if (generation === '5g') {
                 return Platform.OS === 'android' && Number(Platform.Version) < 26
-                    ? videoQualityProfiles.medium
+                    ? highFallbackProfile
                     : videoQualityProfiles.high;
+            }
+            if (generation === '4g') {
+                return highFallbackProfile;
             }
             return videoQualityProfiles.medium;
         }
@@ -275,14 +308,31 @@ async function initialVideoQualityProfile(networkConnected: boolean) {
         : videoQualityProfiles.high;
 }
 
+function isSameVideoProfile(
+    left: VideoQualityProfile,
+    right: VideoQualityProfile,
+) {
+    return (
+        left.name === right.name &&
+        left.width === right.width &&
+        left.height === right.height &&
+        left.frameRate === right.frameRate
+    );
+}
+
 function videoProfileFallbackChain(profile: VideoQualityProfile) {
     if (profile.name === 'high') {
-        return [
+        const chain = [
             videoQualityProfiles.high,
             highFallbackProfile,
             videoQualityProfiles.medium,
             videoQualityProfiles.low,
         ];
+        const startIndex = chain.findIndex(candidate =>
+            isSameVideoProfile(candidate, profile),
+        );
+
+        return startIndex > 0 ? chain.slice(startIndex) : chain;
     }
     if (profile.name === 'medium') {
         return [videoQualityProfiles.medium, videoQualityProfiles.low];
@@ -577,6 +627,54 @@ function logIceServers(
     }));
 }
 
+async function applyVideoSenderQuality(
+    pc: PeerConnection | null,
+    profile: VideoQualityProfile | null | undefined,
+    callId?: string | null,
+    pcId?: number | null,
+) {
+    if (!pc) {
+        return;
+    }
+
+    const sender = pc.getSenders().find(item => item.track?.kind === 'video');
+    if (!sender) {
+        return;
+    }
+
+    try {
+        const senderQuality = profile?.sender ?? highFallbackProfile.sender;
+        const parameters = sender.getParameters();
+        parameters.degradationPreference = 'maintain-resolution';
+        if (parameters.encodings.length === 0) {
+            parameters.encodings = [
+                {
+                    active: true,
+                    ...senderQuality,
+                },
+            ];
+        } else {
+            parameters.encodings.forEach(encoding => {
+                encoding.maxBitrate = senderQuality.maxBitrate;
+                encoding.maxFramerate = senderQuality.maxFramerate;
+            });
+        }
+        await sender.setParameters(parameters);
+        logDev('[SocialMobile] Video sender quality applied', {
+            callId,
+            pcId,
+            profile,
+            ...senderQuality,
+        });
+    } catch (qualityError) {
+        warnDev('[SocialMobile] Failed to apply video sender quality', {
+            callId,
+            pcId,
+            error: qualityError,
+        });
+    }
+}
+
 function statusText(status: CallStatus, callType: CallType) {
     if (status === 'incoming') {
         return callType === 'video' ? 'Входящий видеозвонок' : 'Входящий звонок';
@@ -692,7 +790,7 @@ export function CallProvider({children}: { children: ReactNode }) {
     const peerUserIdRef = useRef(peerUserId);
     const callTypeRef = useRef(callType);
     const networkConnectedRef = useRef(networkConnected);
-    const localVideoProfileRef = useRef<VideoQualityProfileName | null>(null);
+    const localVideoProfileRef = useRef<VideoQualityProfile | null>(null);
     const pcRef = useRef<PeerConnection | null>(null);
     const pcCallIdRef = useRef<string | null>(null);
     const pcIdsRef = useRef(new WeakMap<PeerConnection, number>());
@@ -1508,7 +1606,7 @@ export function CallProvider({children}: { children: ReactNode }) {
                             profile,
                         });
                         stream = await mediaDevices.getUserMedia({
-                            audio: true,
+                            audio: callAudioConstraints,
                             video: videoConstraints(profile),
                         });
                         selectedProfile = profile;
@@ -1527,7 +1625,7 @@ export function CallProvider({children}: { children: ReactNode }) {
             } else {
                 logDev('[SocialMobile] getUserMedia requested for audio call');
                 stream = await mediaDevices.getUserMedia({
-                    audio: true,
+                    audio: callAudioConstraints,
                     video: false,
                 });
             }
@@ -1557,7 +1655,7 @@ export function CallProvider({children}: { children: ReactNode }) {
             });
 
             localStreamRef.current = stream;
-            localVideoProfileRef.current = selectedProfile?.name ?? null;
+            localVideoProfileRef.current = selectedProfile;
             setLocalStream(stream);
             setMicrophoneOn(true);
             setCameraOn(videoTracks.length > 0);
@@ -1615,7 +1713,13 @@ export function CallProvider({children}: { children: ReactNode }) {
 
             try {
                 await track.applyConstraints(videoConstraints(profile));
-                localVideoProfileRef.current = profile.name;
+                localVideoProfileRef.current = profile;
+                await applyVideoSenderQuality(
+                    pcRef.current,
+                    profile,
+                    callIdRef.current,
+                    getPeerConnectionId(pcRef.current),
+                );
                 logDev('[SocialMobile] Local video profile applied', {
                     profile,
                     callId: callIdRef.current,
@@ -1630,7 +1734,7 @@ export function CallProvider({children}: { children: ReactNode }) {
                 return false;
             }
         },
-        [],
+        [getPeerConnectionId],
     );
 
     const createPeerConnection = useCallback(
@@ -2086,6 +2190,12 @@ export function CallProvider({children}: { children: ReactNode }) {
                     });
                     pc.addTrack(track, stream);
                 });
+                await applyVideoSenderQuality(
+                    pc,
+                    localVideoProfileRef.current,
+                    callId,
+                    pcId,
+                );
 
                 const offer = sessionDescriptionForSignal(
                     (await pc.createOffer()) as CallSessionDescription,
@@ -2278,6 +2388,12 @@ export function CallProvider({children}: { children: ReactNode }) {
                 });
                 activePc.addTrack(track, activeStream);
             });
+            await applyVideoSenderQuality(
+                activePc,
+                localVideoProfileRef.current,
+                pendingOffer.callId,
+                pcId,
+            );
 
             logDev('[SocialMobile] setRemoteDescription(offer) start', {
                 callId: pendingOffer.callId,
@@ -2462,8 +2578,14 @@ export function CallProvider({children}: { children: ReactNode }) {
         }
 
         videoTrack._switchCamera();
+        applyVideoSenderQuality(
+            pcRef.current,
+            localVideoProfileRef.current,
+            callIdRef.current,
+            getPeerConnectionId(pcRef.current),
+        ).catch(() => undefined);
         setFrontCamera(current => !current);
-    }, []);
+    }, [getPeerConnectionId]);
 
     const handleSocketEvent = useCallback(
         (event: WsEvent) => {
@@ -2880,7 +3002,11 @@ export function CallProvider({children}: { children: ReactNode }) {
             callType !== 'video' ||
             appState !== 'active' ||
             !networkConnected ||
-            localVideoProfileRef.current === 'high'
+            (localVideoProfileRef.current &&
+                isSameVideoProfile(
+                    localVideoProfileRef.current,
+                    videoQualityProfiles.high,
+                ))
         ) {
             return undefined;
         }
@@ -2891,21 +3017,25 @@ export function CallProvider({children}: { children: ReactNode }) {
                 callTypeRef.current !== 'video' ||
                 appState !== 'active' ||
                 !networkConnectedRef.current ||
-                localVideoProfileRef.current === 'high'
+                (localVideoProfileRef.current &&
+                    isSameVideoProfile(
+                        localVideoProfileRef.current,
+                        videoQualityProfiles.high,
+                    ))
             ) {
                 return;
             }
 
             initialVideoQualityProfile(networkConnectedRef.current)
                 .then(async profile => {
-                    if (profile.name !== 'high') {
-                        return;
-                    }
-                    const highApplied = await applyLocalVideoProfile(
-                        videoQualityProfiles.high,
-                    );
-                    if (!highApplied) {
-                        await applyLocalVideoProfile(highFallbackProfile);
+                    for (const fallbackProfile of videoProfileFallbackChain(profile)) {
+                        if (fallbackProfile.name === 'low') {
+                            return;
+                        }
+                        const applied = await applyLocalVideoProfile(fallbackProfile);
+                        if (applied) {
+                            return;
+                        }
                     }
                 })
                 .catch(() => undefined);
