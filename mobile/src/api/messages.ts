@@ -182,17 +182,19 @@ export function validateLocalChatVideo(video: LocalChatVideo) {
 export function validateLocalVoiceMessage(voice: LocalVoiceMessage) {
   const allowedVoiceMimeTypes = [
     'audio/webm',
+    'audio/ogg',
+    'application/ogg',
     'audio/mp4',
     'audio/m4a',
-    'audio/aac',
+    'audio/x-m4a',
   ];
 
   if (!allowedVoiceMimeTypes.includes(voice.type)) {
-    return 'Поддерживаются только голосовые сообщения WebM';
+    return 'Поддерживаются только голосовые сообщения WebM, Ogg или M4A';
   }
 
   if (voice.fileSize && voice.fileSize > CHAT_VOICE_MAX_BYTES) {
-    return 'Голосовое сообщение должно быть не больше 12 МБ';
+    return 'Голосовое сообщение должно быть не больше 100 МБ';
   }
 
   if (voice.durationSeconds < 1) {
@@ -218,7 +220,7 @@ export function validateLocalVideoNoteMessage(
   }
 
   if (videoNote.fileSize && videoNote.fileSize > CHAT_VIDEO_NOTE_MAX_BYTES) {
-    return 'Видео-сообщение должно быть не больше 25 МБ';
+    return 'Видео-сообщение должно быть не больше 100 МБ';
   }
 
   if (videoNote.durationSeconds < 1) {

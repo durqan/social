@@ -14,7 +14,10 @@ import {
 } from 'lucide-react-native';
 
 import { isEmailVerified } from '../../api/auth';
-import { CHAT_IMAGE_MAX_BYTES, CHAT_IMAGE_MIME_TYPES } from '../../config/env';
+import {
+  AVATAR_IMAGE_MAX_BYTES,
+  AVATAR_IMAGE_MIME_TYPES,
+} from '../../config/env';
 import { getApiErrorMessage } from '../../api/http';
 import { userApi } from '../../api/users';
 import { AppButton } from '../../components/AppButton';
@@ -157,7 +160,7 @@ export default function ProfileScreen() {
     const result = await launchImageLibrary({
       mediaType: 'photo',
       selectionLimit: 1,
-      restrictMimeTypes: [...CHAT_IMAGE_MIME_TYPES],
+      restrictMimeTypes: [...AVATAR_IMAGE_MIME_TYPES],
       includeExtra: true,
       maxWidth: 1600,
       maxHeight: 1600,
@@ -176,7 +179,7 @@ export default function ProfileScreen() {
       setError('Выберите изображение JPEG, PNG или WebP.');
       return;
     }
-    if (image.fileSize && image.fileSize > CHAT_IMAGE_MAX_BYTES) {
+    if (image.fileSize && image.fileSize > AVATAR_IMAGE_MAX_BYTES) {
       setError('Аватар должен быть не больше 10 МБ.');
       return;
     }
@@ -426,7 +429,7 @@ export default function ProfileScreen() {
 
 function assetToAvatarImage(asset?: Asset) {
   if (!asset?.uri || !asset.type) return null;
-  if (!(CHAT_IMAGE_MIME_TYPES as readonly string[]).includes(asset.type))
+  if (!(AVATAR_IMAGE_MIME_TYPES as readonly string[]).includes(asset.type))
     return null;
   return {
     uri: asset.uri,

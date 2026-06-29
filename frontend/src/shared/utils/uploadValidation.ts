@@ -1,4 +1,6 @@
 import {
+    AVATAR_IMAGE_MAX_BYTES,
+    AVATAR_IMAGE_MIME_TYPES,
     CHAT_ATTACHMENT_MAX_COUNT,
     CHAT_ATTACHMENT_MAX_TOTAL_BYTES,
     CHAT_AUDIO_MAX_BYTES,
@@ -27,13 +29,21 @@ import {
     formatFileSize,
 } from '@social/shared';
 
-export const avatarMaxSize = 5 * 1024 * 1024;
+export const avatarMaxSize = AVATAR_IMAGE_MAX_BYTES;
 
+const avatarTypes = new Set<string>(AVATAR_IMAGE_MIME_TYPES);
 const imageTypes = new Set<string>(CHAT_IMAGE_MIME_TYPES);
 const videoTypes = new Set<string>(CHAT_VIDEO_MIME_TYPES);
 const audioTypes = new Set<string>(CHAT_AUDIO_MIME_TYPES);
 const fileTypes = new Set<string>(CHAT_FILE_MIME_TYPES);
-const voiceTypes = new Set([CHAT_VOICE_MIME_TYPE, 'audio/ogg']);
+const voiceTypes = new Set([
+    CHAT_VOICE_MIME_TYPE,
+    'audio/ogg',
+    'application/ogg',
+    'audio/mp4',
+    'audio/m4a',
+    'audio/x-m4a',
+]);
 const videoNoteTypes = new Set<string>(CHAT_VIDEO_NOTE_MIME_TYPES);
 const blockedAttachmentExtensions = new Set<string>(CHAT_BLOCKED_ATTACHMENT_EXTENSIONS);
 const imageExtensions = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif']);
@@ -81,6 +91,22 @@ export function validateImageFile(file: File, maxSize: number) {
 
     if (file.size > maxSize) {
         return `Файл слишком большой: ${formatFileSize(file.size)}. Максимум ${formatFileSize(maxSize)}.`;
+    }
+
+    return '';
+}
+
+export function validateAvatarFile(file: File) {
+    if (file.size <= 0) {
+        return 'Файл пустой. Выберите другое изображение.';
+    }
+
+    if (!avatarTypes.has(file.type)) {
+        return 'Поддерживаются только JPG, PNG или WebP.';
+    }
+
+    if (file.size > avatarMaxSize) {
+        return `Файл слишком большой: ${formatFileSize(file.size)}. Максимум ${formatFileSize(avatarMaxSize)}.`;
     }
 
     return '';
@@ -246,7 +272,7 @@ export function validateVoiceFile(file: File, durationSeconds: number) {
     }
 
     if (!voiceTypes.has(file.type)) {
-        return 'Поддерживаются только голосовые сообщения WebM или Ogg.';
+        return 'Поддерживаются только голосовые сообщения WebM, Ogg или M4A.';
     }
 
     if (file.size > chatVoiceMaxSize) {

@@ -5,7 +5,7 @@ import type {
   User,
 } from './types';
 import { normalizeUser } from './types';
-import { CHAT_IMAGE_MAX_BYTES } from '../config/env';
+import { AVATAR_IMAGE_MAX_BYTES } from '../config/env';
 
 type ApiCallOptions = {
   signal?: AbortSignal;
@@ -80,7 +80,7 @@ export const userApi = {
       fileSize?: number;
     },
   ) {
-    if (image.fileSize && image.fileSize > CHAT_IMAGE_MAX_BYTES) {
+    if (image.fileSize && image.fileSize > AVATAR_IMAGE_MAX_BYTES) {
       throw new Error('Аватар должен быть не больше 10 МБ');
     }
 

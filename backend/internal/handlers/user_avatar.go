@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	avatarMaxSize        = 5 << 20 // 5 MB
+	avatarMaxSize        = 10 << 20 // 10 MB
 	avatarMaxRequestSize = avatarMaxSize + 1<<20
 	avatarSignedURLTTL   = 15 * time.Minute
 )

@@ -709,11 +709,11 @@ export function getApiErrorMessage(error: unknown) {
     'file content does not match supported document type':
       'Документ поврежден или имеет неподдерживаемый формат',
     'message attachments are too large':
-      'Общий размер вложений не должен превышать 75 МБ',
+      'Общий размер вложений не должен превышать 500 МБ',
     'too many attachments': 'Можно прикрепить максимум 5 файлов за раз',
-    'video is too large': 'Видео должно быть не больше 150 МБ',
-    'audio is too large': 'Аудио должно быть не больше 25 МБ',
-    'file is too large': 'Файл должен быть не больше 25 МБ',
+    'video is too large': 'Видео должно быть не больше 500 МБ',
+    'audio is too large': 'Аудио должно быть не больше 100 МБ',
+    'file is too large': 'Файл должен быть не больше 100 МБ',
     'invalid json file': 'JSON-файл поврежден или имеет неверный формат',
     'invalid zip file': 'ZIP-файл поврежден или имеет неверный формат',
     'failed to read file': 'Не удалось прочитать файл. Попробуйте снова.',
@@ -723,12 +723,16 @@ export function getApiErrorMessage(error: unknown) {
       'Голосовое сообщение нельзя отправить вместе с другими вложениями',
     'cannot mix image and voice attachments':
       'Голосовое сообщение нельзя отправить вместе с изображениями',
+    'cannot mix video note with other attachments':
+      'Видео-сообщение нельзя отправить вместе с другими вложениями',
     'only one voice attachment is supported':
       'Можно отправить только одно голосовое сообщение за раз',
+    'only one video note attachment is supported':
+      'Можно отправить только одно видео-сообщение за раз',
     'voice is required': 'Запишите голосовое сообщение',
-    'voice is too large': 'Голосовое сообщение должно быть не больше 12 МБ',
-    'voice must be webm or ogg':
-      'Голосовое сообщение должно быть в формате WebM или Ogg',
+    'voice is too large': 'Голосовое сообщение должно быть не больше 100 МБ',
+    'voice must be webm, ogg or m4a':
+      'Голосовое сообщение должно быть в формате WebM, Ogg или M4A',
     'voice content does not match content type':
       'Файл поврежден или не является корректным аудио',
     'invalid voice': 'Файл поврежден или не является корректным аудио',
@@ -739,7 +743,22 @@ export function getApiErrorMessage(error: unknown) {
     'voice duration is required':
       'Не удалось определить длительность голосового сообщения',
     'voice is too long': 'Голосовое сообщение должно быть не длиннее 5 минут',
-    'avatar is too large': 'Аватар должен быть не больше 5 МБ',
+    'video note is required': 'Запишите видео-сообщение',
+    'video note is too large': 'Видео-сообщение должно быть не больше 100 МБ',
+    'video note must be webm or mp4':
+      'Видео-сообщение должно быть в формате WebM или MP4',
+    'video note content does not match content type':
+      'Файл поврежден или не является корректным видео',
+    'invalid video note': 'Файл поврежден или не является корректным видео',
+    'failed to read video note':
+      'Не удалось прочитать видео-сообщение. Попробуйте записать снова.',
+    'failed to save video note':
+      'Не удалось сохранить видео-сообщение. Попробуйте позже.',
+    'video note duration is required':
+      'Не удалось определить длительность видео-сообщения',
+    'video note is too long':
+      'Видео-сообщение должно быть не длиннее 5 минут',
+    'avatar is too large': 'Аватар должен быть не больше 10 МБ',
     'avatar is required': 'Выберите изображение для аватара',
     'avatar must be jpeg, png or webp':
       'Поддерживаются только JPEG, PNG и WebP',

@@ -4,7 +4,7 @@ import { useNavigate, useOutletContext, useParams } from 'react-router-dom';
 import { getApiError, getApiStatus, getUploadErrorMessage } from "@/shared/api/errors.js";
 import { userService } from "@/shared/api/userService.js";
 import type { PasswordChangeData, ProfileContextType } from "@/shared/types/domain.js";
-import { avatarMaxSize, validateImageFile } from "@/shared/utils/uploadValidation.js";
+import { validateAvatarFile } from "@/shared/utils/uploadValidation.js";
 import {
     PasswordForm,
     ProfileEditStatus,
@@ -60,7 +60,7 @@ function ProfileEdit() {
         const file = event.target.files?.[0];
         if (!file) return;
 
-        const validationError = validateImageFile(file, avatarMaxSize);
+        const validationError = validateAvatarFile(file);
         if (validationError) {
             setAvatarFile(null);
             setError(validationError);
