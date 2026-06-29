@@ -12,6 +12,7 @@ import {
     ActivityIndicator,
     Alert,
     Modal,
+    NativeModules,
     PermissionsAndroid,
     Platform,
     Pressable,
@@ -105,6 +106,11 @@ type BufferedOutgoingIceCandidate = {
     candidate: CallIceCandidate;
 };
 
+type NativeCallAudioSession = {
+    setCallActive: () => void;
+    clearCallActive: () => void;
+};
+
 type SdpMediaSummary = {
     present: boolean;
     direction: 'sendrecv' | 'sendonly' | 'recvonly' | 'inactive' | 'missing';
@@ -168,6 +174,28 @@ const absoluteFillObject =
             absoluteFillObject?: typeof StyleSheet.absoluteFill;
         }
     ).absoluteFillObject ?? StyleSheet.absoluteFill;
+const nativeCallAudioSession = (
+    NativeModules as {CallAudioSession?: NativeCallAudioSession}
+).CallAudioSession;
+
+function setNativeCallSessionActive(active: boolean) {
+    if (Platform.OS !== 'android') {
+        return;
+    }
+
+    try {
+        if (active) {
+            nativeCallAudioSession?.setCallActive();
+        } else {
+            nativeCallAudioSession?.clearCallActive();
+        }
+    } catch (nativeError) {
+        warnDev('[SocialMobile] Failed to update native call audio session', {
+            active,
+            error: nativeError,
+        });
+    }
+}
 
 function createCallId() {
     return `call-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -712,6 +740,19 @@ export function CallProvider({children}: { children: ReactNode }) {
     useEffect(() => {
         networkConnectedRef.current = networkConnected;
     }, [networkConnected]);
+
+    const callSessionActive =
+        status !== 'idle' && status !== 'ended' && status !== 'error';
+
+    useEffect(() => {
+        setNativeCallSessionActive(callSessionActive);
+    }, [appState, callSessionActive, status]);
+
+    useEffect(() => {
+        return () => {
+            setNativeCallSessionActive(false);
+        };
+    }, []);
 
     const setCallStatus = useCallback(
         (nextStatus: CallStatus, reason = 'state_update') => {
