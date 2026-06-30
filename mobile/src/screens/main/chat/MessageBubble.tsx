@@ -11,10 +11,10 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import Video from 'react-native-video';
-import { Video as VideoIcon } from 'lucide-react-native';
+import { Download, Video as VideoIcon } from 'lucide-react-native';
 
 import { assetURL } from '../../../config/env';
-import type { Message } from '../../../api/types';
+import type { Message, MessageAttachment } from '../../../api/types';
 import type { ThemeColors } from '../../../theme/themes';
 import { formatDuration, formatMessageTime } from '../../../utils/format';
 import { createChatThemeStyles, styles } from './chatStyles';
@@ -243,6 +243,7 @@ export const MessageBubble = React.memo(function MessageBubble({
   onVideoPress,
   onImportLinkPreviewVideo,
   onVoicePress,
+  onDownloadAttachment,
   playingVoiceUrl,
   onLongPress,
   themeColors,
@@ -254,6 +255,10 @@ export const MessageBubble = React.memo(function MessageBubble({
   onVideoPress: (url: string) => void;
   onImportLinkPreviewVideo: (message: Message) => void;
   onVoicePress: (url: string) => void;
+  onDownloadAttachment: (
+    attachment: MessageAttachment,
+    sourceUrl: string,
+  ) => void;
   playingVoiceUrl: string | null;
   onLongPress: () => void;
   themeColors: ThemeColors;
@@ -337,6 +342,31 @@ export const MessageBubble = React.memo(function MessageBubble({
         : nextMetrics,
     );
   };
+
+  const renderDownloadButton = (
+    attachment: MessageAttachment,
+    sourceUrl: string,
+    floating = false,
+  ) => (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Скачать вложение"
+      hitSlop={8}
+      style={[
+        styles.attachmentDownloadButton,
+        floating && styles.attachmentDownloadButtonFloating,
+      ]}
+      onPress={event => {
+        event.stopPropagation();
+        onDownloadAttachment(attachment, sourceUrl);
+      }}
+      onLongPress={event => {
+        event.stopPropagation();
+      }}
+    >
+      <Download color={themeColors.white} size={17} strokeWidth={2.4} />
+    </Pressable>
+  );
 
   return (
     <Pressable
@@ -545,6 +575,7 @@ export const MessageBubble = React.memo(function MessageBubble({
                     )}
                   </Text>
                 </View>
+                {renderDownloadButton(attachment, attachmentUrl)}
               </Pressable>
             );
           }
@@ -588,6 +619,7 @@ export const MessageBubble = React.memo(function MessageBubble({
                 <View style={styles.genericVideoPlay}>
                   <Text style={styles.genericVideoPlayText}>▶</Text>
                 </View>
+                {renderDownloadButton(attachment, attachmentUrl, true)}
                 <Text
                   style={[
                     styles.genericAttachmentMeta,
@@ -645,6 +677,7 @@ export const MessageBubble = React.memo(function MessageBubble({
                     {formatBytes(attachment.original_size || attachment.size)}
                   </Text>
                 </View>
+                {renderDownloadButton(attachment, attachmentUrl)}
               </Pressable>
             );
           }
@@ -659,13 +692,15 @@ export const MessageBubble = React.memo(function MessageBubble({
                   themed.voiceAttachment,
                   outgoing && styles.voiceAttachmentOutgoing,
                 ]}
-                onPress={() =>
-                  Linking.openURL(attachmentUrl).catch(() => undefined)
-                }
+                onPress={() => onDownloadAttachment(attachment, attachmentUrl)}
                 onLongPress={onLongPress}
               >
                 <View style={[styles.genericFileIcon, themed.accentBg]}>
-                  <Text style={styles.genericFileIconText}>↓</Text>
+                  <Download
+                    color={themeColors.white}
+                    size={19}
+                    strokeWidth={2.4}
+                  />
                 </View>
                 <View style={styles.voiceInfo}>
                   <Text
@@ -686,23 +721,29 @@ export const MessageBubble = React.memo(function MessageBubble({
                     {formatBytes(attachment.original_size || attachment.size)}
                   </Text>
                 </View>
+                {renderDownloadButton(attachment, attachmentUrl)}
               </Pressable>
             );
           }
 
           return (
-            <Pressable
+            <View
               key={attachment.id ?? attachment.file_url}
-              accessibilityRole="imagebutton"
-              onPress={() => onImagePress(attachmentUrl)}
-              onLongPress={onLongPress}
+              style={styles.messageImageFrame}
             >
-              <Image
-                source={{ uri: attachmentUrl }}
-                style={styles.messageImage}
-                resizeMode="cover"
-              />
-            </Pressable>
+              <Pressable
+                accessibilityRole="imagebutton"
+                onPress={() => onImagePress(attachmentUrl)}
+                onLongPress={onLongPress}
+              >
+                <Image
+                  source={{ uri: attachmentUrl }}
+                  style={styles.messageImage}
+                  resizeMode="cover"
+                />
+              </Pressable>
+              {renderDownloadButton(attachment, attachmentUrl, true)}
+            </View>
           );
         })}
 

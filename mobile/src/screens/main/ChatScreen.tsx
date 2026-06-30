@@ -122,6 +122,11 @@ import {
   decryptMessageForDisplay,
   decryptMessagesForDisplay,
 } from '../../features/chat/lib/e2eeMessageTransform';
+import {
+  downloadAttachmentErrorMessage,
+  downloadChatAttachment,
+  isAttachmentDownloadable,
+} from '../../features/chat/lib/attachmentDownload';
 import { ChatDoodleBackground } from '../../features/chat/components/ChatDoodleBackground';
 import { setActivePushConversation } from '../../notifications/activeConversation';
 import { MessageBubble, VideoNoteAttachment } from './chat/MessageBubble';
@@ -2807,6 +2812,48 @@ export default function ChatScreen({ route, navigation }: Props) {
     setCopyNotice(notice);
   }
 
+  const handleDownloadAttachment = useCallback(
+    async (attachment: MessageAttachment, sourceUrl?: string) => {
+      try {
+        const result = await downloadChatAttachment(attachment, sourceUrl);
+        setError(null);
+        setCopyNotice(
+          result.status === 'queued'
+            ? `Загрузка начата: ${result.fileName}`
+            : `Файл сохранен: ${result.fileName}`,
+        );
+      } catch (downloadError) {
+        setError(downloadAttachmentErrorMessage(downloadError));
+      }
+    },
+    [],
+  );
+
+  async function downloadSelectedMessageAttachments(message: Message) {
+    const attachments =
+      message.attachments?.filter(isAttachmentDownloadable) ?? [];
+    setSelectedMessage(null);
+
+    if (attachments.length === 0) {
+      setError('В этом сообщении нет доступных вложений.');
+      return;
+    }
+
+    try {
+      for (const attachment of attachments) {
+        await downloadChatAttachment(attachment);
+      }
+      setError(null);
+      setCopyNotice(
+        attachments.length === 1
+          ? 'Вложение скачано'
+          : `Вложения скачаны: ${attachments.length}`,
+      );
+    } catch (downloadError) {
+      setError(downloadAttachmentErrorMessage(downloadError));
+    }
+  }
+
   const toggleVoicePlayback = useCallback(async (url: string) => {
     try {
       // Stop preview if active (mutual exclusive)
@@ -3099,6 +3146,7 @@ export default function ChatScreen({ route, navigation }: Props) {
           onVideoPress={setSelectedVideoUrl}
           onImportLinkPreviewVideo={importLinkPreviewVideo}
           onVoicePress={toggleVoicePlayback}
+          onDownloadAttachment={handleDownloadAttachment}
           playingVoiceUrl={playingVoiceUrl}
           onLongPress={() => openMessageActions(item)}
           themeColors={themeColors}
@@ -3108,6 +3156,7 @@ export default function ChatScreen({ route, navigation }: Props) {
     },
     [
       importLinkPreviewVideo,
+      handleDownloadAttachment,
       messages,
       openMessageActions,
       playingVoiceUrl,
@@ -3721,6 +3770,9 @@ export default function ChatScreen({ route, navigation }: Props) {
         onForward={openForwardDialog}
         onPin={message => {
           pinSelectedMessage(message).catch(() => undefined);
+        }}
+        onDownloadAttachments={message => {
+          downloadSelectedMessageAttachments(message).catch(() => undefined);
         }}
         actionPending={messageActionPending || Boolean(sending)}
         isOwn={Boolean(

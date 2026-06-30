@@ -9,7 +9,10 @@ import com.facebook.react.uimanager.ViewManager
 class CallAudioSessionPackage : ReactPackage {
   override fun createNativeModules(
     reactContext: ReactApplicationContext
-  ): List<NativeModule> = listOf(CallAudioSessionModule(reactContext))
+  ): List<NativeModule> = listOf(
+    AttachmentDownloadModule(reactContext),
+    CallAudioSessionModule(reactContext)
+  )
 
   override fun createViewManagers(
     reactContext: ReactApplicationContext

@@ -1,10 +1,20 @@
 import React, { useMemo } from 'react';
 import { ActivityIndicator, Modal, Pressable, Text, View } from 'react-native';
-import { Copy, Forward, Link, Pencil, Pin, Reply, Trash2 } from 'lucide-react-native';
+import {
+  Copy,
+  Download,
+  Forward,
+  Link,
+  Pencil,
+  Pin,
+  Reply,
+  Trash2,
+} from 'lucide-react-native';
 
 import type { Message, User } from '../../../api/types';
 import type { MessageDeleteMode } from '../../../api/messages';
 import type { ThemeColors } from '../../../theme/themes';
+import { isAttachmentDownloadable } from '../../../features/chat/lib/attachmentDownload';
 import { createChatThemeStyles, styles } from './chatStyles';
 import { firstUrl, isPersistedMessage, messagePreviewText } from './chatUtils';
 
@@ -19,6 +29,7 @@ export function MessageActionSheet({
   onReply,
   onForward,
   onPin,
+  onDownloadAttachments,
   actionPending,
   themeColors,
 }: {
@@ -32,6 +43,7 @@ export function MessageActionSheet({
   onReply: (message: Message) => void;
   onForward: (message: Message) => void;
   onPin: (message: Message) => void;
+  onDownloadAttachments: (message: Message) => void;
   actionPending: boolean;
   themeColors: ThemeColors;
 }) {
@@ -43,6 +55,9 @@ export function MessageActionSheet({
   const messageUrl = message ? firstUrl(message.content) : '';
   const messageIsReal = Boolean(
     message && isPersistedMessage(message),
+  );
+  const hasDownloadableAttachments = Boolean(
+    message?.attachments?.some(isAttachmentDownloadable),
   );
 
   return (
@@ -76,6 +91,27 @@ export function MessageActionSheet({
               </View>
               <Text style={[styles.sheetActionText, themed.text]}>
                 Ответить
+              </Text>
+            </Pressable>
+          ) : null}
+
+          {message && hasDownloadableAttachments ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ disabled: actionPending }}
+              disabled={actionPending}
+              style={styles.sheetAction}
+              onPress={() => onDownloadAttachments(message)}
+            >
+              <View style={[styles.sheetActionIcon, themed.sheetActionIcon]}>
+                <Download
+                  color={themeColors.muted}
+                  size={17}
+                  strokeWidth={2.2}
+                />
+              </View>
+              <Text style={[styles.sheetActionText, themed.text]}>
+                Скачать вложения
               </Text>
             </Pressable>
           ) : null}
@@ -391,4 +427,3 @@ export function ForwardMessageModal({
     </Modal>
   );
 }
-

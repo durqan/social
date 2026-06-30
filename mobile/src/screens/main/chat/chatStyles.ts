@@ -418,6 +418,28 @@ export const styles = StyleSheet.create({
     borderRadius: radius.lg,
     backgroundColor: colors.surfaceMuted,
   },
+  messageImageFrame: {
+    width: 210,
+    height: 150,
+    borderRadius: radius.lg,
+    overflow: 'hidden',
+    backgroundColor: colors.surfaceMuted,
+  },
+  attachmentDownloadButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(2, 6, 23, 0.58)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255, 255, 255, 0.22)',
+  },
+  attachmentDownloadButtonFloating: {
+    position: 'absolute',
+    right: 6,
+    top: 6,
+  },
   genericVideoAttachment: {
     width: 230,
     borderRadius: radius.lg,
