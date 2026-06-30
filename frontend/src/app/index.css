@@ -679,30 +679,12 @@ button {
 
     .chat-doodle-bg {
         position: relative;
-        isolation: isolate;
-        background: transparent;
-    }
-
-    .chat-doodle-bg::before {
-        position: absolute;
-        inset: 0;
-        z-index: -2;
-        pointer-events: none;
-        content: "";
-        background: linear-gradient(135deg, #dcefb5 0%, #b9d8be 55%, #b6e3df 100%);
-    }
-
-    .chat-doodle-bg::after {
-        position: absolute;
-        inset: 0;
-        z-index: -1;
-        pointer-events: none;
-        content: "";
-        background-image: url("/patterns/social-chat-doodle-pattern.svg");
+        background:
+            linear-gradient(135deg, rgba(220, 239, 181, 0.92) 0%, rgba(185, 216, 190, 0.92) 55%, rgba(182, 227, 223, 0.92) 100%),
+            url("/patterns/social-chat-doodle-pattern.svg");
         background-size: 360px 360px;
         background-repeat: repeat;
         background-position: center;
-        opacity: 0.34;
     }
 
     .dark .chat-doodle-bg,
@@ -711,25 +693,12 @@ button {
     [data-theme="neo-tokyo"] .chat-doodle-bg,
     [data-theme="ember-wasteland"] .chat-doodle-bg,
     [data-theme="amoled-void"] .chat-doodle-bg {
-        background: transparent;
-    }
-
-    .dark .chat-doodle-bg::before,
-    [data-theme="classic-dark"] .chat-doodle-bg::before,
-    [data-theme="midnight-orchid"] .chat-doodle-bg::before,
-    [data-theme="neo-tokyo"] .chat-doodle-bg::before,
-    [data-theme="ember-wasteland"] .chat-doodle-bg::before,
-    [data-theme="amoled-void"] .chat-doodle-bg::before {
-        background: linear-gradient(135deg, #17251f 0%, #1b2c28 55%, #142629 100%);
-    }
-
-    .dark .chat-doodle-bg::after,
-    [data-theme="classic-dark"] .chat-doodle-bg::after,
-    [data-theme="midnight-orchid"] .chat-doodle-bg::after,
-    [data-theme="neo-tokyo"] .chat-doodle-bg::after,
-    [data-theme="ember-wasteland"] .chat-doodle-bg::after,
-    [data-theme="amoled-void"] .chat-doodle-bg::after {
-        opacity: 0.08;
+        background:
+            linear-gradient(135deg, rgba(23, 37, 31, 0.98) 0%, rgba(27, 44, 40, 0.98) 55%, rgba(20, 38, 41, 0.98) 100%),
+            url("/patterns/social-chat-doodle-pattern.svg");
+        background-size: 360px 360px;
+        background-repeat: repeat;
+        background-position: center;
     }
 
     .chat-message-bubble {
