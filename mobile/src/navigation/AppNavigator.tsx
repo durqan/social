@@ -7,9 +7,14 @@ import {
 } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import type {
+  NativeStackNavigationOptions,
+  NativeStackScreenProps,
+} from '@react-navigation/native-stack';
 import { enableScreens } from 'react-native-screens';
 import {
   Bell,
+  ChevronLeft,
   Home,
   Menu,
   MessageCircle,
@@ -139,6 +144,43 @@ function ChatHeaderActions({
   );
 }
 
+type ChatScreenOptionsArgs = {
+  route: NativeStackScreenProps<ChatStackParamList, 'Chat'>['route'];
+  navigation: NativeStackScreenProps<ChatStackParamList, 'Chat'>['navigation'];
+};
+
+function chatScreenOptions({
+  route,
+  navigation,
+}: ChatScreenOptionsArgs): NativeStackNavigationOptions {
+  return {
+    title: route.params.name,
+    headerBackVisible: false,
+    headerLeft: () => (
+      <IconButton
+        icon={ChevronLeft}
+        label="Назад к списку чатов"
+        variant="ghost"
+        size="sm"
+        onPress={() => {
+          if (navigation.canGoBack()) {
+            navigation.goBack();
+            return;
+          }
+          navigation.navigate('ChatList');
+        }}
+        style={stylesStatic.chatHeaderBackButton}
+      />
+    ),
+    headerRight: () => (
+      <ChatHeaderActions
+        userId={route.params.userId}
+        name={route.params.name}
+      />
+    ),
+  };
+}
+
 function ChatNavigator() {
   const colors = useThemeColors();
   const styles = createStyles(colors);
@@ -161,15 +203,7 @@ function ChatNavigator() {
       <ChatStack.Screen
         name="Chat"
         component={ChatScreen}
-        options={({ route }) => ({
-          title: route.params.name,
-          headerRight: () => (
-            <ChatHeaderActions
-              userId={route.params.userId}
-              name={route.params.name}
-            />
-          ),
-        })}
+        options={chatScreenOptions}
       />
     </ChatStack.Navigator>
   );
@@ -542,6 +576,13 @@ const stylesStatic = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  chatHeaderBackButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 0,
+    marginLeft: -8,
   },
   chatHeaderButton: {
     width: 38,

@@ -34,21 +34,7 @@ export const createChatThemeStyles = (
 
   return StyleSheet.create({
     chatBackground: {
-      backgroundColor: theme.isDark
-        ? theme.id === 'amoled-void'
-          ? '#030706'
-          : '#111b1c'
-        : '#f2eadf',
-    },
-    chatPatternDot: {
-      backgroundColor: theme.isDark
-        ? 'rgba(218, 228, 220, 0.09)'
-        : 'rgba(76, 86, 68, 0.12)',
-    },
-    chatPatternDash: {
-      backgroundColor: theme.isDark
-        ? 'rgba(218, 228, 220, 0.045)'
-        : 'rgba(76, 86, 68, 0.05)',
+      backgroundColor: theme.background,
     },
     card: {
       backgroundColor: theme.card,
@@ -218,29 +204,6 @@ export const styles = StyleSheet.create({
     padding: 0,
     position: 'relative',
     overflow: 'hidden',
-  },
-  chatWallpaper: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    opacity: 1,
-  },
-  chatPatternDot: {
-    position: 'absolute',
-    width: 3,
-    height: 3,
-    borderRadius: 1.5,
-    opacity: 0.82,
-  },
-  chatPatternDash: {
-    position: 'absolute',
-    width: 24,
-    height: 1,
-    borderRadius: 999,
-    opacity: 0.78,
-    transform: [{ rotate: '-24deg' }],
   },
   loading: {
     flex: 1,

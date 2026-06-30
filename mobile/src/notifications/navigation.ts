@@ -144,6 +144,7 @@ export function navigateRootNotificationRoute(route: NotificationRoute) {
       navigationRef.navigate('MainTabs', {
         screen: 'Chats',
         params: {
+          initial: false,
           screen: 'Chat',
           params: {
             userId: route.userId,
@@ -182,6 +183,7 @@ export function navigateTabNotificationRoute(
   switch (route.kind) {
     case 'chat':
       navigation.navigate('Chats', {
+        initial: false,
         screen: 'Chat',
         params: {
           userId: route.userId,

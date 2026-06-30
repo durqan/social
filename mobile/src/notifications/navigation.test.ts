@@ -34,6 +34,7 @@ describe('notification navigation', () => {
     expect(mockNavigationRef.navigate).toHaveBeenCalledWith('MainTabs', {
       screen: 'Chats',
       params: {
+        initial: false,
         screen: 'Chat',
         params: {
           userId: 42,
@@ -57,6 +58,7 @@ describe('notification navigation', () => {
     expect(mockNavigationRef.navigate).toHaveBeenCalledWith('MainTabs', {
       screen: 'Chats',
       params: {
+        initial: false,
         screen: 'Chat',
         params: {
           userId: 77,
@@ -88,6 +90,7 @@ describe('notification navigation', () => {
     expect(mockNavigationRef.navigate).toHaveBeenCalledWith('MainTabs', {
       screen: 'Chats',
       params: {
+        initial: false,
         screen: 'Chat',
         params: {
           userId: 81,

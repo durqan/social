@@ -156,7 +156,8 @@ const MESSAGE_PAGE_SIZE = 50;
 const LOAD_OLDER_THRESHOLD = 56;
 const SCROLL_TO_LATEST_RETRY_DELAY_MS = 80;
 const SCROLL_TO_LATEST_SETTLE_DELAY_MS = 120;
-const SCROLL_TO_LATEST_MAX_ATTEMPTS = 12;
+const SCROLL_TO_LATEST_MAX_ATTEMPTS = 20;
+const SCROLL_TO_LATEST_BOTTOM_THRESHOLD = 12;
 const COPY_NOTICE_TIMEOUT_MS = 1600;
 const REMOTE_TYPING_TIMEOUT_MS = 2200;
 const LOCAL_TYPING_STOP_DELAY_MS = 1400;
@@ -170,25 +171,6 @@ const voiceAudioSet = {
   AudioSamplingRate: 44100,
   AudioEncodingBitRate: 64000,
 } as const;
-const chatPatternMarks: Array<{
-  kind: 'dot' | 'dash';
-  top: `${number}%`;
-  left: `${number}%`;
-}> = [
-  { kind: 'dot', top: '6%', left: '9%' },
-  { kind: 'dash', top: '10%', left: '58%' },
-  { kind: 'dot', top: '16%', left: '82%' },
-  { kind: 'dash', top: '24%', left: '18%' },
-  { kind: 'dot', top: '31%', left: '44%' },
-  { kind: 'dash', top: '38%', left: '74%' },
-  { kind: 'dot', top: '47%', left: '13%' },
-  { kind: 'dash', top: '55%', left: '37%' },
-  { kind: 'dot', top: '63%', left: '88%' },
-  { kind: 'dash', top: '70%', left: '7%' },
-  { kind: 'dot', top: '78%', left: '53%' },
-  { kind: 'dash', top: '86%', left: '79%' },
-  { kind: 'dot', top: '92%', left: '24%' },
-];
 
 function useLatest<T>(value: T) {
   const ref = useRef(value);
@@ -304,6 +286,9 @@ export default function ChatScreen({ route }: Props) {
   );
   const scrollToLatestAttemptCountRef = useRef(0);
   const messageListContentHeightRef = useRef(0);
+  const messageListLayoutHeightRef = useRef(0);
+  const messageListScrollOffsetYRef = useRef(0);
+  const lastScrollToLatestContentHeightRef = useRef(0);
   const draftRef = useRef<{
     input: string;
     pendingImages: LocalChatImage[];
@@ -448,6 +433,9 @@ export default function ChatScreen({ route }: Props) {
     isUserNearBottomRef.current = true;
     scrollToLatestAttemptCountRef.current = 0;
     messageListContentHeightRef.current = 0;
+    messageListLayoutHeightRef.current = 0;
+    messageListScrollOffsetYRef.current = 0;
+    lastScrollToLatestContentHeightRef.current = 0;
     if (scrollToEndTimerRef.current) {
       clearTimeout(scrollToEndTimerRef.current);
       scrollToEndTimerRef.current = null;
@@ -594,6 +582,20 @@ export default function ChatScreen({ route }: Props) {
     };
   }, [otherUserId]);
 
+  const isMessageListAtLatest = useCallback(() => {
+    const contentHeight = messageListContentHeightRef.current;
+    const layoutHeight = messageListLayoutHeightRef.current;
+
+    if (!contentHeight || !layoutHeight || contentHeight <= layoutHeight) {
+      return true;
+    }
+
+    const distanceFromBottom =
+      contentHeight -
+      (messageListScrollOffsetYRef.current + layoutHeight);
+    return distanceFromBottom <= SCROLL_TO_LATEST_BOTTOM_THRESHOLD;
+  }, []);
+
   const scrollToLatestMessage = useCallback(
     (animated = hasLoadedRef.current) => {
       const reason = pendingScrollToLatestReasonRef.current;
@@ -618,6 +620,8 @@ export default function ChatScreen({ route }: Props) {
         isInitialScrollPendingRef.current = false;
         isUserNearBottomRef.current = true;
         scrollToLatestAttemptCountRef.current = 0;
+        lastScrollToLatestContentHeightRef.current =
+          messageListContentHeightRef.current;
         setMaintainScrollPositionEnabled(true);
       };
 
@@ -640,7 +644,8 @@ export default function ChatScreen({ route }: Props) {
       const list = listRef.current;
       const contentIsMeasured =
         messagesRef.current.length === 0 ||
-        messageListContentHeightRef.current > 0;
+        (messageListContentHeightRef.current > 0 &&
+          messageListLayoutHeightRef.current > 0);
 
       if (!list || !contentIsMeasured) {
         scheduleRetry();
@@ -650,16 +655,28 @@ export default function ChatScreen({ route }: Props) {
       const scroll = () => {
         listRef.current?.scrollToEnd({ animated });
       };
+      const contentHeightBeforeScroll = messageListContentHeightRef.current;
 
       requestAnimationFrame(scroll);
       scrollToEndTimerRef.current = setTimeout(() => {
         scroll();
         requestAnimationFrame(scroll);
-        finishScroll();
+        const contentHeightChanged =
+          messageListContentHeightRef.current !== contentHeightBeforeScroll ||
+          messageListContentHeightRef.current !==
+            lastScrollToLatestContentHeightRef.current;
+        lastScrollToLatestContentHeightRef.current =
+          messageListContentHeightRef.current;
         scrollToEndTimerRef.current = null;
+
+        if (!contentHeightChanged && isMessageListAtLatest()) {
+          finishScroll();
+        } else {
+          scheduleRetry();
+        }
       }, SCROLL_TO_LATEST_SETTLE_DELAY_MS);
     },
-    [messagesRef],
+    [isMessageListAtLatest, messagesRef],
   );
 
   const requestScrollToLatest = useCallback(
@@ -673,6 +690,9 @@ export default function ChatScreen({ route }: Props) {
       }
 
       pendingScrollToLatestReasonRef.current = reason;
+      scrollToLatestAttemptCountRef.current = 0;
+      lastScrollToLatestContentHeightRef.current =
+        messageListContentHeightRef.current;
       scrollToLatestMessage(animated);
     },
     [scrollToLatestMessage],
@@ -1150,15 +1170,19 @@ export default function ChatScreen({ route }: Props) {
 
   const handleMessagesScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      if (isInitialScrollPendingRef.current) {
-        return;
-      }
-
       const { contentOffset, contentSize, layoutMeasurement } =
         event.nativeEvent;
+      messageListScrollOffsetYRef.current = contentOffset.y;
+      messageListContentHeightRef.current = contentSize.height;
+      messageListLayoutHeightRef.current = layoutMeasurement.height;
+
       const distanceFromBottom =
         contentSize.height - (contentOffset.y + layoutMeasurement.height);
       isUserNearBottomRef.current = distanceFromBottom <= 96;
+
+      if (isInitialScrollPendingRef.current) {
+        return;
+      }
 
       if (contentOffset.y > LOAD_OLDER_THRESHOLD) {
         return;
@@ -1170,26 +1194,53 @@ export default function ChatScreen({ route }: Props) {
   );
 
   const handleMessageListLayout = useCallback(
-    () => {
+    (event: LayoutChangeEvent) => {
+      messageListLayoutHeightRef.current = event.nativeEvent.layout.height;
       if (pendingScrollToLatestReasonRef.current && !isLoadingOlderRef.current) {
         scrollToLatestMessage(
           pendingScrollToLatestReasonRef.current !== 'initial_load',
         );
+        return;
+      }
+
+      if (
+        hasLoadedRef.current &&
+        isUserNearBottomRef.current &&
+        !isLoadingOlderRef.current &&
+        messagesRef.current.length > 0
+      ) {
+        pendingScrollToLatestReasonRef.current = 'incoming_message';
+        scrollToLatestAttemptCountRef.current = 0;
+        scrollToLatestMessage(false);
       }
     },
-    [scrollToLatestMessage],
+    [messagesRef, scrollToLatestMessage],
   );
 
   const handleMessageListContentSizeChange = useCallback(
     (_contentWidth: number, contentHeight: number) => {
+      const previousContentHeight = messageListContentHeightRef.current;
       messageListContentHeightRef.current = contentHeight;
       if (pendingScrollToLatestReasonRef.current && !isLoadingOlderRef.current) {
         scrollToLatestMessage(
           pendingScrollToLatestReasonRef.current !== 'initial_load',
         );
+        return;
+      }
+
+      if (
+        hasLoadedRef.current &&
+        isUserNearBottomRef.current &&
+        !isLoadingOlderRef.current &&
+        contentHeight > previousContentHeight &&
+        messagesRef.current.length > 0
+      ) {
+        pendingScrollToLatestReasonRef.current = 'incoming_message';
+        scrollToLatestAttemptCountRef.current = 0;
+        scrollToLatestMessage(true);
       }
     },
-    [scrollToLatestMessage],
+    [messagesRef, scrollToLatestMessage],
   );
 
   useEffect(() => {
@@ -1198,7 +1249,10 @@ export default function ChatScreen({ route }: Props) {
       !isLoadingOlderRef.current &&
       messages.length > 0
     ) {
-      scrollToLatestMessage(false);
+      scrollToLatestAttemptCountRef.current = 0;
+      scrollToLatestMessage(
+        pendingScrollToLatestReasonRef.current !== 'initial_load',
+      );
     }
   }, [messages.length, scrollToLatestMessage]);
 
@@ -2607,8 +2661,9 @@ export default function ChatScreen({ route }: Props) {
   }
 
   function handleComposerFocus() {
-    // Focusing the composer must not move the message list. Scroll is driven by
-    // explicit message events only.
+    if (isUserNearBottomRef.current) {
+      requestScrollToLatest('incoming_message', true);
+    }
   }
 
   async function openComposerAttachments() {
@@ -3022,23 +3077,6 @@ export default function ChatScreen({ route }: Props) {
       contentContainerStyle={[styles.container, themed.chatBackground]}
       onLayout={handleChatLayout}
     >
-      <View pointerEvents="none" style={styles.chatWallpaper}>
-        {chatPatternMarks.map((mark, index) => (
-          <View
-            key={`${mark.kind}-${index}`}
-            style={[
-              mark.kind === 'dot'
-                ? styles.chatPatternDot
-                : styles.chatPatternDash,
-              mark.kind === 'dot'
-                ? themed.chatPatternDot
-                : themed.chatPatternDash,
-              { top: mark.top, left: mark.left },
-            ]}
-          />
-        ))}
-      </View>
-
       <ErrorBanner message={error} />
       <SuccessBanner message={copyNotice} />
 
