@@ -118,6 +118,7 @@ import {
   decryptMessageForDisplay,
   decryptMessagesForDisplay,
 } from '../../features/chat/lib/e2eeMessageTransform';
+import { ChatDoodleBackground } from '../../features/chat/components/ChatDoodleBackground';
 import { setActivePushConversation } from '../../notifications/activeConversation';
 import { MessageBubble, VideoNoteAttachment } from './chat/MessageBubble';
 import { ForwardMessageModal, MessageActionSheet } from './chat/ChatModals';
@@ -3108,54 +3109,56 @@ export default function ChatScreen({ route }: Props) {
         </Pressable>
       ) : null}
 
-      {loading && !hasLoaded ? (
-        <View style={styles.loading}>
-          <LoadingState text="Загружаем сообщения" />
-        </View>
-      ) : (
-        <FlatList
-          ref={listRef}
-          style={styles.messageListContainer}
-          data={messages}
-          keyExtractor={messageKeyExtractor}
-          refreshing={refreshing}
-          onRefresh={() => loadMessages('refresh')}
-          keyboardShouldPersistTaps="handled"
-          maintainVisibleContentPosition={
-            maintainScrollPositionEnabled
-              ? { minIndexForVisible: 0 }
-              : undefined
-          }
-          onScroll={handleMessagesScroll}
-          scrollEventThrottle={SCROLL_EVENT_THROTTLE_MS}
-          renderItem={renderMessageItem}
-          extraData={{ playingVoiceUrl, themeColors, userId: user?.id }}
-          initialNumToRender={12}
-          windowSize={7}
-          maxToRenderPerBatch={8}
-          updateCellsBatchingPeriod={50}
-          removeClippedSubviews={Platform.OS === 'android'}
-          onLayout={handleMessageListLayout}
-          contentContainerStyle={[
-            styles.messageList,
-            messages.length === 0 && styles.emptyMessageList,
-          ]}
-          onContentSizeChange={handleMessageListContentSizeChange}
-          ListHeaderComponent={
-            loadingOlder ? (
-              <View style={styles.loadingOlder}>
-                <ActivityIndicator color={themeColors.accent} />
-              </View>
-            ) : null
-          }
-          ListEmptyComponent={
-            <EmptyState
-              title="Сообщений пока нет"
-              text="Напишите первым, отправьте изображение или голосовое."
-            />
-          }
-        />
-      )}
+      <ChatDoodleBackground isDark={themeColors.isDark}>
+        {loading && !hasLoaded ? (
+          <View style={styles.loading}>
+            <LoadingState text="Загружаем сообщения" />
+          </View>
+        ) : (
+          <FlatList
+            ref={listRef}
+            style={styles.messageListContainer}
+            data={messages}
+            keyExtractor={messageKeyExtractor}
+            refreshing={refreshing}
+            onRefresh={() => loadMessages('refresh')}
+            keyboardShouldPersistTaps="handled"
+            maintainVisibleContentPosition={
+              maintainScrollPositionEnabled
+                ? { minIndexForVisible: 0 }
+                : undefined
+            }
+            onScroll={handleMessagesScroll}
+            scrollEventThrottle={SCROLL_EVENT_THROTTLE_MS}
+            renderItem={renderMessageItem}
+            extraData={{ playingVoiceUrl, themeColors, userId: user?.id }}
+            initialNumToRender={12}
+            windowSize={7}
+            maxToRenderPerBatch={8}
+            updateCellsBatchingPeriod={50}
+            removeClippedSubviews={Platform.OS === 'android'}
+            onLayout={handleMessageListLayout}
+            contentContainerStyle={[
+              styles.messageList,
+              messages.length === 0 && styles.emptyMessageList,
+            ]}
+            onContentSizeChange={handleMessageListContentSizeChange}
+            ListHeaderComponent={
+              loadingOlder ? (
+                <View style={styles.loadingOlder}>
+                  <ActivityIndicator color={themeColors.accent} />
+                </View>
+              ) : null
+            }
+            ListEmptyComponent={
+              <EmptyState
+                title="Сообщений пока нет"
+                text="Напишите первым, отправьте изображение или голосовое."
+              />
+            }
+          />
+        )}
+      </ChatDoodleBackground>
 
       <View
         style={[

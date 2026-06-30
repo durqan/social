@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="360" viewBox="0 0 360 360">
+  <defs>
+    <pattern id="social-doodle-pattern" width="360" height="360" patternUnits="userSpaceOnUse">
+      <g fill="none" stroke="#5f8f62" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round" opacity="0.20">
+        <!-- chat bubbles -->
+        <path d="M34 46h52c8 0 14 6 14 14v24c0 8-6 14-14 14H61l-18 14 4-14H34c-8 0-14-6-14-14V60c0-8 6-14 14-14z"/>
+        <circle cx="46" cy="72" r="2.5"/><circle cx="60" cy="72" r="2.5"/><circle cx="74" cy="72" r="2.5"/>
+
+        <path d="M226 54h42c7 0 12 5 12 12v18c0 7-5 12-12 12h-19l-15 11 3-11h-11c-7 0-12-5-12-12V66c0-7 5-12 12-12z"/>
+        <circle cx="238" cy="75" r="2"/><circle cx="249" cy="75" r="2"/><circle cx="260" cy="75" r="2"/>
+
+        <!-- profile circles -->
+        <circle cx="148" cy="76" r="24"/>
+        <circle cx="148" cy="69" r="7"/>
+        <path d="M132 92c4-10 28-10 32 0"/>
+
+        <circle cx="310" cy="188" r="22"/>
+        <circle cx="310" cy="182" r="6"/>
+        <path d="M296 202c4-9 24-9 28 0"/>
+
+        <!-- paper planes and paths -->
+        <path d="M266 142l54-24-20 50-11-22-23-4z"/>
+        <path d="M289 146l31-28"/>
+        <path d="M244 160c-18 14-35 12-45 2-11-11 4-26 17-15 13 10 1 27-18 34" stroke-dasharray="5 7" opacity="0.16"/>
+
+        <path d="M72 258l44-20-16 42-9-18-19-4z"/>
+        <path d="M91 262l25-24"/>
+        <path d="M36 278c18-22 42-8 29 10-9 12-26 5-20-10 7-18 39-27 58-12" stroke-dasharray="5 7" opacity="0.16"/>
+
+        <!-- media icons -->
+        <rect x="32" y="176" width="46" height="36" rx="8"/>
+        <circle cx="46" cy="188" r="4"/>
+        <path d="M39 205l12-12 9 8 7-7 8 11"/>
+
+        <rect x="206" y="238" width="52" height="38" rx="8"/>
+        <circle cx="222" cy="251" r="4"/>
+        <path d="M214 266l13-13 10 9 7-7 9 11"/>
+
+        <rect x="294" y="36" width="38" height="30" rx="6"/>
+        <circle cx="313" cy="51" r="8"/>
+        <path d="M298 42h9"/>
+
+        <!-- call / mic / headphones -->
+        <path d="M142 190c-13-13-19-27-14-33l8-8 14 14-7 7c4 8 10 14 18 18l7-7 14 14-8 8c-6 5-20-1-32-13z"/>
+        <path d="M306 282v-22a18 18 0 0 0-36 0v22"/>
+        <path d="M270 282h-8v-18h8"/>
+        <path d="M306 282h8v-18h-8"/>
+        <rect x="132" y="258" width="14" height="32" rx="7"/>
+        <path d="M122 276c0 12 8 21 17 21s17-9 17-21"/>
+        <path d="M139 297v14"/><path d="M128 311h22"/>
+
+        <!-- code and tech -->
+        <path d="M214 132l-14 12 14 12"/>
+        <path d="M244 132l14 12-14 12"/>
+        <path d="M235 126l-12 36"/>
+        <path d="M104 134h16"/><path d="M112 126v16"/>
+        <path d="M318 318h18"/><path d="M327 309v18"/>
+
+        <!-- hearts / checks / badges -->
+        <path d="M180 312c-19-13-30-23-30-36 0-10 8-17 17-17 6 0 11 3 14 8 3-5 8-8 14-8 9 0 17 7 17 17 0 13-11 23-32 36z"/>
+        <circle cx="92" cy="132" r="18"/>
+        <path d="M82 132l8 8 16-18"/>
+        <circle cx="322" cy="96" r="14"/>
+        <path d="M315 96l6 6 10-12"/>
+
+        <!-- little mascot blobs -->
+        <path d="M40 320c-10 0-18-8-18-18 0-12 10-20 21-18 4-8 17-7 20 2 10 2 16 10 16 20 0 11-9 20-21 20H40z"/>
+        <circle cx="42" cy="304" r="2"/><circle cx="58" cy="304" r="2"/>
+        <path d="M45 313c5 4 10 4 15 0"/>
+
+        <path d="M284 330c-10 0-18-8-18-18 0-11 9-19 20-18 5-9 18-8 21 2 9 3 15 10 15 20 0 11-9 20-20 20h-18z"/>
+        <circle cx="286" cy="315" r="2"/><circle cx="302" cy="315" r="2"/>
+        <path d="M289 323c4 3 9 3 13 0"/>
+
+        <!-- leaves -->
+        <path d="M166 24c-8 19-8 38 0 58"/>
+        <path d="M166 38c-17-1-25-8-29-21 16 0 25 8 29 21z"/>
+        <path d="M166 54c18-1 27-8 31-21-17 0-27 8-31 21z"/>
+        <path d="M58 118c-6 16-6 31 0 46"/>
+        <path d="M58 130c-13-1-20-6-23-16 13 0 20 6 23 16z"/>
+        <path d="M58 144c14-1 21-6 24-17-14 0-21 7-24 17z"/>
+
+        <!-- small decorative atoms -->
+        <circle cx="24" cy="130" r="2"/>
+        <circle cx="182" cy="120" r="2"/>
+        <circle cx="332" cy="246" r="2"/>
+        <circle cx="118" cy="326" r="2"/>
+        <path d="M294 226l4 8 8 4-8 4-4 8-4-8-8-4 8-4 4-8z"/>
+        <path d="M186 28l3 7 7 3-7 3-3 7-3-7-7-3 7-3 3-7z"/>
+        <path d="M112 220l3 6 6 3-6 3-3 6-3-6-6-3 6-3 3-6z"/>
+        <path d="M28 236l2 5 5 2-5 2-2 5-2-5-5-2 5-2 2-5z"/>
+        <path d="M336 150l2 5 5 2-5 2-2 5-2-5-5-2 5-2 2-5z"/>
+      </g>
+    </pattern>
+  </defs>
+
+  <rect width="360" height="360" fill="url(#social-doodle-pattern)"/>
+</svg>
