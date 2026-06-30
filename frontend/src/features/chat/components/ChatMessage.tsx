@@ -1,4 +1,5 @@
 import { memo, useRef, useState, type MouseEvent, type TouchEvent } from 'react';
+import { toast } from 'react-hot-toast';
 import type { Message, MessageAttachment, MessageLinkPreview } from "@/shared/types/domain.js";
 import { Avatar } from "@/shared/ui/Avatar.js";
 import { ImageViewer } from "@/shared/ui/ImageViewer.js";
@@ -10,6 +11,11 @@ import { Icon } from "@/shared/ui/Icon.js";
 import { formatFileSize } from "@/shared/utils/uploadValidation.js";
 import { MessageReactions } from "@/features/chat/components/MessageReactions.js";
 import { ReactionBurst } from "@/features/chat/components/ReactionBurst.js";
+import {
+    attachmentDisplayName,
+    downloadAttachment,
+    downloadAttachmentErrorMessage,
+} from "@/features/chat/lib/attachmentDownload.js";
 
 const urlPattern = /(https?:\/\/[^\s<]+|www\.[^\s<]+)/gi;
 
@@ -69,15 +75,6 @@ function linkifyText(value: string) {
 
         return part.value;
     });
-}
-
-function attachmentName(attachment: MessageAttachment, fallback: string) {
-    if (attachment.original_filename) {
-        return attachment.original_filename;
-    }
-    const path = (attachment.file_url || '').split('?')[0] || '';
-    const last = path.split('/').filter(Boolean).pop();
-    return last || fallback;
 }
 
 function providerLabel(provider: MessageLinkPreview['provider']) {
@@ -285,7 +282,7 @@ const ChatMessageComponent = ({
     const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const suppressNextClickRef = useRef(false);
     const touchStartRef = useRef<{ x: number; y: number } | null>(null);
-    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+    const [previewAttachment, setPreviewAttachment] = useState<MessageAttachment | null>(null);
     const failedAttachments = message.attachments?.filter(attachment => attachment.decryption_error) || [];
     const imageAttachments = message.attachments?.filter(attachment => attachment.file_type === 'image' && !attachment.decryption_error) || [];
     const voiceAttachments = message.attachments?.filter(attachment => attachment.file_type === 'voice' && !attachment.decryption_error) || [];
@@ -306,12 +303,19 @@ const ChatMessageComponent = ({
     const currentMessageStatus = messageStatus(message, isOwn);
     const messageStatusLabel = statusChecks(currentMessageStatus);
     const timestamp = formatTime(message.created_at);
+    const previewUrl = previewAttachment?.decrypted_file_url || previewAttachment?.file_url || null;
     const rootSpacingClass = isFirst || showDate
         ? ''
         : isGroupedWithPrevious
             ? 'mt-1'
             : 'mt-2.5 sm:mt-3';
     const showIncomingAvatar = !isOwn && !selectionMode && !isGroupedWithNext;
+
+    const handleAttachmentDownload = (attachment: MessageAttachment) => {
+        void downloadAttachment(attachment).catch(error => {
+            toast.error(downloadAttachmentErrorMessage(error));
+        });
+    };
 
     const clearLongPressTimer = () => {
         if (longPressTimer.current) {
@@ -554,6 +558,7 @@ const ChatMessageComponent = ({
                                             selectionMode={selectionMode}
                                             canSelect={canSelect}
                                             onSelectMessage={onSelectMessage}
+                                            onDownload={handleAttachmentDownload}
                                         />
                                     ))}
                                 </div>
@@ -569,39 +574,62 @@ const ChatMessageComponent = ({
                                             selectionMode={selectionMode}
                                             canSelect={canSelect}
                                             onSelectMessage={onSelectMessage}
+                                            onDownload={handleAttachmentDownload}
                                         />
                                     ))}
                                 </div>
                             ) : null}
 
                             {imageAttachments.length ? (
-                                <div className={`grid gap-2 ${imageAttachments.length > 1 ? 'grid-cols-2' : 'grid-cols-1'} ${message.content || videoAttachments.length || audioAttachments.length || fileAttachments.length ? 'mb-2' : ''}`}>
+                                <div className={`chat-message-image-grid ${imageAttachments.length > 1 ? 'chat-message-image-grid--multi' : ''} ${message.content || videoAttachments.length || audioAttachments.length || fileAttachments.length ? 'mb-2' : ''}`}>
                                     {imageAttachments.map(attachment => (
-                                        <button
-                                            type="button"
+                                        <div
                                             key={attachment.file_url}
-                                            onClick={event => {
-                                                if (selectionMode) {
-                                                    event.preventDefault();
-                                                    event.stopPropagation();
-                                                    if (canSelect) {
-                                                        onSelectMessage();
-                                                    }
-                                                    return;
-                                                }
-
-                                                setPreviewUrl(attachment.decrypted_file_url || attachment.file_url);
-                                            }}
-                                            className="block overflow-hidden rounded-xl bg-black/5 text-left"
-                                            aria-label="Открыть изображение"
+                                            className="chat-message-image-preview"
                                         >
-                                            <img
-                                                src={attachment.decrypted_file_url || attachment.file_url}
-                                                alt="Вложение"
-                                                className="max-h-72 w-full object-cover"
-                                                loading="lazy"
-                                            />
-                                        </button>
+                                            <button
+                                                type="button"
+                                                onClick={event => {
+                                                    if (selectionMode) {
+                                                        event.preventDefault();
+                                                        event.stopPropagation();
+                                                        if (canSelect) {
+                                                            onSelectMessage();
+                                                        }
+                                                        return;
+                                                    }
+
+                                                    setPreviewAttachment(attachment);
+                                                }}
+                                                className="chat-message-image-button"
+                                                aria-label="Открыть изображение"
+                                            >
+                                                <img
+                                                    src={attachment.decrypted_file_url || attachment.file_url}
+                                                    alt="Вложение"
+                                                    className="chat-message-image"
+                                                    loading="lazy"
+                                                />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="absolute right-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full border border-white/80 bg-white/95 text-slate-700 shadow-sm backdrop-blur-sm transition hover:bg-white hover:text-[var(--app-accent)]"
+                                                onClick={event => {
+                                                    event.stopPropagation();
+                                                    if (selectionMode) {
+                                                        if (canSelect) {
+                                                            onSelectMessage();
+                                                        }
+                                                        return;
+                                                    }
+                                                    handleAttachmentDownload(attachment);
+                                                }}
+                                                aria-label="Скачать изображение"
+                                                title="Скачать"
+                                            >
+                                                <Icon name="download" className="h-4 w-4" />
+                                            </button>
+                                        </div>
                                     ))}
                                 </div>
                             ) : null}
@@ -610,6 +638,7 @@ const ChatMessageComponent = ({
                                 <div className={message.content || audioAttachments.length || fileAttachments.length ? 'mb-2 space-y-2' : 'space-y-2'}>
                                     {videoAttachments.map(attachment => {
                                         const src = attachment.decrypted_file_url || attachment.file_url;
+                                        const name = attachmentDisplayName(attachment, 'video.mp4');
                                         return (
                                             <div key={attachment.id ?? attachment.file_url} className="overflow-hidden rounded-xl bg-black/5">
                                                 <video
@@ -621,8 +650,26 @@ const ChatMessageComponent = ({
                                                 />
                                                 <div className="flex items-center gap-2 px-3 py-2 text-xs text-[var(--app-text-secondary)]">
                                                     <Icon name="video" className="h-4 w-4 flex-shrink-0" />
-                                                    <span className="min-w-0 flex-1 truncate">{attachmentName(attachment, 'video.mp4')}</span>
+                                                    <span className="min-w-0 flex-1 truncate">{name}</span>
                                                     <span>{formatFileSize(attachment.original_size || attachment.size)}</span>
+                                                    <button
+                                                        type="button"
+                                                        className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-white/80 text-[var(--app-accent)] transition hover:bg-white hover:text-[var(--app-accent-hover)]"
+                                                        onClick={event => {
+                                                            event.stopPropagation();
+                                                            if (selectionMode) {
+                                                                if (canSelect) {
+                                                                    onSelectMessage();
+                                                                }
+                                                                return;
+                                                            }
+                                                            handleAttachmentDownload(attachment);
+                                                        }}
+                                                        aria-label="Скачать видео"
+                                                        title="Скачать"
+                                                    >
+                                                        <Icon name="download" className="h-4 w-4" />
+                                                    </button>
                                                 </div>
                                             </div>
                                         );
@@ -642,14 +689,33 @@ const ChatMessageComponent = ({
                                 <div className={message.content || fileAttachments.length ? 'mb-2 space-y-2' : 'space-y-2'}>
                                     {audioAttachments.map(attachment => {
                                         const src = attachment.decrypted_file_url || attachment.file_url;
+                                        const name = attachmentDisplayName(attachment, 'audio.mp3');
                                         return (
                                             <div key={attachment.id ?? attachment.file_url} className="rounded-xl border border-[var(--app-border)] bg-[var(--app-card-muted)] px-3 py-2">
                                                 <div className="mb-2 flex items-center gap-2 text-sm font-medium text-[var(--app-text-primary)]">
                                                     <Icon name="audio" className="h-4 w-4 flex-shrink-0 text-[var(--app-accent)]" />
-                                                    <span className="min-w-0 flex-1 truncate">{attachmentName(attachment, 'audio.mp3')}</span>
+                                                    <span className="min-w-0 flex-1 truncate">{name}</span>
                                                     <span className="text-xs font-normal text-[var(--app-text-secondary)]">
                                                         {formatFileSize(attachment.original_size || attachment.size)}
                                                     </span>
+                                                    <button
+                                                        type="button"
+                                                        className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-white/80 text-[var(--app-accent)] transition hover:bg-white hover:text-[var(--app-accent-hover)]"
+                                                        onClick={event => {
+                                                            event.stopPropagation();
+                                                            if (selectionMode) {
+                                                                if (canSelect) {
+                                                                    onSelectMessage();
+                                                                }
+                                                                return;
+                                                            }
+                                                            handleAttachmentDownload(attachment);
+                                                        }}
+                                                        aria-label="Скачать аудио"
+                                                        title="Скачать"
+                                                    >
+                                                        <Icon name="download" className="h-4 w-4" />
+                                                    </button>
                                                 </div>
                                                 <audio
                                                     src={src}
@@ -667,8 +733,7 @@ const ChatMessageComponent = ({
                             {fileAttachments.length ? (
                                 <div className={message.content ? 'mb-2 space-y-2' : 'space-y-2'}>
                                     {fileAttachments.map(attachment => {
-                                        const src = attachment.decrypted_file_url || attachment.file_url;
-                                        const name = attachmentName(attachment, 'file');
+                                        const name = attachmentDisplayName(attachment, 'file');
                                         return (
                                             <div key={attachment.id ?? attachment.file_url} className="flex items-center gap-3 rounded-xl border border-[var(--app-border)] bg-[var(--app-card-muted)] px-3 py-2">
                                                 <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-white/70 text-[var(--app-text-secondary)]">
@@ -680,16 +745,24 @@ const ChatMessageComponent = ({
                                                         {formatFileSize(attachment.original_size || attachment.size)}
                                                     </span>
                                                 </span>
-                                                <a
-                                                    href={src}
-                                                    download={name}
+                                                <button
+                                                    type="button"
                                                     className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-white/80 text-[var(--app-accent)] transition hover:bg-white hover:text-[var(--app-accent-hover)]"
-                                                    onClick={event => event.stopPropagation()}
+                                                    onClick={event => {
+                                                        event.stopPropagation();
+                                                        if (selectionMode) {
+                                                            if (canSelect) {
+                                                                onSelectMessage();
+                                                            }
+                                                            return;
+                                                        }
+                                                        handleAttachmentDownload(attachment);
+                                                    }}
                                                     aria-label="Скачать файл"
                                                     title="Скачать файл"
                                                 >
                                                     <Icon name="download" className="h-4 w-4" />
-                                                </a>
+                                                </button>
                                             </div>
                                         );
                                     })}
@@ -731,7 +804,8 @@ const ChatMessageComponent = ({
                 <ImageViewer
                     src={previewUrl}
                     alt="Вложение"
-                    onClose={() => setPreviewUrl(null)}
+                    onClose={() => setPreviewAttachment(null)}
+                    onDownload={previewAttachment ? () => handleAttachmentDownload(previewAttachment) : undefined}
                 />
             )}
         </div>

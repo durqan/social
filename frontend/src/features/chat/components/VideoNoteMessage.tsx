@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react
 import type { MessageAttachment } from '@/shared/types/domain.js';
 import { formatDuration } from '@/shared/utils/uploadValidation.js';
 import { VideoNoteOrbit } from '@/features/chat/components/VideoNoteOrbit.js';
+import { Icon } from '@/shared/ui/Icon.js';
 
 interface VideoNoteMessageProps {
   attachment: MessageAttachment;
@@ -11,6 +12,7 @@ interface VideoNoteMessageProps {
   selectionMode?: boolean;
   canSelect?: boolean;
   onSelectMessage?: () => void;
+  onDownload?: (attachment: MessageAttachment) => void;
 }
 
 export const VideoNoteMessage = ({
@@ -21,6 +23,7 @@ export const VideoNoteMessage = ({
   selectionMode = false,
   canSelect = false,
   onSelectMessage,
+  onDownload,
 }: VideoNoteMessageProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const src = attachment.decrypted_file_url || attachment.file_url;
@@ -156,6 +159,27 @@ export const VideoNoteMessage = ({
           {timestamp}
           {statusLabel && <span className="ml-1">{statusLabel}</span>}
         </div>
+      )}
+
+      {onDownload && (
+        <button
+          type="button"
+          className="mt-0.5 flex h-7 w-7 items-center justify-center rounded-full bg-white/80 text-[var(--app-accent)] shadow-sm transition hover:bg-white hover:text-[var(--app-accent-hover)]"
+          onClick={(event) => {
+            event.stopPropagation();
+            if (selectionMode) {
+              if (canSelect) {
+                onSelectMessage?.();
+              }
+              return;
+            }
+            onDownload(attachment);
+          }}
+          aria-label="Скачать видео-сообщение"
+          title="Скачать"
+        >
+          <Icon name="download" className="h-3.5 w-3.5" />
+        </button>
       )}
     </div>
   );

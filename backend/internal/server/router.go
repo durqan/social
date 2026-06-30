@@ -21,9 +21,9 @@ func NewRouter(database *gorm.DB, cfg config.Config) *gin.Engine {
 
 	router.Use(cors.New(cors.Config{
 		AllowOrigins:     cfg.AllowedOrigins,
-		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowMethods:     []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-CSRF-Token"},
-		ExposeHeaders:    []string{"Content-Length"},
+		ExposeHeaders:    []string{"Content-Length", "Content-Disposition", "Content-Range", "Accept-Ranges"},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
 	}))
@@ -34,12 +34,25 @@ func NewRouter(database *gorm.DB, cfg config.Config) *gin.Engine {
 	registerUserRoutes(router, database)
 	registerPostRoutes(router, database)
 	registerMessageRoutes(router, database)
+	registerAttachmentRoutes(router, database)
 	registerConversationRoutes(router, database)
 	registerCallRoutes(router, database)
 	registerE2EERoutes(router, database)
 	registerWebSocketRoutes(router, database, cfg)
 
 	return router
+}
+
+func registerAttachmentRoutes(router *gin.Engine, database *gorm.DB) {
+	attachments := router.Group(
+		"/attachments",
+		middleware.AuthMiddleware(),
+		middleware.UserActivityMiddleware(database),
+		middleware.CSRFMiddleware(),
+	)
+
+	attachments.GET("/:id/download", handlers.DownloadMessageAttachment(database))
+	attachments.HEAD("/:id/download", handlers.DownloadMessageAttachment(database))
 }
 
 func registerCallRoutes(router *gin.Engine, database *gorm.DB) {
@@ -164,6 +177,8 @@ func registerMessageRoutes(router *gin.Engine, database *gorm.DB) {
 	messages.GET("/unread/count", middleware.CacheMiddleware(10*time.Second), handlers.GetUnreadCount(database))
 	messages.GET("/uploads/:filename", handlers.GetUploadedMessageImage())
 	messages.GET("/attachments/:id/thumbnail", handlers.GetMessageAttachmentThumbnail(database))
+	messages.GET("/attachments/:id/download", handlers.DownloadMessageAttachment(database))
+	messages.HEAD("/attachments/:id/download", handlers.DownloadMessageAttachment(database))
 	messages.GET("/attachments/:id", handlers.GetMessageAttachment(database))
 	messages.HEAD("/attachments/:id", handlers.GetMessageAttachment(database))
 	messages.POST("/upload", middleware.RequireVerifiedEmail(database), middleware.RateLimitMiddleware(60, time.Hour), handlers.UploadMessageImage(database))

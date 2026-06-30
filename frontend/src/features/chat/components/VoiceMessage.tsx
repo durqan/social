@@ -10,6 +10,7 @@ interface VoiceMessageProps {
   selectionMode?: boolean;
   canSelect?: boolean;
   onSelectMessage?: () => void;
+  onDownload?: (attachment: MessageAttachment) => void;
 }
 
 export const VoiceMessage = ({
@@ -18,6 +19,7 @@ export const VoiceMessage = ({
   selectionMode = false,
   canSelect = false,
   onSelectMessage,
+  onDownload,
 }: VoiceMessageProps) => {
   const progressRef = useRef<HTMLDivElement>(null);
 
@@ -119,6 +121,27 @@ export const VoiceMessage = ({
       <div className="text-[10px] tabular-nums font-medium text-gray-500 flex-shrink-0 w-[4.5rem] text-right tracking-tight">
         {formatDuration(player.currentTime)} / {formatDuration(displayDuration)}
       </div>
+
+      {onDownload && (
+        <button
+          type="button"
+          className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-white/80 text-[var(--app-accent)] shadow-sm transition hover:bg-white hover:text-[var(--app-accent-hover)]"
+          onClick={(event) => {
+            event.stopPropagation();
+            if (selectionMode) {
+              if (canSelect) {
+                onSelectMessage?.();
+              }
+              return;
+            }
+            onDownload(attachment);
+          }}
+          aria-label="Скачать голосовое сообщение"
+          title="Скачать"
+        >
+          <Icon name="download" className="h-4 w-4" />
+        </button>
+      )}
 
       <audio ref={player.audioRef} src={src} preload="metadata" data-voice="true" />
     </div>

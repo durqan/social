@@ -553,7 +553,7 @@ export const ChatMessageList = ({
     }, [contextMenu, menuActions.length]);
 
     return (
-        <div ref={containerRef} onScroll={handleScroll} className="chat-doodle-bg flex-1 overflow-y-auto p-3 sm:p-4">
+        <div ref={containerRef} onScroll={handleScroll} className="chat-message-list chat-doodle-bg flex-1 overflow-y-auto p-3 sm:p-4">
             {loadingMore && (
                 <div className="flex justify-center py-2">
                     <Spinner size="sm" />

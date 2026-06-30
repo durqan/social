@@ -650,6 +650,43 @@ func GetMessageAttachment(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
+func DownloadMessageAttachment(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, ok := authenticatedUserID(c)
+		if !ok {
+			return
+		}
+
+		attachmentID, ok := uintParam(c, "id", "invalid attachment id")
+		if !ok {
+			return
+		}
+
+		attachment, err := repository.GetMessageAttachmentForUser(db, attachmentID, userID)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				c.JSON(404, gin.H{"error": "attachment not found"})
+				return
+			}
+			c.JSON(500, gin.H{"error": "failed to load attachment"})
+			return
+		}
+
+		key, ok := services.AttachmentObjectKey(attachment.FileURL)
+		if !ok {
+			c.JSON(500, gin.H{"error": "invalid attachment path"})
+			return
+		}
+		store, err := storage.Default()
+		if err != nil {
+			c.JSON(500, gin.H{"error": "failed to load storage"})
+			return
+		}
+
+		serveMessageAttachmentDownload(c, store, key, attachment)
+	}
+}
+
 func GetMessageAttachmentThumbnail(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID, ok := authenticatedUserID(c)
@@ -709,6 +746,98 @@ func serveMessageAttachmentObject(c *gin.Context, store storage.Storage, key str
 	}
 
 	serveStoredObjectWithHeaders(c, store, key, contentType, disposition)
+}
+
+func serveMessageAttachmentDownload(c *gin.Context, store storage.Storage, key string, attachment *models.MessageAttachment) {
+	contentType := strings.TrimSpace(attachment.ContentType)
+	if contentType == "" {
+		contentType = services.ContentTypeForKey(key)
+	}
+
+	filename := messageAttachmentDownloadFilename(attachment, key, contentType)
+	disposition := mime.FormatMediaType("attachment", map[string]string{"filename": filename})
+	serveStoredObjectWithHeaders(c, store, key, contentType, disposition)
+}
+
+func messageAttachmentDownloadFilename(attachment *models.MessageAttachment, key string, contentType string) string {
+	fallbackExt := messageAttachmentDownloadExtension(attachment, key, contentType)
+	if strings.TrimSpace(attachment.OriginalFilename) != "" {
+		return services.SanitizeAttachmentFilename(attachment.OriginalFilename, fallbackExt)
+	}
+
+	prefix := "file"
+	switch attachment.FileType {
+	case "image":
+		prefix = "image"
+	case "video":
+		prefix = "video"
+	case "audio", "voice":
+		prefix = "audio"
+	case "video_note":
+		prefix = "video-note"
+	}
+
+	return services.SanitizeAttachmentFilename(fmt.Sprintf("%s-%d%s", prefix, attachment.ID, fallbackExt), fallbackExt)
+}
+
+func messageAttachmentDownloadExtension(attachment *models.MessageAttachment, key string, contentType string) string {
+	if mediaType, _, err := mime.ParseMediaType(strings.TrimSpace(contentType)); err == nil {
+		switch strings.ToLower(mediaType) {
+		case "image/jpeg":
+			return ".jpg"
+		case "image/png":
+			return ".png"
+		case "image/webp":
+			return ".webp"
+		case "image/gif":
+			return ".gif"
+		case "video/mp4":
+			return ".mp4"
+		case "video/webm":
+			return ".webm"
+		case "video/quicktime":
+			return ".mov"
+		case "audio/mpeg":
+			return ".mp3"
+		case "audio/ogg", "application/ogg":
+			return ".ogg"
+		case "audio/webm":
+			return ".webm"
+		case "audio/mp4", "audio/m4a", "audio/x-m4a":
+			return ".m4a"
+		case "audio/wav", "audio/x-wav":
+			return ".wav"
+		case "application/pdf":
+			return ".pdf"
+		case "text/plain":
+			return ".txt"
+		case "application/zip":
+			return ".zip"
+		case "application/json":
+			return ".json"
+		case "text/csv":
+			return ".csv"
+		}
+	}
+
+	if ext := strings.ToLower(filepath.Ext(key)); ext != "" {
+		return ext
+	}
+
+	switch attachment.FileType {
+	case "image":
+		return ".jpg"
+	case "video":
+		return ".mp4"
+	case "audio":
+		return ".mp3"
+	case "voice":
+		return ".webm"
+	case "video_note":
+		return ".mp4"
+	default:
+		return ".bin"
+	}
 }
 
 func serveStoredObjectWithHeaders(c *gin.Context, store storage.Storage, key string, contentType string, disposition string) {

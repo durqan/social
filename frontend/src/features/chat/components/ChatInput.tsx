@@ -146,6 +146,7 @@ export const ChatInput = ({
 }: ChatInputProps) => {
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+    const composerShellRef = useRef<HTMLDivElement | null>(null);
     const sendingRef = useRef(false);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const voiceChunksRef = useRef<Blob[]>([]);
@@ -209,13 +210,39 @@ export const ChatInput = ({
         textarea.style.overflowY = textarea.scrollHeight > textareaMaxHeight ? 'auto' : 'hidden';
     }, []);
 
+    const reportComposerLayout = useCallback(() => {
+        const shell = composerShellRef.current;
+        if (shell) {
+            document.documentElement.style.setProperty(
+                '--chat-input-height',
+                `${Math.ceil(shell.getBoundingClientRect().height)}px`,
+            );
+        }
+        onComposerLayoutChange?.();
+    }, [onComposerLayoutChange]);
+
     useLayoutEffect(() => {
         resizeTextarea();
     }, [resizeTextarea, value]);
 
     useLayoutEffect(() => {
-        onComposerLayoutChange?.();
+        reportComposerLayout();
     });
+
+    useEffect(() => {
+        const shell = composerShellRef.current;
+        if (!shell || typeof ResizeObserver === 'undefined') {
+            return;
+        }
+
+        const observer = new ResizeObserver(() => reportComposerLayout());
+        observer.observe(shell);
+        return () => observer.disconnect();
+    }, [reportComposerLayout]);
+
+    useEffect(() => () => {
+        document.documentElement.style.removeProperty('--chat-input-height');
+    }, []);
 
     useEffect(() => {
         const urls = selectedFiles.map(file => URL.createObjectURL(file));
@@ -807,7 +834,7 @@ export const ChatInput = ({
     };
 
     return (
-        <div className="chat-composer-shell">
+        <div ref={composerShellRef} className="chat-composer-shell">
             {replyPreview && (
                 <div className="chat-composer-context-bar">
                     <div className="chat-composer-context-bar__content">
