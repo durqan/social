@@ -195,6 +195,15 @@ export const createChatThemeStyles = (
       backgroundColor: theme.accent,
       color: theme.white,
     },
+    scrollToLatestButton: {
+      backgroundColor: theme.surface,
+      borderColor: theme.border,
+      shadowColor: theme.shadow,
+    },
+    scrollToLatestButtonNew: {
+      backgroundColor: theme.accent,
+      borderColor: theme.accent,
+    },
   });
 };
 
@@ -214,6 +223,17 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 8,
   },
+  chatHeaderTitleButton: {
+    maxWidth: 190,
+    minHeight: 34,
+    justifyContent: 'center',
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+  },
+  chatHeaderTitleText: {
+    ...typography.body,
+    fontWeight: '900',
+  },
   messageListContainer: {
     flex: 1,
     zIndex: 1,
@@ -229,6 +249,38 @@ export const styles = StyleSheet.create({
   },
   emptyMessageList: {
     justifyContent: 'center',
+  },
+  scrollToLatestButton: {
+    position: 'absolute',
+    right: 14,
+    bottom: 14,
+    minWidth: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 4,
+    paddingHorizontal: 12,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    shadowColor: colors.shadow,
+    shadowOpacity: colors.isDark ? 0.16 : 0.18,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: colors.isDark ? 2 : 6,
+    zIndex: 6,
+  },
+  scrollToLatestButtonNew: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
+  },
+  scrollToLatestText: {
+    color: colors.white,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '900',
   },
   bubbleRow: {
     flexDirection: 'row',

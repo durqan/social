@@ -1,10 +1,15 @@
-import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
-export const useChatScroll = (resetKey?: unknown) => {
+const bottomThreshold = 100;
+
+export const useChatScroll = (resetKey?: unknown, latestMessageKey?: unknown) => {
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const isAutoScroll = useRef(true);
     const animationFrameRef = useRef<number | null>(null);
     const timeoutRefs = useRef<number[]>([]);
+    const latestMessageKeyRef = useRef<unknown>(latestMessageKey);
+    const [isAtBottom, setIsAtBottom] = useState(true);
+    const [hasNewMessagesBelow, setHasNewMessagesBelow] = useState(false);
 
     const clearScheduledScrolls = useCallback(() => {
         if (animationFrameRef.current !== null) {
@@ -41,6 +46,8 @@ export const useChatScroll = (resetKey?: unknown) => {
 
     const forceScrollToBottom = useCallback(() => {
         isAutoScroll.current = true;
+        setIsAtBottom(true);
+        setHasNewMessagesBelow(false);
         scheduleScrollToBottom(true);
     }, [scheduleScrollToBottom]);
 
@@ -56,7 +63,30 @@ export const useChatScroll = (resetKey?: unknown) => {
 
     useLayoutEffect(() => {
         forceScrollToBottom();
+        latestMessageKeyRef.current = latestMessageKey;
+        setHasNewMessagesBelow(false);
     }, [forceScrollToBottom, resetKey]);
+
+    useEffect(() => {
+        if (latestMessageKeyRef.current === latestMessageKey) {
+            return;
+        }
+
+        latestMessageKeyRef.current = latestMessageKey;
+
+        if (!latestMessageKey) {
+            setHasNewMessagesBelow(false);
+            return;
+        }
+
+        if (isAutoScroll.current) {
+            setHasNewMessagesBelow(false);
+            scheduleScrollToBottom(false);
+            return;
+        }
+
+        setHasNewMessagesBelow(true);
+    }, [latestMessageKey, scheduleScrollToBottom]);
 
     useEffect(() => {
         return () => clearScheduledScrolls();
@@ -86,8 +116,20 @@ export const useChatScroll = (resetKey?: unknown) => {
 
     const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
         const target = e.currentTarget;
-        isAutoScroll.current = target.scrollHeight - target.scrollTop - target.clientHeight < 100;
+        const nextAtBottom = target.scrollHeight - target.scrollTop - target.clientHeight < bottomThreshold;
+        isAutoScroll.current = nextAtBottom;
+        setIsAtBottom(nextAtBottom);
+        if (nextAtBottom) {
+            setHasNewMessagesBelow(false);
+        }
     };
 
-    return { messagesEndRef, handleScroll, forceScrollToBottom, scrollToBottomIfNeeded };
+    return {
+        messagesEndRef,
+        handleScroll,
+        forceScrollToBottom,
+        scrollToBottomIfNeeded,
+        isAtBottom,
+        hasNewMessagesBelow,
+    };
 };

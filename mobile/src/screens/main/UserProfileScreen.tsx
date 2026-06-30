@@ -12,9 +12,9 @@ import { friendsApi } from '../../api/friends';
 import { AppButton } from '../../components/AppButton';
 import {
   ErrorBanner,
-  LoadingState,
   SuccessBanner,
 } from '../../components/Feedback';
+import { ProfileSkeleton } from '../../components/Skeleton';
 import { Screen } from '../../components/Screen';
 import { useAuth } from '../../context/AuthContext';
 import { useThemeColors } from '../../theme/ThemeContext';
@@ -142,7 +142,7 @@ export default function UserProfileScreen({ navigation, route }: Props) {
   if (loading && !profile) {
     return (
       <Screen>
-        <LoadingState text="Загружаем профиль" />
+        <ProfileSkeleton />
       </Screen>
     );
   }

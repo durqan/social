@@ -244,7 +244,7 @@ interface ChatMessageProps {
     onCancelEdit: () => void;
     formatTime: (date: string) => string;
     formatDate: (date: string) => string;
-    onOpenUser?: (userId: number) => void;
+    onOpenUser?: (userId: number, anchorRect: DOMRect) => void;
     onImportLinkPreviewVideo?: (message: Message) => void;
 }
 
@@ -405,7 +405,7 @@ const ChatMessageComponent = ({
         <div
             id={isFirst ? 'msg-first' : `msg-${message.id}`}
             data-chat-message-id={message.id}
-            className={`${rootSpacingClass} ${isContextActive ? 'relative z-[60]' : ''} select-none [-webkit-touch-callout:none] [-webkit-user-select:none]`}
+            className={`chat-message-row ${rootSpacingClass} ${isContextActive ? 'relative z-[60]' : ''} select-none [-webkit-touch-callout:none] [-webkit-user-select:none]`}
             style={{
                 touchAction: 'manipulation',
             }}
@@ -448,7 +448,7 @@ const ChatMessageComponent = ({
                             size="sm"
                             className="mr-2 flex-shrink-0 self-end"
                             ariaLabel={`Открыть профиль ${recipientName || 'собеседника'}`}
-                            onClick={onOpenUser ? () => onOpenUser(message.from_id) : undefined}
+                            onClick={onOpenUser ? event => onOpenUser(message.from_id, event.currentTarget.getBoundingClientRect()) : undefined}
                         />
                     ) : (
                         <div className="mr-2 h-8 w-8 flex-shrink-0" aria-hidden="true" />

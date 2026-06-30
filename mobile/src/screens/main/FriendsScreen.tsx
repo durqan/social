@@ -15,7 +15,7 @@ import {
 } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Check, Search, Trash2, UserRound, X } from 'lucide-react-native';
+import { Check, Search, Trash2, UserRound, UsersRound, X } from 'lucide-react-native';
 
 import { friendsApi } from '../../api/friends';
 import { getApiErrorMessage } from '../../api/http';
@@ -25,8 +25,9 @@ import { IconButton } from '../../components/IconButton';
 import {
   EmptyState,
   ErrorBanner,
-  LoadingState,
 } from '../../components/Feedback';
+import { FriendsListSkeleton } from '../../components/Skeleton';
+import { MiniProfileSheet } from '../../components/MiniProfileSheet';
 import { Screen } from '../../components/Screen';
 import { useNotifications } from '../../context/NotificationsContext';
 import { useThemeColors } from '../../theme/ThemeContext';
@@ -58,6 +59,7 @@ export default function FriendsScreen() {
   const [hasLoaded, setHasLoaded] = useState(false);
   const hasLoadedRef = useRef(false);
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [profileUser, setProfileUser] = useState<User | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async (mode: LoadMode = 'initial') => {
@@ -197,13 +199,14 @@ export default function FriendsScreen() {
       </View>
 
       {loading && !hasLoaded ? (
-        <LoadingState text="Загружаем друзей" />
+        <FriendsListSkeleton />
       ) : (
         <>
           <View style={styles.subsection}>
             <Text style={styles.subsectionTitle}>Заявки в друзья</Text>
             {requests.length === 0 ? (
               <EmptyState
+                icon={UsersRound}
                 title="Заявок пока нет"
                 text="Когда кто-то отправит вам заявку, она появится здесь."
               />
@@ -215,7 +218,18 @@ export default function FriendsScreen() {
                       style={styles.requestUser}
                       onPress={() => request.user && openProfile(request.user)}
                     >
-                      <UserAvatar user={request.user} colors={colors} />
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="Открыть мини-профиль"
+                        onPress={event => {
+                          event.stopPropagation();
+                          if (request.user) {
+                            setProfileUser(request.user);
+                          }
+                        }}
+                      >
+                        <UserAvatar user={request.user} colors={colors} />
+                      </Pressable>
                       <View style={styles.userMeta}>
                         <Text style={styles.userName}>
                           {request.user?.name || 'Пользователь'}
@@ -267,7 +281,8 @@ export default function FriendsScreen() {
               scrollEnabled={false}
               ListEmptyComponent={
                 <EmptyState
-                  title="У вас пока нет друзей"
+                  icon={UsersRound}
+                  title="Пока нет друзей"
                   text="Добавьте друзей через поиск или примите входящую заявку."
                 />
               }
@@ -276,7 +291,16 @@ export default function FriendsScreen() {
                   style={styles.friendRow}
                   onPress={() => openChat(item)}
                 >
-                  <UserAvatar user={item} colors={colors} />
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Открыть мини-профиль"
+                    onPress={event => {
+                      event.stopPropagation();
+                      setProfileUser(item);
+                    }}
+                  >
+                    <UserAvatar user={item} colors={colors} />
+                  </Pressable>
                   <View style={styles.userMeta}>
                     <Text style={styles.userName}>
                       {item.name || 'Пользователь'}
@@ -312,6 +336,21 @@ export default function FriendsScreen() {
           </View>
         </>
       )}
+      <MiniProfileSheet
+        visible={Boolean(profileUser)}
+        userId={profileUser?.id}
+        user={profileUser}
+        onClose={() => setProfileUser(null)}
+        onOpenProfile={(userId, name) =>
+          navigation.navigate('UserProfile', { userId, name })
+        }
+        onMessage={(userId, name) =>
+          navigation.navigate('Chats', {
+            screen: 'Chat',
+            params: { userId, name: name || 'Пользователь' },
+          })
+        }
+      />
     </Screen>
   );
 }

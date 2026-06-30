@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { friendService } from "@/features/friends/api/friendService.js";
 import {
     notificationService,
@@ -7,8 +8,12 @@ import {
 import type { User, Friendship } from "@/shared/types/domain.js";
 import { FriendItem } from "@/features/friends/components/FriendItem.js";
 import { FriendRequestItem } from "@/features/friends/components/FriendRequestItem.js";
-import { Icon } from "@/shared/ui/Icon.js";
 import { useAppDialog } from "@/app/providers/AppDialogProvider.js";
+import { EmptyState } from "@/shared/ui/EmptyState.js";
+import { FriendsSkeleton } from "@/shared/ui/Skeleton.js";
+import { MiniProfilePopover } from "@/shared/ui/MiniProfilePopover.js";
+import { Icon } from "@/shared/ui/Icon.js";
+import { useAuth } from "@/app/providers/AuthContext.js";
 
 type FriendsTab = 'friends' | 'requests';
 type FriendMenuState = {
@@ -36,8 +41,11 @@ function Friends() {
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<FriendsTab>('friends');
     const [menu, setMenu] = useState<FriendMenuState | null>(null);
+    const [miniProfile, setMiniProfile] = useState<{ userId: number; anchorRect: DOMRect; user?: User | null } | null>(null);
     const [deletingFriendId, setDeletingFriendId] = useState<number | null>(null);
     const dialog = useAppDialog();
+    const navigate = useNavigate();
+    const { currentUser } = useAuth();
 
     const selectedFriend = menu
         ? friends.find(friend => friend.id === menu.friendId) ?? null
@@ -126,6 +134,19 @@ function Friends() {
         });
     };
 
+    const openMiniProfile = (friend: User, anchorRect: DOMRect) => {
+        if (!friend.id) {
+            return;
+        }
+
+        setMenu(null);
+        setMiniProfile({
+            userId: friend.id,
+            anchorRect,
+            user: friend,
+        });
+    };
+
     const requestRemoveFriend = async (friend: User) => {
         if (!friend.id) {
             return;
@@ -160,7 +181,20 @@ function Friends() {
     };
 
     if (loading) {
-        return <div className="p-4 text-center">Загрузка...</div>;
+        return (
+            <div className="mx-auto grid max-w-5xl gap-4 lg:grid-cols-[minmax(0,820px)_240px] lg:items-start">
+                <div className="app-card overflow-hidden">
+                    <div className="flex border-b border-gray-200/80 bg-gray-50/70">
+                        <div className="flex-1 px-4 py-3">
+                            <span className="font-medium text-gray-500">Друзья</span>
+                        </div>
+                    </div>
+                    <div className="p-3 sm:p-4">
+                        <FriendsSkeleton />
+                    </div>
+                </div>
+            </div>
+        );
     }
 
     const recentFriends = friends.slice(0, 4);
@@ -200,7 +234,8 @@ function Friends() {
                     <div className="p-3 sm:p-4">
                         {activeTab === 'friends' && (
                             friends.length === 0 ? (
-                                <EmptyFriendsState
+                                <EmptyState
+                                    icon="friends"
                                     title="Пока нет друзей"
                                     text="Найдите людей через поиск сверху и отправьте заявку."
                                 />
@@ -212,6 +247,7 @@ function Friends() {
                                             friend={friend}
                                             active={menu?.mode === 'mobile' && menu.friendId === friend.id}
                                             onOpenMenu={openFriendMenu}
+                                            onOpenMiniProfile={openMiniProfile}
                                         />
                                     ))}
                                 </div>
@@ -219,8 +255,9 @@ function Friends() {
                         )}
                         {activeTab === 'requests' && (
                             requests.length === 0 ? (
-                                <EmptyFriendsState
-                                    title="Нет входящих заявок"
+                                <EmptyState
+                                    icon="friends"
+                                    title="Заявок пока нет"
                                     text="Когда кто-то предложит дружбу, заявка появится здесь."
                                 />
                             ) : (
@@ -317,18 +354,13 @@ function Friends() {
                     </button>
                 </div>
             )}
-        </div>
-    );
-}
-
-function EmptyFriendsState({ title, text }: { title: string; text: string }) {
-    return (
-        <div className="rounded-2xl border border-dashed border-gray-200 bg-white/70 px-5 py-8 text-center">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-600">
-                <Icon name="friends" className="h-6 w-6" />
-            </div>
-            <p className="mt-3 font-semibold text-gray-900">{title}</p>
-            <p className="mt-1 text-sm text-gray-500">{text}</p>
+            <MiniProfilePopover
+                profile={miniProfile}
+                currentUserId={currentUser?.id}
+                onClose={() => setMiniProfile(null)}
+                onOpenProfile={userId => navigate(`/users/${userId}`)}
+                onMessage={userId => currentUser?.id && navigate(`/users/${currentUser.id}/chat/${userId}`)}
+            />
         </div>
     );
 }

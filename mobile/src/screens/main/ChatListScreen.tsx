@@ -8,7 +8,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useFocusEffect, useIsFocused } from '@react-navigation/native';
+import { CommonActions, useFocusEffect, useIsFocused } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { MessageCircle, Pin, PinOff, Trash2 } from 'lucide-react-native';
 
@@ -18,9 +18,10 @@ import type { Conversation } from '@social/shared';
 import {
   EmptyState,
   ErrorBanner,
-  LoadingState,
   SuccessBanner,
 } from '../../components/Feedback';
+import { ConversationListSkeleton } from '../../components/Skeleton';
+import { MiniProfileSheet } from '../../components/MiniProfileSheet';
 import { Screen } from '../../components/Screen';
 import { useUnread } from '../../context/UnreadContext';
 import { useThemeColors } from '../../theme/ThemeContext';
@@ -58,6 +59,8 @@ export default function ChatListScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [selectedConversation, setSelectedConversation] =
+    useState<Conversation | null>(null);
+  const [profileConversation, setProfileConversation] =
     useState<Conversation | null>(null);
   const [busyConversationId, setBusyConversationId] = useState<number | null>(
     null,
@@ -237,10 +240,11 @@ export default function ChatListScreen({ navigation }: Props) {
         ]}
         ListEmptyComponent={
           loading && !hasLoaded ? (
-            <LoadingState text="Загружаем чаты" />
+            <ConversationListSkeleton />
           ) : (
             <EmptyState
-              title="Чатов пока нет"
+              icon={MessageCircle}
+              title="Пока нет диалогов"
               text="Откройте вкладку Друзья, чтобы начать диалог."
             />
           )
@@ -263,11 +267,20 @@ export default function ChatListScreen({ navigation }: Props) {
               onLongPress={() => setSelectedConversation(item)}
               delayLongPress={280}
             >
-              <ConversationAvatar
-                conversation={item}
-                isUnread={isUnread}
-                colors={colors}
-              />
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Открыть мини-профиль"
+                onPress={event => {
+                  event.stopPropagation();
+                  setProfileConversation(item);
+                }}
+              >
+                <ConversationAvatar
+                  conversation={item}
+                  isUnread={isUnread}
+                  colors={colors}
+                />
+              </Pressable>
               <View style={styles.meta}>
                 <View style={styles.rowHeader}>
                   <View style={styles.nameBox}>
@@ -325,6 +338,38 @@ export default function ChatListScreen({ navigation }: Props) {
           deleteConversation(conversation).catch(() => undefined);
         }}
         colors={colors}
+      />
+      <MiniProfileSheet
+        visible={Boolean(profileConversation)}
+        userId={profileConversation?.user_id}
+        user={
+          profileConversation
+            ? {
+                id: profileConversation.user_id,
+                name: profileConversation.name,
+                avatar: profileConversation.avatar,
+                avatar_position_x: profileConversation.avatar_position_x,
+                avatar_position_y: profileConversation.avatar_position_y,
+                avatar_scale: profileConversation.avatar_scale,
+                last_seen_at: profileConversation.last_seen_at,
+              }
+            : null
+        }
+        onClose={() => setProfileConversation(null)}
+        onOpenProfile={(userId, name) => {
+          navigation.getParent()?.getParent()?.dispatch(
+            CommonActions.navigate({
+              name: 'UserProfile',
+              params: { userId, name },
+            }),
+          );
+        }}
+        onMessage={(userId, name) => {
+          navigation.navigate('Chat', {
+            userId,
+            name: name || 'Пользователь',
+          });
+        }}
       />
     </Screen>
   );

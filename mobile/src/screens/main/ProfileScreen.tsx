@@ -24,9 +24,9 @@ import { AppButton } from '../../components/AppButton';
 import { EmailVerificationNotice } from '../../components/EmailVerificationNotice';
 import {
   ErrorBanner,
-  LoadingState,
   SuccessBanner,
 } from '../../components/Feedback';
+import { ProfileSkeleton } from '../../components/Skeleton';
 import { Screen } from '../../components/Screen';
 import { TextField } from '../../components/TextField';
 import { useAuth } from '../../context/AuthContext';
@@ -201,7 +201,7 @@ export default function ProfileScreen() {
   if (!user) {
     return (
       <Screen>
-        <LoadingState text="Загружаем профиль" />
+        <ProfileSkeleton />
       </Screen>
     );
   }

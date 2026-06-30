@@ -12,11 +12,14 @@ import { useChatTyping } from "@/features/chat/hooks/useChatTyping.js";
 import { ChatHeader } from "@/features/chat/components/ChatHeader.js";
 import { ChatInput } from "@/features/chat/components/ChatInput.js";
 import { ChatMessageList } from "@/features/chat/components/ChatMessageList.js";
+import { ScrollToBottomButton } from "@/features/chat/components/ScrollToBottomButton.js";
 import { useWebSocket } from "@/app/providers/WebSocketContext.js";
 import { useAppDialog } from "@/app/providers/AppDialogProvider.js";
 import { useAudioCall } from "@/features/call/AudioCallContext.js";
 import { toast } from 'react-hot-toast';
 import { Spinner } from "@/shared/ui/Spinner.js";
+import { ChatMessagesSkeleton } from "@/shared/ui/Skeleton.js";
+import { MiniProfilePopover } from "@/shared/ui/MiniProfilePopover.js";
 import { formatMonthDayDate, formatTime } from "@/shared/utils/date.js";
 import {usePresence} from "@/shared/hooks/usePresence.js";
 import { getUploadErrorMessage } from "@/shared/api/errors.js";
@@ -387,6 +390,7 @@ function Chat() {
     const [forwardError, setForwardError] = useState('');
     const [pinnedMessage, setPinnedMessage] = useState<PinnedMessage | null>(null);
     const [scrollToMessageRequest, setScrollToMessageRequest] = useState<{ messageId: number; requestId: number } | null>(null);
+    const [miniProfile, setMiniProfile] = useState<{ userId: number; anchorRect: DOMRect; user?: User | null } | null>(null);
     const dragDepthRef = useRef(0);
 
     const transformChatMessages = useCallback((items: Message[]) => (
@@ -416,7 +420,15 @@ function Chat() {
 
     const { otherTyping, setOtherTyping, handleTyping } = useChatTyping(Number(userId));
     const { selectionMode, selectedMessages, toggleSelect, enterSelectionMode, exitSelectionMode } = useChatSelection();
-    const { messagesEndRef, handleScroll, forceScrollToBottom, scrollToBottomIfNeeded } = useChatScroll(userId);
+    const latestMessageKey = messages[messages.length - 1]?.id ?? null;
+    const {
+        messagesEndRef,
+        handleScroll,
+        forceScrollToBottom,
+        scrollToBottomIfNeeded,
+        isAtBottom,
+        hasNewMessagesBelow,
+    } = useChatScroll(userId, latestMessageKey);
     const { online, lastSeenAt } = usePresence(recipient?.id);
     const e2eeReady = Boolean(
         currentUser?.id &&
@@ -1171,6 +1183,22 @@ function Chat() {
         navigate(`/users/${profileUserId}`);
     }, [navigate]);
 
+    const openMiniProfile = useCallback((profileUserId: number, anchorRect: DOMRect) => {
+        const baseUser = profileUserId === recipient?.id
+            ? recipient
+            : profileUserId === currentUser?.id
+                ? currentUser
+                : null;
+        setMiniProfile({ userId: profileUserId, anchorRect, user: baseUser });
+    }, [currentUser, recipient]);
+
+    const openMiniProfileMessage = useCallback((profileUserId: number) => {
+        setMiniProfile(null);
+        if (currentUser?.id) {
+            navigate(`/users/${currentUser.id}/chat/${profileUserId}`);
+        }
+    }, [currentUser?.id, navigate]);
+
     const saveEditedMessage = useCallback(async (messageId: number, content: string) => {
         const existingMessage = messages.find(message => message.id === messageId);
         const shouldEncryptEdit = Boolean(
@@ -1526,7 +1554,13 @@ function Chat() {
         queueFilesForPreview(files);
     };
 
-    if (initialLoading) return <div className="flex h-full items-center justify-center sm:h-[calc(100vh-120px)]"><Spinner /></div>;
+    if (initialLoading) {
+        return (
+            <div className="chat-wallpaper h-full overflow-hidden sm:h-[calc(100vh-120px)] sm:rounded-2xl sm:border sm:border-gray-200/80">
+                <ChatMessagesSkeleton />
+            </div>
+        );
+    }
 
     return (
         <div
@@ -1578,7 +1612,7 @@ function Chat() {
                         ? () => startVideoCall(Number(userId), recipient?.name)
                         : undefined
                 }
-                onOpenRecipient={openUserProfile}
+                onOpenRecipient={openMiniProfile}
                 recipientLastSeenAt={lastSeenAt ?? recipient?.last_seen_at}
             />
             <PinnedMessageBanner
@@ -1621,9 +1655,14 @@ function Chat() {
                 messagesEndRef={messagesEndRef}
                 formatDate={formatMonthDayDate}
                 formatTime={formatTime}
-                onOpenUser={openUserProfile}
+                onOpenUser={openMiniProfile}
                 onImportLinkPreviewVideo={importLinkPreviewVideo}
                 scrollToMessageRequest={scrollToMessageRequest}
+            />
+            <ScrollToBottomButton
+                visible={!isAtBottom || hasNewMessagesBelow}
+                hasNewMessages={hasNewMessagesBelow}
+                onClick={forceScrollToBottom}
             />
             {otherTyping && <div className="px-4 pb-2 text-sm text-gray-500">{recipient?.name} печатает...</div>}
             <ChatInput
@@ -1720,6 +1759,14 @@ function Chat() {
                     </div>
                 </div>
             )}
+            <MiniProfilePopover
+                profile={miniProfile}
+                currentUserId={currentUser?.id}
+                onClose={() => setMiniProfile(null)}
+                onOpenProfile={openUserProfile}
+                onMessage={openMiniProfileMessage}
+                onCall={callStatus === 'idle' ? userId => startCall(userId) : undefined}
+            />
         </div>
     );
 }

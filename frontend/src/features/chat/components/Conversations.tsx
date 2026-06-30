@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent, type TouchEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { Conversation } from "@/shared/types/domain.js";
+import type { Conversation, User } from "@/shared/types/domain.js";
 import { messageService } from "@/features/chat/api/messageService.js";
 import { Avatar } from "@/shared/ui/Avatar.js";
 import { useAuth } from "@/app/providers/AuthContext.js";
 import { formatMonthDayDate } from "@/shared/utils/date.js";
 import { Icon } from "@/shared/ui/Icon.js";
+import { EmptyState } from "@/shared/ui/EmptyState.js";
+import { ConversationsSkeleton } from "@/shared/ui/Skeleton.js";
+import { MiniProfilePopover } from "@/shared/ui/MiniProfilePopover.js";
 import { useWebSocket } from "@/app/providers/WebSocketContext.js";
 import { useAppDialog } from "@/app/providers/AppDialogProvider.js";
 import type { WsEvent } from "@/shared/types/ws.js";
@@ -35,6 +38,7 @@ function Conversations() {
     const [conversations, setConversations] = useState<Conversation[]>([]);
     const [loading, setLoading] = useState(true);
     const [menu, setMenu] = useState<ConversationMenuState | null>(null);
+    const [miniProfile, setMiniProfile] = useState<{ userId: number; anchorRect: DOMRect; user?: User | null } | null>(null);
     const [deletingUserId, setDeletingUserId] = useState<number | null>(null);
     const [pinningUserId, setPinningUserId] = useState<number | null>(null);
     const navigate = useNavigate();
@@ -109,6 +113,25 @@ function Conversations() {
             mode,
             x: Math.max(8, Math.min(position.x, window.innerWidth - menuWidth - 8)),
             y: Math.max(8, Math.min(position.y, window.innerHeight - menuHeight - 8)),
+        });
+    };
+
+    const conversationUser = (conversation: Conversation): User => ({
+        id: conversation.user_id,
+        name: conversation.name,
+        avatar: conversation.avatar,
+        avatar_position_x: conversation.avatar_position_x,
+        avatar_position_y: conversation.avatar_position_y,
+        avatar_scale: conversation.avatar_scale,
+        last_seen_at: conversation.last_seen_at,
+    });
+
+    const openMiniProfile = (conversation: Conversation, anchorRect: DOMRect) => {
+        setMenu(null);
+        setMiniProfile({
+            userId: conversation.user_id,
+            anchorRect,
+            user: conversationUser(conversation),
         });
     };
 
@@ -198,7 +221,12 @@ function Conversations() {
     };
 
     if (loading) {
-        return <div className="p-4 text-center">Загрузка...</div>;
+        return (
+            <div className="mx-auto max-w-2xl">
+                <h1 className="mb-3 text-xl font-semibold tracking-tight text-gray-950 sm:mb-4 sm:text-2xl">Сообщения</h1>
+                <ConversationsSkeleton />
+            </div>
+        );
     }
 
     return (
@@ -206,14 +234,12 @@ function Conversations() {
             <h1 className="mb-3 text-xl font-semibold tracking-tight text-gray-950 sm:mb-4 sm:text-2xl">Сообщения</h1>
             <div className="app-card overflow-hidden">
                 {!conversations || conversations.length === 0 ? (
-                    <div className="p-6 text-center sm:p-8">
-                        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-600">
-                            <Icon name="messages" className="h-6 w-6" />
-                        </div>
-                        <p className="mt-3 font-semibold text-gray-900">Нет диалогов</p>
-                        <p className="mt-1 text-sm text-gray-500">
-                            Начните переписку с другом, и чат появится здесь.
-                        </p>
+                    <div className="p-4 sm:p-6">
+                        <EmptyState
+                            icon="messages"
+                            title="Пока нет диалогов"
+                            text="Начните переписку с другом, и чат появится здесь."
+                        />
                     </div>
                 ) : (
                     conversations.map(conv => (
@@ -223,6 +249,7 @@ function Conversations() {
                             active={menu?.mode === 'mobile' && menu.userId === conv.user_id}
                             onOpen={() => currentUser?.id && navigate(`/users/${currentUser.id}/chat/${conv.user_id}`)}
                             onOpenMenu={openMenu}
+                            onOpenMiniProfile={openMiniProfile}
                         />
                     ))
                 )}
@@ -270,6 +297,13 @@ function Conversations() {
                     </button>
                 </div>
             )}
+            <MiniProfilePopover
+                profile={miniProfile}
+                currentUserId={currentUser?.id}
+                onClose={() => setMiniProfile(null)}
+                onOpenProfile={userId => navigate(`/users/${userId}`)}
+                onMessage={userId => currentUser?.id && navigate(`/users/${currentUser.id}/chat/${userId}`)}
+            />
         </div>
     );
 }
@@ -279,11 +313,13 @@ function ConversationItem({
     active,
     onOpen,
     onOpenMenu,
+    onOpenMiniProfile,
 }: {
     conversation: Conversation;
     active: boolean;
     onOpen: () => void;
     onOpenMenu: (conversation: Conversation, position: { x: number; y: number }, mode: 'desktop' | 'mobile') => void;
+    onOpenMiniProfile: (conversation: Conversation, anchorRect: DOMRect) => void;
 }) {
     const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const touchStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -363,8 +399,8 @@ function ConversationItem({
             onTouchEnd={handleTouchEnd}
             onTouchCancel={handleTouchEnd}
             onTouchMove={handleTouchMove}
-            className={`flex select-none items-center gap-3 cursor-pointer border-b border-gray-100 p-3 transition 
-            last:border-b-0 [-webkit-touch-callout:none] [-webkit-user-select:none] 
+            className={`app-interactive-card flex select-none items-center gap-3 cursor-pointer border-b border-gray-100 p-3 transition
+            last:border-b-0 [-webkit-touch-callout:none] [-webkit-user-select:none]
             hover:bg-gray-50 sm:p-4 ${active ? 'relative z-[60] bg-white shadow-2xl ring-2 ring-white/80' : ''}`}
             style={{ touchAction: 'manipulation' }}
         >
@@ -375,6 +411,8 @@ function ConversationItem({
                 positionY={conversation.avatar_position_y}
                 scale={conversation.avatar_scale}
                 size="list"
+                ariaLabel={`Открыть мини-профиль ${conversation.name || 'пользователя'}`}
+                onClick={event => onOpenMiniProfile(conversation, event.currentTarget.getBoundingClientRect())}
             />
             <div className="min-w-0 flex-1">
                 <div className="flex items-start justify-between gap-3">
@@ -384,7 +422,16 @@ function ConversationItem({
                                 <Icon name="pin" className="h-3.5 w-3.5" />
                             </span>
                         )}
-                        <p className="truncate font-semibold text-gray-950">{conversation.name}</p>
+                        <button
+                            type="button"
+                            className="min-w-0 truncate font-semibold text-gray-950"
+                            onClick={event => {
+                                event.stopPropagation();
+                                onOpenMiniProfile(conversation, event.currentTarget.getBoundingClientRect());
+                            }}
+                        >
+                            {conversation.name}
+                        </button>
                     </div>
                     <p className="flex-shrink-0 text-xs text-gray-500">
                         {formatMonthDayDate(conversation.last_message_at)}

@@ -1,6 +1,7 @@
 import React, {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -32,6 +33,8 @@ import type {
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import type { Asset, ImagePickerResponse } from 'react-native-image-picker';
 import {
+  ChevronDown,
+  MessageCircle,
   Mic,
   Pause,
   Paperclip,
@@ -49,7 +52,7 @@ import Sound, {
 } from 'react-native-nitro-sound';
 import Video from 'react-native-video';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useFocusEffect, useIsFocused } from '@react-navigation/native';
+import { CommonActions, useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { WS_EVENTS } from '@social/shared';
 
 import {
@@ -85,9 +88,10 @@ import { IconButton } from '../../components/IconButton';
 import {
   EmptyState,
   ErrorBanner,
-  LoadingState,
   SuccessBanner,
 } from '../../components/Feedback';
+import { ChatMessagesSkeleton } from '../../components/Skeleton';
+import { MiniProfileSheet } from '../../components/MiniProfileSheet';
 import { Screen } from '../../components/Screen';
 import { useAppLifecycle } from '../../context/AppLifecycleContext';
 import { useAuth } from '../../context/AuthContext';
@@ -259,7 +263,7 @@ function chatErrorMessage(error: unknown) {
   return getApiErrorMessage(error);
 }
 
-export default function ChatScreen({ route }: Props) {
+export default function ChatScreen({ route, navigation }: Props) {
   const { user } = useAuth();
   const { textSizeId } = useTheme();
   const themeColors = useThemeColors();
@@ -358,6 +362,9 @@ export default function ChatScreen({ route }: Props) {
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [playingVoiceUrl, setPlayingVoiceUrl] = useState<string | null>(null);
   const [messageActionPending, setMessageActionPending] = useState(false);
+  const [showScrollToLatest, setShowScrollToLatest] = useState(false);
+  const [newMessagesBelow, setNewMessagesBelow] = useState(false);
+  const [miniProfileVisible, setMiniProfileVisible] = useState(false);
 
   const [pendingVoice, setPendingVoice] = useState<LocalVoiceMessage | null>(
     null,
@@ -386,6 +393,27 @@ export default function ChatScreen({ route }: Props) {
       e2eeState.recipientPublicKey &&
       e2eeState.localKey,
   );
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      // eslint-disable-next-line react/no-unstable-nested-components
+      headerTitle: () => (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Открыть мини-профиль"
+          style={styles.chatHeaderTitleButton}
+          onPress={() => setMiniProfileVisible(true)}
+        >
+          <Text
+            style={[styles.chatHeaderTitleText, { color: themeColors.text }]}
+            numberOfLines={1}
+          >
+            {route.params.name}
+          </Text>
+        </Pressable>
+      ),
+    });
+  }, [navigation, route.params.name, themeColors.text]);
 
   const messagesRef = useLatest(messages);
   const hasMoreRef = useLatest(hasMore);
@@ -453,6 +481,8 @@ export default function ChatScreen({ route }: Props) {
     setEditingMessage(null);
     setReplyToMessage(null);
     setError(null);
+    setShowScrollToLatest(false);
+    setNewMessagesBelow(false);
   }, [otherUserId, user?.id]);
 
   const applyAndroidKeyboardInset = useCallback(() => {
@@ -620,6 +650,8 @@ export default function ChatScreen({ route }: Props) {
         pendingScrollToLatestReasonRef.current = null;
         isInitialScrollPendingRef.current = false;
         isUserNearBottomRef.current = true;
+        setShowScrollToLatest(false);
+        setNewMessagesBelow(false);
         scrollToLatestAttemptCountRef.current = 0;
         lastScrollToLatestContentHeightRef.current =
           messageListContentHeightRef.current;
@@ -1179,7 +1211,12 @@ export default function ChatScreen({ route }: Props) {
 
       const distanceFromBottom =
         contentSize.height - (contentOffset.y + layoutMeasurement.height);
-      isUserNearBottomRef.current = distanceFromBottom <= 96;
+      const nearBottom = distanceFromBottom <= 96;
+      isUserNearBottomRef.current = nearBottom;
+      setShowScrollToLatest(!nearBottom);
+      if (nearBottom) {
+        setNewMessagesBelow(false);
+      }
 
       if (isInitialScrollPendingRef.current) {
         return;
@@ -1193,6 +1230,15 @@ export default function ChatScreen({ route }: Props) {
     },
     [loadOlderMessages],
   );
+
+  const scrollToLatestFromButton = useCallback(() => {
+    setShowScrollToLatest(false);
+    setNewMessagesBelow(false);
+    isUserNearBottomRef.current = true;
+    pendingScrollToLatestReasonRef.current = 'incoming_message';
+    scrollToLatestAttemptCountRef.current = 0;
+    scrollToLatestMessage(true);
+  }, [scrollToLatestMessage]);
 
   const handleMessageListLayout = useCallback(
     (event: LayoutChangeEvent) => {
@@ -1599,6 +1645,9 @@ export default function ChatScreen({ route }: Props) {
               pendingScrollToLatestReasonRef.current = 'own_message';
             } else if (isUserNearBottomRef.current) {
               pendingScrollToLatestReasonRef.current = 'incoming_message';
+            } else {
+              setShowScrollToLatest(true);
+              setNewMessagesBelow(true);
             }
             return [...previous, displayMessage];
           });
@@ -3111,52 +3160,79 @@ export default function ChatScreen({ route }: Props) {
 
       <ChatDoodleBackground isDark={themeColors.isDark}>
         {loading && !hasLoaded ? (
-          <View style={styles.loading}>
-            <LoadingState text="Загружаем сообщения" />
-          </View>
+          <ChatMessagesSkeleton />
         ) : (
-          <FlatList
-            ref={listRef}
-            style={styles.messageListContainer}
-            data={messages}
-            keyExtractor={messageKeyExtractor}
-            refreshing={refreshing}
-            onRefresh={() => loadMessages('refresh')}
-            keyboardShouldPersistTaps="handled"
-            maintainVisibleContentPosition={
-              maintainScrollPositionEnabled
-                ? { minIndexForVisible: 0 }
-                : undefined
-            }
-            onScroll={handleMessagesScroll}
-            scrollEventThrottle={SCROLL_EVENT_THROTTLE_MS}
-            renderItem={renderMessageItem}
-            extraData={{ playingVoiceUrl, themeColors, userId: user?.id }}
-            initialNumToRender={12}
-            windowSize={7}
-            maxToRenderPerBatch={8}
-            updateCellsBatchingPeriod={50}
-            removeClippedSubviews={Platform.OS === 'android'}
-            onLayout={handleMessageListLayout}
-            contentContainerStyle={[
-              styles.messageList,
-              messages.length === 0 && styles.emptyMessageList,
-            ]}
-            onContentSizeChange={handleMessageListContentSizeChange}
-            ListHeaderComponent={
-              loadingOlder ? (
-                <View style={styles.loadingOlder}>
-                  <ActivityIndicator color={themeColors.accent} />
-                </View>
-              ) : null
-            }
-            ListEmptyComponent={
-              <EmptyState
-                title="Сообщений пока нет"
-                text="Напишите первым, отправьте изображение или голосовое."
-              />
-            }
-          />
+          <>
+            <FlatList
+              ref={listRef}
+              style={styles.messageListContainer}
+              data={messages}
+              keyExtractor={messageKeyExtractor}
+              refreshing={refreshing}
+              onRefresh={() => loadMessages('refresh')}
+              keyboardShouldPersistTaps="handled"
+              maintainVisibleContentPosition={
+                maintainScrollPositionEnabled
+                  ? { minIndexForVisible: 0 }
+                  : undefined
+              }
+              onScroll={handleMessagesScroll}
+              scrollEventThrottle={SCROLL_EVENT_THROTTLE_MS}
+              renderItem={renderMessageItem}
+              extraData={{ playingVoiceUrl, themeColors, userId: user?.id }}
+              initialNumToRender={12}
+              windowSize={7}
+              maxToRenderPerBatch={8}
+              updateCellsBatchingPeriod={50}
+              removeClippedSubviews={Platform.OS === 'android'}
+              onLayout={handleMessageListLayout}
+              contentContainerStyle={[
+                styles.messageList,
+                messages.length === 0 && styles.emptyMessageList,
+              ]}
+              onContentSizeChange={handleMessageListContentSizeChange}
+              ListHeaderComponent={
+                loadingOlder ? (
+                  <View style={styles.loadingOlder}>
+                    <ActivityIndicator color={themeColors.accent} />
+                  </View>
+                ) : null
+              }
+              ListEmptyComponent={
+                <EmptyState
+                  icon={MessageCircle}
+                  title="Нет сообщений"
+                  text="Начните переписку, отправьте изображение или голосовое."
+                />
+              }
+            />
+            {showScrollToLatest || newMessagesBelow ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={
+                  newMessagesBelow
+                    ? 'Показать новые сообщения'
+                    : 'Прокрутить вниз'
+                }
+                style={[
+                  styles.scrollToLatestButton,
+                  themed.scrollToLatestButton,
+                  newMessagesBelow && styles.scrollToLatestButtonNew,
+                  newMessagesBelow && themed.scrollToLatestButtonNew,
+                ]}
+                onPress={scrollToLatestFromButton}
+              >
+                {newMessagesBelow ? (
+                  <Text style={styles.scrollToLatestText}>Новые</Text>
+                ) : null}
+                <ChevronDown
+                  color={newMessagesBelow ? themeColors.white : themeColors.text}
+                  size={18}
+                  strokeWidth={2.7}
+                />
+              </Pressable>
+            ) : null}
+          </>
         )}
       </ChatDoodleBackground>
 
@@ -3662,6 +3738,20 @@ export default function ChatScreen({ route }: Props) {
           submitForward().catch(() => undefined);
         }}
         themeColors={themeColors}
+      />
+      <MiniProfileSheet
+        visible={miniProfileVisible}
+        userId={otherUserId}
+        user={{ id: otherUserId, name: route.params.name }}
+        onClose={() => setMiniProfileVisible(false)}
+        onOpenProfile={(targetId, name) => {
+          navigation.getParent()?.getParent()?.dispatch(
+            CommonActions.navigate({
+              name: 'UserProfile',
+              params: { userId: targetId, name },
+            }),
+          );
+        }}
       />
     </Screen>
   );

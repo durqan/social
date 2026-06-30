@@ -140,6 +140,198 @@ button {
         transform: scale(0.96);
     }
 
+    .app-interactive-card {
+        transition: background 160ms ease, border-color 160ms ease, box-shadow 180ms ease, transform 180ms ease;
+    }
+
+    .app-interactive-card:hover {
+        border-color: var(--app-border-strong);
+        background: var(--app-hover);
+        box-shadow: 0 10px 26px var(--app-shadow-color);
+        transform: translateY(-1px);
+    }
+
+    .app-popover-surface {
+        animation: app-popover-enter 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+
+    .skeleton-block {
+        position: relative;
+        display: block;
+        overflow: hidden;
+        background: color-mix(in srgb, var(--app-card-muted) 84%, var(--app-text-soft) 16%);
+    }
+
+    .skeleton-block::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        transform: translateX(-110%);
+        background: linear-gradient(
+            90deg,
+            transparent 0%,
+            color-mix(in srgb, var(--app-surface) 62%, transparent) 48%,
+            transparent 100%
+        );
+        animation: skeleton-shimmer 1450ms ease-in-out infinite;
+    }
+
+    .skeleton-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .empty-state-card {
+        border: 1px dashed var(--app-border);
+        border-radius: 18px;
+        background: color-mix(in srgb, var(--app-card) 82%, transparent);
+        box-shadow: 0 12px 30px var(--app-shadow-color);
+        padding: 28px 22px;
+        text-align: center;
+        animation: empty-state-enter 220ms ease both;
+    }
+
+    .empty-state-card__icon {
+        display: inline-flex;
+        width: 48px;
+        height: 48px;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        background: var(--app-accent-soft);
+        color: var(--app-accent);
+    }
+
+    .empty-state-card__title {
+        margin-top: 12px;
+        color: var(--app-text-primary);
+        font-size: 15px;
+        font-weight: 800;
+        line-height: 20px;
+    }
+
+    .empty-state-card__text {
+        margin: 5px auto 0;
+        max-width: 320px;
+        color: var(--app-text-secondary);
+        font-size: 13px;
+        line-height: 18px;
+    }
+
+    .mini-profile-popover {
+        position: fixed;
+        z-index: 100;
+        width: min(320px, calc(100vw - 24px));
+        border: 1px solid var(--app-border);
+        border-radius: 18px;
+        background: color-mix(in srgb, var(--app-card) 96%, transparent);
+        box-shadow: 0 18px 50px var(--app-shadow-color);
+        padding: 14px;
+        color: var(--app-text-primary);
+        animation: app-popover-enter 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+
+    .mini-profile-sheet-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 99;
+        background: var(--app-overlay-soft);
+    }
+
+    .mini-profile-sheet {
+        position: fixed;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        z-index: 100;
+        border: 1px solid var(--app-border);
+        border-bottom: 0;
+        border-radius: 24px 24px 0 0;
+        background: var(--app-card);
+        box-shadow: 0 -18px 48px var(--app-shadow-color);
+        padding: 10px 16px calc(18px + env(safe-area-inset-bottom));
+        color: var(--app-text-primary);
+        animation: app-sheet-enter 210ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+
+    .mini-profile-sheet__handle {
+        width: 42px;
+        height: 4px;
+        margin: 0 auto 12px;
+        border-radius: 999px;
+        background: var(--app-border-strong);
+    }
+
+    .mini-profile-popover__header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .mini-profile-popover__name {
+        overflow: hidden;
+        color: var(--app-text-primary);
+        font-size: 15px;
+        font-weight: 800;
+        line-height: 20px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .mini-profile-popover__status,
+    .mini-profile-popover__meta {
+        overflow: hidden;
+        color: var(--app-text-secondary);
+        font-size: 12px;
+        line-height: 16px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .mini-profile-popover__status--online {
+        color: var(--app-success);
+    }
+
+    .mini-profile-popover__actions {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+        gap: 8px;
+        margin-top: 14px;
+    }
+
+    .mini-profile-popover__action {
+        display: inline-flex;
+        min-height: 38px;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        border: 1px solid var(--app-border);
+        border-radius: 12px;
+        background: var(--app-surface-muted);
+        color: var(--app-text-primary);
+        font-size: 13px;
+        font-weight: 750;
+        transition: background 150ms ease, border-color 150ms ease, color 150ms ease, transform 150ms ease;
+    }
+
+    .mini-profile-popover__action:hover {
+        border-color: var(--app-border-strong);
+        background: var(--app-hover);
+        transform: translateY(-1px);
+    }
+
+    .mini-profile-popover__action--primary {
+        border-color: var(--app-accent-border);
+        background: var(--app-accent);
+        color: var(--app-text-inverse);
+    }
+
+    .mini-profile-popover__action--primary:hover {
+        background: var(--app-accent-hover);
+        color: var(--app-text-inverse);
+    }
+
     .chat-composer-shell {
         border-top: 1px solid var(--app-border);
         background: color-mix(in srgb, var(--app-surface) 88%, transparent);
@@ -740,6 +932,10 @@ button {
         box-shadow: 0 1px 1px rgba(15, 23, 42, 0.05);
     }
 
+    .chat-message-row {
+        animation: chat-message-enter 180ms ease-out both;
+    }
+
     .chat-message-bubble--own,
     .chat-message-bubble--other {
         min-width: 0;
@@ -859,18 +1055,18 @@ button {
 
     .message-reaction {
         display: inline-flex;
-        min-width: 30px;
-        height: 26px;
+        min-width: 36px;
+        height: 30px;
         align-items: center;
         justify-content: center;
         gap: 4px;
-        padding: 0 8px;
+        padding: 0 10px;
         border: 1px solid rgba(148, 163, 184, 0.2);
         border-radius: 999px;
         background: rgba(255, 255, 255, 0.74);
         color: var(--app-text-secondary);
         box-shadow: 0 3px 10px rgba(15, 23, 42, 0.055);
-        font-size: 13px;
+        font-size: 14px;
         line-height: 1;
         opacity: 0;
         transform: scale(0.82) translateY(3px);
@@ -906,15 +1102,60 @@ button {
 
     .message-reaction__emoji {
         font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
-        font-size: 15px;
+        font-size: 17px;
         filter: saturate(1.04);
     }
 
     .message-reaction__count {
         min-width: 7px;
-        font-size: 11px;
+        font-size: 12px;
         font-weight: 650;
         font-variant-numeric: tabular-nums;
+    }
+
+    .chat-scroll-bottom-button {
+        position: absolute;
+        right: 14px;
+        bottom: 78px;
+        z-index: 30;
+        display: inline-flex;
+        min-width: 38px;
+        height: 38px;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        border: 1px solid var(--app-border);
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--app-card) 92%, transparent);
+        box-shadow: 0 10px 28px var(--app-shadow-color);
+        color: var(--app-text-secondary);
+        padding: 0 11px;
+        animation: chat-scroll-button-enter 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+        transition: background 150ms ease, color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
+    }
+
+    .chat-scroll-bottom-button:hover {
+        background: var(--app-card);
+        color: var(--app-accent);
+        transform: translateY(-1px);
+        box-shadow: 0 14px 34px var(--app-shadow-color);
+    }
+
+    .chat-scroll-bottom-button--new {
+        border-color: var(--app-accent-border);
+        background: var(--app-accent);
+        color: var(--app-text-inverse);
+    }
+
+    .chat-scroll-bottom-button--new:hover {
+        background: var(--app-accent-hover);
+        color: var(--app-text-inverse);
+    }
+
+    .chat-scroll-bottom-button__text {
+        font-size: 12px;
+        font-weight: 800;
+        line-height: 1;
     }
 
     .reaction-picker {
@@ -1335,6 +1576,67 @@ button {
     }
 }
 
+@keyframes skeleton-shimmer {
+    100% {
+        transform: translateX(110%);
+    }
+}
+
+@keyframes empty-state-enter {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes app-popover-enter {
+    from {
+        opacity: 0;
+        transform: translateY(4px) scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes app-sheet-enter {
+    from {
+        opacity: 0;
+        transform: translateY(16px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes chat-message-enter {
+    from {
+        opacity: 0;
+        transform: translateY(4px) scale(0.99);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes chat-scroll-button-enter {
+    from {
+        opacity: 0;
+        transform: translateY(6px) scale(0.94);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
 @keyframes reaction-picker-in {
     0% {
         opacity: 0;
@@ -1455,6 +1757,31 @@ button {
 }
 
 @media (prefers-reduced-motion: reduce) {
+    .skeleton-block::after,
+    .empty-state-card,
+    .mini-profile-popover,
+    .mini-profile-sheet,
+    .chat-message-row,
+    .chat-scroll-bottom-button {
+        animation: none;
+    }
+
+    .skeleton-block::after {
+        display: none;
+    }
+
+    .app-interactive-card,
+    .mini-profile-popover__action,
+    .chat-scroll-bottom-button {
+        transition-duration: 1ms;
+    }
+
+    .app-interactive-card:hover,
+    .mini-profile-popover__action:hover,
+    .chat-scroll-bottom-button:hover {
+        transform: none;
+    }
+
     .reaction-picker,
     .reaction-picker__emoji--pop,
     .message-reaction,

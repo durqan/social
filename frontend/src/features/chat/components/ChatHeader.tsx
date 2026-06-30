@@ -17,7 +17,7 @@ interface ChatHeaderProps {
     onDeleteClick: () => void;
     onStartAudioCall?: () => void;
     onStartVideoCall?: () => void;
-    onOpenRecipient?: (recipientId: number) => void;
+    onOpenRecipient?: (recipientId: number, anchorRect: DOMRect) => void;
     recipientLastSeenAt?: string | null;
 }
 
@@ -77,16 +77,24 @@ export const ChatHeader = ({
                             positionY={recipientAvatarPositionY}
                             scale={recipientAvatarScale}
                             ariaLabel={`Открыть профиль ${recipientName || 'собеседника'}`}
-                            onClick={recipientId && onOpenRecipient ? () => onOpenRecipient(recipientId) : undefined}
+                            onClick={recipientId && onOpenRecipient ? event => onOpenRecipient(recipientId, event.currentTarget.getBoundingClientRect()) : undefined}
                         />
-                        <div className="min-w-0">
-                            <h2 className="font-semibold text-gray-950 truncate text-sm sm:text-base">{recipientName || 'Пользователь'}</h2>
+                        <button
+                            type="button"
+                            className="min-w-0 text-left"
+                            onClick={event => {
+                                if (recipientId && onOpenRecipient) {
+                                    onOpenRecipient(recipientId, event.currentTarget.getBoundingClientRect());
+                                }
+                            }}
+                        >
+                            <h2 className="truncate text-sm font-semibold text-gray-950 sm:text-base">{recipientName || 'Пользователь'}</h2>
                             {statusText && (
                                 <p className={recipientStatus ? 'text-xs text-emerald-600' : 'text-xs text-gray-400'}>
                                     {statusText}
                                 </p>
                             )}
-                        </div>
+                        </button>
                     </div>
 
                     <div className="flex items-center gap-1.5 flex-shrink-0 sm:gap-2">

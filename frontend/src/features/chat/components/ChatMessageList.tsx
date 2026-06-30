@@ -101,7 +101,7 @@ interface ChatMessageListProps {
     formatDate: (date: string) => string;
     formatTime: (date: string) => string;
     actionsEnabled?: boolean;
-    onOpenUser?: (userId: number) => void;
+    onOpenUser?: (userId: number, anchorRect: DOMRect) => void;
     onImportLinkPreviewVideo?: (message: Message) => void;
     scrollToMessageRequest?: ScrollToMessageRequest | null;
 }

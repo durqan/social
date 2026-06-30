@@ -8,9 +8,10 @@ import {
     type MarkNotificationsReadPayload,
 } from "@/features/notifications/api/notificationService.js";
 import type { Comment, Post, ProfileContextType } from "@/shared/types/domain.js";
-import { Spinner } from "@/shared/ui/Spinner.js";
 import { PostCard } from "@/features/wall/components/PostCard.js";
 import { PostComposer } from "@/features/wall/components/PostComposer.js";
+import { EmptyState } from "@/shared/ui/EmptyState.js";
+import { WallSkeleton } from "@/shared/ui/Skeleton.js";
 
 const wallPageSize = 20;
 
@@ -269,7 +270,7 @@ function Wall() {
     };
 
     if (loading) {
-        return <div className="flex justify-center py-12"><Spinner /></div>;
+        return <WallSkeleton />;
     }
 
     return (
@@ -277,6 +278,7 @@ function Wall() {
             {isOwner && (
                 <PostComposer
                     content={newPostContent}
+                    currentUser={currentUser}
                     submitting={submitting}
                     onContentChange={setNewPostContent}
                     onSubmit={handleCreatePost}
@@ -290,12 +292,11 @@ function Wall() {
                     </div>
                 )}
                 {posts.length === 0 ? (
-                    <div className="app-card border-dashed p-6 text-center sm:p-8">
-                        <p className="text-base font-semibold text-gray-900">Пока нет постов</p>
-                        <p className="mt-1 text-sm text-gray-500">
-                            Здесь появятся публикации и обсуждения пользователя.
-                        </p>
-                    </div>
+                    <EmptyState
+                        icon="wall"
+                        title="Пока нет постов"
+                        text="Здесь появятся публикации и обсуждения пользователя."
+                    />
                 ) : (
                     posts.map(post => (
                         <PostCard

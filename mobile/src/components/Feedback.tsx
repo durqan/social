@@ -49,12 +49,31 @@ export function Notice({ title, text }: { title: string; text?: string }) {
   );
 }
 
-export function EmptyState({ title, text }: { title: string; text?: string }) {
+type EmptyStateIcon = React.ComponentType<{
+  color?: string;
+  size?: number;
+  strokeWidth?: number;
+}>;
+
+export function EmptyState({
+  title,
+  text,
+  icon: Icon,
+}: {
+  title: string;
+  text?: string;
+  icon?: EmptyStateIcon;
+}) {
   const colors = useThemeColors();
   const styles = createStyles(colors);
 
   return (
     <View style={styles.emptyBox}>
+      {Icon ? (
+        <View style={styles.emptyIcon}>
+          <Icon color={colors.accentStrong} size={24} strokeWidth={2.4} />
+        </View>
+      ) : null}
       <Text style={styles.emptyTitle}>{title}</Text>
       {text ? <Text style={styles.emptyText}>{text}</Text> : null}
     </View>
@@ -149,6 +168,15 @@ const createStyles = (colors: ThemeColors) =>
       shadowRadius: 16,
       shadowOffset: { width: 0, height: 8 },
       elevation: colors.isDark ? 0 : 1,
+    },
+    emptyIcon: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.accentSoft,
+      marginBottom: spacing.xs,
     },
     emptyTitle: {
       color: colors.text,

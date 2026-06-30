@@ -1,4 +1,4 @@
-import {useRef, type MouseEvent, type TouchEvent} from 'react';
+import {useRef, type KeyboardEvent, type MouseEvent, type TouchEvent} from 'react';
 import {useNavigate} from 'react-router-dom';
 
 import {usePresence} from "@/shared/hooks/usePresence.js";
@@ -10,9 +10,10 @@ type FriendItemProps = {
     friend: User;
     active: boolean;
     onOpenMenu: (friend: User, position: { x: number; y: number }, mode: 'desktop' | 'mobile') => void;
+    onOpenMiniProfile: (friend: User, anchorRect: DOMRect) => void;
 };
 
-export function FriendItem({friend, active, onOpenMenu}: FriendItemProps) {
+export function FriendItem({friend, active, onOpenMenu, onOpenMiniProfile}: FriendItemProps) {
     const navigate = useNavigate();
     const friendID = friend.id;
     const {online, lastSeenAt} = usePresence(friendID);
@@ -38,13 +39,13 @@ export function FriendItem({friend, active, onOpenMenu}: FriendItemProps) {
         navigate(`/users/${friendID}`);
     };
 
-    const handleContextMenu = (event: MouseEvent<HTMLButtonElement>) => {
+    const handleContextMenu = (event: MouseEvent<HTMLDivElement>) => {
         event.preventDefault();
         event.stopPropagation();
         onOpenMenu(friend, {x: event.clientX, y: event.clientY}, 'desktop');
     };
 
-    const handleTouchStart = (event: TouchEvent<HTMLButtonElement>) => {
+    const handleTouchStart = (event: TouchEvent<HTMLDivElement>) => {
         if (event.touches.length !== 1) {
             return;
         }
@@ -72,7 +73,7 @@ export function FriendItem({friend, active, onOpenMenu}: FriendItemProps) {
         touchStartRef.current = null;
     };
 
-    const handleTouchMove = (event: TouchEvent<HTMLButtonElement>) => {
+    const handleTouchMove = (event: TouchEvent<HTMLDivElement>) => {
         const start = touchStartRef.current;
         const touch = event.touches[0];
 
@@ -94,17 +95,28 @@ export function FriendItem({friend, active, onOpenMenu}: FriendItemProps) {
         openProfile();
     };
 
+    const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+        if (event.key !== 'Enter' && event.key !== ' ') {
+            return;
+        }
+
+        event.preventDefault();
+        handleClick();
+    };
+
     return (
-        <button
-            type="button"
+        <div
+            role="button"
+            tabIndex={0}
             onClick={handleClick}
+            onKeyDown={handleKeyDown}
             onContextMenu={handleContextMenu}
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
             onTouchCancel={handleTouchEnd}
             onTouchMove={handleTouchMove}
-            className={`flex w-full select-none items-center gap-3 rounded-xl p-3 
-            text-left transition cursor-pointer [-webkit-touch-callout:none] [-webkit-user-select:none] 
+            className={`app-interactive-card flex w-full select-none items-center gap-3 rounded-xl p-3
+            text-left transition cursor-pointer [-webkit-touch-callout:none] [-webkit-user-select:none]
             hover:bg-gray-50 ${active ? 'relative z-[60] bg-white shadow-2xl ring-2 ring-white/80' : ''}`}
             style={{touchAction: 'manipulation'}}
         >
@@ -115,8 +127,17 @@ export function FriendItem({friend, active, onOpenMenu}: FriendItemProps) {
                 positionY={friend.avatarPositionY}
                 scale={friend.avatarScale}
                 size="list"
+                ariaLabel={`Открыть мини-профиль ${friend.name || 'пользователя'}`}
+                onClick={event => onOpenMiniProfile(friend, event.currentTarget.getBoundingClientRect())}
             />
-            <span className="min-w-0">
+            <button
+                type="button"
+                className="min-w-0 text-left"
+                onClick={event => {
+                    event.stopPropagation();
+                    onOpenMiniProfile(friend, event.currentTarget.getBoundingClientRect());
+                }}
+            >
                 <span className="block truncate font-semibold text-gray-800">
                     {friend.name || 'Пользователь'}
                 </span>
@@ -130,7 +151,7 @@ export function FriendItem({friend, active, onOpenMenu}: FriendItemProps) {
                         {statusText}
                     </span>
                 )}
-            </span>
-        </button>
+            </button>
+        </div>
     );
 }

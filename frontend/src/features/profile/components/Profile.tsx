@@ -5,7 +5,7 @@ import Sidebar from './Sidebar.js';
 import { useAuth } from "@/app/providers/AuthContext.js";
 import { userService } from "@/shared/api/userService.js";
 import { Icon } from "@/shared/ui/Icon.js";
-import { Spinner } from "@/shared/ui/Spinner.js";
+import { ProfileSkeleton } from "@/shared/ui/Skeleton.js";
 import { usePresence } from "@/shared/hooks/usePresence.js";
 import { UserSearch } from "@/features/profile/components/UserSearch.js";
 import { NotificationBell } from "@/features/notifications/components/NotificationBell.js";
@@ -70,11 +70,8 @@ function Profile() {
 
     if (loading) {
         return (
-            <div className="min-h-screen bg-[var(--app-bg)] flex items-center justify-center">
-                <div className="flex flex-col items-center gap-4">
-                    <Spinner size="lg" />
-                    <p className="text-gray-500">Загрузка...</p>
-                </div>
+            <div className="app-main-bg min-h-screen bg-[var(--app-bg)] px-3 py-6 sm:p-6">
+                <ProfileSkeleton />
             </div>
         );
     }

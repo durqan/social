@@ -5,6 +5,7 @@ import {
   FlatList,
   Image,
   Pressable,
+  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -16,6 +17,7 @@ import {
   MessageCircle,
   Pencil,
   Send,
+  Share2,
   Trash2,
 } from 'lucide-react-native';
 
@@ -29,6 +31,7 @@ import {
   ErrorBanner,
   LoadingState,
 } from '../../components/Feedback';
+import { WallSkeleton } from '../../components/Skeleton';
 import { useNotifications } from '../../context/NotificationsContext';
 import { useThemeColors } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/themes';
@@ -320,6 +323,16 @@ export function WallFeed({
     }
   }
 
+  async function sharePost(post: Post) {
+    const title = post.user?.name ? `Пост ${post.user.name}` : 'Пост';
+    const message = `${post.content}\n\nsocial://users/${post.user?.id ?? userId}`;
+    try {
+      await Share.share({ title, message });
+    } catch {
+      // Native share can be cancelled by the user.
+    }
+  }
+
   async function toggleCommentLike(postId: number, commentId: number) {
     setBusyCommentId(commentId);
     setError(null);
@@ -521,6 +534,19 @@ export function WallFeed({
             {post.comments_count}
           </Text>
         </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          style={({ pressed }) => [
+            styles.reactionButton,
+            pressed && styles.reactionButtonPressed,
+          ]}
+          onPress={() => {
+            sharePost(post).catch(() => undefined);
+          }}
+        >
+          <Share2 color={colors.muted} size={16} strokeWidth={2.2} />
+          <Text style={styles.reactionText}>Поделиться</Text>
+        </Pressable>
       </View>
 
       {openCommentsId === post.id ? (
@@ -631,7 +657,7 @@ export function WallFeed({
       ) : null}
 
       <Text style={styles.sectionTitle}>Стена</Text>
-      {loading && !hasLoaded ? <LoadingState text="Загружаем стену" /> : null}
+      {loading && !hasLoaded ? <WallSkeleton /> : null}
     </View>
   );
 
@@ -644,6 +670,7 @@ export function WallFeed({
       ListEmptyComponent={
         loading && !hasLoaded ? null : (
           <EmptyState
+            icon={MessageCircle}
             title="Пока нет постов"
             text={
               isOwner
