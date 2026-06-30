@@ -1,36 +1,25 @@
 import { StyleSheet } from 'react-native';
 
 import { colors } from '../../../theme/colors';
-import {
-  createTypography,
-  radius,
-  spacing,
-  textSizeOptions,
-  typography,
-  type TextSizeId,
-} from '../../../theme/layout';
+import { radius, spacing, typography } from '../../../theme/layout';
 import type { ThemeColors } from '../../../theme/themes';
 
-export const createChatThemeStyles = (
-  theme: ThemeColors,
-  textSizeId: TextSizeId = 'standard',
-) => {
-  const scaledTypography = createTypography(textSizeOptions[textSizeId].scale);
+export const createChatThemeStyles = (theme: ThemeColors) => {
   const ownBubbleBg = theme.isDark
     ? theme.id === 'amoled-void'
       ? '#163d37'
       : '#24594f'
-    : '#d9fdd3';
+    : '#d8fdd2';
   const ownBubbleText = theme.isDark ? '#f5faf7' : '#173026';
   const otherBubbleBg = theme.isDark
     ? theme.id === 'amoled-void'
       ? '#0c1112'
       : '#1d2729'
-    : '#fffefa';
+    : '#ffffff';
   const otherBubbleText = theme.isDark ? '#f4f7fb' : '#172033';
   const otherBubbleBorder = theme.isDark
     ? 'rgba(218, 228, 220, 0.1)'
-    : 'rgba(69, 80, 64, 0.1)';
+    : 'rgba(69, 80, 64, 0.08)';
 
   return StyleSheet.create({
     chatBackground: {
@@ -58,8 +47,8 @@ export const createChatThemeStyles = (
       backgroundColor: theme.surface,
       borderColor: theme.border,
       shadowColor: theme.shadow,
-      shadowOpacity: theme.isDark ? 0.14 : 0.2,
-      elevation: theme.isDark ? 3 : 12,
+      shadowOpacity: theme.isDark ? 0.1 : 0.14,
+      elevation: theme.isDark ? 2 : 5,
     },
     surfaceMutedBar: {
       backgroundColor: theme.surfaceMuted,
@@ -80,15 +69,15 @@ export const createChatThemeStyles = (
       color: otherBubbleText,
     },
     messageBodyText: {
-      fontSize: scaledTypography.body.fontSize + 1,
-      lineHeight: scaledTypography.body.lineHeight + 1,
+      fontSize: 16,
+      lineHeight: 21,
     },
     outgoingMessageText: {
       color: ownBubbleText,
     },
     composerInputText: {
-      fontSize: scaledTypography.body.fontSize,
-      lineHeight: scaledTypography.body.lineHeight,
+      fontSize: 16,
+      lineHeight: 21,
     },
     outgoingAccentText: {
       color: ownBubbleText,
@@ -224,28 +213,36 @@ export const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   chatHeaderTitleButton: {
-    maxWidth: 190,
-    minHeight: 34,
+    flexShrink: 1,
+    maxWidth: 220,
+    minWidth: 0,
+    minHeight: 32,
     justifyContent: 'center',
     borderRadius: radius.pill,
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: 6,
   },
   chatHeaderTitleText: {
-    ...typography.body,
-    fontWeight: '900',
+    fontSize: 18,
+    lineHeight: 22,
+    fontWeight: '700',
   },
   messageListContainer: {
     flex: 1,
     zIndex: 1,
+    backgroundColor: 'transparent',
+  },
+  transparentBackground: {
+    backgroundColor: 'transparent',
   },
   callActions: {
     display: 'none',
   },
   messageList: {
     paddingHorizontal: 10,
-    paddingTop: spacing.md,
-    paddingBottom: 20,
+    paddingTop: 8,
+    paddingBottom: 8,
     flexGrow: 1,
+    backgroundColor: 'transparent',
   },
   emptyMessageList: {
     justifyContent: 'center',
@@ -287,7 +284,7 @@ export const styles = StyleSheet.create({
     justifyContent: 'flex-start',
   },
   bubbleRowSpacing: {
-    marginBottom: 7,
+    marginBottom: 4,
   },
   bubbleRowGroupedSpacing: {
     marginBottom: 2,
@@ -296,20 +293,20 @@ export const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   bubble: {
-    maxWidth: '82%',
+    maxWidth: '78%',
     borderRadius: 18,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
     gap: spacing.xs,
     position: 'relative',
     shadowColor: colors.shadow,
-    shadowOpacity: 0.035,
-    shadowRadius: 3,
+    shadowOpacity: 0.02,
+    shadowRadius: 2,
     shadowOffset: { width: 0, height: 1 },
-    elevation: 1,
+    elevation: 0,
   },
   bubbleWithFloatingFooter: {
-    paddingBottom: 25,
+    paddingBottom: 22,
   },
   incoming: {
     backgroundColor: colors.surface,
@@ -323,17 +320,17 @@ export const styles = StyleSheet.create({
   },
   messageText: {
     fontSize: 16,
-    lineHeight: 22,
+    lineHeight: 21,
     color: colors.text,
   },
   messageInlineFooter: {
-    fontSize: 11,
+    fontSize: 12,
     lineHeight: 14,
   },
   messageFooter: {
     position: 'absolute',
-    right: 10,
-    bottom: 5,
+    right: 8,
+    bottom: 4,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
@@ -342,13 +339,13 @@ export const styles = StyleSheet.create({
     opacity: 0,
   },
   messageFooterTime: {
-    fontSize: 11,
+    fontSize: 12,
     lineHeight: 14,
     fontWeight: '500',
   },
   messageFooterChecks: {
     marginLeft: 1,
-    fontSize: 10,
+    fontSize: 11,
     lineHeight: 14,
     fontWeight: '900',
     letterSpacing: -1,
@@ -1083,55 +1080,55 @@ export const styles = StyleSheet.create({
     flexShrink: 0,
     borderTopWidth: 0,
     paddingHorizontal: 8,
-    paddingTop: spacing.xs,
-    paddingBottom: 14,
+    paddingTop: 6,
+    paddingBottom: 6,
     backgroundColor: 'transparent',
   },
   composer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    gap: 6,
-    minHeight: 62,
+    gap: 5,
+    minHeight: 56,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 30,
-    paddingHorizontal: 7,
-    paddingVertical: 6,
+    borderRadius: 28,
+    paddingHorizontal: 6,
+    paddingVertical: 5,
     backgroundColor: colors.surface,
     shadowColor: colors.shadow,
-    shadowOpacity: colors.isDark ? 0.16 : 0.22,
-    shadowRadius: 30,
-    shadowOffset: { width: 0, height: 14 },
-    elevation: colors.isDark ? 4 : 12,
+    shadowOpacity: colors.isDark ? 0.1 : 0.14,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: colors.isDark ? 2 : 5,
   },
   composerSideButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     borderWidth: 0,
-    marginBottom: 1,
+    marginBottom: 2,
     backgroundColor: colors.cardMuted,
   },
   composerInputContainer: {
     flex: 1,
     minWidth: 0,
-    minHeight: 46,
+    minHeight: 44,
     flexDirection: 'row',
     alignItems: 'flex-end',
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 24,
-    paddingLeft: spacing.md,
+    borderRadius: 22,
+    paddingLeft: 12,
     paddingRight: 2,
     backgroundColor: colors.input,
   },
   composerEmojiButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 2,
+    marginBottom: 3,
   },
   composerButtonPressed: {
     opacity: 0.72,
@@ -1140,10 +1137,10 @@ export const styles = StyleSheet.create({
     opacity: 0.42,
   },
   composerActionButton: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    marginBottom: 0,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    marginBottom: 1,
   },
   composerActionRecording: {
     backgroundColor: colors.danger,
@@ -1154,10 +1151,10 @@ export const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     paddingHorizontal: 0,
-    paddingVertical: 9,
+    paddingVertical: 7,
     color: colors.text,
-    fontSize: 15,
-    lineHeight: 20,
+    fontSize: 16,
+    lineHeight: 21,
   },
   lightbox: {
     flex: 1,

@@ -97,7 +97,7 @@ import { useAppLifecycle } from '../../context/AppLifecycleContext';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationsContext';
 import { useUnread } from '../../context/UnreadContext';
-import { useTheme, useThemeColors } from '../../theme/ThemeContext';
+import { useThemeColors } from '../../theme/ThemeContext';
 import { formatDuration } from '../../utils/format';
 import { useAppResumeEffect } from '../../utils/useAppResumeEffect';
 import type { ChatStackParamList } from '../../navigation/types';
@@ -154,8 +154,8 @@ type SendingState =
   | 'sending'
   | null;
 
-const COMPOSER_INPUT_MIN_HEIGHT = 48;
-const COMPOSER_INPUT_MAX_HEIGHT = 136;
+const COMPOSER_INPUT_MIN_HEIGHT = 44;
+const COMPOSER_INPUT_MAX_HEIGHT = 112;
 const KEYBOARD_INSET_UPDATE_DELAY_MS = 80;
 const MESSAGE_PAGE_SIZE = 50;
 const LOAD_OLDER_THRESHOLD = 56;
@@ -265,13 +265,12 @@ function chatErrorMessage(error: unknown) {
 
 export default function ChatScreen({ route, navigation }: Props) {
   const { user } = useAuth();
-  const { textSizeId } = useTheme();
   const themeColors = useThemeColors();
   const windowDimensions = useWindowDimensions();
   const safeAreaInsets = useSafeAreaInsets();
   const themed = useMemo(
-    () => createChatThemeStyles(themeColors, textSizeId),
-    [textSizeId, themeColors],
+    () => createChatThemeStyles(themeColors),
+    [themeColors],
   );
   const isFocused = useIsFocused();
   const { isForeground, networkConnected } = useAppLifecycle();
@@ -2705,7 +2704,7 @@ export default function ChatScreen({ route, navigation }: Props) {
   function handleComposerContentSizeChange(contentHeight: number) {
     const nextHeight = Math.min(
       COMPOSER_INPUT_MAX_HEIGHT,
-      Math.max(COMPOSER_INPUT_MIN_HEIGHT, Math.ceil(contentHeight) + 16),
+      Math.max(COMPOSER_INPUT_MIN_HEIGHT, Math.ceil(contentHeight) + 10),
     );
     setInputHeight(nextHeight);
   }
@@ -3165,7 +3164,10 @@ export default function ChatScreen({ route, navigation }: Props) {
           <>
             <FlatList
               ref={listRef}
-              style={styles.messageListContainer}
+              style={[
+                styles.messageListContainer,
+                styles.transparentBackground,
+              ]}
               data={messages}
               keyExtractor={messageKeyExtractor}
               refreshing={refreshing}
@@ -3188,6 +3190,7 @@ export default function ChatScreen({ route, navigation }: Props) {
               onLayout={handleMessageListLayout}
               contentContainerStyle={[
                 styles.messageList,
+                styles.transparentBackground,
                 messages.length === 0 && styles.emptyMessageList,
               ]}
               onContentSizeChange={handleMessageListContentSizeChange}
@@ -3573,7 +3576,7 @@ export default function ChatScreen({ route, navigation }: Props) {
                 )
               }
               placeholder="Сообщение…"
-              placeholderTextColor={themeColors.soft}
+              placeholderTextColor="#9aa6b2"
               multiline
               scrollEnabled={inputHeight >= COMPOSER_INPUT_MAX_HEIGHT}
               maxLength={1000}

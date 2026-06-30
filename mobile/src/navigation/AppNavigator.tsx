@@ -126,7 +126,7 @@ function ChatHeaderActions({
         icon={Phone}
         label="Аудиозвонок"
         variant="ghost"
-        size="sm"
+        size="lg"
         disabled={disabled}
         onPress={() => startAudioCall(userId, name)}
         style={stylesStatic.chatHeaderButton}
@@ -135,7 +135,7 @@ function ChatHeaderActions({
         icon={Video}
         label="Видеозвонок"
         variant="ghost"
-        size="sm"
+        size="lg"
         disabled={disabled}
         onPress={() => startVideoCall(userId, name)}
         style={stylesStatic.chatHeaderButton}
@@ -575,19 +575,19 @@ const stylesStatic = StyleSheet.create({
   chatHeaderActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
   chatHeaderBackButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     borderWidth: 0,
     marginLeft: -8,
   },
   chatHeaderButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
   },
   tabIconShell: {
     width: 38,

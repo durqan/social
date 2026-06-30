@@ -16,7 +16,6 @@ import { Video as VideoIcon } from 'lucide-react-native';
 import { assetURL } from '../../../config/env';
 import type { Message } from '../../../api/types';
 import type { ThemeColors } from '../../../theme/themes';
-import { useTheme } from '../../../theme/ThemeContext';
 import { formatDuration, formatMessageTime } from '../../../utils/format';
 import { createChatThemeStyles, styles } from './chatStyles';
 import {
@@ -41,10 +40,9 @@ function LinkPreviewCard({
   onImport: () => void;
   themeColors: ThemeColors;
 }) {
-  const { textSizeId } = useTheme();
   const themed = useMemo(
-    () => createChatThemeStyles(themeColors, textSizeId),
-    [textSizeId, themeColors],
+    () => createChatThemeStyles(themeColors),
+    [themeColors],
   );
   const preview = message.link_preview;
   if (!preview) {
@@ -289,7 +287,7 @@ export const MessageBubble = React.memo(function MessageBubble({
   const textHasHardBreak = displayContent.includes('\n');
   const maxBubbleContentWidth = Math.max(
     0,
-    (windowDimensions.width - 20) * 0.82 - 28,
+    (windowDimensions.width - 20) * 0.78 - 24,
   );
   const canInlineFooter =
     textOnlyMessage &&
