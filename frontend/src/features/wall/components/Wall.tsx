@@ -290,8 +290,11 @@ function Wall() {
                     </div>
                 )}
                 {posts.length === 0 ? (
-                    <div className="app-card p-6 text-center text-gray-500 sm:p-8">
-                        Пока нет постов.
+                    <div className="app-card border-dashed p-6 text-center sm:p-8">
+                        <p className="text-base font-semibold text-gray-900">Пока нет постов</p>
+                        <p className="mt-1 text-sm text-gray-500">
+                            Здесь появятся публикации и обсуждения пользователя.
+                        </p>
                     </div>
                 ) : (
                     posts.map(post => (

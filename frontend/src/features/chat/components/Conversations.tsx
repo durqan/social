@@ -206,7 +206,15 @@ function Conversations() {
             <h1 className="mb-3 text-xl font-semibold tracking-tight text-gray-950 sm:mb-4 sm:text-2xl">Сообщения</h1>
             <div className="app-card overflow-hidden">
                 {!conversations || conversations.length === 0 ? (
-                    <div className="p-6 text-center text-gray-500 sm:p-8">Нет диалогов</div>
+                    <div className="p-6 text-center sm:p-8">
+                        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-600">
+                            <Icon name="messages" className="h-6 w-6" />
+                        </div>
+                        <p className="mt-3 font-semibold text-gray-900">Нет диалогов</p>
+                        <p className="mt-1 text-sm text-gray-500">
+                            Начните переписку с другом, и чат появится здесь.
+                        </p>
+                    </div>
                 ) : (
                     conversations.map(conv => (
                         <ConversationItem

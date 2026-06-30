@@ -133,7 +133,7 @@ function Profile() {
                     </div>
                 </header>
 
-                <main className={isChatPage ? 'h-[calc(100dvh-57px)] p-0 sm:h-auto sm:p-6' : 'px-3 pb-24 pt-4 sm:p-6'}>
+                <main className={isChatPage ? 'h-[calc(100dvh-57px)] p-0 sm:h-auto sm:p-6' : 'app-main-bg min-h-[calc(100dvh-57px)] px-3 pb-24 pt-4 sm:p-6'}>
                     <Outlet context={contextValue} />
                 </main>
             </div>
