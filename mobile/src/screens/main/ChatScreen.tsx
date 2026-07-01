@@ -2982,7 +2982,6 @@ export default function ChatScreen({ route, navigation }: Props) {
     <Screen
       scroll={false}
       padded={false}
-      avoidKeyboard
       style={themed.chatBackground}
       contentContainerStyle={[styles.container, themed.chatBackground]}
     >
