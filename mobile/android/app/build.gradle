@@ -1,10 +1,78 @@
+import java.net.URI
+import java.util.Locale
+
 apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
+def propOrEnv = { name ->
+    def value = project.findProperty(name)
+    if (value == null) {
+        value = System.getenv(name)
+    }
+    return value == null ? null : value.toString().trim()
+}
+
+def parsePositiveInteger = { name, value ->
+    try {
+        def parsed = (value ?: "1") as Integer
+        if (parsed < 1) {
+            throw new NumberFormatException("not positive")
+        }
+        return parsed
+    } catch (NumberFormatException ignored) {
+        throw new GradleException("${name} must be a positive integer.")
+    }
+}
+
+def releaseVersionCode = parsePositiveInteger("SOCIAL_VERSION_CODE", propOrEnv("SOCIAL_VERSION_CODE"))
+def releaseVersionName = propOrEnv("SOCIAL_VERSION_NAME") ?: "1.0.0"
+def releaseStoreFilePath = propOrEnv("SOCIAL_UPLOAD_STORE_FILE")
+def releaseStorePassword = propOrEnv("SOCIAL_UPLOAD_STORE_PASSWORD")
+def releaseKeyAlias = propOrEnv("SOCIAL_UPLOAD_KEY_ALIAS")
+def releaseKeyPassword = propOrEnv("SOCIAL_UPLOAD_KEY_PASSWORD")
+def releaseSigningConfigured = [
+    releaseStoreFilePath,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword,
+].every { it != null && !it.isBlank() }
+
 def googleServicesFile = file("google-services.json")
 if (googleServicesFile.exists()) {
     apply plugin: "com.google.gms.google-services"
+}
+
+def validatePublicHttpsUrl = { name, value, required = false ->
+    if (value == null || value.isBlank()) {
+        if (required) {
+            throw new GradleException("${name} must be set for release builds.")
+        }
+        return
+    }
+    def trimmed = value.trim()
+    if (!trimmed.startsWith("https://")) {
+        throw new GradleException("${name} must be a public HTTPS URL for release builds.")
+    }
+
+    def uri = new URI(trimmed)
+    def host = (uri.host ?: "").toLowerCase(Locale.ROOT)
+    if (host.isBlank()) {
+        throw new GradleException("${name} must include a public host.")
+    }
+    def ipv6Host = host.replace("[", "").replace("]", "")
+    def privateIpv6Host = ipv6Host == "::1" ||
+        (ipv6Host.contains(":") && (ipv6Host.startsWith("fc") || ipv6Host.startsWith("fd")))
+    def privateHost = host == "localhost" ||
+        host == "127.0.0.1" ||
+        host == "10.0.2.2" ||
+        host.startsWith("10.") ||
+        host.startsWith("192.168.") ||
+        privateIpv6Host ||
+        (host ==~ /^172\.(1[6-9]|2[0-9]|3[0-1])\..*/)
+    if (privateHost || trimmed.contains("/api/api")) {
+        throw new GradleException("${name} must not point to localhost, emulator, LAN/private IP, or contain /api/api.")
+    }
 }
 
 /**
@@ -87,8 +155,11 @@ android {
         applicationId "com.socialmobile"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode releaseVersionCode
+        versionName releaseVersionName
+        manifestPlaceholders = [
+            usesCleartextTraffic: "false",
+        ]
 
         ndk {
             abiFilters "armeabi-v7a", "arm64-v8a", "x86_64"
@@ -101,20 +172,61 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        release {
+            if (releaseSigningConfigured) {
+                storeFile file(releaseStoreFilePath)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
+            manifestPlaceholders = [
+                usesCleartextTraffic: "true",
+            ]
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            if (releaseSigningConfigured) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled enableProguardInReleaseBuilds
             shrinkResources enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
+            manifestPlaceholders = [
+                usesCleartextTraffic: "false",
+            ]
         }
     }
+}
+
+gradle.taskGraph.whenReady { taskGraph ->
+    def releasePackageRequested = taskGraph.allTasks.any { task ->
+        task.path.endsWith(":app:assembleRelease") || task.path.endsWith(":app:bundleRelease")
+    }
+    if (!releasePackageRequested) {
+        return
+    }
+
+    if (!releaseSigningConfigured) {
+        throw new GradleException(
+            "Release signing is not configured. Set SOCIAL_UPLOAD_STORE_FILE, " +
+            "SOCIAL_UPLOAD_STORE_PASSWORD, SOCIAL_UPLOAD_KEY_ALIAS and SOCIAL_UPLOAD_KEY_PASSWORD."
+        )
+    }
+    if (!file(releaseStoreFilePath).exists()) {
+        throw new GradleException("Release signing keystore was not found at SOCIAL_UPLOAD_STORE_FILE=${releaseStoreFilePath}.")
+    }
+    if (!googleServicesFile.exists()) {
+        throw new GradleException(
+            "android/app/google-services.json is required for production Firebase Messaging release builds."
+        )
+    }
+
+    validatePublicHttpsUrl("SOCIAL_API_BASE_URL", propOrEnv("SOCIAL_API_BASE_URL"), true)
+    validatePublicHttpsUrl("SOCIAL_NOTIFICATIONS_BASE_URL", propOrEnv("SOCIAL_NOTIFICATIONS_BASE_URL"))
 }
 
 dependencies {

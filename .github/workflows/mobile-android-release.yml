@@ -1,0 +1,205 @@
+name: mobile-android-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: "Optional override for vars.SOCIAL_API_BASE_URL, for example https://example.com/api"
+        required: false
+        type: string
+
+jobs:
+  build:
+    name: Build Android Release AAB
+    runs-on: ubuntu-latest
+
+    env:
+      ANDROID_NDK_VERSION: "27.1.12297006"
+      SOCIAL_VERSION_CODE: ${{ vars.SOCIAL_VERSION_CODE || github.run_number }}
+      SOCIAL_VERSION_NAME: ${{ vars.SOCIAL_VERSION_NAME || '1.0.0' }}
+      SOCIAL_API_BASE_URL: ${{ inputs.api_base_url || vars.SOCIAL_API_BASE_URL }}
+      SOCIAL_NOTIFICATIONS_BASE_URL: ${{ vars.SOCIAL_NOTIFICATIONS_BASE_URL }}
+      SOCIAL_TURN_URLS: ${{ vars.SOCIAL_TURN_URLS }}
+      SOCIAL_TURN_USERNAME: ${{ vars.SOCIAL_TURN_USERNAME }}
+
+    defaults:
+      run:
+        working-directory: mobile
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          yes | sdkmanager --licenses
+
+          install_android_packages() {
+            rm -rf "$ANDROID_HOME/ndk/26.3.11579264" \
+                   "$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION" \
+                   "$ANDROID_HOME/ndk-bundle" \
+                   "$ANDROID_HOME/.temp" \
+                   "$ANDROID_HOME/temp" \
+                   "$HOME/.android/cache"
+            sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0" "cmake;3.22.1" "ndk;$ANDROID_NDK_VERSION"
+          }
+
+          install_android_packages || {
+            echo "Initial Android SDK package install failed; clearing SDK caches and retrying."
+            install_android_packages
+          }
+
+          ls -la "$ANDROID_SDK_ROOT/ndk/$ANDROID_NDK_VERSION"
+          yes | sdkmanager --licenses
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate mobile dependencies
+        run: |
+          if npm ls @react-native-cookies/cookies; then
+            echo "@react-native-cookies/cookies must not be installed."
+            exit 1
+          fi
+
+          npm ls @preeternal/react-native-cookie-manager
+
+      - name: Configure Firebase Android
+        env:
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          set +x
+          if [ -z "$GOOGLE_SERVICES_JSON_BASE64" ]; then
+            echo "GOOGLE_SERVICES_JSON_BASE64 is required for release builds."
+            exit 1
+          fi
+          rm -f android/app/google-services.json
+          printf '%s' "$GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > android/app/google-services.json
+          echo "Firebase Android config written."
+
+      - name: Configure Android release signing
+        env:
+          ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          ANDROID_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+        run: |
+          set +x
+          if [ -z "$ANDROID_UPLOAD_KEYSTORE_BASE64" ] ||
+             [ -z "$ANDROID_UPLOAD_KEYSTORE_PASSWORD" ] ||
+             [ -z "$ANDROID_UPLOAD_KEY_ALIAS" ] ||
+             [ -z "$ANDROID_UPLOAD_KEY_PASSWORD" ]; then
+            echo "Android release signing secrets are required."
+            exit 1
+          fi
+
+          rm -f android/app/upload-keystore.jks
+          printf '%s' "$ANDROID_UPLOAD_KEYSTORE_BASE64" | base64 --decode > android/app/upload-keystore.jks
+          chmod 600 android/app/upload-keystore.jks
+          {
+            echo "SOCIAL_UPLOAD_STORE_FILE=upload-keystore.jks"
+            echo "SOCIAL_UPLOAD_STORE_PASSWORD=$ANDROID_UPLOAD_KEYSTORE_PASSWORD"
+            echo "SOCIAL_UPLOAD_KEY_ALIAS=$ANDROID_UPLOAD_KEY_ALIAS"
+            echo "SOCIAL_UPLOAD_KEY_PASSWORD=$ANDROID_UPLOAD_KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+
+      - name: Validate release inputs
+        run: |
+          node <<'NODE'
+          const fail = message => {
+            console.error(message);
+            process.exit(1);
+          };
+
+          const versionCode = (process.env.SOCIAL_VERSION_CODE || '').trim();
+          const versionName = (process.env.SOCIAL_VERSION_NAME || '').trim();
+          if (!/^[1-9][0-9]*$/.test(versionCode)) {
+            fail('SOCIAL_VERSION_CODE must be a positive integer.');
+          }
+          if (!versionName) {
+            fail('SOCIAL_VERSION_NAME must not be empty.');
+          }
+
+          function validatePublicHttpsUrl(name, required) {
+            const value = (process.env[name] || '').trim();
+            if (!value) {
+              if (required) {
+                fail(`Set repository variable ${name} or provide a workflow input.`);
+              }
+              return;
+            }
+
+            let parsed;
+            try {
+              parsed = new URL(value);
+            } catch {
+              fail(`${name} must be a valid public HTTPS URL.`);
+            }
+
+            const host = parsed.hostname.toLowerCase();
+            const isIpv6 = host.includes(':');
+            const privateHost =
+              host === 'localhost' ||
+              host === '127.0.0.1' ||
+              host === '10.0.2.2' ||
+              host.startsWith('10.') ||
+              host.startsWith('192.168.') ||
+              /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host) ||
+              host === '::1' ||
+              (isIpv6 && (host.startsWith('fc') || host.startsWith('fd')));
+
+            if (parsed.protocol !== 'https:' || !host) {
+              fail(`${name} must be a public HTTPS URL with a host.`);
+            }
+            if (privateHost || parsed.pathname.includes('/api/api')) {
+              fail(`${name} must not point to localhost, emulator, LAN/private IP, or contain /api/api.`);
+            }
+          }
+
+          validatePublicHttpsUrl('SOCIAL_API_BASE_URL', true);
+          validatePublicHttpsUrl('SOCIAL_NOTIFICATIONS_BASE_URL', false);
+          NODE
+
+          echo "Building release AAB version $SOCIAL_VERSION_NAME ($SOCIAL_VERSION_CODE)"
+          echo "SOCIAL_API_BASE_URL=$SOCIAL_API_BASE_URL"
+
+      - name: TypeScript check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test -- --runInBand
+
+      - name: Build release AAB
+        run: |
+          chmod +x android/gradlew
+          npm run build:android:release
+
+      - name: Upload release AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: social-mobile-release-aab
+          path: mobile/android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error

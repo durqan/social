@@ -6,6 +6,7 @@ import {
   Text,
   View,
   type LayoutChangeEvent,
+  type GestureResponderEvent,
   type NativeSyntheticEvent,
   type TextLayoutEventData,
   useWindowDimensions,
@@ -245,6 +246,7 @@ export const MessageBubble = React.memo(function MessageBubble({
   onVoicePress,
   onDownloadAttachment,
   playingVoiceUrl,
+  onTouchStart,
   onLongPress,
   themeColors,
   groupedWithNext = false,
@@ -260,6 +262,7 @@ export const MessageBubble = React.memo(function MessageBubble({
     sourceUrl: string,
   ) => void;
   playingVoiceUrl: string | null;
+  onTouchStart?: (event: GestureResponderEvent) => void;
   onLongPress: () => void;
   themeColors: ThemeColors;
   groupedWithNext?: boolean;
@@ -378,6 +381,7 @@ export const MessageBubble = React.memo(function MessageBubble({
           : styles.bubbleRowSpacing,
       ]}
       delayLongPress={280}
+      onTouchStart={onTouchStart}
       onLongPress={onLongPress}
     >
       <View

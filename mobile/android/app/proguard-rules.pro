@@ -30,10 +30,20 @@
 -keep class com.reactnativecommunity.netinfo.** { *; }
 -keep class com.reactnativecommunity.asyncstorage.** { *; }
 -keep class com.imagepicker.** { *; }
+-keep class com.reactnativedocumentpicker.** { *; }
+-keep class com.reactnativecompressor.** { *; }
+-keep class com.margelo.nitro.compressor.** { *; }
+-keep class com.oblador.keychain.** { *; }
+-keep class com.preeternal.reactnativecookiemanager.** { *; }
 -keep class com.brentvatne.** { *; }
 -dontwarn io.invertase.firebase.**
 -dontwarn app.notifee.**
 -dontwarn com.reactnativecommunity.netinfo.**
 -dontwarn com.reactnativecommunity.asyncstorage.**
 -dontwarn com.imagepicker.**
+-dontwarn com.reactnativedocumentpicker.**
+-dontwarn com.reactnativecompressor.**
+-dontwarn com.margelo.nitro.compressor.**
+-dontwarn com.oblador.keychain.**
+-dontwarn com.preeternal.reactnativecookiemanager.**
 -dontwarn com.brentvatne.**

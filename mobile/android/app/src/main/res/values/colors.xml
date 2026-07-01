@@ -1,3 +1,7 @@
 <resources>
+    <color name="launcher_background">#EDF7ED</color>
     <color name="notification_color">#2563EB</color>
+    <color name="splash_background">#EDF7ED</color>
+    <color name="status_bar_color">#EDF7ED</color>
+    <color name="navigation_bar_color">#FFFFFF</color>
 </resources>

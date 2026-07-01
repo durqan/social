@@ -1,4 +1,9 @@
 import {
+  CHAT_AUDIO_MAX_BYTES,
+  CHAT_AUDIO_MIME_TYPES,
+  CHAT_BLOCKED_ATTACHMENT_EXTENSIONS,
+  CHAT_FILE_MAX_BYTES,
+  CHAT_FILE_MIME_TYPES,
   CHAT_IMAGE_MAX_BYTES,
   CHAT_IMAGE_MIME_TYPES,
   CHAT_VIDEO_MAX_BYTES,
@@ -9,7 +14,7 @@ import {
   CHAT_VIDEO_NOTE_MAX_DURATION_SECONDS,
   CHAT_VIDEO_NOTE_MIME_TYPES,
 } from '../config/env';
-import { formatDuration } from '@social/shared';
+import { formatDuration, formatFileSize } from '@social/shared';
 import type { EncryptedAttachmentFields } from '../crypto/attachment';
 import type { EncryptedMessagePayload } from '../crypto/encryptMessage';
 import { apiCacheKey, apiRequest, toQueryString } from './http';
@@ -57,6 +62,20 @@ export type LocalChatVideo = {
   width?: number;
   height?: number;
 };
+
+export type LocalChatFile = {
+  id: string;
+  uri: string;
+  type: string;
+  fileName: string;
+  fileSize?: number;
+  fileType: 'audio' | 'file';
+};
+
+export type ChatUploadAttachmentType = Extract<
+  MessageAttachment['file_type'],
+  'image' | 'video' | 'audio' | 'file'
+>;
 
 export type UploadFilePart =
   | {
@@ -179,6 +198,38 @@ export function validateLocalChatVideo(video: LocalChatVideo) {
   return null;
 }
 
+export function validateLocalChatFile(file: LocalChatFile) {
+  const extension = extensionFromFileName(file.fileName);
+  if (
+    extension &&
+    (CHAT_BLOCKED_ATTACHMENT_EXTENSIONS as readonly string[]).includes(
+      extension,
+    )
+  ) {
+    return 'Этот тип файла нельзя отправить';
+  }
+
+  if (file.fileType === 'audio') {
+    if (!(CHAT_AUDIO_MIME_TYPES as readonly string[]).includes(file.type)) {
+      return 'Аудио должно быть в формате MP3, M4A, WAV, Ogg или WebM';
+    }
+    if (file.fileSize && file.fileSize > CHAT_AUDIO_MAX_BYTES) {
+      return `Аудиофайл должен быть не больше ${formatFileSize(
+        CHAT_AUDIO_MAX_BYTES,
+      )}`;
+    }
+    return null;
+  }
+
+  if (!(CHAT_FILE_MIME_TYPES as readonly string[]).includes(file.type)) {
+    return 'Поддерживаются PDF, TXT, DOC, DOCX, XLS, XLSX, ZIP, JSON и CSV';
+  }
+  if (file.fileSize && file.fileSize > CHAT_FILE_MAX_BYTES) {
+    return `Файл должен быть не больше ${formatFileSize(CHAT_FILE_MAX_BYTES)}`;
+  }
+  return null;
+}
+
 export function validateLocalVoiceMessage(voice: LocalVoiceMessage) {
   const allowedVoiceMimeTypes = [
     'audio/webm',
@@ -208,6 +259,11 @@ export function validateLocalVoiceMessage(voice: LocalVoiceMessage) {
   }
 
   return null;
+}
+
+function extensionFromFileName(fileName: string) {
+  const match = /\.([a-z0-9]{1,12})$/i.exec(fileName.trim());
+  return match?.[1]?.toLowerCase() || '';
 }
 
 export function validateLocalVideoNoteMessage(
@@ -397,6 +453,22 @@ export const messageApi = {
         'Видео слишком большое после сжатия. Попробуйте выбрать более короткий ролик.',
       );
     }
+
+    return apiRequest<MessageAttachment>('/messages/upload', {
+      method: 'POST',
+      body: formData,
+    });
+  },
+
+  async uploadAttachment(
+    file: LocalChatFile | UploadFilePart,
+    fileType: Extract<ChatUploadAttachmentType, 'audio' | 'file'>,
+    encryption?: AttachmentUploadEncryption,
+  ) {
+    const formData = new FormData();
+    appendUploadFile(formData, 'attachment', file);
+    formData.append('file_type', fileType);
+    appendAttachmentEncryption(formData, encryption);
 
     return apiRequest<MessageAttachment>('/messages/upload', {
       method: 'POST',

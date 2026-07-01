@@ -625,7 +625,7 @@ function logIceServers(
     callId: string,
     pcId?: number | null,
 ) {
-    console.log('[SocialMobile] ICE config before pc', JSON.stringify({
+    logDev('[SocialMobile] ICE config before pc', {
         callId,
         pcId,
         iceServers: servers.map(server => ({
@@ -635,7 +635,7 @@ function logIceServers(
             hasCredential: Boolean(server.credential),
             credentialLen: server.credential?.length ?? 0,
         })),
-    }));
+    });
 }
 
 async function applyVideoSenderQuality(
@@ -1929,8 +1929,8 @@ export function CallProvider({children}: { children: ReactNode }) {
 
                 try {
                     const payload = candidate.toJSON();
-                    console.log('[SocialMobile] ICE candidate raw', payload.candidate);
-                    console.log('[SocialMobile] ICE candidate type', iceCandidateType(payload));
+                    logDev('[SocialMobile] ICE candidate raw', payload.candidate);
+                    logDev('[SocialMobile] ICE candidate type', iceCandidateType(payload));
                     if (!isUsableIceCandidate(payload)) {
                         logDev('[SocialMobile] Skipping empty outgoing ICE candidate', {
                             callId,

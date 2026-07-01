@@ -11,6 +11,7 @@ import {
   Alert,
   FlatList,
   Image,
+  Keyboard,
   Modal,
   PermissionsAndroid,
   Platform,
@@ -21,6 +22,13 @@ import {
   View,
 } from 'react-native';
 import Clipboard from '@react-native-clipboard/clipboard';
+import {
+  errorCodes as documentPickerErrorCodes,
+  isErrorWithCode as isDocumentPickerErrorWithCode,
+  pick as pickDocuments,
+  types as documentPickerTypes,
+  type DocumentPickerResponse,
+} from '@react-native-documents/picker';
 import type {
   GestureResponderEvent,
   LayoutChangeEvent,
@@ -31,6 +39,9 @@ import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import type { Asset, ImagePickerResponse } from 'react-native-image-picker';
 import {
   ChevronDown,
+  File as FileIcon,
+  FileAudio,
+  FileText,
   MessageCircle,
   Mic,
   Pause,
@@ -53,19 +64,29 @@ import { CommonActions, useFocusEffect, useIsFocused } from '@react-navigation/n
 import { WS_EVENTS } from '@social/shared';
 
 import {
-  CHAT_IMAGE_MAX_COUNT,
+  CHAT_ATTACHMENT_MAX_COUNT,
+  CHAT_ATTACHMENT_MAX_TOTAL_BYTES,
+  CHAT_AUDIO_MIME_TYPES,
+  CHAT_BLOCKED_ATTACHMENT_EXTENSIONS,
+  CHAT_FILE_MIME_TYPES,
+  CHAT_IMAGE_MIME_TYPES,
   CHAT_VIDEO_NOTE_MAX_DURATION_SECONDS,
+  CHAT_VIDEO_MIME_TYPES,
   CHAT_VOICE_MAX_DURATION_SECONDS,
+  formatFileSize,
 } from '@social/shared';
 import { e2eeApi } from '../../api/e2ee';
 import { friendsApi } from '../../api/friends';
 import { getApiErrorMessage, getCookieHeader } from '../../api/http';
 import {
   messageApi,
+  validateLocalChatFile,
   validateLocalChatVideo,
   validateLocalChatImage,
   validateLocalVideoNoteMessage,
   validateLocalVoiceMessage,
+  type ChatUploadAttachmentType,
+  type LocalChatFile,
   type LocalChatImage,
   type LocalChatVideo,
   type LocalVideoNoteMessage,
@@ -164,6 +185,10 @@ type PendingLatestScroll = {
   reason: ScrollToLatestReason;
   animated: boolean;
 };
+type PendingChatAttachment = LocalAttachmentSource & {
+  id: string;
+  fileType: ChatUploadAttachmentType;
+};
 
 const COMPOSER_INPUT_MIN_HEIGHT = 44;
 const COMPOSER_INPUT_MAX_HEIGHT = 112;
@@ -175,6 +200,21 @@ const REMOTE_TYPING_TIMEOUT_MS = 2200;
 const LOCAL_TYPING_STOP_DELAY_MS = 1400;
 const LONG_PRESS_DELAY_MS = 260;
 const SCROLL_EVENT_THROTTLE_MS = 16;
+const MESSAGE_LIST_TAP_MOVE_THRESHOLD = 8;
+const documentPickerMimeTypes = [
+  documentPickerTypes.images,
+  documentPickerTypes.video,
+  documentPickerTypes.audio,
+  documentPickerTypes.pdf,
+  documentPickerTypes.doc,
+  documentPickerTypes.docx,
+  documentPickerTypes.xls,
+  documentPickerTypes.xlsx,
+  documentPickerTypes.zip,
+  documentPickerTypes.plainText,
+  documentPickerTypes.json,
+  documentPickerTypes.csv,
+].flatMap(value => (Array.isArray(value) ? value : [value]));
 const voiceAudioSet = {
   AudioEncoderAndroid: AudioEncoderAndroidType.AAC,
   OutputFormatAndroid: OutputFormatAndroidType.MPEG_4,
@@ -289,6 +329,13 @@ export default function ChatScreen({ route, navigation }: Props) {
   const pendingScrollFrameRef = useRef<number | null>(null);
   const isInitialScrollPendingRef = useRef(false);
   const isUserNearBottomRef = useRef(true);
+  const messageListTapRef = useRef({
+    startX: 0,
+    startY: 0,
+    startTimestamp: 0,
+    moved: false,
+  });
+  const lastMessageTouchTimestampRef = useRef(0);
   const messageListMetricsRef = useRef<MessageListMetrics>({
     contentHeight: 0,
     layoutHeight: 0,
@@ -296,8 +343,7 @@ export default function ChatScreen({ route, navigation }: Props) {
   });
   const draftRef = useRef<{
     input: string;
-    pendingImages: LocalChatImage[];
-    pendingVideo: LocalChatVideo | null;
+    pendingAttachments: PendingChatAttachment[];
   } | null>(null);
   const recordingStartedAtRef = useRef(0);
   const recordingSecondsRef = useRef(0);
@@ -321,8 +367,9 @@ export default function ChatScreen({ route, navigation }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [inputHeight, setInputHeight] = useState(COMPOSER_INPUT_MIN_HEIGHT);
-  const [pendingImages, setPendingImages] = useState<LocalChatImage[]>([]);
-  const [pendingVideo, setPendingVideo] = useState<LocalChatVideo | null>(null);
+  const [pendingAttachments, setPendingAttachments] = useState<
+    PendingChatAttachment[]
+  >([]);
   const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
   const [selectedVideoUrl, setSelectedVideoUrl] = useState<string | null>(null);
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
@@ -407,8 +454,7 @@ export default function ChatScreen({ route, navigation }: Props) {
 
   const messagesRef = useLatest(messages);
   const hasMoreRef = useLatest(hasMore);
-  const pendingImagesRef = useLatest(pendingImages);
-  const pendingVideoRef = useLatest(pendingVideo);
+  const pendingAttachmentsRef = useLatest(pendingAttachments);
   const pendingVideoNoteRef = useLatest(pendingVideoNote);
   const pendingVoiceRef = useLatest(pendingVoice);
   const playingVoiceUrlRef = useLatest(playingVoiceUrl);
@@ -717,11 +763,17 @@ export default function ChatScreen({ route, navigation }: Props) {
                 durationSeconds: source.durationSeconds || 0,
               },
             )
-          : await messageApi.uploadImage(uploadFile, {
+          : fileType === 'image'
+          ? await messageApi.uploadImage(uploadFile, {
               ...encrypted.fields,
               width: encrypted.metadata.width,
               height: encrypted.metadata.height,
-            });
+            })
+          : await messageApi.uploadAttachment(
+              uploadFile,
+              fileType,
+              encrypted.fields,
+            );
       return withDecryptedAttachmentPreview(
         attachment,
         encrypted.previewUri,
@@ -1053,6 +1105,55 @@ export default function ChatScreen({ route, navigation }: Props) {
     [loadOlderMessages, messagesRef],
   );
 
+  const markMessageTouchStart = useCallback((event: GestureResponderEvent) => {
+    lastMessageTouchTimestampRef.current = event.nativeEvent.timestamp;
+  }, []);
+
+  const handleMessageListTouchStart = useCallback(
+    (event: GestureResponderEvent) => {
+      messageListTapRef.current = {
+        startX: event.nativeEvent.pageX,
+        startY: event.nativeEvent.pageY,
+        startTimestamp: event.nativeEvent.timestamp,
+        moved: false,
+      };
+    },
+    [],
+  );
+
+  const handleMessageListTouchMove = useCallback(
+    (event: GestureResponderEvent) => {
+      const tap = messageListTapRef.current;
+      if (tap.moved) {
+        return;
+      }
+
+      const deltaX = Math.abs(event.nativeEvent.pageX - tap.startX);
+      const deltaY = Math.abs(event.nativeEvent.pageY - tap.startY);
+      if (
+        deltaX > MESSAGE_LIST_TAP_MOVE_THRESHOLD ||
+        deltaY > MESSAGE_LIST_TAP_MOVE_THRESHOLD
+      ) {
+        tap.moved = true;
+      }
+    },
+    [],
+  );
+
+  const handleMessageListTouchEnd = useCallback(
+    (event: GestureResponderEvent) => {
+      const tap = messageListTapRef.current;
+      const messageHandledThisTap =
+        lastMessageTouchTimestampRef.current >= tap.startTimestamp &&
+        lastMessageTouchTimestampRef.current <= event.nativeEvent.timestamp;
+
+      if (!tap.moved && !messageHandledThisTap) {
+        Keyboard.dismiss();
+      }
+    },
+    [],
+  );
+
   const scrollToLatestFromButton = useCallback(() => {
     pendingLatestScrollRef.current = null;
     setShowScrollToLatest(false);
@@ -1220,8 +1321,7 @@ export default function ChatScreen({ route, navigation }: Props) {
 
     setInput(draftRef.current.input);
     setInputHeight(COMPOSER_INPUT_MIN_HEIGHT);
-    setPendingImages(draftRef.current.pendingImages);
-    setPendingVideo(draftRef.current.pendingVideo);
+    setPendingAttachments(draftRef.current.pendingAttachments);
     draftRef.current = null;
   }, []);
 
@@ -1500,6 +1600,65 @@ export default function ChatScreen({ route, navigation }: Props) {
     setError(getApiErrorMessage(apiError) || defaultMessage);
   }
 
+  function validatePendingAttachment(attachment: PendingChatAttachment) {
+    const extension = extensionFromFileName(attachment.fileName);
+    if (
+      extension &&
+      (CHAT_BLOCKED_ATTACHMENT_EXTENSIONS as readonly string[]).includes(
+        extension,
+      )
+    ) {
+      return 'Этот тип файла нельзя отправить';
+    }
+
+    if (attachment.fileType === 'image') {
+      return validateLocalChatImage(attachment as LocalChatImage);
+    }
+    if (attachment.fileType === 'video') {
+      return validateLocalChatVideo(attachment as LocalChatVideo);
+    }
+    return validateLocalChatFile(attachment as LocalChatFile);
+  }
+
+  function appendPendingAttachments(attachments: PendingChatAttachment[]) {
+    if (attachments.length === 0) {
+      setError('Не удалось подготовить вложение. Попробуйте еще раз.');
+      return;
+    }
+
+    const current = pendingAttachmentsRef.current;
+    if (current.length + attachments.length > CHAT_ATTACHMENT_MAX_COUNT) {
+      setError(
+        `Можно прикрепить максимум ${CHAT_ATTACHMENT_MAX_COUNT} файлов за раз`,
+      );
+      return;
+    }
+
+    const validationError = attachments
+      .map(validatePendingAttachment)
+      .find(Boolean);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    const knownTotalSize = [...current, ...attachments].reduce(
+      (total, attachment) => total + (attachment.fileSize || 0),
+      0,
+    );
+    if (knownTotalSize > CHAT_ATTACHMENT_MAX_TOTAL_BYTES) {
+      setError(
+        `Вложения слишком большие. Максимум ${formatFileSize(
+          CHAT_ATTACHMENT_MAX_TOTAL_BYTES,
+        )} на сообщение.`,
+      );
+      return;
+    }
+
+    setError(null);
+    setPendingAttachments(previous => [...previous, ...attachments]);
+  }
+
   async function applyPickedComposerMedia(result: ImagePickerResponse) {
     if (result.didCancel) {
       return;
@@ -1516,54 +1675,26 @@ export default function ChatScreen({ route, navigation }: Props) {
       return;
     }
 
-    const videoAsset = assets.find(asset =>
-      (asset.type || '').startsWith('video/'),
-    );
-    if (videoAsset) {
-      if (pendingImages.length > 0 || assets.length > 1) {
-        setError('В MVP можно отправить одно видео без других вложений');
-        return;
-      }
-      const video = assetToLocalVideo(videoAsset);
-      if (!video) {
-        setError('Не удалось выбрать видео. Попробуйте еще раз.');
-        return;
-      }
-      const validationError = validateLocalChatVideo(video);
-      if (validationError) {
-        setError(validationError);
-        return;
-      }
-      setError(null);
-      setPendingVideo(video);
-      return;
-    }
-
-    const images = assets
-      .map(assetToLocalImage)
-      .filter((image): image is LocalChatImage => Boolean(image));
-    const firstError = images.map(validateLocalChatImage).find(Boolean);
-
-    if (firstError) {
-      setError(firstError);
-      return;
-    }
-
-    setError(null);
-    setPendingImages(previous =>
-      [...previous, ...images].slice(0, CHAT_IMAGE_MAX_COUNT),
+    appendPendingAttachments(
+      assets
+        .map(assetToPendingAttachment)
+        .filter(
+          (attachment): attachment is PendingChatAttachment =>
+            Boolean(attachment),
+        ),
     );
   }
 
-  async function pickImagesFromLibrary() {
-    if (pendingVideo || pendingVideoRef.current) {
-      setError('Сначала отправьте или удалите выбранное видео');
+  async function pickMediaFromLibrary() {
+    if (pendingVoiceRef.current || pendingVideoNoteRef.current) {
+      setError('Сначала отправьте или удалите текущие вложения');
       return;
     }
-    const remaining = CHAT_IMAGE_MAX_COUNT - pendingImages.length;
+    const remaining =
+      CHAT_ATTACHMENT_MAX_COUNT - pendingAttachmentsRef.current.length;
     if (remaining <= 0) {
       setError(
-        `Можно прикрепить не больше ${CHAT_IMAGE_MAX_COUNT} изображений`,
+        `Можно прикрепить максимум ${CHAT_ATTACHMENT_MAX_COUNT} файлов за раз`,
       );
       return;
     }
@@ -1580,6 +1711,49 @@ export default function ChatScreen({ route, navigation }: Props) {
 
       await applyPickedComposerMedia(result);
     } catch (apiError) {
+      handlePickerError(
+        'Не удалось выбрать файл. Попробуйте еще раз.',
+        apiError,
+      );
+    }
+  }
+
+  async function pickFilesFromDevice() {
+    if (pendingVoiceRef.current || pendingVideoNoteRef.current) {
+      setError('Сначала отправьте или удалите текущие вложения');
+      return;
+    }
+    const remaining =
+      CHAT_ATTACHMENT_MAX_COUNT - pendingAttachmentsRef.current.length;
+    if (remaining <= 0) {
+      setError(
+        `Можно прикрепить максимум ${CHAT_ATTACHMENT_MAX_COUNT} файлов за раз`,
+      );
+      return;
+    }
+
+    try {
+      const files = await pickDocuments({
+        mode: 'import',
+        allowMultiSelection: remaining > 1,
+        type: documentPickerMimeTypes,
+      });
+      appendPendingAttachments(
+        files
+          .slice(0, remaining)
+          .map(documentToPendingAttachment)
+          .filter(
+            (attachment): attachment is PendingChatAttachment =>
+              Boolean(attachment),
+          ),
+      );
+    } catch (apiError) {
+      if (
+        isDocumentPickerErrorWithCode(apiError) &&
+        apiError.code === documentPickerErrorCodes.OPERATION_CANCELED
+      ) {
+        return;
+      }
       handlePickerError(
         'Не удалось выбрать файл. Попробуйте еще раз.',
         apiError,
@@ -1606,13 +1780,13 @@ export default function ChatScreen({ route, navigation }: Props) {
   }
 
   async function takePhoto() {
-    if (pendingVideo || pendingVideoRef.current) {
-      setError('Сначала отправьте или удалите выбранное видео');
+    if (pendingVoiceRef.current || pendingVideoNoteRef.current) {
+      setError('Сначала отправьте или удалите текущие вложения');
       return;
     }
-    if (pendingImages.length >= CHAT_IMAGE_MAX_COUNT) {
+    if (pendingAttachmentsRef.current.length >= CHAT_ATTACHMENT_MAX_COUNT) {
       setError(
-        `Можно прикрепить не больше ${CHAT_IMAGE_MAX_COUNT} изображений`,
+        `Можно прикрепить максимум ${CHAT_ATTACHMENT_MAX_COUNT} файлов за раз`,
       );
       return;
     }
@@ -1722,9 +1896,8 @@ export default function ChatScreen({ route, navigation }: Props) {
       previewPlayingRef.current = false;
     }
     if (
-      pendingImagesRef.current.length > 0 ||
+      pendingAttachmentsRef.current.length > 0 ||
       pendingVoiceRef.current ||
-      pendingVideoRef.current ||
       pendingVideoNoteRef.current
     ) {
       setError('Сначала отправьте или удалите текущие вложения');
@@ -2013,9 +2186,8 @@ export default function ChatScreen({ route, navigation }: Props) {
       sendingRef.current ||
       editingMessageRef.current ||
       recordingActiveRef.current ||
-      pendingImagesRef.current.length > 0 ||
+      pendingAttachmentsRef.current.length > 0 ||
       pendingVoiceRef.current ||
-      pendingVideoRef.current ||
       pendingVideoNoteRef.current
     ) {
       setError('Сначала отправьте или удалите текущие вложения');
@@ -2285,7 +2457,7 @@ export default function ChatScreen({ route, navigation }: Props) {
       return;
     }
 
-    if (!trimmed && pendingImages.length === 0 && !pendingVideo) {
+    if (!trimmed && pendingAttachments.length === 0) {
       setError('Введите сообщение или выберите вложение');
       return;
     }
@@ -2295,18 +2467,21 @@ export default function ChatScreen({ route, navigation }: Props) {
     }
 
     let uploadFailed = false;
-    const nextSendingState = pendingVideo
+    const hasPendingVideo = pendingAttachments.some(
+      attachment => attachment.fileType === 'video',
+    );
+    const nextSendingState = hasPendingVideo
       ? 'preparingVideo'
-      : pendingImages.length > 0
+      : pendingAttachments.length > 0
       ? 'uploading'
       : 'sending';
     sendingRef.current = nextSendingState;
     setSending(nextSendingState);
     setUploadProgress(
-      pendingImages.length > 0
+      pendingAttachments.length > 0
         ? {
             current: 0,
-            total: pendingImages.length,
+            total: pendingAttachments.length,
           }
         : null,
     );
@@ -2318,41 +2493,60 @@ export default function ChatScreen({ route, navigation }: Props) {
       }
 
       const attachments: MessageAttachment[] = [];
-      if (pendingVideo) {
+      for (const [index, pendingAttachment] of pendingAttachments.entries()) {
         try {
-          const compressedVideo = await compressLocalChatVideo(
-            pendingVideo,
-            stage => {
-              setSending(
-                stage === 'compressing' ? 'compressingVideo' : 'preparingVideo',
-              );
-            },
-          );
-          setSending('uploadingVideo');
-          attachments.push(
-            e2eeReady
-              ? await encryptAndUploadAttachment(
-                  compressedVideo,
-                  'video',
-                  otherUserId,
-                )
-              : await messageApi.uploadVideo(compressedVideo),
-          );
-        } catch (apiError) {
-          uploadFailed = true;
-          throw apiError;
-        }
-      }
-      for (const [index, image] of pendingImages.entries()) {
-        try {
-          attachments.push(
-            e2eeReady
-              ? await encryptAndUploadAttachment(image, 'image', otherUserId)
-              : await messageApi.uploadImage(image),
-          );
+          if (pendingAttachment.fileType === 'video') {
+            const compressedVideo = await compressLocalChatVideo(
+              pendingAttachment as LocalChatVideo,
+              stage => {
+                setSending(
+                  stage === 'compressing'
+                    ? 'compressingVideo'
+                    : 'preparingVideo',
+                );
+              },
+            );
+            setSending('uploadingVideo');
+            attachments.push(
+              e2eeReady
+                ? await encryptAndUploadAttachment(
+                    compressedVideo,
+                    'video',
+                    otherUserId,
+                  )
+                : await messageApi.uploadVideo(compressedVideo),
+            );
+          } else if (pendingAttachment.fileType === 'image') {
+            setSending('uploading');
+            attachments.push(
+              e2eeReady
+                ? await encryptAndUploadAttachment(
+                    pendingAttachment,
+                    'image',
+                    otherUserId,
+                  )
+                : await messageApi.uploadImage(
+                    pendingAttachment as LocalChatImage,
+                  ),
+            );
+          } else {
+            setSending('uploading');
+            attachments.push(
+              e2eeReady
+                ? await encryptAndUploadAttachment(
+                    pendingAttachment,
+                    pendingAttachment.fileType,
+                    otherUserId,
+                  )
+                : await messageApi.uploadAttachment(
+                    pendingAttachment as LocalChatFile,
+                    pendingAttachment.fileType,
+                  ),
+            );
+          }
           setUploadProgress({
             current: index + 1,
-            total: pendingImages.length,
+            total: pendingAttachments.length,
           });
         } catch (apiError) {
           uploadFailed = true;
@@ -2365,8 +2559,7 @@ export default function ChatScreen({ route, navigation }: Props) {
 
       draftRef.current = {
         input,
-        pendingImages,
-        pendingVideo,
+        pendingAttachments,
       };
 
       if (chatSocket.isConnected()) {
@@ -2394,8 +2587,7 @@ export default function ChatScreen({ route, navigation }: Props) {
 
       setInput('');
       setInputHeight(COMPOSER_INPUT_MIN_HEIGHT);
-      setPendingImages([]);
-      setPendingVideo(null);
+      setPendingAttachments([]);
       setReplyToMessage(null);
       stopLocalTyping();
     } catch (apiError) {
@@ -2412,12 +2604,10 @@ export default function ChatScreen({ route, navigation }: Props) {
     }
   }
 
-  function removePendingImage(id: string) {
-    setPendingImages(previous => previous.filter(image => image.id !== id));
-  }
-
-  function removePendingVideo() {
-    setPendingVideo(null);
+  function removePendingAttachment(id: string) {
+    setPendingAttachments(previous =>
+      previous.filter(attachment => attachment.id !== id),
+    );
   }
 
   const importLinkPreviewVideo = useCallback(
@@ -2535,7 +2725,6 @@ export default function ChatScreen({ route, navigation }: Props) {
   async function openComposerAttachments() {
     if (
       pendingVoiceRef.current ||
-      pendingVideoRef.current ||
       pendingVideoNoteRef.current
     ) {
       setError('Сначала отправьте или удалите текущие вложения');
@@ -2552,9 +2741,17 @@ export default function ChatScreen({ route, navigation }: Props) {
         },
       },
       {
-        text: 'Выбрать из галереи',
+        text: 'Фото или видео из галереи',
         onPress: () => {
-          pickImagesFromLibrary().catch(() => {
+          pickMediaFromLibrary().catch(() => {
+            setError('Не удалось выбрать файл. Попробуйте еще раз.');
+          });
+        },
+      },
+      {
+        text: 'Выбрать файл',
+        onPress: () => {
+          pickFilesFromDevice().catch(() => {
             setError('Не удалось выбрать файл. Попробуйте еще раз.');
           });
         },
@@ -2737,7 +2934,7 @@ export default function ChatScreen({ route, navigation }: Props) {
 
   function startEditingMessage(message: Message) {
     setSelectedMessage(null);
-    setPendingImages([]);
+    setPendingAttachments([]);
     setReplyToMessage(null);
     stopLocalTyping();
     setEditingMessage(message);
@@ -2927,8 +3124,7 @@ export default function ChatScreen({ route, navigation }: Props) {
   const showComposerSendButton =
     Boolean(trimmedInput) ||
     Boolean(editingMessage) ||
-    pendingImages.length > 0 ||
-    Boolean(pendingVideo);
+    pendingAttachments.length > 0;
   const composerMediaIcon = composerMediaMode === 'voice' ? Mic : VideoIcon;
   const composerMediaLabel =
     composerMediaMode === 'voice'
@@ -2960,6 +3156,7 @@ export default function ChatScreen({ route, navigation }: Props) {
           onVoicePress={toggleVoicePlayback}
           onDownloadAttachment={handleDownloadAttachment}
           playingVoiceUrl={playingVoiceUrl}
+          onTouchStart={markMessageTouchStart}
           onLongPress={() => openMessageActions(item)}
           themeColors={themeColors}
           groupedWithNext={groupedWithNext}
@@ -2969,6 +3166,7 @@ export default function ChatScreen({ route, navigation }: Props) {
     [
       importLinkPreviewVideo,
       handleDownloadAttachment,
+      markMessageTouchStart,
       messages,
       openMessageActions,
       playingVoiceUrl,
@@ -3033,6 +3231,9 @@ export default function ChatScreen({ route, navigation }: Props) {
               onRefresh={() => loadMessages('refresh')}
               keyboardShouldPersistTaps="handled"
               maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+              onTouchStart={handleMessageListTouchStart}
+              onTouchMove={handleMessageListTouchMove}
+              onTouchEnd={handleMessageListTouchEnd}
               onScroll={handleMessagesScroll}
               scrollEventThrottle={SCROLL_EVENT_THROTTLE_MS}
               renderItem={renderMessageItem}
@@ -3095,63 +3296,90 @@ export default function ChatScreen({ route, navigation }: Props) {
       </ChatDoodleBackground>
 
       <View style={[styles.composerDock, themed.composerDock]}>
-        {pendingImages.length > 0 ? (
+        {pendingAttachments.length > 0 ? (
           <View style={[styles.previewStrip, themed.surfaceBar]}>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.previewStripContent}
             >
-              {pendingImages.map(image => (
-                <View key={image.id} style={styles.previewItem}>
-                  <Image
-                    source={{ uri: image.uri }}
-                    style={styles.previewImage}
-                  />
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Убрать вложение"
-                    style={styles.previewRemove}
-                    onPress={() => removePendingImage(image.id)}
-                  >
-                    <Text style={styles.previewRemoveText}>×</Text>
-                  </Pressable>
-                </View>
-              ))}
-            </ScrollView>
-          </View>
-        ) : null}
+              {pendingAttachments.map(attachment => {
+                const AttachmentIcon =
+                  attachment.fileType === 'audio'
+                    ? FileAudio
+                    : attachment.fileType === 'file'
+                    ? FileText
+                    : FileIcon;
 
-        {pendingVideo ? (
-          <View style={[styles.previewVideoCard, themed.surfaceBar]}>
-            <Video
-              source={{ uri: pendingVideo.uri }}
-              style={styles.previewVideo}
-              paused
-              resizeMode="cover"
-            />
-            <View style={styles.previewVideoMeta}>
-              <Text
-                style={[styles.previewVideoTitle, themed.text]}
-                numberOfLines={1}
-              >
-                {pendingVideo.fileName}
-              </Text>
-              <Text style={[styles.previewVideoSubtitle, themed.mutedText]}>
-                Видео
-                {pendingVideo.durationSeconds
-                  ? ` · ${formatDuration(pendingVideo.durationSeconds)}`
-                  : ''}
-              </Text>
-            </View>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Убрать видео"
-              style={styles.previewRemove}
-              onPress={removePendingVideo}
-            >
-              <Text style={styles.previewRemoveText}>×</Text>
-            </Pressable>
+                return (
+                  <View
+                    key={attachment.id}
+                    style={[
+                      styles.previewItem,
+                      (attachment.fileType === 'audio' ||
+                        attachment.fileType === 'file') &&
+                        styles.previewFileItem,
+                    ]}
+                  >
+                    {attachment.fileType === 'image' ? (
+                      <Image
+                        source={{ uri: attachment.uri }}
+                        style={styles.previewImage}
+                      />
+                    ) : attachment.fileType === 'video' ? (
+                      <View style={styles.previewVideoTile}>
+                        <Video
+                          source={{ uri: attachment.uri }}
+                          style={styles.previewVideoThumbnail}
+                          paused
+                          muted
+                          resizeMode="cover"
+                        />
+                        <View style={styles.previewVideoBadge}>
+                          <VideoIcon
+                            color={themeColors.white}
+                            size={18}
+                            strokeWidth={2.5}
+                          />
+                        </View>
+                      </View>
+                    ) : (
+                      <View style={[styles.previewFileTile, themed.cardMuted]}>
+                        <View style={[styles.previewFileIcon, themed.accentBg]}>
+                          <AttachmentIcon
+                            color={themeColors.white}
+                            size={20}
+                            strokeWidth={2.4}
+                          />
+                        </View>
+                        <View style={styles.previewFileMeta}>
+                          <Text
+                            style={[styles.previewFileName, themed.text]}
+                            numberOfLines={1}
+                          >
+                            {attachment.fileName}
+                          </Text>
+                          <Text
+                            style={[styles.previewFileDetail, themed.mutedText]}
+                            numberOfLines={1}
+                          >
+                            {pendingAttachmentSubtitle(attachment)}
+                          </Text>
+                        </View>
+                      </View>
+                    )}
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Убрать вложение"
+                      style={styles.previewRemove}
+                      onPress={() => removePendingAttachment(attachment.id)}
+                    >
+                      <Text style={styles.previewRemoveText}>×</Text>
+                    </Pressable>
+                  </View>
+                );
+              })}
+            </ScrollView>
           </View>
         ) : null}
 
@@ -3171,8 +3399,8 @@ export default function ChatScreen({ route, navigation }: Props) {
                 ? 'Загружаем видео-сообщение'
                 : sending === 'uploading'
                 ? uploadProgress
-                  ? `Загружаем изображения: ${uploadProgress.current} из ${uploadProgress.total}`
-                  : 'Загружаем изображение'
+                  ? `Загружаем вложения: ${uploadProgress.current} из ${uploadProgress.total}`
+                  : 'Загружаем вложение'
                 : 'Отправляем сообщение'}
             </Text>
           </View>
@@ -3468,8 +3696,7 @@ export default function ChatScreen({ route, navigation }: Props) {
                 recordingBusy ||
                 (!trimmedInput &&
                   !editingMessage &&
-                  pendingImages.length === 0 &&
-                  !pendingVideo) ||
+                  pendingAttachments.length === 0) ||
                 Boolean(pendingVoice) ||
                 Boolean(pendingVideoNote)
               }
@@ -3610,19 +3837,59 @@ export default function ChatScreen({ route, navigation }: Props) {
   );
 }
 
-function assetToLocalImage(asset: Asset): LocalChatImage | null {
-  if (!asset.uri || !asset.type) {
+function assetToPendingAttachment(asset: Asset): PendingChatAttachment | null {
+  if (!asset.uri) {
+    return null;
+  }
+
+  const fileName =
+    asset.fileName || defaultAttachmentFileName(asset.type, Date.now());
+  const type = normalizeAttachmentMimeType(asset.type, fileName);
+  if (!type) {
+    return null;
+  }
+
+  const fileType = attachmentFileTypeFromMime(type);
+  if (fileType !== 'image' && fileType !== 'video') {
     return null;
   }
 
   return {
-    id: `${asset.uri}-${asset.fileSize ?? Date.now()}`,
+    id: localAttachmentId(asset.uri, asset.fileSize),
     uri: asset.uri,
-    type: asset.type,
-    fileName: asset.fileName || `chat-image-${Date.now()}.jpg`,
+    type,
+    fileName,
     fileSize: asset.fileSize,
     width: asset.width,
     height: asset.height,
+    durationSeconds:
+      fileType === 'video' && asset.duration
+        ? Math.max(1, Math.round(asset.duration))
+        : undefined,
+    fileType,
+  };
+}
+
+function documentToPendingAttachment(
+  document: DocumentPickerResponse,
+): PendingChatAttachment | null {
+  if (!document.uri) {
+    return null;
+  }
+
+  const fileName = document.name?.trim() || `attachment-${Date.now()}`;
+  const type = normalizeAttachmentMimeType(document.type, fileName);
+  if (!type) {
+    return null;
+  }
+
+  return {
+    id: localAttachmentId(document.uri, document.size ?? undefined),
+    uri: document.uri,
+    type,
+    fileName,
+    fileSize: document.size ?? undefined,
+    fileType: attachmentFileTypeFromMime(type),
   };
 }
 
@@ -3645,20 +3912,149 @@ function assetToLocalVideoNote(asset?: Asset): LocalVideoNoteMessage | null {
   };
 }
 
-function assetToLocalVideo(asset?: Asset): LocalChatVideo | null {
-  if (!asset?.uri) {
-    return null;
+function pendingAttachmentSubtitle(attachment: PendingChatAttachment) {
+  const parts = [pendingAttachmentTypeLabel(attachment.fileType)];
+  if (attachment.durationSeconds) {
+    parts.push(formatDuration(attachment.durationSeconds));
   }
-  return {
-    id: `${asset.uri}-${asset.fileSize ?? Date.now()}`,
-    uri: asset.uri,
-    type: asset.type || 'video/mp4',
-    fileName: asset.fileName || `chat-video-${Date.now()}.mp4`,
-    durationSeconds: asset.duration
-      ? Math.max(1, Math.round(asset.duration))
-      : undefined,
-    fileSize: asset.fileSize,
-    width: asset.width,
-    height: asset.height,
-  };
+  if (attachment.fileSize) {
+    parts.push(formatFileSize(attachment.fileSize));
+  }
+  return parts.join(' · ');
+}
+
+function pendingAttachmentTypeLabel(fileType: ChatUploadAttachmentType) {
+  switch (fileType) {
+    case 'image':
+      return 'Изображение';
+    case 'video':
+      return 'Видео';
+    case 'audio':
+      return 'Аудио';
+    default:
+      return 'Файл';
+  }
+}
+
+function localAttachmentId(uri: string, fileSize?: number | null) {
+  return `${uri}-${fileSize ?? Date.now()}`;
+}
+
+function extensionFromFileName(fileName: string) {
+  const match = /\.([a-z0-9]{1,12})$/i.exec(fileName.trim());
+  return match?.[1]?.toLowerCase() || '';
+}
+
+function normalizeAttachmentMimeType(
+  mimeType?: string | null,
+  fileName?: string,
+) {
+  const raw = mimeType?.split(';')[0]?.trim().toLowerCase() || '';
+  const inferred = inferMimeTypeFromFileName(fileName);
+
+  if (!raw || raw === 'application/octet-stream' || !raw.includes('/')) {
+    return inferred || raw || '';
+  }
+
+  switch (raw) {
+    case 'image/jpg':
+      return 'image/jpeg';
+    case 'audio/m4a':
+      return 'audio/mp4';
+    case 'text/comma-separated-values':
+      return 'text/csv';
+    default:
+      return raw;
+  }
+}
+
+function inferMimeTypeFromFileName(fileName?: string) {
+  switch (extensionFromFileName(fileName || '')) {
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg';
+    case 'png':
+      return 'image/png';
+    case 'webp':
+      return 'image/webp';
+    case 'gif':
+      return 'image/gif';
+    case 'mp4':
+      return 'video/mp4';
+    case 'mov':
+      return 'video/quicktime';
+    case 'webm':
+      return 'video/webm';
+    case 'mp3':
+      return 'audio/mpeg';
+    case 'm4a':
+      return 'audio/mp4';
+    case 'wav':
+      return 'audio/wav';
+    case 'ogg':
+      return 'audio/ogg';
+    case 'pdf':
+      return 'application/pdf';
+    case 'txt':
+      return 'text/plain';
+    case 'doc':
+      return 'application/msword';
+    case 'docx':
+      return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    case 'xls':
+      return 'application/vnd.ms-excel';
+    case 'xlsx':
+      return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    case 'zip':
+      return 'application/zip';
+    case 'json':
+      return 'application/json';
+    case 'csv':
+      return 'text/csv';
+    default:
+      return '';
+  }
+}
+
+function attachmentFileTypeFromMime(type: string): ChatUploadAttachmentType {
+  if (
+    type.startsWith('image/') ||
+    (CHAT_IMAGE_MIME_TYPES as readonly string[]).includes(type)
+  ) {
+    return 'image';
+  }
+  if (
+    type.startsWith('video/') ||
+    (CHAT_VIDEO_MIME_TYPES as readonly string[]).includes(type)
+  ) {
+    return 'video';
+  }
+  if (
+    type.startsWith('audio/') ||
+    (CHAT_AUDIO_MIME_TYPES as readonly string[]).includes(type)
+  ) {
+    return 'audio';
+  }
+  if ((CHAT_FILE_MIME_TYPES as readonly string[]).includes(type)) {
+    return 'file';
+  }
+  return 'file';
+}
+
+function defaultAttachmentFileName(type: string | undefined, timestamp: number) {
+  const normalizedType = normalizeAttachmentMimeType(type);
+  const fileType = normalizedType
+    ? attachmentFileTypeFromMime(normalizedType)
+    : 'file';
+
+  switch (fileType) {
+    case 'image':
+      return `chat-image-${timestamp}.jpg`;
+    case 'video':
+      return `chat-video-${timestamp}.mp4`;
+    case 'audio':
+      return `chat-audio-${timestamp}.mp3`;
+    default:
+      return `attachment-${timestamp}`;
+  }
 }

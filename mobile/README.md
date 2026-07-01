@@ -55,7 +55,7 @@ cd mobile
 npm run android
 ```
 
-## Локальная APK-сборка
+## Локальная Android-сборка
 
 Debug APK:
 
@@ -64,44 +64,35 @@ cd mobile
 npm run build:android
 ```
 
-Release APK:
+Production release для Google Play собирается как signed AAB только через GitHub Actions. Полный checklist: [`GOOGLE_PLAY_RELEASE.md`](./GOOGLE_PLAY_RELEASE.md).
 
-```sh
-cd mobile
-SOCIAL_API_BASE_URL=https://example.com/api \
-SOCIAL_NOTIFICATIONS_BASE_URL=https://example.com/notifications-api \
-SOCIAL_TURN_URLS=turn:example.com:3478?transport=udp,turn:example.com:3478?transport=tcp \
-SOCIAL_TURN_USERNAME=turn-user \
-SOCIAL_TURN_CREDENTIAL=turn-password \
-npm run build:android:release
-```
+Для звонков на реальных телефонах TURN-переменные должны быть переданы именно во время сборки AAB: они инлайнятся Metro/Babel в JS bundle. Не встраивайте в мобильный bundle привилегированный долгоживущий TURN secret; используйте краткоживущие/ограниченные credentials или backend-issued ICE config.
 
-Для звонков на реальных телефонах TURN-переменные должны быть переданы именно во время сборки APK: они инлайнятся Metro/Babel в JS bundle. Если собрать release без `SOCIAL_TURN_URLS`, приложение будет использовать только публичный STUN и на части сетей звонок может отображаться как принятый, но без аудио/видео соединения.
+Release variant собирает JS bundle внутрь Android artefact, поэтому установленное приложение запускается без Metro. Для release используйте публичный HTTPS backend URL; не используйте `localhost`, `127.0.0.1`, `10.0.2.2` или LAN/private IP.
 
-Release variant собирает JS bundle внутрь APK, поэтому установленное приложение запускается без Metro. Для release используйте публичный HTTPS backend URL; не используйте `localhost`, `127.0.0.1`, `10.0.2.2` или LAN/private IP.
-
-APK после сборки:
+AAB после CI-сборки:
 
 ```text
-mobile/android/app/build/outputs/apk/debug/app-debug.apk
-mobile/android/app/build/outputs/apk/release/app-release.apk
+mobile/android/app/build/outputs/bundle/release/app-release.aab
 ```
 
-Текущая CI-сборка подписывает release APK debug keystore из React Native template. Для production публикации нужен отдельный signing config и production keystore.
+Release-сборка не использует debug signing. Если upload keystore, Firebase config или production API URL не настроены в GitHub Actions, workflow завершится ошибкой.
 
-## Build APK via GitHub Actions
+## Build AAB via GitHub Actions
 
 1. Откройте GitHub repository settings.
 2. Перейдите в `Secrets and variables` -> `Actions` -> `Variables`.
 3. Добавьте repository variable `SOCIAL_API_BASE_URL`, например `https://example.com/api`.
 4. При отдельном notifications route добавьте `SOCIAL_NOTIFICATIONS_BASE_URL`, например `https://example.com/notifications-api`.
-5. Для FCM добавьте GitHub Secret `GOOGLE_SERVICES_JSON_BASE64`.
-6. Откройте GitHub -> Actions.
-7. Выберите workflow `mobile-android-apk`.
-8. Нажмите `Run workflow`. Поле `api_base_url` можно оставить пустым; оно нужно только как временный override.
-9. После завершения job скачайте artifacts `social-mobile-debug-apk` и `social-mobile-release-apk`.
+5. Добавьте repository variable `SOCIAL_VERSION_CODE` и `SOCIAL_VERSION_NAME` или используйте defaults workflow.
+6. Для FCM добавьте GitHub Secret `GOOGLE_SERVICES_JSON_BASE64`.
+7. Для подписи добавьте `ANDROID_UPLOAD_KEYSTORE_BASE64`, `ANDROID_UPLOAD_KEYSTORE_PASSWORD`, `ANDROID_UPLOAD_KEY_ALIAS`, `ANDROID_UPLOAD_KEY_PASSWORD`.
+8. Откройте GitHub -> Actions.
+9. Выберите workflow `mobile-android-release`.
+10. Нажмите `Run workflow`. Поле `api_base_url` можно оставить пустым; оно нужно только как временный override.
+11. После завершения job скачайте artifact `social-mobile-release-aab`.
 
-Workflow проверяет, что `SOCIAL_API_BASE_URL` начинается с `https://`, не указывает на localhost/emulator/LAN/private IP, не содержит двойной путь `/api/api`, прогоняет `tsc`, `lint`, `jest`, а затем собирает debug и release APK.
+Workflow проверяет, что `SOCIAL_API_BASE_URL` начинается с `https://`, не указывает на localhost/emulator/LAN/private IP, не содержит двойной путь `/api/api`, прогоняет `tsc`, `lint`, `jest`, а затем собирает signed release AAB.
 
 ## Реализованные экраны
 
@@ -200,7 +191,7 @@ REST refresh flow:
 - Normalization payload для `new_message`, `friend_request`, `friend_request_accepted`, `system`.
 - Safe navigation fallback при открытии уведомления.
 - Android permission `POST_NOTIFICATIONS`.
-- Conditional `google-services` Gradle plugin: сборка не ломается без `google-services.json`.
+- Conditional `google-services` Gradle plugin для debug/dev; production release требует `google-services.json`.
 - Регистрация FCM token после login через `POST /push/mobile-token`.
 - Отвязка FCM token перед logout через `DELETE /push/mobile-token`.
 
@@ -223,7 +214,7 @@ Workflow декодирует secret в `mobile/android/app/google-services.json
 
 Ручная проверка push:
 
-1. Соберите APK с `google-services.json`.
+1. Соберите AAB или release APK с `google-services.json`.
 2. Войдите в приложение и разрешите уведомления.
 3. Отправьте этому пользователю сообщение или заявку в друзья с другого аккаунта.
 4. Сверните приложение и проверьте системное уведомление.
@@ -245,9 +236,7 @@ Camera и microphone runtime permissions запрашиваются только
 
 ## TODO
 
-- Production Firebase config: добавить настоящий `google-services.json` в secure delivery process.
-- Production signing config и keystore для публикации.
 - Deep link для `/auth/verify-email/:token`, если email-подтверждение должно открываться прямо в mobile app.
+- Backend-issued ICE config/short-lived TURN credentials для стабильных звонков без встраивания долгоживущего TURN секрета в mobile bundle.
 - Полноценная мобильная стратегия auth, только если cookie/WebSocket auth окажется нестабильной на production.
-- TURN production config для стабильных звонков в сложных сетях.
 - Лента постов и dark/light theme provider остаются отдельными этапами.
