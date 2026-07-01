@@ -692,6 +692,7 @@ export const ChatInput = ({
         isVideoNoteRecording,
         isRecording,
         onErrorMessageChange,
+        onSendVoice,
         pendingVideoNote,
         recordingStopping,
         sending,
@@ -1168,7 +1169,17 @@ export const ChatInput = ({
                 </div>
                 {showEmojiPicker && (
                     <div className="absolute bottom-16 right-4 z-50">
-                        <Suspense fallback={<div className="h-[260px] w-[300px] rounded-xl border border-gray-200 bg-white shadow-lg" />}>
+                        <Suspense
+                            fallback={(
+                                <div
+                                    className="flex h-[260px] w-[300px] items-center justify-center rounded-xl border border-gray-200 bg-white text-[var(--app-text-secondary)] shadow-lg"
+                                    role="status"
+                                    aria-label="Загрузка эмодзи"
+                                >
+                                    <span className="chat-composer-spinner" aria-hidden="true" />
+                                </div>
+                            )}
+                        >
                             <EmojiPicker
                                 width={300}
                                 height={260}

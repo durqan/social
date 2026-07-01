@@ -1,5 +1,6 @@
 import React, { useCallback, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   FlatList,
   Image,
   Modal,
@@ -34,6 +35,7 @@ import type { ChatStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'ChatList'>;
 type LoadMode = 'refresh' | 'silent';
+const CONVERSATION_PAGE_SIZE = 50;
 
 function conversationTimestamp(conversation: Conversation) {
   const timestamp = Date.parse(conversation.last_message_at || '');
@@ -57,6 +59,8 @@ export default function ChatListScreen({ navigation }: Props) {
   const styles = createStyles(colors);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [selectedConversation, setSelectedConversation] =
     useState<Conversation | null>(null);
@@ -69,27 +73,58 @@ export default function ChatListScreen({ navigation }: Props) {
   const [error, setError] = useState<string | null>(null);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadSeq = useRef(0);
+  const nextOffsetRef = useRef(0);
   const screenActiveRef = useRef(false);
   const loadAbortRef = useRef<AbortController | null>(null);
 
   const load = useCallback(
-    async (mode: LoadMode = 'refresh') => {
+    async (mode: LoadMode | 'more' = 'refresh') => {
       const requestSeq = ++loadSeq.current;
-      loadAbortRef.current?.abort();
+      if (mode !== 'more') {
+        loadAbortRef.current?.abort();
+      }
       const controller = new AbortController();
       loadAbortRef.current = controller;
       if (mode !== 'silent') {
-        setLoading(true);
+        if (mode === 'more') {
+          setLoadingMore(true);
+        } else {
+          setLoading(true);
+        }
       }
       setError(null);
       try {
-        const nextConversations = await messageApi.getConversations({
-          signal: controller.signal,
-        });
+        const offset = mode === 'more' ? nextOffsetRef.current : 0;
+        const limit =
+          mode === 'more'
+            ? CONVERSATION_PAGE_SIZE
+            : Math.max(CONVERSATION_PAGE_SIZE, nextOffsetRef.current || 0);
+        const page = await messageApi.getConversationsPage(
+          {
+            limit,
+            offset,
+          },
+          {
+            signal: controller.signal,
+          },
+        );
         if (!screenActiveRef.current || loadSeq.current !== requestSeq) {
           return;
         }
-        setConversations(sortConversations(nextConversations));
+        setConversations(previous => {
+          if (mode !== 'more') {
+            return sortConversations(page.conversations);
+          }
+          const existingIds = new Set(previous.map(item => item.user_id));
+          const nextConversations = page.conversations.filter(
+            item => !existingIds.has(item.user_id),
+          );
+          return nextConversations.length
+            ? sortConversations([...previous, ...nextConversations])
+            : previous;
+        });
+        setHasMore(page.has_more);
+        nextOffsetRef.current = page.next_offset;
         refreshUnreadCount().catch(() => undefined);
       } catch (apiError) {
         if ((apiError as Error)?.message === 'request aborted') {
@@ -104,7 +139,9 @@ export default function ChatListScreen({ navigation }: Props) {
         }
         if (screenActiveRef.current && loadSeq.current === requestSeq) {
           setHasLoaded(true);
-          if (mode !== 'silent') {
+          if (mode === 'more') {
+            setLoadingMore(false);
+          } else if (mode !== 'silent') {
             setLoading(false);
           }
         }
@@ -138,6 +175,9 @@ export default function ChatListScreen({ navigation }: Props) {
         }
         loadAbortRef.current?.abort();
         loadAbortRef.current = null;
+        nextOffsetRef.current = 0;
+        setHasMore(false);
+        setLoadingMore(false);
         setLoading(false);
       };
     }, [load]),
@@ -234,6 +274,12 @@ export default function ChatListScreen({ navigation }: Props) {
         keyExtractor={item => String(item.user_id)}
         refreshing={loading && hasLoaded}
         onRefresh={load}
+        onEndReached={() => {
+          if (!loadingMore && hasMore) {
+            load('more').catch(() => undefined);
+          }
+        }}
+        onEndReachedThreshold={0.6}
         contentContainerStyle={[
           styles.listContent,
           conversations.length === 0 && styles.emptyListContent,
@@ -248,6 +294,13 @@ export default function ChatListScreen({ navigation }: Props) {
               text="Откройте вкладку Друзья, чтобы начать диалог."
             />
           )
+        }
+        ListFooterComponent={
+          loadingMore ? (
+            <View style={styles.loadingMore}>
+              <ActivityIndicator color={colors.accentStrong} />
+            </View>
+          ) : null
         }
         renderItem={({ item }) => {
           const isUnread = item.unread_count > 0;
@@ -508,6 +561,10 @@ const createStyles = (colors: ThemeColors) =>
     emptyListContent: {
       flexGrow: 1,
       justifyContent: 'center',
+    },
+    loadingMore: {
+      paddingVertical: spacing.lg,
+      alignItems: 'center',
     },
     row: {
       flexDirection: 'row',

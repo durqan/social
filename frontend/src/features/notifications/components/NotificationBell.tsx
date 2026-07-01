@@ -10,23 +10,19 @@ import type { SocialNotification } from "@/shared/types/domain.js";
 import { formatRelativeDate } from "@/shared/utils/date.js";
 import { Avatar } from "@/shared/ui/Avatar.js";
 import { Icon } from "@/shared/ui/Icon.js";
+import {
+  countUnseenNotificationBadge,
+  fallbackActorName,
+  getNotificationTitle,
+  notificationSeenIdsForVisibleNotifications,
+} from "@/features/notifications/lib/notificationDisplay.js";
 
 type NotificationBellProps = {
   userId?: number;
   compact?: boolean;
 };
 
-const fallbackActorName = "Пользователь";
 const markSeenDelayMs = 750;
-
-const notificationText: Record<string, (actorName: string) => string> = {
-  post_liked: (actorName) => `${actorName} лайкнул(а) ваш пост`,
-  comment_created: (actorName) => `${actorName} прокомментировал(а) ваш пост`,
-  friend_request: (actorName) => `${actorName} отправил(а) заявку в друзья`,
-  friend_accepted: (actorName) => `${actorName} принял(а) вашу заявку`,
-  message_received: (actorName) => `${actorName} написал(а) вам`,
-  incoming_call: (actorName) => `${actorName} звонил(а) вам`,
-};
 
 let notificationAudioContext: AudioContext | null = null;
 
@@ -69,18 +65,6 @@ function playNotificationSound() {
   } catch (error) {
     console.error("Ошибка проигрывания звука уведомления:", error);
   }
-}
-
-export function getNotificationTitle(
-  notification: SocialNotification,
-  actorName?: string,
-) {
-  const buildTitle = notificationText[notification.type];
-  if (!buildTitle) {
-    return "Новое уведомление";
-  }
-
-  return buildTitle(actorName || fallbackActorName);
 }
 
 function getNotificationDetails(notification: SocialNotification) {
@@ -169,20 +153,6 @@ function isChatPath(conversationId: number) {
   return new RegExp(`/chat/${conversationId}(?:$|[/?#])`).test(
     window.location.pathname,
   );
-}
-
-export function countUnseenNotificationBadge(
-  notifications: SocialNotification[],
-) {
-  return notifications.filter((notification) => !notification.is_seen).length;
-}
-
-export function notificationSeenIdsForVisibleNotifications(
-  visibleNotifications: SocialNotification[],
-) {
-  return visibleNotifications
-    .filter((notification) => !notification.is_seen)
-    .map((notification) => notification.id);
 }
 
 export function NotificationBell({

@@ -26,7 +26,15 @@ export const VoiceMessage = ({
   const src = attachment.decrypted_file_url || attachment.file_url;
   const initialDuration = attachment.duration_seconds ?? attachment.duration ?? 0;
 
-  const player = useVoicePlayback(src, initialDuration);
+  const {
+    audioRef,
+    isPlaying,
+    currentTime,
+    duration,
+    progressPercent,
+    togglePlay: toggleVoicePlayback,
+    seek,
+  } = useVoicePlayback(src, initialDuration);
 
   const togglePlay = useCallback(
     async (e?: React.MouseEvent) => {
@@ -39,9 +47,9 @@ export const VoiceMessage = ({
         }
         return;
       }
-      await player.togglePlay();
+      await toggleVoicePlayback();
     },
-    [player, selectionMode, canSelect, onSelectMessage],
+    [toggleVoicePlayback, selectionMode, canSelect, onSelectMessage],
   );
 
   const handleProgressClick = useCallback(
@@ -55,7 +63,7 @@ export const VoiceMessage = ({
       }
 
       const bar = progressRef.current;
-      const dur = player.duration || initialDuration;
+      const dur = duration || initialDuration;
       if (!bar || !dur || dur <= 0) return;
 
       const rect = bar.getBoundingClientRect();
@@ -63,13 +71,12 @@ export const VoiceMessage = ({
       const percent = Math.max(0, Math.min(1, clickX / rect.width));
       const newTime = percent * dur;
 
-      player.seek(newTime);
+      seek(newTime);
     },
-    [player, initialDuration, selectionMode, canSelect, onSelectMessage],
+    [duration, initialDuration, seek, selectionMode, canSelect, onSelectMessage],
   );
 
-  const progressPercent = player.progressPercent;
-  const displayDuration = player.duration || initialDuration;
+  const displayDuration = duration || initialDuration;
 
   const playButtonClass = isOwn
     ? 'bg-sky-600 text-white hover:bg-sky-700 active:bg-sky-800'
@@ -94,10 +101,10 @@ export const VoiceMessage = ({
         type="button"
         onClick={togglePlay}
         className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full transition shadow-sm ${playButtonClass}`}
-        aria-label={player.isPlaying ? 'Пауза' : 'Воспроизвести голосовое сообщение'}
-        title={player.isPlaying ? 'Пауза' : 'Воспроизвести'}
+        aria-label={isPlaying ? 'Пауза' : 'Воспроизвести голосовое сообщение'}
+        title={isPlaying ? 'Пауза' : 'Воспроизвести'}
       >
-        <Icon name={player.isPlaying ? 'pause' : 'play'} className="h-4 w-4" filled />
+        <Icon name={isPlaying ? 'pause' : 'play'} className="h-4 w-4" filled />
       </button>
 
       <div
@@ -107,7 +114,7 @@ export const VoiceMessage = ({
         role="slider"
         aria-valuemin={0}
         aria-valuemax={Math.floor(displayDuration)}
-        aria-valuenow={Math.floor(player.currentTime)}
+        aria-valuenow={Math.floor(currentTime)}
         aria-label="Позиция воспроизведения голосового сообщения"
       >
         <div className="relative h-1.5 w-full bg-gray-300/70 rounded-full overflow-hidden">
@@ -119,7 +126,7 @@ export const VoiceMessage = ({
       </div>
 
       <div className="text-[10px] tabular-nums font-medium text-gray-500 flex-shrink-0 w-[4.5rem] text-right tracking-tight">
-        {formatDuration(player.currentTime)} / {formatDuration(displayDuration)}
+        {formatDuration(currentTime)} / {formatDuration(displayDuration)}
       </div>
 
       {onDownload && (
@@ -143,7 +150,7 @@ export const VoiceMessage = ({
         </button>
       )}
 
-      <audio ref={player.audioRef} src={src} preload="metadata" data-voice="true" />
+      <audio ref={audioRef} src={src} preload="metadata" data-voice="true" />
     </div>
   );
 };

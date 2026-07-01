@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent } from 'react';
+import { useEffect, useState, type ChangeEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { userService } from "@/shared/api/userService.js";
@@ -15,25 +15,38 @@ export function UserSearch({ className = '' }: UserSearchProps) {
     const [query, setQuery] = useState('');
     const [results, setResults] = useState<User[]>([]);
 
-    const searchUsers = async (nextQuery: string) => {
+    useEffect(() => {
+        const nextQuery = query.trim();
         if (nextQuery.length <= 2) {
-            setResults([]);
-            return;
+            return undefined;
         }
 
-        try {
-            setResults(await userService.searchUsers(nextQuery));
-        } catch (error) {
-            console.error('Ошибка поиска:', error);
-            setResults([]);
-        }
-    };
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => {
+            userService.searchUsers(nextQuery, { signal: controller.signal })
+                .then(setResults)
+                .catch(error => {
+                    if (controller.signal.aborted) {
+                        return;
+                    }
+                    console.error('Ошибка поиска:', error);
+                    setResults([]);
+                });
+        }, 250);
+
+        return () => {
+            window.clearTimeout(timeout);
+            controller.abort();
+        };
+    }, [query]);
 
     const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
         const nextQuery = event.target.value;
 
         setQuery(nextQuery);
-        void searchUsers(nextQuery);
+        if (nextQuery.trim().length <= 2) {
+            setResults([]);
+        }
     };
 
     const openUser = (userId: number) => {

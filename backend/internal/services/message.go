@@ -446,7 +446,11 @@ func LoadMessage(db *gorm.DB, messageID uint) (models.Message, error) {
 }
 
 func GetConversations(db *gorm.DB, userID uint) ([]map[string]interface{}, error) {
-	conversations, err := repository.GetConversations(db, userID)
+	return GetConversationsPage(db, userID, 0, 0)
+}
+
+func GetConversationsPage(db *gorm.DB, userID uint, limit int, offset int) ([]map[string]interface{}, error) {
+	conversations, err := repository.GetConversationsPage(db, userID, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -917,14 +921,23 @@ func uniqueMessageIDs(ids []uint) []uint {
 }
 
 func MarkConversationRead(db *gorm.DB, fromID, toID uint) error {
-	if err := repository.MarkMessagesAsRead(db, fromID, toID); err != nil {
-		return err
+	_, err := MarkConversationReadWithResult(db, fromID, toID)
+	return err
+}
+
+func MarkConversationReadWithResult(db *gorm.DB, fromID, toID uint) (int64, error) {
+	affected, err := repository.MarkMessagesAsRead(db, fromID, toID)
+	if err != nil {
+		return 0, err
+	}
+	if affected == 0 {
+		return 0, nil
 	}
 	if _, err := ForceUserActivity(db, toID); err != nil {
 		log.Printf("failed to update reader activity: %v", err)
 	}
 	InvalidateMessageCaches()
-	return nil
+	return affected, nil
 }
 
 func InvalidateMessageCaches() {

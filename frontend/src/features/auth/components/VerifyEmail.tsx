@@ -9,11 +9,11 @@ function VerifyEmail() {
     const { token } = useParams();
     const [state, setState] = useState<VerifyState>('loading');
     const [message, setMessage] = useState('Подтверждаем почту...');
+    const displayState: VerifyState = token ? state : 'error';
+    const displayMessage = token ? message : 'Ссылка подтверждения некорректна';
 
     useEffect(() => {
         if (!token) {
-            setState('error');
-            setMessage('Ссылка подтверждения некорректна');
             return;
         }
 
@@ -33,24 +33,24 @@ function VerifyEmail() {
         <div className="min-h-screen bg-[var(--app-bg)] flex items-center justify-center px-4 py-6">
             <div className="app-card w-full max-w-md p-5 text-center sm:p-8">
                 <div className={`mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full text-2xl ${
-                    state === 'success'
+                    displayState === 'success'
                         ? 'bg-emerald-100 text-emerald-700'
-                        : state === 'error'
+                        : displayState === 'error'
                             ? 'bg-red-100 text-red-700'
                             : 'bg-sky-100 text-sky-700'
                 }`}>
-                    {state === 'success' ? '✓' : state === 'error' ? '!' : '...'}
+                    {displayState === 'success' ? '✓' : displayState === 'error' ? '!' : '...'}
                 </div>
 
                 <h1 className="text-xl font-bold text-gray-800 mb-3 sm:text-2xl">
-                    {state === 'success'
+                    {displayState === 'success'
                         ? 'Email подтвержден'
-                        : state === 'error'
+                        : displayState === 'error'
                             ? 'Не удалось подтвердить email'
                             : 'Подтверждение email'}
                 </h1>
 
-                <p className="text-gray-600 mb-6">{message}</p>
+                <p className="text-gray-600 mb-6">{displayMessage}</p>
 
                 <Link
                     to="/"

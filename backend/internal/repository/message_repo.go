@@ -85,9 +85,13 @@ func GetMessageAttachmentForUser(db *gorm.DB, attachmentID, userID uint) (*model
 }
 
 func GetConversations(db *gorm.DB, userID uint) ([]map[string]interface{}, error) {
+	return GetConversationsPage(db, userID, 0, 0)
+}
+
+func GetConversationsPage(db *gorm.DB, userID uint, limit int, offset int) ([]map[string]interface{}, error) {
 	var conversations []map[string]interface{}
 
-	err := db.Raw(`
+	query := `
         WITH visible_messages AS (
             SELECT 
                 m.*,
@@ -189,8 +193,14 @@ func GetConversations(db *gorm.DB, userID uint) ([]map[string]interface{}, error
                 ON cp.user_id = ?
                 AND cp.conversation_id = lm.peer_user_id
         ORDER BY is_pinned DESC, last_message_at DESC
-    `, userID, userID, userID, userID, userID, userID, userID, userID).
-		Scan(&conversations).Error
+    `
+	args := []interface{}{userID, userID, userID, userID, userID, userID, userID, userID}
+	if limit > 0 {
+		query += " LIMIT ? OFFSET ?"
+		args = append(args, limit, offset)
+	}
+
+	err := db.Raw(query, args...).Scan(&conversations).Error
 	normalizeScannedMapValues(conversations)
 
 	return conversations, err
@@ -344,8 +354,8 @@ func DeletePinnedMessagesByMessageIDs(db *gorm.DB, messageIDs []uint) error {
 	return db.Where("message_id IN ?", messageIDs).Delete(&models.PinnedMessage{}).Error
 }
 
-func MarkMessagesAsRead(db *gorm.DB, fromID, toID uint) error {
-	return db.Model(&models.Message{}).
+func MarkMessagesAsRead(db *gorm.DB, fromID, toID uint) (int64, error) {
+	result := db.Model(&models.Message{}).
 		Where(`
 			from_id = ? AND to_id = ? AND is_read = false
 			AND NOT EXISTS (
@@ -353,7 +363,8 @@ func MarkMessagesAsRead(db *gorm.DB, fromID, toID uint) error {
 				WHERE mud.message_id = messages.id AND mud.user_id = ?
 			)
 		`, fromID, toID, toID).
-		Update("is_read", true).Error
+		Update("is_read", true)
+	return result.RowsAffected, result.Error
 }
 
 func GetMessageByID(db *gorm.DB, id uint) (*models.Message, error) {
@@ -377,6 +388,24 @@ func GetMessageByIDForUser(db *gorm.DB, id, userID uint) (*models.Message, error
 		err = hideDeletedMessageRelationsForUser(db, userID, &message)
 	}
 	return &message, err
+}
+
+func MessageVisibleToUser(db *gorm.DB, messageID, userID uint) (bool, error) {
+	if messageID == 0 || userID == 0 {
+		return false, nil
+	}
+
+	var count int64
+	err := db.Model(&models.Message{}).
+		Where("id = ? AND (from_id = ? OR to_id = ?)", messageID, userID, userID).
+		Where(`
+			NOT EXISTS (
+				SELECT 1 FROM message_user_deletions mud
+				WHERE mud.message_id = messages.id AND mud.user_id = ?
+			)
+		`, userID).
+		Count(&count).Error
+	return count > 0, err
 }
 
 func GetMessageByIDForDelete(db *gorm.DB, id uint, includeDeleted bool) (*models.Message, error) {

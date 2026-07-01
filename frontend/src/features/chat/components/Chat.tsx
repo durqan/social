@@ -501,7 +501,7 @@ function Chat() {
             return fallback || message;
         }
         return decryptMessageForDisplay(message, currentUser.id, e2eeState.localKey);
-    }, [currentUser?.id, e2eeState.localKey]);
+    }, [currentUser, e2eeState.localKey]);
 
     const encryptContentForRecipient = useCallback(async (
         content: string,
@@ -531,7 +531,7 @@ function Chat() {
             senderBundle: e2eeState.localKey,
             recipientPublicKeyBase64: publicKey,
         });
-    }, [currentUser?.id, e2eeState.localKey, e2eeState.selfEnabled]);
+    }, [currentUser, e2eeState.localKey, e2eeState.selfEnabled]);
 
     const encryptCurrentChatContent = useCallback(async (content: string) => {
         if (!content) {
@@ -615,7 +615,7 @@ function Chat() {
             height,
         });
         return withDecryptedAttachmentPreview(attachment, file, encrypted.metadata, encrypted.fields);
-    }, [currentUser?.id, e2eeState.localKey, recipientPublicKeyForUser]);
+    }, [currentUser, e2eeState.localKey, recipientPublicKeyForUser]);
 
     const uploadForwardedAttachments = useCallback(async (
         attachments: MessageAttachment[],
@@ -1197,7 +1197,7 @@ function Chat() {
         if (currentUser?.id) {
             navigate(`/users/${currentUser.id}/chat/${profileUserId}`);
         }
-    }, [currentUser?.id, navigate]);
+    }, [currentUser, navigate]);
 
     const saveEditedMessage = useCallback(async (messageId: number, content: string) => {
         const existingMessage = messages.find(message => message.id === messageId);

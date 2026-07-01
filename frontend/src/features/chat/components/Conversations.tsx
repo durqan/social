@@ -34,9 +34,13 @@ const sortConversations = (items: Conversation[]) => [...items].sort((first, sec
     return conversationTimestamp(second) - conversationTimestamp(first);
 });
 
+const conversationPageSize = 50;
+
 function Conversations() {
     const [conversations, setConversations] = useState<Conversation[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loadingMore, setLoadingMore] = useState(false);
+    const [hasMore, setHasMore] = useState(false);
     const [menu, setMenu] = useState<ConversationMenuState | null>(null);
     const [miniProfile, setMiniProfile] = useState<{ userId: number; anchorRect: DOMRect; user?: User | null } | null>(null);
     const [deletingUserId, setDeletingUserId] = useState<number | null>(null);
@@ -45,15 +49,41 @@ function Conversations() {
     const dialog = useAppDialog();
     const { currentUser } = useAuth();
     const wsService = useWebSocket();
+    const nextOffsetRef = useRef(0);
 
-    const fetchConversations = useCallback(async () => {
+    const fetchConversations = useCallback(async (mode: 'replace' | 'more' = 'replace') => {
+        const offset = mode === 'more' ? nextOffsetRef.current : 0;
+        const limit = mode === 'replace'
+            ? Math.max(conversationPageSize, nextOffsetRef.current || 0)
+            : conversationPageSize;
+        if (mode === 'more') {
+            setLoadingMore(true);
+        }
         try {
-            setConversations(sortConversations(await messageService.getConversations()));
+            const page = await messageService.getConversationsPage({ limit, offset });
+            setConversations(prev => {
+                if (mode !== 'more') {
+                    return sortConversations(page.conversations);
+                }
+                const existingIds = new Set(prev.map(conversation => conversation.user_id));
+                const nextConversations = page.conversations.filter(conversation => !existingIds.has(conversation.user_id));
+                return nextConversations.length ? sortConversations([...prev, ...nextConversations]) : prev;
+            });
+            setHasMore(page.has_more);
+            nextOffsetRef.current = page.next_offset;
         } catch (err) {
             console.error(err);
-            setConversations([]);
+            if (mode !== 'more') {
+                setConversations([]);
+                setHasMore(false);
+                nextOffsetRef.current = 0;
+            }
         } finally {
-            setLoading(false);
+            if (mode === 'more') {
+                setLoadingMore(false);
+            } else {
+                setLoading(false);
+            }
         }
     }, []);
 
@@ -254,6 +284,18 @@ function Conversations() {
                     ))
                 )}
             </div>
+            {hasMore && (
+                <div className="mt-3 flex justify-center">
+                    <button
+                        type="button"
+                        className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-200 disabled:cursor-wait disabled:opacity-60"
+                        disabled={loadingMore}
+                        onClick={() => void fetchConversations('more')}
+                    >
+                        {loadingMore ? 'Загрузка...' : 'Показать еще'}
+                    </button>
+                </div>
+            )}
             {menu?.mode === 'mobile' && selectedConversation && (
                 <button
                     type="button"

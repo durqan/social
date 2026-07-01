@@ -258,14 +258,50 @@ function normalizeConversation(conversation: Conversation): Conversation {
 }
 
 export const messageApi = {
-  async getConversations(options?: ApiCallOptions) {
-    const conversations = await apiRequest<Conversation[]>('/conversations', {
-      cacheKey: apiCacheKey('chat-list', 'conversations'),
-      signal: options?.signal,
-    });
+  async getConversations(
+    params?: {
+      limit?: number;
+      offset?: number;
+    },
+    options?: ApiCallOptions,
+  ) {
+    const query = params ? toQueryString(params) : '';
+    const conversations = await apiRequest<Conversation[]>(
+      `/conversations${query}`,
+      {
+        cacheKey: apiCacheKey(
+          'chat-list',
+          `conversations:${params?.offset ?? 0}:${params?.limit ?? 'all'}`,
+        ),
+        signal: options?.signal,
+      },
+    );
     return Array.isArray(conversations)
       ? conversations.map(normalizeConversation)
       : [];
+  },
+
+  async getConversationsPage(
+    params: {
+      limit: number;
+      offset: number;
+    },
+    options?: ApiCallOptions,
+  ) {
+    const conversations = await this.getConversations(
+      {
+        limit: params.limit + 1,
+        offset: params.offset,
+      },
+      options,
+    );
+    const hasMore = conversations.length > params.limit;
+    const page = hasMore ? conversations.slice(0, params.limit) : conversations;
+    return {
+      conversations: page,
+      has_more: hasMore,
+      next_offset: params.offset + page.length,
+    };
   },
 
   async pinConversation(conversationId: number) {

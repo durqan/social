@@ -280,8 +280,12 @@ func handleWebSocketReadReceipt(ctx context.Context, userID uint, rawPayload jso
 		return
 	}
 
-	if err := services.MarkConversationRead(dbInstance, payload.ToID, userID); err != nil {
+	affected, err := services.MarkConversationReadWithResult(dbInstance, payload.ToID, userID)
+	if err != nil {
 		log.Println("Failed to mark messages as read:", err)
+		return
+	}
+	if affected == 0 {
 		return
 	}
 
@@ -414,12 +418,12 @@ func broadcastMessageReactionUpdate(ctx context.Context, db *gorm.DB, message mo
 }
 
 func messageReactionUpdateEvent(db *gorm.DB, message models.Message, userID uint) ([]byte, bool, error) {
-	visibleMessage, err := repository.GetMessageByIDForUser(db, message.ID, userID)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, false, nil
-	}
+	visible, err := repository.MessageVisibleToUser(db, message.ID, userID)
 	if err != nil {
 		return nil, false, err
+	}
+	if !visible {
+		return nil, false, nil
 	}
 	summaries, err := repository.GetReactionSummaries(db, message.ID, userID)
 	if err != nil {
@@ -430,7 +434,7 @@ func messageReactionUpdateEvent(db *gorm.DB, message models.Message, userID uint
 		"payload": gin.H{
 			"message_id":       message.ID,
 			"conversation_id":  participantIDForMessage(message, userID),
-			"reaction_version": visibleMessage.ReactionVersion,
+			"reaction_version": message.ReactionVersion,
 			"reactions":        summaries,
 		},
 	})

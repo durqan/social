@@ -1,11 +1,10 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import { useAuth } from "@/app/providers/AuthContext.js";
 import { useWebSocket } from "@/app/providers/WebSocketContext.js";
 
 import { callService, type ActiveCall } from "@/features/call/api/callService.js";
-import { CallChatPanel } from "@/features/call/components/CallChatPanel.js";
 import { CallOverlay } from "@/features/call/components/CallOverlay.js";
 import { userService } from "@/shared/api/userService.js";
 import { getCallErrorMessage } from "@/features/call/lib/callConfig.js";
@@ -39,6 +38,10 @@ type AudioCallContextValue = {
 };
 
 const AudioCallContext = createContext<AudioCallContextValue | null>(null);
+const CallChatPanel = lazy(async () => {
+    const module = await import("@/features/call/components/CallChatPanel.js");
+    return { default: module.CallChatPanel };
+});
 
 function createCallId() {
     return globalThis.crypto?.randomUUID?.() ??
@@ -424,6 +427,7 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
             cleanupCall();
         }
     }, [
+        callTypeRef,
         cleanupCall,
         createPeerConnection,
         currentUser,
@@ -431,6 +435,7 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
         setCallPeer,
         setCallStatus,
         setCurrentCallType,
+        statusRef,
         wsService,
     ]);
 
@@ -572,11 +577,13 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
             cleanupCall();
         }
     }, [
+        callTypeRef,
         cleanupCall,
         createPeerConnection,
         flushPendingIce,
         getLocalStream,
         hydrateIncomingCall,
+        peerUserIdRef,
         setCallStatus,
         wsService,
     ]);
@@ -590,7 +597,7 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
         }
 
         cleanupCall();
-    }, [cleanupCall, wsService]);
+    }, [cleanupCall, peerUserIdRef, wsService]);
 
     const endCall = useCallback(() => {
         const toId = peerUserIdRef.current;
@@ -601,7 +608,7 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
         }
 
         cleanupCall();
-    }, [cleanupCall, wsService]);
+    }, [cleanupCall, peerUserIdRef, wsService]);
 
     useEffect(() => {
         const handleMessage = async (event: WsEvent) => {
@@ -762,10 +769,12 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
         flushPendingIce,
         isCallChatOpenRef,
         loadPeerName,
+        peerUserIdRef,
         setCallChatUnread,
         setCallPeer,
         setCallStatus,
         setCurrentCallType,
+        statusRef,
         wsService,
     ]);
 
@@ -965,13 +974,29 @@ export const AudioCallProvider = ({ children }: { children: ReactNode }) => {
             />
 
             {isCallChatOpen && peerUserId && currentUser && (
-                <CallChatPanel
-                    peerUserId={peerUserId}
-                    peerName={peerName}
-                    currentUser={currentUser}
-                    onClose={closeCallChat}
-                    onSeen={markCallChatSeen}
-                />
+                <Suspense
+                    fallback={(
+                        <div
+                            className="fixed inset-0 z-[60] bg-black/45 sm:bg-black/30"
+                            role="status"
+                            aria-label="Загрузка чата звонка"
+                        >
+                            <section className="absolute inset-x-0 bottom-0 flex max-h-[78vh] min-h-[420px] flex-col overflow-hidden rounded-t-2xl bg-[var(--app-chat-bg)] shadow-2xl sm:inset-y-0 sm:left-auto sm:right-0 sm:h-full sm:max-h-none sm:w-[390px] sm:rounded-none">
+                                <div className="flex flex-1 items-center justify-center text-[var(--app-text-secondary)]">
+                                    <span className="chat-composer-spinner" aria-hidden="true" />
+                                </div>
+                            </section>
+                        </div>
+                    )}
+                >
+                    <CallChatPanel
+                        peerUserId={peerUserId}
+                        peerName={peerName}
+                        currentUser={currentUser}
+                        onClose={closeCallChat}
+                        onSeen={markCallChatSeen}
+                    />
+                </Suspense>
             )}
         </AudioCallContext.Provider>
     );

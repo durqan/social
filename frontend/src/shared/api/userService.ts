@@ -33,8 +33,11 @@ export const userService = {
         })).map(normalizeUser);
     },
 
-    async searchUsers(query: string): Promise<User[]> {
-        return (await request.get<User[]>('/users/search', { params: { q: query } })).map(normalizeUser);
+    async searchUsers(query: string, options?: { signal?: AbortSignal }): Promise<User[]> {
+        return (await request.get<User[]>('/users/search', {
+            params: { q: query },
+            signal: options?.signal,
+        })).map(normalizeUser);
     },
 
     async updateUser(userId: number | string, data: UpdateUserData): Promise<User> {

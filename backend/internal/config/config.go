@@ -21,6 +21,11 @@ const (
 	defaultRedisPort     = "6379"
 	defaultRedisPassword = ""
 	defaultRedisDB       = 0
+
+	defaultDBMaxOpenConns       = 25
+	defaultDBMaxIdleConns       = 25
+	defaultDBConnMaxLifetimeMin = 30
+	defaultDBConnMaxIdleTimeMin = 5
 )
 
 type Config struct {
@@ -35,6 +40,11 @@ type Config struct {
 	RedisPort     string
 	RedisPassword string
 	RedisDB       int
+
+	DBMaxOpenConns       int
+	DBMaxIdleConns       int
+	DBConnMaxLifetimeMin int
+	DBConnMaxIdleTimeMin int
 }
 
 var (
@@ -59,6 +69,11 @@ func Load() Config {
 			RedisPort:     getEnv("REDIS_PORT", defaultRedisPort),
 			RedisPassword: getEnv("REDIS_PASSWORD", defaultRedisPassword),
 			RedisDB:       getEnvInt("REDIS_DB", defaultRedisDB),
+
+			DBMaxOpenConns:       getEnvInt("DB_MAX_OPEN_CONNS", defaultDBMaxOpenConns),
+			DBMaxIdleConns:       getEnvInt("DB_MAX_IDLE_CONNS", defaultDBMaxIdleConns),
+			DBConnMaxLifetimeMin: getEnvInt("DB_CONN_MAX_LIFETIME_MINUTES", defaultDBConnMaxLifetimeMin),
+			DBConnMaxIdleTimeMin: getEnvInt("DB_CONN_MAX_IDLE_TIME_MINUTES", defaultDBConnMaxIdleTimeMin),
 		}
 
 		validateSecurity(cached)

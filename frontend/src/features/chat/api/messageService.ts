@@ -8,6 +8,12 @@ export type PaginatedMessages = {
     has_more: boolean;
 };
 
+export type ConversationPage = {
+    conversations: Conversation[];
+    has_more: boolean;
+    next_offset: number;
+};
+
 type PinnedMessageResponse = {
     pinned_message: PinnedMessage | null;
 };
@@ -107,9 +113,23 @@ export const messageService = {
     async importLinkPreviewVideo(messageId: number): Promise<Message> {
         return request.post<Message>(`/messages/${messageId}/link-preview/import-video`);
     },
-    async getConversations(): Promise<Conversation[]> {
-        const conversations = await request.get<Conversation[]>('/conversations');
+    async getConversations(params?: { limit?: number; offset?: number }): Promise<Conversation[]> {
+        const conversations = await request.get<Conversation[]>('/conversations', { params });
         return Array.isArray(conversations) ? conversations : [];
+    },
+
+    async getConversationsPage(params: { limit: number; offset: number }): Promise<ConversationPage> {
+        const conversations = await this.getConversations({
+            limit: params.limit + 1,
+            offset: params.offset,
+        });
+        const hasMore = conversations.length > params.limit;
+        const page = hasMore ? conversations.slice(0, params.limit) : conversations;
+        return {
+            conversations: page,
+            has_more: hasMore,
+            next_offset: params.offset + page.length,
+        };
     },
 
     async pinConversation(conversationId: number): Promise<void> {

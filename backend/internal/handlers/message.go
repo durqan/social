@@ -237,7 +237,21 @@ func GetConversations(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		conversations, err := services.GetConversations(db, userID)
+		limit := 0
+		offset := 0
+		if c.Query("limit") != "" || c.Query("offset") != "" {
+			var ok bool
+			limit, ok = intQuery(c, "limit", 50, 1, 100)
+			if !ok {
+				return
+			}
+			offset, ok = intQuery(c, "offset", 0, 0, 1000000)
+			if !ok {
+				return
+			}
+		}
+
+		conversations, err := services.GetConversationsPage(db, userID, limit, offset)
 		if err != nil {
 			c.JSON(500, gin.H{"error": "failed to get conversations"})
 			return
@@ -724,13 +738,16 @@ func MarkMessagesAsRead(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		if err := services.MarkConversationRead(db, fromID, userID); err != nil {
+		affected, err := services.MarkConversationReadWithResult(db, fromID, userID)
+		if err != nil {
 			c.JSON(500, gin.H{"error": "failed to mark as read"})
 			return
 		}
-		sendMessageReadReceipt(c.Request.Context(), userID, fromID)
-		sendConversationReadSync(c.Request.Context(), userID, fromID)
-		enqueueMessageReadSync(db, userID, fromID)
+		if affected > 0 {
+			sendMessageReadReceipt(c.Request.Context(), userID, fromID)
+			sendConversationReadSync(c.Request.Context(), userID, fromID)
+			enqueueMessageReadSync(db, userID, fromID)
+		}
 
 		c.JSON(200, gin.H{"message": "marked as read"})
 	}

@@ -22,23 +22,31 @@ export const PreviewVoiceMessage = ({
 }: PreviewVoiceMessageProps) => {
   const progressRef = useRef<HTMLDivElement>(null);
 
-  const player = useVoicePlayback(src, durationSeconds);
+  const {
+    audioRef,
+    isPlaying,
+    currentTime,
+    duration,
+    progressPercent,
+    togglePlay,
+    seek,
+  } = useVoicePlayback(src, durationSeconds);
 
   const handleProgressClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       const bar = progressRef.current;
-      const dur = player.duration || durationSeconds;
+      const dur = duration || durationSeconds;
       if (!bar || !dur || dur <= 0) return;
 
       const rect = bar.getBoundingClientRect();
       const clickX = e.clientX - rect.left;
       const percent = Math.max(0, Math.min(1, clickX / rect.width));
-      player.seek(percent * dur);
+      seek(percent * dur);
     },
-    [player, durationSeconds],
+    [duration, durationSeconds, seek],
   );
 
-  const displayDuration = player.duration || durationSeconds;
+  const displayDuration = duration || durationSeconds;
   const sizeLabel = formatFileSize(sizeBytes);
 
   return (
@@ -47,13 +55,13 @@ export const PreviewVoiceMessage = ({
       <div className="flex items-center gap-3">
         <button
           type="button"
-          onClick={() => void player.togglePlay()}
+          onClick={() => void togglePlay()}
           className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-sky-600 text-white shadow-sm transition hover:bg-sky-700 active:bg-sky-800"
-          aria-label={player.isPlaying ? 'Пауза' : 'Воспроизвести запись'}
-          title={player.isPlaying ? 'Пауза' : 'Воспроизвести'}
+          aria-label={isPlaying ? 'Пауза' : 'Воспроизвести запись'}
+          title={isPlaying ? 'Пауза' : 'Воспроизвести'}
           disabled={sending}
         >
-          <Icon name={player.isPlaying ? 'pause' : 'play'} className="h-3.5 w-3.5" filled />
+          <Icon name={isPlaying ? 'pause' : 'play'} className="h-3.5 w-3.5" filled />
         </button>
 
         <div
@@ -63,19 +71,19 @@ export const PreviewVoiceMessage = ({
           role="slider"
           aria-valuemin={0}
           aria-valuemax={Math.floor(displayDuration)}
-          aria-valuenow={Math.floor(player.currentTime)}
+          aria-valuenow={Math.floor(currentTime)}
           aria-label="Позиция воспроизведения записанного голосового"
         >
           <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-gray-300/70">
             <div
               className="absolute left-0 top-0 h-1.5 rounded-full bg-sky-500 transition-[width] duration-75"
-              style={{ width: `${player.progressPercent}%` }}
+              style={{ width: `${progressPercent}%` }}
             />
           </div>
         </div>
 
         <div className="w-[5.5rem] flex-shrink-0 text-right text-[10px] tabular-nums font-medium tracking-tight text-gray-500">
-          {formatDuration(player.currentTime)} / {formatDuration(displayDuration)}
+          {formatDuration(currentTime)} / {formatDuration(displayDuration)}
         </div>
       </div>
 
@@ -109,7 +117,7 @@ export const PreviewVoiceMessage = ({
         </button>
       </div>
 
-      <audio ref={player.audioRef} src={src} preload="metadata" data-voice="true" />
+      <audio ref={audioRef} src={src} preload="metadata" data-voice="true" />
     </div>
   );
 };

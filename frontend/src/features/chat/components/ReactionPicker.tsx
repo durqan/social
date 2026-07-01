@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-export const quickReactions = ['👍', '❤️', '😂', '😮', '😢', '🔥'] as const;
+const quickReactions = ['👍', '❤️', '😂', '😮', '😢', '🔥'] as const;
 
 interface ReactionPickerProps {
     anchorRect: DOMRect;

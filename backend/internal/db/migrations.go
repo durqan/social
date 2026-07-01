@@ -50,6 +50,9 @@ func ensurePerformanceIndexes(database *gorm.DB) error {
 		"idx_messages_to_unread_from_active ON messages (to_id, is_read, from_id) WHERE deleted_at IS NULL",
 		"idx_message_attachments_message_type_encryption ON message_attachments (message_id, file_type, encryption_version)",
 		"idx_message_reactions_message_created_id ON message_reactions (message_id, created_at ASC, id ASC)",
+		"idx_notification_outboxes_status_next_attempt_id ON notification_outboxes (status, next_attempt_at ASC, id ASC) WHERE status IN ('pending', 'failed')",
+		"idx_call_logs_status_expires_id ON call_logs (status, expires_at ASC, id ASC) WHERE expires_at IS NOT NULL",
+		"idx_call_logs_status_updated_id ON call_logs (status, updated_at ASC, id ASC)",
 	}
 	for _, index := range indexes {
 		if err := createIndexIfMissing(database, index); err != nil {

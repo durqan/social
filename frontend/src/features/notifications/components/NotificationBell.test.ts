@@ -4,7 +4,7 @@ import {
   countUnseenNotificationBadge,
   getNotificationTitle,
   notificationSeenIdsForVisibleNotifications,
-} from "./NotificationBell";
+} from "@/features/notifications/lib/notificationDisplay.js";
 import type { SocialNotification } from "@/shared/types/domain.js";
 
 function notification(

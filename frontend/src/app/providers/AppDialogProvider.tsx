@@ -234,9 +234,10 @@ export function AppDialog({ dialog, onCancel, onConfirm }: AppDialogProps) {
     const titleId = useId();
     const messageId = useId();
     const confirmButtonRef = useRef<HTMLButtonElement>(null);
+    const dialogId = dialog?.id;
 
     useEffect(() => {
-        if (!dialog) {
+        if (dialogId == null) {
             return;
         }
 
@@ -255,7 +256,7 @@ export function AppDialog({ dialog, onCancel, onConfirm }: AppDialogProps) {
             document.body.style.overflow = previousOverflow;
             activeElement?.focus();
         };
-    }, [dialog?.id]);
+    }, [dialogId]);
 
     useEffect(() => {
         if (!dialog) {
