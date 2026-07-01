@@ -11,7 +11,6 @@ import {
   Alert,
   FlatList,
   Image,
-  Keyboard,
   Modal,
   PermissionsAndroid,
   Platform,
@@ -20,10 +19,8 @@ import {
   Text,
   TextInput,
   View,
-  useWindowDimensions,
 } from 'react-native';
 import Clipboard from '@react-native-clipboard/clipboard';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type {
   GestureResponderEvent,
   LayoutChangeEvent,
@@ -158,21 +155,26 @@ type SendingState =
   | 'uploadingVideoNote'
   | 'sending'
   | null;
+type MessageListMetrics = {
+  contentHeight: number;
+  layoutHeight: number;
+  offsetY: number;
+};
+type PendingLatestScroll = {
+  reason: ScrollToLatestReason;
+  animated: boolean;
+};
 
 const COMPOSER_INPUT_MIN_HEIGHT = 44;
 const COMPOSER_INPUT_MAX_HEIGHT = 112;
-const KEYBOARD_INSET_UPDATE_DELAY_MS = 80;
 const MESSAGE_PAGE_SIZE = 50;
 const LOAD_OLDER_THRESHOLD = 56;
-const SCROLL_TO_LATEST_RETRY_DELAY_MS = 80;
-const SCROLL_TO_LATEST_SETTLE_DELAY_MS = 120;
-const SCROLL_TO_LATEST_MAX_ATTEMPTS = 20;
-const SCROLL_TO_LATEST_BOTTOM_THRESHOLD = 12;
+const NEAR_LATEST_THRESHOLD = 96;
 const COPY_NOTICE_TIMEOUT_MS = 1600;
 const REMOTE_TYPING_TIMEOUT_MS = 2200;
 const LOCAL_TYPING_STOP_DELAY_MS = 1400;
 const LONG_PRESS_DELAY_MS = 260;
-const SCROLL_EVENT_THROTTLE_MS = 80;
+const SCROLL_EVENT_THROTTLE_MS = 16;
 const voiceAudioSet = {
   AudioEncoderAndroid: AudioEncoderAndroidType.AAC,
   OutputFormatAndroid: OutputFormatAndroidType.MPEG_4,
@@ -271,8 +273,6 @@ function chatErrorMessage(error: unknown) {
 export default function ChatScreen({ route, navigation }: Props) {
   const { user } = useAuth();
   const themeColors = useThemeColors();
-  const windowDimensions = useWindowDimensions();
-  const safeAreaInsets = useSafeAreaInsets();
   const themed = useMemo(
     () => createChatThemeStyles(themeColors),
     [themeColors],
@@ -285,19 +285,15 @@ export default function ChatScreen({ route, navigation }: Props) {
   const listRef = useRef<FlatList<Message>>(null);
   const hasLoadedRef = useRef(false);
   const isLoadingOlderRef = useRef(false);
-  const pendingScrollToLatestReasonRef = useRef<ScrollToLatestReason | null>(
-    null,
-  );
+  const pendingLatestScrollRef = useRef<PendingLatestScroll | null>(null);
+  const pendingScrollFrameRef = useRef<number | null>(null);
   const isInitialScrollPendingRef = useRef(false);
   const isUserNearBottomRef = useRef(true);
-  const scrollToEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
-  const scrollToLatestAttemptCountRef = useRef(0);
-  const messageListContentHeightRef = useRef(0);
-  const messageListLayoutHeightRef = useRef(0);
-  const messageListScrollOffsetYRef = useRef(0);
-  const lastScrollToLatestContentHeightRef = useRef(0);
+  const messageListMetricsRef = useRef<MessageListMetrics>({
+    contentHeight: 0,
+    layoutHeight: 0,
+    offsetY: 0,
+  });
   const draftRef = useRef<{
     input: string;
     pendingImages: LocalChatImage[];
@@ -316,13 +312,6 @@ export default function ChatScreen({ route, navigation }: Props) {
     null,
   );
   const previousNetworkConnectedRef = useRef(networkConnected);
-  const baseChatLayoutHeightRef = useRef(0);
-  const chatLayoutHeightRef = useRef(0);
-  const androidKeyboardHeightRef = useRef(0);
-  const keyboardInsetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
-  const keyboardVisibleRef = useRef(false);
   const screenMountedRef = useRef(true);
   const chatSessionSeqRef = useRef(0);
   const loadMessagesSeqRef = useRef(0);
@@ -354,8 +343,6 @@ export default function ChatScreen({ route, navigation }: Props) {
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [hasLoaded, setHasLoaded] = useState(false);
-  const [maintainScrollPositionEnabled, setMaintainScrollPositionEnabled] =
-    useState(false);
   const [sending, setSending] = useState<SendingState>(null);
   const [uploadProgress, setUploadProgress] = useState<{
     current: number;
@@ -382,7 +369,6 @@ export default function ChatScreen({ route, navigation }: Props) {
   const [otherTyping, setOtherTyping] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copyNotice, setCopyNotice] = useState<string | null>(null);
-  const [androidKeyboardInset, setAndroidKeyboardInset] = useState(0);
   const [e2eeState, setE2eeState] = useState<ChatE2EEState>({
     loading: true,
     selfEnabled: false,
@@ -461,25 +447,24 @@ export default function ChatScreen({ route, navigation }: Props) {
     loadPinnedSeqRef.current += 1;
     hasLoadedRef.current = false;
     isLoadingOlderRef.current = false;
-    pendingScrollToLatestReasonRef.current = null;
+    pendingLatestScrollRef.current = null;
+    if (pendingScrollFrameRef.current !== null) {
+      cancelAnimationFrame(pendingScrollFrameRef.current);
+      pendingScrollFrameRef.current = null;
+    }
     isInitialScrollPendingRef.current = false;
     isUserNearBottomRef.current = true;
-    scrollToLatestAttemptCountRef.current = 0;
-    messageListContentHeightRef.current = 0;
-    messageListLayoutHeightRef.current = 0;
-    messageListScrollOffsetYRef.current = 0;
-    lastScrollToLatestContentHeightRef.current = 0;
-    if (scrollToEndTimerRef.current) {
-      clearTimeout(scrollToEndTimerRef.current);
-      scrollToEndTimerRef.current = null;
-    }
+    messageListMetricsRef.current = {
+      contentHeight: 0,
+      layoutHeight: 0,
+      offsetY: 0,
+    };
     setMessages([]);
     setHasLoaded(false);
     setHasMore(true);
     setLoading(false);
     setRefreshing(false);
     setLoadingOlder(false);
-    setMaintainScrollPositionEnabled(false);
     setPinnedMessage(null);
     setSelectedMessage(null);
     setEditingMessage(null);
@@ -488,98 +473,6 @@ export default function ChatScreen({ route, navigation }: Props) {
     setShowScrollToLatest(false);
     setNewMessagesBelow(false);
   }, [otherUserId, user?.id]);
-
-  const applyAndroidKeyboardInset = useCallback(() => {
-    if (Platform.OS !== 'android') {
-      return;
-    }
-
-    if (!keyboardVisibleRef.current || androidKeyboardHeightRef.current <= 0) {
-      setAndroidKeyboardInset(0);
-      return;
-    }
-
-    const baseLayoutHeight =
-      baseChatLayoutHeightRef.current || chatLayoutHeightRef.current;
-    const currentLayoutHeight = chatLayoutHeightRef.current || baseLayoutHeight;
-    const resizeDelta = Math.max(0, baseLayoutHeight - currentLayoutHeight);
-    const nextInset = Math.max(
-      0,
-      Math.ceil(
-        androidKeyboardHeightRef.current - resizeDelta - safeAreaInsets.bottom,
-      ),
-    );
-
-    setAndroidKeyboardInset(previous =>
-      Math.abs(previous - nextInset) > 1 ? nextInset : previous,
-    );
-  }, [safeAreaInsets.bottom]);
-
-  const handleChatLayout = useCallback(
-    (event: LayoutChangeEvent) => {
-      const { height } = event.nativeEvent.layout;
-      chatLayoutHeightRef.current = height;
-
-      if (
-        !keyboardVisibleRef.current ||
-        height > baseChatLayoutHeightRef.current
-      ) {
-        baseChatLayoutHeightRef.current = height;
-      }
-
-      requestAnimationFrame(applyAndroidKeyboardInset);
-    },
-    [applyAndroidKeyboardInset],
-  );
-
-  useEffect(() => {
-    if (Platform.OS !== 'android') {
-      return;
-    }
-
-    requestAnimationFrame(applyAndroidKeyboardInset);
-  }, [
-    applyAndroidKeyboardInset,
-    windowDimensions.height,
-    windowDimensions.width,
-  ]);
-
-  useEffect(() => {
-    if (Platform.OS !== 'android') {
-      return undefined;
-    }
-
-    const showSubscription = Keyboard.addListener('keyboardDidShow', event => {
-      keyboardVisibleRef.current = true;
-      androidKeyboardHeightRef.current = event.endCoordinates.height;
-      if (keyboardInsetTimerRef.current) {
-        clearTimeout(keyboardInsetTimerRef.current);
-      }
-      requestAnimationFrame(applyAndroidKeyboardInset);
-      keyboardInsetTimerRef.current = setTimeout(
-        applyAndroidKeyboardInset,
-        KEYBOARD_INSET_UPDATE_DELAY_MS,
-      );
-    });
-    const hideSubscription = Keyboard.addListener('keyboardDidHide', () => {
-      keyboardVisibleRef.current = false;
-      androidKeyboardHeightRef.current = 0;
-      if (keyboardInsetTimerRef.current) {
-        clearTimeout(keyboardInsetTimerRef.current);
-        keyboardInsetTimerRef.current = null;
-      }
-      setAndroidKeyboardInset(0);
-    });
-
-    return () => {
-      if (keyboardInsetTimerRef.current) {
-        clearTimeout(keyboardInsetTimerRef.current);
-        keyboardInsetTimerRef.current = null;
-      }
-      showSubscription.remove();
-      hideSubscription.remove();
-    };
-  }, [applyAndroidKeyboardInset]);
 
   useEffect(() => {
     if (!copyNotice) {
@@ -595,9 +488,9 @@ export default function ChatScreen({ route, navigation }: Props) {
       if (recordingMaxTimerRef.current) {
         clearTimeout(recordingMaxTimerRef.current);
       }
-      if (scrollToEndTimerRef.current) {
-        clearTimeout(scrollToEndTimerRef.current);
-        scrollToEndTimerRef.current = null;
+      if (pendingScrollFrameRef.current !== null) {
+        cancelAnimationFrame(pendingScrollFrameRef.current);
+        pendingScrollFrameRef.current = null;
       }
       Sound.removeRecordBackListener();
       Sound.removePlaybackEndListener();
@@ -617,104 +510,25 @@ export default function ChatScreen({ route, navigation }: Props) {
     };
   }, [otherUserId]);
 
-  const isMessageListAtLatest = useCallback(() => {
-    const contentHeight = messageListContentHeightRef.current;
-    const layoutHeight = messageListLayoutHeightRef.current;
-
-    if (!contentHeight || !layoutHeight || contentHeight <= layoutHeight) {
-      return true;
+  const scrollToLatestMessage = useCallback((animated = hasLoadedRef.current) => {
+    if (isLoadingOlderRef.current) {
+      return;
     }
 
-    const distanceFromBottom =
-      contentHeight -
-      (messageListScrollOffsetYRef.current + layoutHeight);
-    return distanceFromBottom <= SCROLL_TO_LATEST_BOTTOM_THRESHOLD;
+    if (pendingScrollFrameRef.current !== null) {
+      cancelAnimationFrame(pendingScrollFrameRef.current);
+    }
+
+    pendingScrollFrameRef.current = requestAnimationFrame(() => {
+      pendingScrollFrameRef.current = null;
+      listRef.current?.scrollToEnd({ animated });
+      pendingLatestScrollRef.current = null;
+      isInitialScrollPendingRef.current = false;
+      isUserNearBottomRef.current = true;
+      setShowScrollToLatest(false);
+      setNewMessagesBelow(false);
+    });
   }, []);
-
-  const scrollToLatestMessage = useCallback(
-    (animated = hasLoadedRef.current) => {
-      const reason = pendingScrollToLatestReasonRef.current;
-      if (
-        !reason ||
-        isLoadingOlderRef.current ||
-        (reason === 'incoming_message' && !isUserNearBottomRef.current)
-      ) {
-        pendingScrollToLatestReasonRef.current = null;
-        return;
-      }
-
-      setMaintainScrollPositionEnabled(false);
-
-      if (scrollToEndTimerRef.current) {
-        clearTimeout(scrollToEndTimerRef.current);
-        scrollToEndTimerRef.current = null;
-      }
-
-      const finishScroll = () => {
-        pendingScrollToLatestReasonRef.current = null;
-        isInitialScrollPendingRef.current = false;
-        isUserNearBottomRef.current = true;
-        setShowScrollToLatest(false);
-        setNewMessagesBelow(false);
-        scrollToLatestAttemptCountRef.current = 0;
-        lastScrollToLatestContentHeightRef.current =
-          messageListContentHeightRef.current;
-        setMaintainScrollPositionEnabled(true);
-      };
-
-      const scheduleRetry = () => {
-        if (
-          scrollToLatestAttemptCountRef.current >=
-          SCROLL_TO_LATEST_MAX_ATTEMPTS
-        ) {
-          finishScroll();
-          return;
-        }
-
-        scrollToLatestAttemptCountRef.current += 1;
-        scrollToEndTimerRef.current = setTimeout(() => {
-          scrollToEndTimerRef.current = null;
-          scrollToLatestMessage(animated);
-        }, SCROLL_TO_LATEST_RETRY_DELAY_MS);
-      };
-
-      const list = listRef.current;
-      const contentIsMeasured =
-        messagesRef.current.length === 0 ||
-        (messageListContentHeightRef.current > 0 &&
-          messageListLayoutHeightRef.current > 0);
-
-      if (!list || !contentIsMeasured) {
-        scheduleRetry();
-        return;
-      }
-
-      const scroll = () => {
-        listRef.current?.scrollToEnd({ animated });
-      };
-      const contentHeightBeforeScroll = messageListContentHeightRef.current;
-
-      requestAnimationFrame(scroll);
-      scrollToEndTimerRef.current = setTimeout(() => {
-        scroll();
-        requestAnimationFrame(scroll);
-        const contentHeightChanged =
-          messageListContentHeightRef.current !== contentHeightBeforeScroll ||
-          messageListContentHeightRef.current !==
-            lastScrollToLatestContentHeightRef.current;
-        lastScrollToLatestContentHeightRef.current =
-          messageListContentHeightRef.current;
-        scrollToEndTimerRef.current = null;
-
-        if (!contentHeightChanged && isMessageListAtLatest()) {
-          finishScroll();
-        } else {
-          scheduleRetry();
-        }
-      }, SCROLL_TO_LATEST_SETTLE_DELAY_MS);
-    },
-    [isMessageListAtLatest, messagesRef],
-  );
 
   const requestScrollToLatest = useCallback(
     (reason: ScrollToLatestReason, animated = hasLoadedRef.current) => {
@@ -726,13 +540,9 @@ export default function ChatScreen({ route, navigation }: Props) {
         return;
       }
 
-      pendingScrollToLatestReasonRef.current = reason;
-      scrollToLatestAttemptCountRef.current = 0;
-      lastScrollToLatestContentHeightRef.current =
-        messageListContentHeightRef.current;
-      scrollToLatestMessage(animated);
+      pendingLatestScrollRef.current = { reason, animated };
     },
-    [scrollToLatestMessage],
+    [],
   );
 
   const decryptChatMessages = useCallback(
@@ -1079,12 +889,14 @@ export default function ChatScreen({ route, navigation }: Props) {
         }
 
         isInitialScrollPendingRef.current = shouldInitialScroll;
-        pendingScrollToLatestReasonRef.current = shouldInitialScroll
-          ? 'initial_load'
-          : null;
-        scrollToLatestAttemptCountRef.current = 0;
-        messageListContentHeightRef.current = 0;
-        setMaintainScrollPositionEnabled(!shouldInitialScroll);
+        pendingLatestScrollRef.current = null;
+        if (shouldInitialScroll) {
+          messageListMetricsRef.current = {
+            ...messageListMetricsRef.current,
+            contentHeight: 0,
+            offsetY: 0,
+          };
+        }
         hasMoreRef.current = response.has_more;
         setHasMore(response.has_more);
         setMessages(previous =>
@@ -1093,8 +905,11 @@ export default function ChatScreen({ route, navigation }: Props) {
             : displayMessages,
         );
 
-        if (shouldInitialScroll) {
+        if (shouldInitialScroll && displayMessages.length) {
           requestScrollToLatest('initial_load', false);
+        } else if (shouldInitialScroll) {
+          isInitialScrollPendingRef.current = false;
+          isUserNearBottomRef.current = true;
         }
 
         markConversationRead().catch(() => undefined);
@@ -1148,15 +963,14 @@ export default function ChatScreen({ route, navigation }: Props) {
       !hasMoreRef.current ||
       !oldestMessage ||
       isInitialScrollPendingRef.current ||
-      pendingScrollToLatestReasonRef.current === 'initial_load' ||
+      pendingLatestScrollRef.current?.reason === 'initial_load' ||
       refreshing
     ) {
       return;
     }
 
     isLoadingOlderRef.current = true;
-    pendingScrollToLatestReasonRef.current = null;
-    setMaintainScrollPositionEnabled(true);
+    pendingLatestScrollRef.current = null;
     setLoadingOlder(true);
 
     try {
@@ -1209,15 +1023,19 @@ export default function ChatScreen({ route, navigation }: Props) {
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       const { contentOffset, contentSize, layoutMeasurement } =
         event.nativeEvent;
-      messageListScrollOffsetYRef.current = contentOffset.y;
-      messageListContentHeightRef.current = contentSize.height;
-      messageListLayoutHeightRef.current = layoutMeasurement.height;
+      messageListMetricsRef.current = {
+        contentHeight: contentSize.height,
+        layoutHeight: layoutMeasurement.height,
+        offsetY: contentOffset.y,
+      };
 
       const distanceFromBottom =
         contentSize.height - (contentOffset.y + layoutMeasurement.height);
-      const nearBottom = distanceFromBottom <= 96;
+      const nearBottom =
+        contentSize.height <= layoutMeasurement.height ||
+        distanceFromBottom <= NEAR_LATEST_THRESHOLD;
       isUserNearBottomRef.current = nearBottom;
-      setShowScrollToLatest(!nearBottom);
+      setShowScrollToLatest(!nearBottom && messagesRef.current.length > 0);
       if (nearBottom) {
         setNewMessagesBelow(false);
       }
@@ -1232,25 +1050,27 @@ export default function ChatScreen({ route, navigation }: Props) {
 
       loadOlderMessages().catch(() => undefined);
     },
-    [loadOlderMessages],
+    [loadOlderMessages, messagesRef],
   );
 
   const scrollToLatestFromButton = useCallback(() => {
+    pendingLatestScrollRef.current = null;
     setShowScrollToLatest(false);
     setNewMessagesBelow(false);
     isUserNearBottomRef.current = true;
-    pendingScrollToLatestReasonRef.current = 'incoming_message';
-    scrollToLatestAttemptCountRef.current = 0;
     scrollToLatestMessage(true);
   }, [scrollToLatestMessage]);
 
   const handleMessageListLayout = useCallback(
     (event: LayoutChangeEvent) => {
-      messageListLayoutHeightRef.current = event.nativeEvent.layout.height;
-      if (pendingScrollToLatestReasonRef.current && !isLoadingOlderRef.current) {
-        scrollToLatestMessage(
-          pendingScrollToLatestReasonRef.current !== 'initial_load',
-        );
+      messageListMetricsRef.current = {
+        ...messageListMetricsRef.current,
+        layoutHeight: event.nativeEvent.layout.height,
+      };
+
+      const pending = pendingLatestScrollRef.current;
+      if (pending && !isLoadingOlderRef.current) {
+        scrollToLatestMessage(pending.animated);
         return;
       }
 
@@ -1260,8 +1080,6 @@ export default function ChatScreen({ route, navigation }: Props) {
         !isLoadingOlderRef.current &&
         messagesRef.current.length > 0
       ) {
-        pendingScrollToLatestReasonRef.current = 'incoming_message';
-        scrollToLatestAttemptCountRef.current = 0;
         scrollToLatestMessage(false);
       }
     },
@@ -1270,12 +1088,16 @@ export default function ChatScreen({ route, navigation }: Props) {
 
   const handleMessageListContentSizeChange = useCallback(
     (_contentWidth: number, contentHeight: number) => {
-      const previousContentHeight = messageListContentHeightRef.current;
-      messageListContentHeightRef.current = contentHeight;
-      if (pendingScrollToLatestReasonRef.current && !isLoadingOlderRef.current) {
-        scrollToLatestMessage(
-          pendingScrollToLatestReasonRef.current !== 'initial_load',
-        );
+      const previousContentHeight =
+        messageListMetricsRef.current.contentHeight;
+      messageListMetricsRef.current = {
+        ...messageListMetricsRef.current,
+        contentHeight,
+      };
+
+      const pending = pendingLatestScrollRef.current;
+      if (pending && !isLoadingOlderRef.current) {
+        scrollToLatestMessage(pending.animated);
         return;
       }
 
@@ -1286,26 +1108,11 @@ export default function ChatScreen({ route, navigation }: Props) {
         contentHeight > previousContentHeight &&
         messagesRef.current.length > 0
       ) {
-        pendingScrollToLatestReasonRef.current = 'incoming_message';
-        scrollToLatestAttemptCountRef.current = 0;
         scrollToLatestMessage(true);
       }
     },
     [messagesRef, scrollToLatestMessage],
   );
-
-  useEffect(() => {
-    if (
-      pendingScrollToLatestReasonRef.current &&
-      !isLoadingOlderRef.current &&
-      messages.length > 0
-    ) {
-      scrollToLatestAttemptCountRef.current = 0;
-      scrollToLatestMessage(
-        pendingScrollToLatestReasonRef.current !== 'initial_load',
-      );
-    }
-  }, [messages.length, scrollToLatestMessage]);
 
   const loadPinnedMessage = useCallback(async () => {
     const sessionSeq = chatSessionSeqRef.current;
@@ -1641,20 +1448,24 @@ export default function ChatScreen({ route, navigation }: Props) {
           if (!isCurrentChatSession(sessionSeq)) {
             return;
           }
-          setMessages(previous => {
-            if (previous.some(item => item.id === displayMessage.id)) {
-              return previous;
-            }
-            if (displayMessage.from_id === user?.id) {
-              pendingScrollToLatestReasonRef.current = 'own_message';
-            } else if (isUserNearBottomRef.current) {
-              pendingScrollToLatestReasonRef.current = 'incoming_message';
-            } else {
-              setShowScrollToLatest(true);
-              setNewMessagesBelow(true);
-            }
-            return [...previous, displayMessage];
-          });
+          if (
+            messagesRef.current.some(item => item.id === displayMessage.id)
+          ) {
+            return;
+          }
+          if (displayMessage.from_id === user?.id) {
+            requestScrollToLatest('own_message', true);
+          } else if (isUserNearBottomRef.current) {
+            requestScrollToLatest('incoming_message', true);
+          } else {
+            setShowScrollToLatest(true);
+            setNewMessagesBelow(true);
+          }
+          setMessages(previous =>
+            previous.some(item => item.id === displayMessage.id)
+              ? previous
+              : [...previous, displayMessage],
+          );
 
           if (message.from_id === otherUserId) {
             markConversationRead().catch(() => undefined);
@@ -1668,6 +1479,7 @@ export default function ChatScreen({ route, navigation }: Props) {
       markConversationRead,
       messagesRef,
       otherUserId,
+      requestScrollToLatest,
       refreshUnreadCount,
       restoreDraftAfterSendError,
       signalChatDataChanged,
@@ -2086,7 +1898,7 @@ export default function ChatScreen({ route, navigation }: Props) {
           commentEncryption,
         );
         const displayMessage = await decryptIncomingMessage(sent);
-        pendingScrollToLatestReasonRef.current = 'own_message';
+        requestScrollToLatest('own_message', true);
         setMessages(previous => [...previous, displayMessage]);
         signalChatDataChanged();
       }
@@ -2305,7 +2117,7 @@ export default function ChatScreen({ route, navigation }: Props) {
           commentEncryption,
         );
         const displayMessage = await decryptIncomingMessage(sent);
-        pendingScrollToLatestReasonRef.current = 'own_message';
+        requestScrollToLatest('own_message', true);
         setMessages(previous => [...previous, displayMessage]);
         signalChatDataChanged();
       }
@@ -2575,7 +2387,7 @@ export default function ChatScreen({ route, navigation }: Props) {
         );
         const displayMessage = await decryptIncomingMessage(sent);
         draftRef.current = null;
-        pendingScrollToLatestReasonRef.current = 'own_message';
+        requestScrollToLatest('own_message', true);
         setMessages(previous => [...previous, displayMessage]);
         signalChatDataChanged();
       }
@@ -2716,7 +2528,7 @@ export default function ChatScreen({ route, navigation }: Props) {
 
   function handleComposerFocus() {
     if (isUserNearBottomRef.current) {
-      requestScrollToLatest('incoming_message', true);
+      scrollToLatestMessage(true);
     }
   }
 
@@ -3067,7 +2879,7 @@ export default function ChatScreen({ route, navigation }: Props) {
             (message.to_id === user?.id && message.from_id === otherUserId),
         );
         if (currentChatMessages.length) {
-          pendingScrollToLatestReasonRef.current = 'own_message';
+          requestScrollToLatest('own_message', true);
           setMessages(previous => [...previous, ...currentChatMessages]);
         }
         setForwardMessage(null);
@@ -3090,7 +2902,7 @@ export default function ChatScreen({ route, navigation }: Props) {
           (message.to_id === user?.id && message.from_id === otherUserId),
       );
       if (currentChatMessages.length) {
-        pendingScrollToLatestReasonRef.current = 'own_message';
+        requestScrollToLatest('own_message', true);
         setMessages(previous => [...previous, ...currentChatMessages]);
       }
       setForwardMessage(null);
@@ -3173,7 +2985,6 @@ export default function ChatScreen({ route, navigation }: Props) {
       avoidKeyboard
       style={themed.chatBackground}
       contentContainerStyle={[styles.container, themed.chatBackground]}
-      onLayout={handleChatLayout}
     >
       <ErrorBanner message={error} />
       <SuccessBanner message={copyNotice} />
@@ -3222,11 +3033,7 @@ export default function ChatScreen({ route, navigation }: Props) {
               refreshing={refreshing}
               onRefresh={() => loadMessages('refresh')}
               keyboardShouldPersistTaps="handled"
-              maintainVisibleContentPosition={
-                maintainScrollPositionEnabled
-                  ? { minIndexForVisible: 0 }
-                  : undefined
-              }
+              maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
               onScroll={handleMessagesScroll}
               scrollEventThrottle={SCROLL_EVENT_THROTTLE_MS}
               renderItem={renderMessageItem}
@@ -3288,15 +3095,7 @@ export default function ChatScreen({ route, navigation }: Props) {
         )}
       </ChatDoodleBackground>
 
-      <View
-        style={[
-          styles.composerDock,
-          themed.composerDock,
-          androidKeyboardInset > 0
-            ? { marginBottom: androidKeyboardInset }
-            : null,
-        ]}
-      >
+      <View style={[styles.composerDock, themed.composerDock]}>
         {pendingImages.length > 0 ? (
           <View style={[styles.previewStrip, themed.surfaceBar]}>
             <ScrollView
