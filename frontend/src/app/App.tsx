@@ -22,6 +22,8 @@ const Conversations = lazy(() => import("@/features/chat/components/Conversation
 const Chat = lazy(() => import("@/features/chat/components/Chat.js"));
 const Friends = lazy(() => import("@/features/friends/components/Friends.js"));
 const VerifyEmail = lazy(() => import("@/features/auth/components/VerifyEmail.js"));
+const PrivacyPolicy = lazy(() => import("@/features/legal/components/PrivacyPolicy.js"));
+const AccountDeletion = lazy(() => import("@/features/legal/components/AccountDeletion.js"));
 
 function AppRoutes() {
     const { currentUser } = useAuth();
@@ -29,6 +31,8 @@ function AppRoutes() {
     return (
         <Suspense fallback={<div className="min-h-screen bg-[var(--app-bg)]" />}>
             <Routes>
+                <Route path="/privacy" element={<PrivacyPolicy />} />
+                <Route path="/account-deletion" element={<AccountDeletion />} />
                 <Route element={<RequireGuest />}>
                     <Route path="/login" element={<Login />} />
                     <Route path="/register" element={<Register />} />

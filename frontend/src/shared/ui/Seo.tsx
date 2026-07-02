@@ -11,9 +11,29 @@ type SeoConfig = {
     title: string;
     description: string;
     robots?: string;
+    lang?: string;
+    locale?: string;
 };
 
 function getSeoConfig(pathname: string): SeoConfig {
+    if (pathname === '/privacy') {
+        return {
+            title: 'Privacy Policy - Durqan',
+            description: 'Privacy Policy for Durqan, including account data, encrypted messages, attachments, push notifications, cookies, and data rights.',
+            lang: 'en',
+            locale: 'en_US',
+        };
+    }
+
+    if (pathname === '/account-deletion') {
+        return {
+            title: 'Account and Data Deletion - Durqan',
+            description: 'How to request deletion of a Durqan account and associated data.',
+            lang: 'en',
+            locale: 'en_US',
+        };
+    }
+
     if (pathname === '/register') {
         return {
             title: 'Durqan - регистрация',
@@ -79,7 +99,7 @@ export function Seo() {
         const canonical = canonicalUrl(location.pathname);
         const robots = config.robots ?? 'index, follow';
 
-        document.documentElement.lang = 'ru';
+        document.documentElement.lang = config.lang ?? 'ru';
         document.title = config.title;
 
         setCanonical(canonical);
@@ -88,7 +108,7 @@ export function Seo() {
         setMeta('name', 'application-name', siteName);
         setMeta('property', 'og:site_name', siteName);
         setMeta('property', 'og:type', 'website');
-        setMeta('property', 'og:locale', 'ru_RU');
+        setMeta('property', 'og:locale', config.locale ?? 'ru_RU');
         setMeta('property', 'og:url', canonical);
         setMeta('property', 'og:title', config.title);
         setMeta('property', 'og:description', config.description);

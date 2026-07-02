@@ -139,14 +139,17 @@ Not currently used:
 - Advertising ID.
 - Third-party crash analytics.
 
-Play Console still needs a public privacy policy URL before production rollout.
+Public policy URLs for Play Console:
+
+- Privacy Policy: `https://durqan.ru/privacy`
+- Account deletion: `https://durqan.ru/account-deletion`
 
 ## Manual Play Console Steps
 
 1. Enroll in Play App Signing and keep the upload keystore private.
 2. Upload `app-release.aab`.
 3. Complete Data Safety using the inventory above.
-4. Add privacy policy URL.
+4. Add privacy policy and account deletion URLs.
 5. Complete content rating and target audience forms.
 6. Complete app access instructions and provide a test account if login is required for review.
 7. Complete full-screen intent declaration for incoming calls.
