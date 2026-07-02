@@ -21,7 +21,7 @@ import {
     Text,
     View,
 } from 'react-native';
-import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
     Mic,
     MicOff,
@@ -44,14 +44,14 @@ import {
     type MediaStreamTrack,
 } from 'react-native-webrtc';
 import NetInfo from '@react-native-community/netinfo';
-import {WS_EVENTS} from '@social/shared';
+import { WS_EVENTS } from '@social/shared';
 
 import {
     callsApi,
     type ActiveCall,
     type RestoredCallIceCandidate,
 } from '../api/calls';
-import {userApi} from '../api/users';
+import { userApi } from '../api/users';
 import {
     chatSocket,
     type CallIceCandidate,
@@ -59,9 +59,16 @@ import {
     type CallType,
     type WsEvent,
 } from '../api/ws';
-import {TURN_CREDENTIAL, TURN_URLS, TURN_USERNAME} from '../config/env';
-import {useAppLifecycle} from './AppLifecycleContext';
-import {useAuth} from './AuthContext';
+import { TURN_CREDENTIAL, TURN_URLS, TURN_USERNAME } from '../config/env';
+import {
+    callError as logCallError,
+    callLog,
+    callWarn,
+    describeCallError,
+    logCallEnvOnce,
+} from '../utils/callDiagnostics';
+import { useAppLifecycle } from './AppLifecycleContext';
+import { useAuth } from './AuthContext';
 import {
     clearPendingIncomingCall,
     consumePendingIncomingCall,
@@ -69,9 +76,9 @@ import {
     subscribePendingIncomingCall,
     type PendingIncomingCallPush,
 } from '../notifications/pendingIncomingCall';
-import {cancelIncomingCallNotification} from '../notifications/localNotifications';
-import {logDev, warnDev} from '../utils/logger';
-import {registerCallShutdownHandler} from './callLifecycle';
+import { cancelIncomingCallNotification } from '../notifications/localNotifications';
+import { logDev, warnDev } from '../utils/logger';
+import { registerCallShutdownHandler } from './callLifecycle';
 import {
     isLiveServerCall,
     isTerminalCallStatus,
@@ -181,21 +188,21 @@ const videoQualityProfiles = {
         width: 426,
         height: 240,
         frameRate: 15,
-        sender: {maxBitrate: 300000, maxFramerate: 15},
+        sender: { maxBitrate: 300000, maxFramerate: 15 },
     },
     medium: {
         name: 'medium',
         width: 854,
         height: 480,
         frameRate: 24,
-        sender: {maxBitrate: 900000, maxFramerate: 24},
+        sender: { maxBitrate: 900000, maxFramerate: 24 },
     },
     high: {
         name: 'high',
         width: 1280,
         height: 720,
         frameRate: 30,
-        sender: {maxBitrate: 1800000, maxFramerate: 30},
+        sender: { maxBitrate: 1800000, maxFramerate: 30 },
     },
 } satisfies Record<VideoQualityProfileName, VideoQualityProfile>;
 const highFallbackProfile: VideoQualityProfile = {
@@ -203,7 +210,7 @@ const highFallbackProfile: VideoQualityProfile = {
     width: 960,
     height: 540,
     frameRate: 30,
-    sender: {maxBitrate: 1200000, maxFramerate: 30},
+    sender: { maxBitrate: 1200000, maxFramerate: 30 },
 };
 const absoluteFillObject =
     (
@@ -212,7 +219,7 @@ const absoluteFillObject =
         }
     ).absoluteFillObject ?? StyleSheet.absoluteFill;
 const nativeCallAudioSession = (
-    NativeModules as {CallAudioSession?: NativeCallAudioSession}
+    NativeModules as { CallAudioSession?: NativeCallAudioSession }
 ).CallAudioSession;
 
 function setNativeCallSessionActive(active: boolean, speakerphoneOn = false) {
@@ -227,6 +234,10 @@ function setNativeCallSessionActive(active: boolean, speakerphoneOn = false) {
             nativeCallAudioSession?.clearCallActive();
         }
     } catch (nativeError) {
+        logCallError('CALL_ERROR', 'native call audio session update failed', {
+            active,
+            error: describeCallError(nativeError),
+        });
         warnDev('[SocialMobile] Failed to update native call audio session', {
             active,
             error: nativeError,
@@ -251,8 +262,8 @@ function normalizeCallUserId(value: unknown) {
         typeof value === 'number'
             ? value
             : typeof value === 'string'
-              ? Number(value)
-              : NaN;
+            ? Number(value)
+            : NaN;
 
     return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
@@ -280,10 +291,19 @@ function iceServers() {
         urls: string | string[];
         username?: string;
         credential?: string;
-    }> = [{urls: 'stun:stun.l.google.com:19302'}];
+    }> = [{ urls: 'stun:stun.l.google.com:19302' }];
 
     if (TURN_URLS.length > 0) {
         if (!TURN_USERNAME || !TURN_CREDENTIAL) {
+            callWarn(
+                'CALL_ENV',
+                'TURN URLs configured without username or credential',
+                {
+                    turnUrls: TURN_URLS.length,
+                    hasUsername: Boolean(TURN_USERNAME),
+                    hasCredential: Boolean(TURN_CREDENTIAL),
+                },
+            );
             warnDev(
                 '[SocialMobile] TURN URLs configured without username or credential',
             );
@@ -312,7 +332,8 @@ async function initialVideoQualityProfile(networkConnected: boolean) {
                 return videoQualityProfiles.low;
             }
             if (generation === '5g') {
-                return Platform.OS === 'android' && Number(Platform.Version) < 26
+                return Platform.OS === 'android' &&
+                    Number(Platform.Version) < 26
                     ? highFallbackProfile
                     : videoQualityProfiles.high;
             }
@@ -373,6 +394,10 @@ function videoConstraints(profile: VideoQualityProfile) {
 
 async function requestCallPermissions(callType: CallType) {
     if (Platform.OS !== 'android') {
+        callLog('CALL_WEBRTC', 'call permissions skipped on non-android', {
+            callType,
+            platform: Platform.OS,
+        });
         return true;
     }
 
@@ -382,12 +407,21 @@ async function requestCallPermissions(callType: CallType) {
     }
 
     try {
+        callLog('CALL_WEBRTC', 'requesting call permissions', {
+            callType,
+            permissions,
+        });
         const result = await PermissionsAndroid.requestMultiple(permissions);
         const denied = permissions.filter(
-            permission => result[permission] !== PermissionsAndroid.RESULTS.GRANTED,
+            permission =>
+                result[permission] !== PermissionsAndroid.RESULTS.GRANTED,
         );
 
         if (denied.length > 0) {
+            callWarn('CALL_ERROR', 'call permissions denied', {
+                callType,
+                denied,
+            });
             warnDev('[SocialMobile] Call permissions denied', {
                 callType,
                 denied,
@@ -395,8 +429,16 @@ async function requestCallPermissions(callType: CallType) {
             return false;
         }
 
+        callLog('CALL_WEBRTC', 'call permissions granted', {
+            callType,
+            permissions,
+        });
         return true;
     } catch (error) {
+        logCallError('CALL_ERROR', 'failed to request call permissions', {
+            callType,
+            error: describeCallError(error),
+        });
         warnDev('[SocialMobile] Failed to request call permissions', error);
         return false;
     }
@@ -407,6 +449,9 @@ function stopStream(stream: MediaStream | null) {
         try {
             track.stop();
         } catch (error) {
+            logCallError('CALL_ERROR', 'failed to stop media track', {
+                error: describeCallError(error),
+            });
             warnDev('[SocialMobile] Failed to stop media track', error);
         }
     });
@@ -414,6 +459,9 @@ function stopStream(stream: MediaStream | null) {
     try {
         stream?.release?.(true);
     } catch (error) {
+        logCallError('CALL_ERROR', 'failed to release media stream', {
+            error: describeCallError(error),
+        });
         warnDev('[SocialMobile] Failed to release media stream', error);
     }
 }
@@ -477,7 +525,8 @@ function summarizeSdp(sdp?: string | null): SdpSummary {
             present: Boolean(videoSection),
             direction: videoDirection as SdpMediaSummary['direction'],
         },
-        hasSendrecv: audioDirection === 'sendrecv' || videoDirection === 'sendrecv',
+        hasSendrecv:
+            audioDirection === 'sendrecv' || videoDirection === 'sendrecv',
     };
 }
 
@@ -507,6 +556,12 @@ function warnIfOfferSdpNotBidirectional(
         (callType === 'video' &&
             (!summary.hasVideo || summary.video.direction !== 'sendrecv'))
     ) {
+        callWarn('CALL_WEBRTC', 'mobile offer SDP is not bidirectional', {
+            callId,
+            pcId,
+            callType,
+            summary,
+        });
         warnDev('[SocialMobile] Mobile offer SDP is not bidirectional', {
             callId,
             pcId,
@@ -572,6 +627,10 @@ async function addIceCandidateSafely(
     } = {},
 ) {
     if (!isUsableIceCandidate(candidate)) {
+        callLog('CALL_WEBRTC', 'skipping empty ICE candidate', {
+            context,
+            ...details,
+        });
         logDev('[SocialMobile] Skipping empty ICE candidate', {
             context,
             ...details,
@@ -580,6 +639,13 @@ async function addIceCandidateSafely(
     }
 
     try {
+        callLog('CALL_WEBRTC', 'adding ICE candidate', {
+            context,
+            ...details,
+            type: iceCandidateType(candidate),
+            sdpMid: candidate.sdpMid,
+            sdpMLineIndex: candidate.sdpMLineIndex,
+        });
         logDev('[SocialMobile] Adding ICE candidate', {
             context,
             ...details,
@@ -589,12 +655,22 @@ async function addIceCandidateSafely(
         });
         await pc.addIceCandidate(new RTCIceCandidate(candidate));
         if (context === 'restored') {
+            callLog('CALL_WEBRTC', 'restored ICE candidate added', {
+                context,
+                ...details,
+                type: iceCandidateType(candidate),
+            });
             logDev('[SocialMobile] addIceCandidate restored', {
                 context,
                 ...details,
                 type: iceCandidateType(candidate),
             });
         } else {
+            callLog('CALL_WEBRTC', 'ICE candidate added', {
+                context,
+                ...details,
+                type: iceCandidateType(candidate),
+            });
             logDev('[SocialMobile] ICE candidate added', {
                 context,
                 ...details,
@@ -603,6 +679,12 @@ async function addIceCandidateSafely(
         }
         return true;
     } catch (error) {
+        logCallError('CALL_ERROR', 'failed to add ICE candidate', {
+            context,
+            ...details,
+            error: describeCallError(error),
+            type: candidate ? iceCandidateType(candidate) : 'unknown',
+        });
         warnDev('[SocialMobile] Failed to add ICE candidate', {
             context,
             ...details,
@@ -619,6 +701,16 @@ function logPeerState(
     event: string,
     pcId?: number | null,
 ) {
+    callLog('CALL_WEBRTC', 'peer state changed', {
+        callId,
+        pcId,
+        nativePcId: pc._pcId,
+        event,
+        signalingState: pc.signalingState,
+        iceGatheringState: pc.iceGatheringState,
+        iceConnectionState: pc.iceConnectionState,
+        connectionState: pc.connectionState,
+    });
     logDev('[SocialMobile] Call peer state', {
         callId,
         pcId,
@@ -636,6 +728,17 @@ function logIceServers(
     callId: string,
     pcId?: number | null,
 ) {
+    callLog('CALL_WEBRTC', 'ICE config before peer connection', {
+        callId,
+        pcId,
+        iceServers: servers.map(server => ({
+            urls: server.urls,
+            hasUsername: Boolean(server.username),
+            usernameLen: server.username?.length ?? 0,
+            hasCredential: Boolean(server.credential),
+            credentialLen: server.credential?.length ?? 0,
+        })),
+    });
     logDev('[SocialMobile] ICE config before pc', {
         callId,
         pcId,
@@ -682,6 +785,12 @@ async function applyVideoSenderQuality(
             });
         }
         await sender.setParameters(parameters);
+        callLog('CALL_WEBRTC', 'video sender quality applied', {
+            callId,
+            pcId,
+            profile,
+            ...senderQuality,
+        });
         logDev('[SocialMobile] Video sender quality applied', {
             callId,
             pcId,
@@ -689,6 +798,11 @@ async function applyVideoSenderQuality(
             ...senderQuality,
         });
     } catch (qualityError) {
+        logCallError('CALL_ERROR', 'failed to apply video sender quality', {
+            callId,
+            pcId,
+            error: describeCallError(qualityError),
+        });
         warnDev('[SocialMobile] Failed to apply video sender quality', {
             callId,
             pcId,
@@ -720,12 +834,22 @@ async function applyAudioSenderQuality(
             encoding.maxBitrate = audioSenderMaxBitrate;
         });
         await sender.setParameters(parameters);
+        callLog('CALL_WEBRTC', 'audio sender quality applied', {
+            callId,
+            pcId,
+            maxBitrate: audioSenderMaxBitrate,
+        });
         logDev('[SocialMobile] Audio sender quality applied', {
             callId,
             pcId,
             maxBitrate: audioSenderMaxBitrate,
         });
     } catch (qualityError) {
+        logCallError('CALL_ERROR', 'failed to apply audio sender quality', {
+            callId,
+            pcId,
+            error: describeCallError(qualityError),
+        });
         warnDev('[SocialMobile] Failed to apply audio sender quality', {
             callId,
             pcId,
@@ -736,7 +860,9 @@ async function applyAudioSenderQuality(
 
 function statusText(status: CallStatus, callType: CallType) {
     if (status === 'incoming') {
-        return callType === 'video' ? 'Входящий видеозвонок' : 'Входящий звонок';
+        return callType === 'video'
+            ? 'Входящий видеозвонок'
+            : 'Входящий звонок';
     }
     if (status === 'connecting') {
         return 'Соединяем звонок';
@@ -831,9 +957,9 @@ function callErrorMessage(error: unknown) {
     return 'Не удалось выполнить звонок. Попробуйте позже.';
 }
 
-export function CallProvider({children}: { children: ReactNode }) {
-    const {user} = useAuth();
-    const {appState, networkConnected, resumeCount} = useAppLifecycle();
+export function CallProvider({ children }: { children: ReactNode }) {
+    const { user } = useAuth();
+    const { appState, networkConnected, resumeCount } = useAppLifecycle();
     const [status, setStatus] = useState<CallStatus>('idle');
     const [callType, setCallType] = useState<CallType>('audio');
     const [peerUserId, setPeerUserId] = useState<number | null>(null);
@@ -881,7 +1007,9 @@ export function CallProvider({children}: { children: ReactNode }) {
     const terminalActionInFlightRef = useRef(new Set<string>());
     const iceRecoveryAttemptsRef = useRef(0);
     const endTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const disconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const disconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+        null,
+    );
     const pcListenerCleanupRef = useRef<(() => void) | null>(null);
 
     useEffect(() => {
@@ -921,16 +1049,35 @@ export function CallProvider({children}: { children: ReactNode }) {
         (nextStatus: CallStatus, reason = 'state_update') => {
             const currentStatus = statusRef.current;
             if (!allowCallTransition(currentStatus, nextStatus)) {
-                warnDev('[SocialMobile] Invalid call state transition ignored', {
+                callWarn(
+                    'CALL_ERROR',
+                    'invalid call state transition ignored',
+                    {
+                        from: currentStatus,
+                        to: nextStatus,
+                        reason,
+                        callId: callIdRef.current,
+                    },
+                );
+                warnDev(
+                    '[SocialMobile] Invalid call state transition ignored',
+                    {
+                        from: currentStatus,
+                        to: nextStatus,
+                        reason,
+                        callId: callIdRef.current,
+                    },
+                );
+                return false;
+            }
+
+            if (currentStatus !== nextStatus) {
+                callLog('CALL_START', 'call state transition', {
                     from: currentStatus,
                     to: nextStatus,
                     reason,
                     callId: callIdRef.current,
                 });
-                return false;
-            }
-
-            if (currentStatus !== nextStatus) {
                 logDev('[SocialMobile] Call state transition', {
                     from: currentStatus,
                     to: nextStatus,
@@ -992,6 +1139,11 @@ export function CallProvider({children}: { children: ReactNode }) {
         clearDisconnectTimer();
         const pc = pcRef.current;
         if (pc) {
+            callLog('CALL_WEBRTC', 'closing peer connection', {
+                callId: pcCallIdRef.current,
+                pcId: pcIdsRef.current.get(pc) ?? null,
+                nativePcId: pc._pcId,
+            });
             logDev('[SocialMobile] Closing call peer connection', {
                 callId: pcCallIdRef.current,
                 pcId: pcIdsRef.current.get(pc) ?? null,
@@ -1009,9 +1161,23 @@ export function CallProvider({children}: { children: ReactNode }) {
         (action: 'end' | 'reject', targetId: number, callId: string) => {
             const key = `${action}:${callId}`;
             if (terminalActionInFlightRef.current.has(key)) {
+                callWarn(
+                    'CALL_WS',
+                    'terminal call action skipped while in flight',
+                    {
+                        action,
+                        callId,
+                        targetId,
+                    },
+                );
                 return;
             }
             terminalActionInFlightRef.current.add(key);
+            callLog('CALL_API', 'terminal call action started', {
+                action,
+                callId,
+                targetId,
+            });
 
             const request =
                 action === 'reject'
@@ -1019,6 +1185,16 @@ export function CallProvider({children}: { children: ReactNode }) {
                     : callsApi.endCall(callId);
             request
                 .catch(terminalError => {
+                    logCallError(
+                        'CALL_ERROR',
+                        'terminal call REST action failed',
+                        {
+                            action,
+                            callId,
+                            targetId,
+                            error: describeCallError(terminalError),
+                        },
+                    );
                     warnDev('[SocialMobile] Call terminal REST action failed', {
                         action,
                         callId,
@@ -1031,11 +1207,24 @@ export function CallProvider({children}: { children: ReactNode }) {
                             chatSocket.sendCallEnd(targetId, callId);
                         }
                     } catch (sendError) {
-                        warnDev('[SocialMobile] Call terminal WS fallback failed', {
-                            action,
-                            callId,
-                            sendError,
-                        });
+                        logCallError(
+                            'CALL_ERROR',
+                            'terminal call WS fallback failed',
+                            {
+                                action,
+                                callId,
+                                targetId,
+                                error: describeCallError(sendError),
+                            },
+                        );
+                        warnDev(
+                            '[SocialMobile] Call terminal WS fallback failed',
+                            {
+                                action,
+                                callId,
+                                sendError,
+                            },
+                        );
                     }
                 })
                 .finally(() => {
@@ -1049,17 +1238,36 @@ export function CallProvider({children}: { children: ReactNode }) {
         (toId: number, candidate: CallIceCandidate, callId: string) => {
             if (!signalingReadyCallIdsRef.current.has(callId)) {
                 const buffered = outgoingIceBufferRef.current.get(callId) ?? [];
-                buffered.push({toId, candidate});
+                buffered.push({ toId, candidate });
                 outgoingIceBufferRef.current.set(callId, buffered.slice(-64));
-                logDev('[SocialMobile] Buffering outgoing ICE before signaling ready', {
-                    callId,
-                    pcId: getPeerConnectionId(pcRef.current),
-                    toId,
-                    type: iceCandidateType(candidate),
-                });
+                callLog(
+                    'CALL_WEBRTC',
+                    'buffering outgoing ICE before signaling ready',
+                    {
+                        callId,
+                        pcId: getPeerConnectionId(pcRef.current),
+                        toId,
+                        type: iceCandidateType(candidate),
+                        bufferedIce: buffered.length,
+                    },
+                );
+                logDev(
+                    '[SocialMobile] Buffering outgoing ICE before signaling ready',
+                    {
+                        callId,
+                        pcId: getPeerConnectionId(pcRef.current),
+                        toId,
+                        type: iceCandidateType(candidate),
+                    },
+                );
                 return;
             }
 
+            callLog('CALL_WS', 'sending call ICE candidate', {
+                callId,
+                toId,
+                type: iceCandidateType(candidate),
+            });
             chatSocket.sendCallIce(toId, candidate, callId);
         },
         [getPeerConnectionId],
@@ -1070,11 +1278,20 @@ export function CallProvider({children}: { children: ReactNode }) {
             signalingReadyCallIdsRef.current.add(callId);
             const buffered = outgoingIceBufferRef.current.get(callId) ?? [];
             outgoingIceBufferRef.current.delete(callId);
-            logDev('[SocialMobile] Call signaling ready; flushing outgoing ICE', {
+            callLog('CALL_WS', 'call signaling ready', {
                 callId,
                 pcId: getPeerConnectionId(pcRef.current),
+                toId,
                 bufferedIce: buffered.length,
             });
+            logDev(
+                '[SocialMobile] Call signaling ready; flushing outgoing ICE',
+                {
+                    callId,
+                    pcId: getPeerConnectionId(pcRef.current),
+                    bufferedIce: buffered.length,
+                },
+            );
             buffered.forEach(item => {
                 const targetId = item.toId || toId;
                 if (callIdRef.current === callId) {
@@ -1141,7 +1358,8 @@ export function CallProvider({children}: { children: ReactNode }) {
             notifyPeer = false,
         ) => {
             const callId = callIdRef.current;
-            const targetId = peerUserIdRef.current ?? pendingOfferRef.current?.fromId;
+            const targetId =
+                peerUserIdRef.current ?? pendingOfferRef.current?.fromId;
 
             if (callId) {
                 chatSocket.discardPendingCallEvents(callId);
@@ -1233,28 +1451,60 @@ export function CallProvider({children}: { children: ReactNode }) {
             if (
                 pendingIceRef.current.some(
                     pending =>
-                        iceCandidateDedupKey(pending, iceCandidateFromId(pending)) === key,
+                        iceCandidateDedupKey(
+                            pending,
+                            iceCandidateFromId(pending),
+                        ) === key,
                 )
             ) {
-                logDev('[SocialMobile] Duplicate pending ICE candidate ignored', {
+                callLog(
+                    'CALL_WEBRTC',
+                    'duplicate pending ICE candidate ignored',
+                    {
+                        source,
+                        callId: callIdRef.current,
+                        pcId: getPeerConnectionId(pcRef.current),
+                        fromId,
+                        type: iceCandidateType(candidate),
+                    },
+                );
+                logDev(
+                    '[SocialMobile] Duplicate pending ICE candidate ignored',
+                    {
+                        source,
+                        callId: callIdRef.current,
+                        pcId: getPeerConnectionId(pcRef.current),
+                        fromId,
+                        type: iceCandidateType(candidate),
+                    },
+                );
+                return;
+            }
+
+            pendingIceRef.current.push(candidate);
+            callLog(
+                'CALL_WEBRTC',
+                'queued ICE candidate until remote description',
+                {
                     source,
                     callId: callIdRef.current,
                     pcId: getPeerConnectionId(pcRef.current),
                     fromId,
                     type: iceCandidateType(candidate),
-                });
-                return;
-            }
-
-            pendingIceRef.current.push(candidate);
-            logDev('[SocialMobile] Queuing ICE candidate until remoteDescription', {
-                source,
-                callId: callIdRef.current,
-                pcId: getPeerConnectionId(pcRef.current),
-                fromId,
-                type: iceCandidateType(candidate),
-                bufferedIce: pendingIceRef.current.length,
-            });
+                    bufferedIce: pendingIceRef.current.length,
+                },
+            );
+            logDev(
+                '[SocialMobile] Queuing ICE candidate until remoteDescription',
+                {
+                    source,
+                    callId: callIdRef.current,
+                    pcId: getPeerConnectionId(pcRef.current),
+                    fromId,
+                    type: iceCandidateType(candidate),
+                    bufferedIce: pendingIceRef.current.length,
+                },
+            );
         },
         [getPeerConnectionId],
     );
@@ -1262,6 +1512,13 @@ export function CallProvider({children}: { children: ReactNode }) {
     const flushPendingIce = useCallback(async () => {
         const pc = pcRef.current;
         if (!pc?.remoteDescription) {
+            callWarn('CALL_WEBRTC', 'buffered ICE flush skipped', {
+                callId: callIdRef.current,
+                pcId: getPeerConnectionId(pc),
+                hasPeerConnection: Boolean(pc),
+                hasRemoteDescription: Boolean(pc?.remoteDescription),
+                bufferedIce: pendingIceRef.current.length,
+            });
             logDev('[SocialMobile] Buffered ICE flush skipped', {
                 callId: callIdRef.current,
                 pcId: getPeerConnectionId(pc),
@@ -1274,6 +1531,11 @@ export function CallProvider({children}: { children: ReactNode }) {
 
         const pending = pendingIceRef.current.splice(0);
         pendingIceRef.current = [];
+        callLog('CALL_WEBRTC', 'flushing buffered ICE candidates', {
+            callId: pcCallIdRef.current,
+            pcId: getPeerConnectionId(pc),
+            count: pending.length,
+        });
         logDev('[SocialMobile] Flushing buffered ICE candidates', {
             callId: pcCallIdRef.current,
             pcId: getPeerConnectionId(pc),
@@ -1285,11 +1547,16 @@ export function CallProvider({children}: { children: ReactNode }) {
             if (appliedRemoteIceKeysRef.current.has(key)) {
                 continue;
             }
-            const added = await addIceCandidateSafely(pc, candidate, 'pending', {
-                callId: pcCallIdRef.current,
-                pcId: getPeerConnectionId(pc),
-                fromId,
-            });
+            const added = await addIceCandidateSafely(
+                pc,
+                candidate,
+                'pending',
+                {
+                    callId: pcCallIdRef.current,
+                    pcId: getPeerConnectionId(pc),
+                    fromId,
+                },
+            );
             if (added) {
                 appliedRemoteIceKeysRef.current.add(key);
             }
@@ -1300,6 +1567,14 @@ export function CallProvider({children}: { children: ReactNode }) {
         async (call: ActiveCall, reason: string) => {
             const userId = user?.id;
             if (!userId) {
+                callWarn(
+                    'CALL_ERROR',
+                    'restored ICE skipped without current user',
+                    {
+                        reason,
+                        callId: call.call_id,
+                    },
+                );
                 return;
             }
 
@@ -1322,6 +1597,13 @@ export function CallProvider({children}: { children: ReactNode }) {
                 },
             );
 
+            callLog('CALL_WEBRTC', 'active call restored ICE candidates', {
+                reason,
+                callId: call.call_id,
+                pcId,
+                totalIce: call.ice_candidates?.length ?? 0,
+                remoteIce: restoredCandidates.length,
+            });
             logDev('[SocialMobile] Active call restored ICE candidates', {
                 reason,
                 callId: call.call_id,
@@ -1331,13 +1613,27 @@ export function CallProvider({children}: { children: ReactNode }) {
             });
 
             if (!pc || pcCallIdRef.current !== call.call_id) {
-                logDev('[SocialMobile] Restored ICE skipped without current PC', {
-                    reason,
-                    callId: call.call_id,
-                    pcCallId: pcCallIdRef.current,
-                    pcId,
-                    remoteIce: restoredCandidates.length,
-                });
+                callWarn(
+                    'CALL_WEBRTC',
+                    'restored ICE skipped without current PC',
+                    {
+                        reason,
+                        callId: call.call_id,
+                        pcCallId: pcCallIdRef.current,
+                        pcId,
+                        remoteIce: restoredCandidates.length,
+                    },
+                );
+                logDev(
+                    '[SocialMobile] Restored ICE skipped without current PC',
+                    {
+                        reason,
+                        callId: call.call_id,
+                        pcCallId: pcCallIdRef.current,
+                        pcId,
+                        remoteIce: restoredCandidates.length,
+                    },
+                );
                 return;
             }
 
@@ -1351,11 +1647,16 @@ export function CallProvider({children}: { children: ReactNode }) {
                     queuePendingIceCandidate(candidate, fromId, 'restored');
                     continue;
                 }
-                const added = await addIceCandidateSafely(pc, candidate, 'restored', {
-                    callId: call.call_id,
-                    pcId,
-                    fromId,
-                });
+                const added = await addIceCandidateSafely(
+                    pc,
+                    candidate,
+                    'restored',
+                    {
+                        callId: call.call_id,
+                        pcId,
+                        fromId,
+                    },
+                );
                 if (added) {
                     appliedRemoteIceKeysRef.current.add(key);
                 }
@@ -1368,6 +1669,12 @@ export function CallProvider({children}: { children: ReactNode }) {
         async (call: ActiveCall, reason: string) => {
             const userId = user?.id;
             if (!userId || callIdRef.current !== call.call_id) {
+                callWarn('CALL_ERROR', 'active call restore skipped', {
+                    reason,
+                    callId: call.call_id,
+                    currentUserId: userId ?? null,
+                    currentCallId: callIdRef.current,
+                });
                 return false;
             }
 
@@ -1376,6 +1683,17 @@ export function CallProvider({children}: { children: ReactNode }) {
             const pcId = getPeerConnectionId(pc);
             const restoredIceCount = call.ice_candidates?.length ?? 0;
 
+            callLog('CALL_START', 'active call restore', {
+                reason,
+                callId: call.call_id,
+                pcId,
+                localStatus: statusRef.current,
+                serverStatus: call.status,
+                peerId,
+                hasOffer: Boolean(call.offer),
+                hasAnswer: Boolean(call.answer),
+                restoredIceCount,
+            });
             logDev('[SocialMobile] Active call restore', {
                 reason,
                 callId: call.call_id,
@@ -1391,7 +1709,8 @@ export function CallProvider({children}: { children: ReactNode }) {
             if (peerUserIdRef.current !== peerId) {
                 setCallPeer(peerId);
             }
-            const restoredCallType = call.call_type === 'video' ? 'video' : 'audio';
+            const restoredCallType =
+                call.call_type === 'video' ? 'video' : 'audio';
             setCurrentCallType(restoredCallType);
             if (
                 statusRef.current !== 'active' &&
@@ -1403,7 +1722,8 @@ export function CallProvider({children}: { children: ReactNode }) {
             if (
                 call.offer &&
                 call.callee_id === userId &&
-                (statusRef.current === 'incoming' || statusRef.current === 'connecting')
+                (statusRef.current === 'incoming' ||
+                    statusRef.current === 'connecting')
             ) {
                 pendingOfferRef.current = {
                     fromId: call.caller_id,
@@ -1420,19 +1740,32 @@ export function CallProvider({children}: { children: ReactNode }) {
                 pcCallIdRef.current === call.call_id &&
                 !pc.remoteDescription
             ) {
+                callLog('CALL_WEBRTC', 'restoring call answer', {
+                    callId: call.call_id,
+                    pcId,
+                    answer: summarizeSdp(call.answer.sdp),
+                });
                 logDev('[SocialMobile] Restoring call answer', {
                     callId: call.call_id,
                     pcId,
                     answer: summarizeSdp(call.answer.sdp),
                 });
-                await pc.setRemoteDescription(new RTCSessionDescription(call.answer));
-                if (pcRef.current !== pc || callIdRef.current !== call.call_id) {
+                await pc.setRemoteDescription(
+                    new RTCSessionDescription(call.answer),
+                );
+                if (
+                    pcRef.current !== pc ||
+                    callIdRef.current !== call.call_id
+                ) {
                     return false;
                 }
                 logPeerState(pc, call.call_id, 'remote-answer-restored', pcId);
                 await flushPendingIce();
                 if (statusRef.current !== 'active') {
-                    setCallStatus('connecting', 'answer_restored_waiting_for_media');
+                    setCallStatus(
+                        'connecting',
+                        'answer_restored_waiting_for_media',
+                    );
                 }
             }
 
@@ -1454,15 +1787,37 @@ export function CallProvider({children}: { children: ReactNode }) {
     const showHydratedIncomingCall = useCallback(
         async (call: ActiveCall, fallbackName?: string) => {
             if (!shouldShowIncomingServerCall(call, user?.id)) {
+                callWarn(
+                    'CALL_START',
+                    'incoming active call restore skipped by server state',
+                    {
+                        callId: call.call_id,
+                        status: call.status,
+                        currentUserId: user?.id ?? null,
+                        callerId: call.caller_id,
+                        calleeId: call.callee_id,
+                        hasOffer: Boolean(call.offer),
+                    },
+                );
                 return false;
             }
 
             if (
                 statusRef.current !== 'idle' &&
                 !(
-                    statusRef.current === 'incoming' && callIdRef.current === call.call_id
+                    statusRef.current === 'incoming' &&
+                    callIdRef.current === call.call_id
                 )
             ) {
+                callWarn(
+                    'CALL_START',
+                    'incoming active call restore skipped by local state',
+                    {
+                        callId: call.call_id,
+                        localStatus: statusRef.current,
+                        currentCallId: callIdRef.current,
+                    },
+                );
                 return false;
             }
 
@@ -1473,6 +1828,14 @@ export function CallProvider({children}: { children: ReactNode }) {
                 callType: call.call_type === 'video' ? 'video' : 'audio',
             };
             pendingIceRef.current = call.ice_candidates ?? [];
+            callLog('CALL_START', 'incoming active call restored', {
+                callId: call.call_id,
+                pcId: getPeerConnectionId(pcRef.current),
+                hasOffer: Boolean(call.offer),
+                hasAnswer: Boolean(call.answer),
+                restoredIceCount: pendingIceRef.current.length,
+                status: call.status,
+            });
             logDev('[SocialMobile] Incoming active call restored', {
                 callId: call.call_id,
                 pcId: getPeerConnectionId(pcRef.current),
@@ -1484,7 +1847,8 @@ export function CallProvider({children}: { children: ReactNode }) {
             pendingIncomingCallPushRef.current = null;
             callIdRef.current = call.call_id;
             setCallPeer(call.caller_id);
-            const restoredCallType = call.call_type === 'video' ? 'video' : 'audio';
+            const restoredCallType =
+                call.call_type === 'video' ? 'video' : 'audio';
             setCurrentCallType(restoredCallType);
             setDefaultSpeakerphoneForCallType(restoredCallType);
             setError(null);
@@ -1511,6 +1875,13 @@ export function CallProvider({children}: { children: ReactNode }) {
         async (callId?: string | null, fallbackName?: string) => {
             const userId = user?.id;
             if (!userId) {
+                callWarn(
+                    'CALL_ERROR',
+                    'hydrate incoming call skipped without user id',
+                    {
+                        callId: callId ?? null,
+                    },
+                );
                 return;
             }
 
@@ -1521,20 +1892,42 @@ export function CallProvider({children}: { children: ReactNode }) {
                     statusRef.current === 'incoming' &&
                     pendingOfferRef.current
                 ) {
+                    callLog(
+                        'CALL_START',
+                        'hydrate skipped for already pending incoming call',
+                        {
+                            callId: normalizedCallId,
+                        },
+                    );
                     return;
                 }
                 if (hydratingCallIdsRef.current.has(normalizedCallId)) {
+                    callLog(
+                        'CALL_START',
+                        'hydrate skipped because call id is already hydrating',
+                        {
+                            callId: normalizedCallId,
+                        },
+                    );
                     return;
                 }
                 hydratingCallIdsRef.current.add(normalizedCallId);
             } else {
                 if (hydratingActiveRef.current) {
+                    callLog(
+                        'CALL_START',
+                        'active call hydrate skipped because hydrate is in flight',
+                    );
                     return;
                 }
                 hydratingActiveRef.current = true;
             }
 
             try {
+                callLog('CALL_API', 'hydrate active call started', {
+                    callId: normalizedCallId || null,
+                    fallbackNameProvided: Boolean(fallbackName),
+                });
                 const call = normalizedCallId
                     ? await callsApi.getActiveCall(normalizedCallId)
                     : await callsApi.getActiveCall();
@@ -1552,12 +1945,20 @@ export function CallProvider({children}: { children: ReactNode }) {
                                 callId: currentCallId,
                             },
                         );
+                        callLog(
+                            'CALL_START',
+                            'active call hydrate skipped during outgoing setup',
+                            {
+                                callId: currentCallId,
+                            },
+                        );
                         return;
                     }
 
                     if (
                         currentCallId &&
-                        (!normalizedCallId || currentCallId === normalizedCallId) &&
+                        (!normalizedCallId ||
+                            currentCallId === normalizedCallId) &&
                         statusRef.current !== 'idle' &&
                         statusRef.current !== 'ended' &&
                         statusRef.current !== 'error'
@@ -1565,14 +1966,25 @@ export function CallProvider({children}: { children: ReactNode }) {
                         finishCall('ended');
                     }
                     if (normalizedCallId) {
-                        await rememberTerminalIncomingCall(normalizedCallId).catch(
-                            () => undefined,
-                        );
+                        await rememberTerminalIncomingCall(
+                            normalizedCallId,
+                        ).catch(() => undefined);
                     }
                     return;
                 }
 
-                if (isTerminalCallStatus(call.status) || !isLiveServerCall(call)) {
+                if (
+                    isTerminalCallStatus(call.status) ||
+                    !isLiveServerCall(call)
+                ) {
+                    callLog(
+                        'CALL_START',
+                        'hydrated call is terminal or not live',
+                        {
+                            callId: call.call_id,
+                            status: call.status,
+                        },
+                    );
                     await rememberTerminalIncomingCall(call.call_id).catch(
                         () => undefined,
                     );
@@ -1582,25 +1994,46 @@ export function CallProvider({children}: { children: ReactNode }) {
                     ) {
                         finishCall('ended');
                     } else if (
-                        pendingIncomingCallPushRef.current?.callId === call.call_id
+                        pendingIncomingCallPushRef.current?.callId ===
+                        call.call_id
                     ) {
                         pendingIncomingCallPushRef.current = null;
-                        clearPendingIncomingCall(call.call_id).catch(() => undefined);
-                        cancelIncomingCallNotification(call.call_id).catch(() => undefined);
+                        clearPendingIncomingCall(call.call_id).catch(
+                            () => undefined,
+                        );
+                        cancelIncomingCallNotification(call.call_id).catch(
+                            () => undefined,
+                        );
                     }
                     return;
                 }
 
                 if (shouldKeepLocalServerCall(call, currentCallId)) {
-                    logDev('[SocialMobile] Active call hydrate kept local call', {
-                        callId: call.call_id,
-                        status: call.status,
-                        localStatus: statusRef.current,
-                        pcId: getPeerConnectionId(pcRef.current),
-                        hasOffer: Boolean(call.offer),
-                        hasAnswer: Boolean(call.answer),
-                        iceCandidates: call.ice_candidates?.length ?? 0,
-                    });
+                    callLog(
+                        'CALL_START',
+                        'active call hydrate kept local call',
+                        {
+                            callId: call.call_id,
+                            status: call.status,
+                            localStatus: statusRef.current,
+                            pcId: getPeerConnectionId(pcRef.current),
+                            hasOffer: Boolean(call.offer),
+                            hasAnswer: Boolean(call.answer),
+                            iceCandidates: call.ice_candidates?.length ?? 0,
+                        },
+                    );
+                    logDev(
+                        '[SocialMobile] Active call hydrate kept local call',
+                        {
+                            callId: call.call_id,
+                            status: call.status,
+                            localStatus: statusRef.current,
+                            pcId: getPeerConnectionId(pcRef.current),
+                            hasOffer: Boolean(call.offer),
+                            hasAnswer: Boolean(call.answer),
+                            iceCandidates: call.ice_candidates?.length ?? 0,
+                        },
+                    );
                     await restoreActiveCallState(
                         call,
                         normalizedCallId ? 'call_id_restore' : 'active_restore',
@@ -1620,7 +2053,9 @@ export function CallProvider({children}: { children: ReactNode }) {
 
                 if (statusRef.current !== 'idle') {
                     if (shouldShowIncomingServerCall(call, userId)) {
-                        callsApi.rejectCall(call.call_id).catch(() => undefined);
+                        callsApi
+                            .rejectCall(call.call_id)
+                            .catch(() => undefined);
                     }
                     return;
                 }
@@ -1632,7 +2067,14 @@ export function CallProvider({children}: { children: ReactNode }) {
                     );
                 }
             } catch (hydrateError) {
-                warnDev('[SocialMobile] Failed to hydrate incoming call', hydrateError);
+                logCallError('CALL_ERROR', 'failed to hydrate incoming call', {
+                    callId: normalizedCallId || null,
+                    error: describeCallError(hydrateError),
+                });
+                warnDev(
+                    '[SocialMobile] Failed to hydrate incoming call',
+                    hydrateError,
+                );
             } finally {
                 if (normalizedCallId) {
                     hydratingCallIdsRef.current.delete(normalizedCallId);
@@ -1657,12 +2099,40 @@ export function CallProvider({children}: { children: ReactNode }) {
                 call.callerId === user.id ||
                 statusRef.current !== 'idle'
             ) {
+                callWarn('CALL_START', 'pending incoming call push ignored', {
+                    callId: call.callId,
+                    callerId: call.callerId,
+                    currentUserId: user?.id ?? null,
+                    status: statusRef.current,
+                    reason: !user?.id
+                        ? 'missing_user'
+                        : call.callerId === user.id
+                        ? 'self_call'
+                        : 'busy',
+                });
                 return;
             }
 
             pendingIncomingCallPushRef.current = call;
             chatSocket.connect();
-            hydrateIncomingCall(call.callId, call.callerName).catch(() => undefined);
+            hydrateIncomingCall(call.callId, call.callerName).catch(
+                hydrateError => {
+                    logCallError(
+                        'CALL_ERROR',
+                        'pending incoming call hydrate failed',
+                        {
+                            callId: call.callId,
+                            callerId: call.callerId,
+                            error: describeCallError(hydrateError),
+                        },
+                    );
+                },
+            );
+            callLog('CALL_START', 'pending incoming call push staged', {
+                callId: call.callId,
+                callerId: call.callerId,
+                conversationId: call.conversationId,
+            });
             logDev('[SocialMobile] Pending incoming call push staged', {
                 callId: call.callId,
                 callerId: call.callerId,
@@ -1673,8 +2143,14 @@ export function CallProvider({children}: { children: ReactNode }) {
     );
 
     const openLocalStream = useCallback(async (nextCallType: CallType) => {
+        callLog('CALL_WEBRTC', 'opening local media stream', {
+            callType: nextCallType,
+        });
         const permissionsGranted = await requestCallPermissions(nextCallType);
         if (!permissionsGranted) {
+            callWarn('CALL_ERROR', 'local media blocked by permissions', {
+                callType: nextCallType,
+            });
             throw new Error(
                 nextCallType === 'video'
                     ? 'call video permissions denied'
@@ -1690,11 +2166,20 @@ export function CallProvider({children}: { children: ReactNode }) {
                     networkConnectedRef.current,
                 );
                 let lastVideoError: unknown = null;
-                for (const profile of videoProfileFallbackChain(initialProfile)) {
+                for (const profile of videoProfileFallbackChain(
+                    initialProfile,
+                )) {
                     try {
-                        logDev('[SocialMobile] getUserMedia requested for video call', {
+                        callLog('CALL_WEBRTC', 'getUserMedia requested', {
+                            callType: 'video',
                             profile,
                         });
+                        logDev(
+                            '[SocialMobile] getUserMedia requested for video call',
+                            {
+                                profile,
+                            },
+                        );
                         stream = await mediaDevices.getUserMedia({
                             audio: callAudioConstraints,
                             video: videoConstraints(profile),
@@ -1703,16 +2188,32 @@ export function CallProvider({children}: { children: ReactNode }) {
                         break;
                     } catch (profileError) {
                         lastVideoError = profileError;
-                        warnDev('[SocialMobile] Video profile failed, trying fallback', {
-                            profile,
-                            error: profileError,
-                        });
+                        logCallError(
+                            'CALL_ERROR',
+                            'video getUserMedia profile failed',
+                            {
+                                profile,
+                                error: describeCallError(profileError),
+                            },
+                        );
+                        warnDev(
+                            '[SocialMobile] Video profile failed, trying fallback',
+                            {
+                                profile,
+                                error: profileError,
+                            },
+                        );
                     }
                 }
                 if (!stream) {
-                    throw lastVideoError || new Error('call video track missing');
+                    throw (
+                        lastVideoError || new Error('call video track missing')
+                    );
                 }
             } else {
+                callLog('CALL_WEBRTC', 'getUserMedia requested', {
+                    callType: 'audio',
+                });
                 logDev('[SocialMobile] getUserMedia requested for audio call');
                 stream = await mediaDevices.getUserMedia({
                     audio: callAudioConstraints,
@@ -1725,14 +2226,31 @@ export function CallProvider({children}: { children: ReactNode }) {
 
             if (audioTracks.length === 0) {
                 stopStream(stream);
+                logCallError('CALL_ERROR', 'local media has no audio track', {
+                    callType: nextCallType,
+                    videoTracks: videoTracks.length,
+                });
                 throw new Error('call audio track missing');
             }
 
             if (nextCallType === 'video' && videoTracks.length === 0) {
                 stopStream(stream);
+                logCallError(
+                    'CALL_ERROR',
+                    'local video media has no video track',
+                    {
+                        audioTracks: audioTracks.length,
+                    },
+                );
                 throw new Error('call video track missing');
             }
 
+            callLog('CALL_WEBRTC', 'local media stream opened', {
+                callType: nextCallType,
+                audioTracks: audioTracks.length,
+                videoTracks: videoTracks.length,
+                tracks: summarizeStreamTracks(stream),
+            });
             logDev('[SocialMobile] Local call stream opened', {
                 callType: nextCallType,
                 audioTracks: audioTracks.length,
@@ -1756,6 +2274,10 @@ export function CallProvider({children}: { children: ReactNode }) {
                 stopStream(stream);
             }
 
+            logCallError('CALL_ERROR', 'getUserMedia failed', {
+                callType: nextCallType,
+                error: describeCallError(streamError),
+            });
             warnDev('[SocialMobile] getUserMedia error', {
                 callType: nextCallType,
                 error: streamError,
@@ -1775,10 +2297,21 @@ export function CallProvider({children}: { children: ReactNode }) {
                 if (nextCallType !== 'video') {
                     throw streamError;
                 }
-                warnDev('[SocialMobile] Video stream failed, falling back to audio', {
-                    error: streamError,
-                    callId: callIdRef.current,
-                });
+                logCallError(
+                    'CALL_ERROR',
+                    'video stream failed, falling back to audio',
+                    {
+                        error: describeCallError(streamError),
+                        callId: callIdRef.current,
+                    },
+                );
+                warnDev(
+                    '[SocialMobile] Video stream failed, falling back to audio',
+                    {
+                        error: streamError,
+                        callId: callIdRef.current,
+                    },
+                );
                 return {
                     stream: await openLocalStream('audio'),
                     callType: 'audio' as CallType,
@@ -1791,13 +2324,35 @@ export function CallProvider({children}: { children: ReactNode }) {
     const applyLocalVideoProfile = useCallback(
         async (profile: VideoQualityProfile) => {
             if (callTypeRef.current !== 'video') {
+                callWarn(
+                    'CALL_WEBRTC',
+                    'local video profile skipped for non-video call',
+                    {
+                        callId: callIdRef.current,
+                        callType: callTypeRef.current,
+                    },
+                );
                 return false;
             }
 
             const track = localStreamRef.current?.getVideoTracks()[0] as
                 | ConstraintCapableTrack
                 | undefined;
-            if (!track || track.readyState === 'ended' || !track.applyConstraints) {
+            if (
+                !track ||
+                track.readyState === 'ended' ||
+                !track.applyConstraints
+            ) {
+                callWarn(
+                    'CALL_WEBRTC',
+                    'local video profile skipped without live track',
+                    {
+                        callId: callIdRef.current,
+                        hasTrack: Boolean(track),
+                        readyState: track?.readyState,
+                        hasApplyConstraints: Boolean(track?.applyConstraints),
+                    },
+                );
                 return false;
             }
 
@@ -1814,8 +2369,21 @@ export function CallProvider({children}: { children: ReactNode }) {
                     profile,
                     callId: callIdRef.current,
                 });
+                callLog('CALL_WEBRTC', 'local video profile applied', {
+                    profile,
+                    callId: callIdRef.current,
+                });
                 return true;
             } catch (profileError) {
+                logCallError(
+                    'CALL_ERROR',
+                    'failed to apply local video profile',
+                    {
+                        profile,
+                        callId: callIdRef.current,
+                        error: describeCallError(profileError),
+                    },
+                );
                 warnDev('[SocialMobile] Failed to apply local video profile', {
                     profile,
                     callId: callIdRef.current,
@@ -1831,6 +2399,12 @@ export function CallProvider({children}: { children: ReactNode }) {
         (toId: number, callId: string) => {
             const existingPc = pcRef.current;
             if (existingPc && pcCallIdRef.current === callId) {
+                callLog('CALL_WEBRTC', 'reusing peer connection', {
+                    callId,
+                    pcId: getPeerConnectionId(existingPc),
+                    nativePcId: existingPc._pcId,
+                    toId,
+                });
                 logDev('[SocialMobile] Reusing existing call peer connection', {
                     callId,
                     pcId: getPeerConnectionId(existingPc),
@@ -1843,6 +2417,17 @@ export function CallProvider({children}: { children: ReactNode }) {
             closePeerConnection();
 
             const servers = iceServers();
+            callLog('CALL_WEBRTC', 'creating peer connection', {
+                callId,
+                toId,
+                iceServers: servers.map(server => ({
+                    urls: server.urls,
+                    hasUsername: Boolean(server.username),
+                    usernameLen: server.username?.length ?? 0,
+                    hasCredential: Boolean(server.credential),
+                    credentialLen: server.credential?.length ?? 0,
+                })),
+            });
             const pc = new RTCPeerConnection({
                 iceServers: servers,
             });
@@ -1858,58 +2443,67 @@ export function CallProvider({children}: { children: ReactNode }) {
                 pcCallIdRef.current === callId &&
                 callIdRef.current === callId;
 
-          const updateRemoteStream = (stream: MediaStream) => {
-            const existingTracks = remoteStreamRef.current?.getTracks() ?? [];
-            const incomingTracks = stream.getTracks();
+            const updateRemoteStream = (stream: MediaStream) => {
+                const existingTracks =
+                    remoteStreamRef.current?.getTracks() ?? [];
+                const incomingTracks = stream.getTracks();
 
-            const tracksById = new Map<string, MediaStreamTrack>();
+                const tracksById = new Map<string, MediaStreamTrack>();
 
-            [...existingTracks, ...incomingTracks].forEach(track => {
-              if (track.readyState === 'live') {
-                tracksById.set(track.id, track);
-              }
-            });
+                [...existingTracks, ...incomingTracks].forEach(track => {
+                    if (track.readyState === 'live') {
+                        tracksById.set(track.id, track);
+                    }
+                });
 
-            const nextStream = new WebRTCMediaStream(
-                Array.from(tracksById.values()),
-            ) as MediaStream;
+                const nextStream = new WebRTCMediaStream(
+                    Array.from(tracksById.values()),
+                ) as MediaStream;
 
-            remoteStreamRef.current = nextStream;
-            setRemoteStream(nextStream);
+                remoteStreamRef.current = nextStream;
+                setRemoteStream(nextStream);
 
-            const hasLiveAudio = nextStream
-                .getAudioTracks()
-                .some(track => track.readyState === 'live');
+                const hasLiveAudio = nextStream
+                    .getAudioTracks()
+                    .some(track => track.readyState === 'live');
 
-            const hasLiveVideo = nextStream
-                .getVideoTracks()
-                .some(track => track.readyState === 'live');
+                const hasLiveVideo = nextStream
+                    .getVideoTracks()
+                    .some(track => track.readyState === 'live');
 
-            logDev('[SocialMobile] Remote stream updated', {
-              callId,
-              pcId,
-              streamId: nextStream.id,
-              streamUrl: nextStream.toURL?.(),
-              hasLiveAudio,
-              hasLiveVideo,
-              tracks: summarizeStreamTracks(nextStream),
-            });
+                logDev('[SocialMobile] Remote stream updated', {
+                    callId,
+                    pcId,
+                    streamId: nextStream.id,
+                    streamUrl: nextStream.toURL?.(),
+                    hasLiveAudio,
+                    hasLiveVideo,
+                    tracks: summarizeStreamTracks(nextStream),
+                });
+                callLog('CALL_WEBRTC', 'remote stream updated', {
+                    callId,
+                    pcId,
+                    streamId: nextStream.id,
+                    hasLiveAudio,
+                    hasLiveVideo,
+                    tracks: summarizeStreamTracks(nextStream),
+                });
 
-            const mediaReady =
-                callTypeRef.current === 'audio'
-                    ? hasLiveAudio
-                    : hasLiveVideo;
+                const mediaReady =
+                    callTypeRef.current === 'audio'
+                        ? hasLiveAudio
+                        : hasLiveVideo;
 
-            if (
-                mediaReady &&
-                statusRef.current !== 'active' &&
-                statusRef.current !== 'ended' &&
-                statusRef.current !== 'error' &&
-                statusRef.current !== 'idle'
-            ) {
-              setCallStatus('active', 'remote_media_ready');
-            }
-          };
+                if (
+                    mediaReady &&
+                    statusRef.current !== 'active' &&
+                    statusRef.current !== 'ended' &&
+                    statusRef.current !== 'error' &&
+                    statusRef.current !== 'idle'
+                ) {
+                    setCallStatus('active', 'remote_media_ready');
+                }
+            };
 
             const ensureRemoteStreamForTrack = (track: MediaStreamTrack) => {
                 const existing = remoteStreamRef.current;
@@ -1940,16 +2534,49 @@ export function CallProvider({children}: { children: ReactNode }) {
 
                 try {
                     const payload = candidate.toJSON();
-                    logDev('[SocialMobile] ICE candidate raw', payload.candidate);
-                    logDev('[SocialMobile] ICE candidate type', iceCandidateType(payload));
+                    callLog('CALL_WEBRTC', 'ICE candidate generated', {
+                        callId,
+                        pcId,
+                        toId,
+                        type: iceCandidateType(payload),
+                        sdpMid: payload.sdpMid,
+                        sdpMLineIndex: payload.sdpMLineIndex,
+                    });
+                    logDev(
+                        '[SocialMobile] ICE candidate raw',
+                        payload.candidate,
+                    );
+                    logDev(
+                        '[SocialMobile] ICE candidate type',
+                        iceCandidateType(payload),
+                    );
                     if (!isUsableIceCandidate(payload)) {
-                        logDev('[SocialMobile] Skipping empty outgoing ICE candidate', {
-                            callId,
-                            pcId,
-                        });
+                        callWarn(
+                            'CALL_WEBRTC',
+                            'skipping empty outgoing ICE candidate',
+                            {
+                                callId,
+                                pcId,
+                            },
+                        );
+                        logDev(
+                            '[SocialMobile] Skipping empty outgoing ICE candidate',
+                            {
+                                callId,
+                                pcId,
+                            },
+                        );
                         return;
                     }
 
+                    callLog('CALL_WS', 'sending outgoing ICE candidate', {
+                        callId,
+                        pcId,
+                        toId,
+                        type: iceCandidateType(payload),
+                        sdpMid: payload.sdpMid,
+                        sdpMLineIndex: payload.sdpMLineIndex,
+                    });
                     logDev('[SocialMobile] Sending ICE candidate', {
                         callId,
                         pcId,
@@ -1960,7 +2587,16 @@ export function CallProvider({children}: { children: ReactNode }) {
                     });
                     sendOrBufferOutgoingIce(toId, payload, callId);
                 } catch (sendError) {
-                    warnDev('[SocialMobile] Failed to send ICE candidate', sendError);
+                    logCallError('CALL_ERROR', 'failed to send ICE candidate', {
+                        callId,
+                        pcId,
+                        toId,
+                        error: describeCallError(sendError),
+                    });
+                    warnDev(
+                        '[SocialMobile] Failed to send ICE candidate',
+                        sendError,
+                    );
                 }
             };
 
@@ -1969,19 +2605,31 @@ export function CallProvider({children}: { children: ReactNode }) {
                     return;
                 }
 
-                const track = (event as { track?: MediaStreamTrack | null }).track;
-                const [stream] = (event as { streams?: MediaStream[] }).streams ?? [];
+                const track = (event as { track?: MediaStreamTrack | null })
+                    .track;
+                const [stream] =
+                    (event as { streams?: MediaStream[] }).streams ?? [];
                 logDev('[SocialMobile] Remote track event', {
                     callId,
                     pcId,
                     trackKind: track?.kind,
                     track: track ? summarizeTrack(track) : null,
                     streamCount:
-                        (event as { streams?: MediaStream[] }).streams?.length ?? 0,
+                        (event as { streams?: MediaStream[] }).streams
+                            ?.length ?? 0,
                     streams:
                         (event as { streams?: MediaStream[] }).streams?.map(
                             summarizeStreamTracks,
                         ) ?? [],
+                });
+                callLog('CALL_WEBRTC', 'remote track event', {
+                    callId,
+                    pcId,
+                    trackKind: track?.kind,
+                    track: track ? summarizeTrack(track) : null,
+                    streamCount:
+                        (event as { streams?: MediaStream[] }).streams
+                            ?.length ?? 0,
                 });
 
                 if (stream) {
@@ -2023,16 +2671,28 @@ export function CallProvider({children}: { children: ReactNode }) {
                     const restartIce = (
                         pc as PeerConnection & { restartIce?: () => void }
                     ).restartIce;
-                    if (iceRecoveryAttemptsRef.current < maxIceRecoveryAttempts) {
+                    if (
+                        iceRecoveryAttemptsRef.current < maxIceRecoveryAttempts
+                    ) {
                         iceRecoveryAttemptsRef.current += 1;
                         try {
                             restartIce?.call(pc);
+                            callLog('CALL_WEBRTC', 'ICE restart requested', {
+                                callId,
+                                pcId,
+                                attempt: iceRecoveryAttemptsRef.current,
+                            });
                             logDev('[SocialMobile] ICE restart requested', {
                                 callId,
                                 pcId,
                                 attempt: iceRecoveryAttemptsRef.current,
                             });
                         } catch (restartError) {
+                            logCallError('CALL_ERROR', 'ICE restart failed', {
+                                callId,
+                                pcId,
+                                error: describeCallError(restartError),
+                            });
                             warnDev('[SocialMobile] ICE restart failed', {
                                 callId,
                                 pcId,
@@ -2053,11 +2713,18 @@ export function CallProvider({children}: { children: ReactNode }) {
                             callIdRef.current === callId &&
                             stillDisconnected
                         ) {
-                            if (iceRecoveryAttemptsRef.current < maxIceRecoveryAttempts) {
+                            if (
+                                iceRecoveryAttemptsRef.current <
+                                maxIceRecoveryAttempts
+                            ) {
                                 handlePeerStateChange('ice-recovery-timeout');
                                 return;
                             }
-                            finishCall('error', 'Соединение звонка прервано.', true);
+                            finishCall(
+                                'error',
+                                'Соединение звонка прервано.',
+                                true,
+                            );
                         }
                     }, disconnectedCleanupDelayMs);
                 }
@@ -2079,20 +2746,46 @@ export function CallProvider({children}: { children: ReactNode }) {
                         iceRecoveryAttemptsRef.current += 1;
                         try {
                             (
-                                pc as PeerConnection & { restartIce?: () => void }
+                                pc as PeerConnection & {
+                                    restartIce?: () => void;
+                                }
                             ).restartIce?.();
-                            logDev('[SocialMobile] ICE restart requested after failure', {
-                                callId,
-                                pcId,
-                                attempt: iceRecoveryAttemptsRef.current,
-                            });
+                            callLog(
+                                'CALL_WEBRTC',
+                                'ICE restart requested after failure',
+                                {
+                                    callId,
+                                    pcId,
+                                    attempt: iceRecoveryAttemptsRef.current,
+                                },
+                            );
+                            logDev(
+                                '[SocialMobile] ICE restart requested after failure',
+                                {
+                                    callId,
+                                    pcId,
+                                    attempt: iceRecoveryAttemptsRef.current,
+                                },
+                            );
                             return;
                         } catch (restartError) {
-                            warnDev('[SocialMobile] ICE restart after failure failed', {
-                                callId,
-                                pcId,
-                                restartError,
-                            });
+                            logCallError(
+                                'CALL_ERROR',
+                                'ICE restart after failure failed',
+                                {
+                                    callId,
+                                    pcId,
+                                    error: describeCallError(restartError),
+                                },
+                            );
+                            warnDev(
+                                '[SocialMobile] ICE restart after failure failed',
+                                {
+                                    callId,
+                                    pcId,
+                                    restartError,
+                                },
+                            );
                         }
                     }
                     finishCall('error', 'Соединение звонка прервано.', true);
@@ -2131,11 +2824,16 @@ export function CallProvider({children}: { children: ReactNode }) {
             peerHandlers.onicecandidate = handleIceCandidate;
             peerHandlers.ontrack = handleTrack;
             peerHandlers.onconnectionstatechange = handleConnectionStateChange;
-            peerHandlers.oniceconnectionstatechange = handleIceConnectionStateChange;
-            peerHandlers.onicegatheringstatechange = handleIceGatheringStateChange;
+            peerHandlers.oniceconnectionstatechange =
+                handleIceConnectionStateChange;
+            peerHandlers.onicegatheringstatechange =
+                handleIceGatheringStateChange;
             peerHandlers.onsignalingstatechange = handleSignalingStateChange;
             pcListenerCleanupRef.current = () => {
-                eventTarget.removeEventListener?.('icecandidate', handleIceCandidate);
+                eventTarget.removeEventListener?.(
+                    'icecandidate',
+                    handleIceCandidate,
+                );
                 eventTarget.removeEventListener?.('track', handleTrack);
                 eventTarget.removeEventListener?.(
                     'connectionstatechange',
@@ -2160,7 +2858,8 @@ export function CallProvider({children}: { children: ReactNode }) {
                     peerHandlers.ontrack = null;
                 }
                 if (
-                    peerHandlers.onconnectionstatechange === handleConnectionStateChange
+                    peerHandlers.onconnectionstatechange ===
+                    handleConnectionStateChange
                 ) {
                     peerHandlers.onconnectionstatechange = null;
                 }
@@ -2177,7 +2876,8 @@ export function CallProvider({children}: { children: ReactNode }) {
                     peerHandlers.onicegatheringstatechange = null;
                 }
                 if (
-                    peerHandlers.onsignalingstatechange === handleSignalingStateChange
+                    peerHandlers.onsignalingstatechange ===
+                    handleSignalingStateChange
                 ) {
                     peerHandlers.onsignalingstatechange = null;
                 }
@@ -2197,24 +2897,69 @@ export function CallProvider({children}: { children: ReactNode }) {
     );
 
     const startCall = useCallback(
-        async (toId: number, name: string | undefined, nextCallType: CallType) => {
+        async (
+            toId: number,
+            name: string | undefined,
+            nextCallType: CallType,
+        ) => {
+            logCallEnvOnce('start_call');
             const targetId = normalizeCallUserId(toId);
+            callLog('CALL_START', 'start call requested', {
+                toId,
+                targetId,
+                peerNameProvided: Boolean(name),
+                callType: nextCallType,
+                currentUserId: user?.id ?? null,
+                status: statusRef.current,
+                startInFlight: startInFlightRef.current,
+            });
             if (!targetId) {
+                callWarn(
+                    'CALL_ERROR',
+                    'call start blocked without valid peer id',
+                    {
+                        toId,
+                        callType: nextCallType,
+                    },
+                );
                 showCallError('Не удалось определить собеседника для звонка.');
                 return;
             }
 
-            if (
-                !user?.id ||
-                statusRef.current !== 'idle' ||
-                startInFlightRef.current
-            ) {
-                logDev('[SocialMobile] Ignoring duplicate or invalid call start', {
-                    toId: targetId,
-                    callType: nextCallType,
-                    status: statusRef.current,
-                    startInFlight: startInFlightRef.current,
-                });
+            if (!user?.id) {
+                callWarn(
+                    'CALL_ERROR',
+                    'call start blocked without current user id',
+                    {
+                        toId: targetId,
+                        callType: nextCallType,
+                        status: statusRef.current,
+                    },
+                );
+                showCallError('Не удалось определить текущего пользователя.');
+                return;
+            }
+
+            if (statusRef.current !== 'idle' || startInFlightRef.current) {
+                callWarn(
+                    'CALL_START',
+                    'duplicate or invalid call start ignored',
+                    {
+                        toId: targetId,
+                        callType: nextCallType,
+                        status: statusRef.current,
+                        startInFlight: startInFlightRef.current,
+                    },
+                );
+                logDev(
+                    '[SocialMobile] Ignoring duplicate or invalid call start',
+                    {
+                        toId: targetId,
+                        callType: nextCallType,
+                        status: statusRef.current,
+                        startInFlight: startInFlightRef.current,
+                    },
+                );
                 return;
             }
 
@@ -2228,6 +2973,11 @@ export function CallProvider({children}: { children: ReactNode }) {
             setCurrentCallType(nextCallType);
             setDefaultSpeakerphoneForCallType(nextCallType);
             setCallStatus('connecting');
+            callLog('CALL_START', 'outgoing call setup started', {
+                callId,
+                toId: targetId,
+                callType: nextCallType,
+            });
 
             try {
                 const isCurrentStart = () =>
@@ -2258,10 +3008,27 @@ export function CallProvider({children}: { children: ReactNode }) {
                     }
                 };
 
+                callLog(
+                    'CALL_WS',
+                    'connect requested before outgoing call offer',
+                    {
+                        callId,
+                        toId: targetId,
+                    },
+                );
                 chatSocket.connect();
-                const {stream, callType: effectiveCallType} =
+                const { stream, callType: effectiveCallType } =
                     await openLocalStreamWithFallback(nextCallType);
                 if (!isCurrentStart()) {
+                    callWarn(
+                        'CALL_START',
+                        'outgoing call became stale after media open',
+                        {
+                            callId,
+                            toId: targetId,
+                            status: statusRef.current,
+                        },
+                    );
                     cleanupStaleStart(stream);
                     return;
                 }
@@ -2270,17 +3037,39 @@ export function CallProvider({children}: { children: ReactNode }) {
 
                 const pc = createPeerConnection(targetId, callId);
                 if (!isCurrentStart()) {
+                    callWarn(
+                        'CALL_START',
+                        'outgoing call became stale after peer connection',
+                        {
+                            callId,
+                            toId: targetId,
+                            status: statusRef.current,
+                        },
+                    );
                     cleanupStaleStart(stream, pc);
                     return;
                 }
                 const pcId = getPeerConnectionId(pc);
 
-                logDev('[SocialMobile] Adding local tracks before createOffer', {
+                callLog('CALL_WEBRTC', 'adding local tracks before offer', {
                     callId,
                     pcId,
                     tracks: summarizeStreamTracks(stream),
                 });
+                logDev(
+                    '[SocialMobile] Adding local tracks before createOffer',
+                    {
+                        callId,
+                        pcId,
+                        tracks: summarizeStreamTracks(stream),
+                    },
+                );
                 stream.getTracks().forEach(track => {
+                    callLog('CALL_WEBRTC', 'local track added', {
+                        callId,
+                        pcId,
+                        track: summarizeTrack(track),
+                    });
                     logDev('[SocialMobile] addTrack(local)', {
                         callId,
                         pcId,
@@ -2296,14 +3085,34 @@ export function CallProvider({children}: { children: ReactNode }) {
                 );
                 await applyAudioSenderQuality(pc, callId, pcId);
 
+                callLog('CALL_WEBRTC', 'creating call offer', {
+                    callId,
+                    pcId,
+                    callType: effectiveCallType,
+                });
                 const offer = sessionDescriptionForSignal(
                     (await pc.createOffer()) as CallSessionDescription,
                 );
                 if (!isCurrentStart()) {
+                    callWarn(
+                        'CALL_START',
+                        'outgoing call became stale after offer create',
+                        {
+                            callId,
+                            toId: targetId,
+                            status: statusRef.current,
+                        },
+                    );
                     cleanupStaleStart(stream, pc);
                     return;
                 }
                 const offerSummary = summarizeSdp(offer.sdp);
+                callLog('CALL_WEBRTC', 'call offer created', {
+                    callId,
+                    pcId,
+                    callType: effectiveCallType,
+                    summary: offerSummary,
+                });
                 logDev('[SocialMobile] createOffer SDP summary', {
                     callId,
                     pcId,
@@ -2317,8 +3126,21 @@ export function CallProvider({children}: { children: ReactNode }) {
                     pcId,
                 );
 
+                callLog('CALL_WEBRTC', 'setting local offer description', {
+                    callId,
+                    pcId,
+                });
                 await pc.setLocalDescription(new RTCSessionDescription(offer));
                 if (!isCurrentStart()) {
+                    callWarn(
+                        'CALL_START',
+                        'outgoing call became stale after local offer',
+                        {
+                            callId,
+                            toId: targetId,
+                            status: statusRef.current,
+                        },
+                    );
                     cleanupStaleStart(stream, pc);
                     return;
                 }
@@ -2336,16 +3158,52 @@ export function CallProvider({children}: { children: ReactNode }) {
                     signalingState: pc.signalingState,
                     localDescription: summarizeSdp(localOffer.sdp),
                 });
+                callLog('CALL_WEBRTC', 'local offer description set', {
+                    callId,
+                    pcId,
+                    signalingState: pc.signalingState,
+                    localDescription: summarizeSdp(localOffer.sdp),
+                });
 
+                callLog('CALL_WS', 'waiting for websocket before offer', {
+                    callId,
+                    toId: targetId,
+                    timeoutMs: 8000,
+                });
                 const socketReady = await chatSocket.waitUntilConnected(8000);
                 if (!isCurrentStart()) {
+                    callWarn(
+                        'CALL_START',
+                        'outgoing call became stale while waiting for socket',
+                        {
+                            callId,
+                            toId: targetId,
+                            status: statusRef.current,
+                        },
+                    );
                     cleanupStaleStart(stream, pc);
                     return;
                 }
                 if (!socketReady) {
+                    logCallError(
+                        'CALL_ERROR',
+                        'websocket not connected before offer',
+                        {
+                            callId,
+                            toId: targetId,
+                            timeoutMs: 8000,
+                        },
+                    );
                     throw new Error('WebSocket is not connected');
                 }
 
+                callLog('CALL_WS', 'sending call offer', {
+                    callId,
+                    pcId,
+                    toId: targetId,
+                    callType: effectiveCallType,
+                    sdp: summarizeSdp(localOffer.sdp),
+                });
                 logDev('[SocialMobile] Sending call offer', {
                     callId,
                     pcId,
@@ -2360,12 +3218,28 @@ export function CallProvider({children}: { children: ReactNode }) {
                     callId,
                 );
                 if (!offerSent) {
+                    logCallError('CALL_ERROR', 'call offer was not sent', {
+                        callId,
+                        pcId,
+                        toId: targetId,
+                    });
                     throw new Error('WebSocket is not connected');
                 }
                 markCallSignalingReady(callId, targetId);
                 setCallStatus('ringing', 'offer_sent');
+                callLog('CALL_START', 'outgoing call offer sent', {
+                    callId,
+                    toId: targetId,
+                    callType: effectiveCallType,
+                });
             } catch (callError) {
                 const message = callErrorMessage(callError);
+                logCallError('CALL_ERROR', 'start call failed', {
+                    callId,
+                    toId: targetId,
+                    callType: nextCallType,
+                    error: describeCallError(callError),
+                });
                 showCallError(message);
                 finishCall('error', message);
             } finally {
@@ -2399,7 +3273,19 @@ export function CallProvider({children}: { children: ReactNode }) {
     );
 
     const acceptCall = useCallback(async () => {
+        logCallEnvOnce('accept_call');
+        callLog('CALL_START', 'accept call requested', {
+            callId:
+                callIdRef.current ?? pendingOfferRef.current?.callId ?? null,
+            fromId: pendingOfferRef.current?.fromId ?? null,
+            status: statusRef.current,
+            acceptInFlight: acceptInFlightRef.current,
+        });
         if (acceptInFlightRef.current) {
+            callWarn('CALL_START', 'duplicate call accept ignored', {
+                callId: callIdRef.current ?? pendingOfferRef.current?.callId,
+                status: statusRef.current,
+            });
             logDev('[SocialMobile] Ignoring duplicate call accept', {
                 callId: callIdRef.current ?? pendingOfferRef.current?.callId,
                 status: statusRef.current,
@@ -2410,9 +3296,30 @@ export function CallProvider({children}: { children: ReactNode }) {
         if (!pendingOffer) {
             const callId = callIdRef.current;
             if (callId) {
+                callWarn(
+                    'CALL_START',
+                    'accept requested without pending offer; hydrating',
+                    {
+                        callId,
+                        status: statusRef.current,
+                    },
+                );
                 setError('Восстанавливаем соединение звонка...');
                 chatSocket.connect();
-                hydrateIncomingCall(callId).catch(() => undefined);
+                hydrateIncomingCall(callId).catch(hydrateError => {
+                    logCallError('CALL_ERROR', 'hydrate after accept failed', {
+                        callId,
+                        error: describeCallError(hydrateError),
+                    });
+                });
+            } else {
+                callWarn(
+                    'CALL_ERROR',
+                    'accept requested without pending offer or call id',
+                    {
+                        status: statusRef.current,
+                    },
+                );
             }
             return;
         }
@@ -2453,35 +3360,74 @@ export function CallProvider({children}: { children: ReactNode }) {
         try {
             await callsApi.acceptCallIntent(pendingOffer.callId);
             if (!isCurrentAccept()) {
+                callWarn(
+                    'CALL_START',
+                    'incoming call became stale after accept API',
+                    {
+                        callId: pendingOffer.callId,
+                        fromId: pendingOffer.fromId,
+                        status: statusRef.current,
+                    },
+                );
                 cleanupStaleAccept();
                 return;
             }
             cancelIncomingCallNotification(pendingOffer.callId).catch(
                 () => undefined,
             );
-            const opened = await openLocalStreamWithFallback(pendingOffer.callType);
+            const opened = await openLocalStreamWithFallback(
+                pendingOffer.callType,
+            );
             stream = opened.stream;
             setCurrentCallType(opened.callType);
             setDefaultSpeakerphoneForCallType(opened.callType);
             if (!isCurrentAccept()) {
+                callWarn(
+                    'CALL_START',
+                    'incoming call became stale after media open',
+                    {
+                        callId: pendingOffer.callId,
+                        fromId: pendingOffer.fromId,
+                        status: statusRef.current,
+                    },
+                );
                 cleanupStaleAccept();
                 return;
             }
             callIdRef.current = pendingOffer.callId;
             pc = createPeerConnection(pendingOffer.fromId, pendingOffer.callId);
             if (!isCurrentAccept()) {
+                callWarn(
+                    'CALL_START',
+                    'incoming call became stale after peer connection',
+                    {
+                        callId: pendingOffer.callId,
+                        fromId: pendingOffer.fromId,
+                        status: statusRef.current,
+                    },
+                );
                 cleanupStaleAccept();
                 return;
             }
             const pcId = getPeerConnectionId(pc);
             const activeStream = stream;
             const activePc = pc;
+            callLog('CALL_WEBRTC', 'adding local tracks before answer', {
+                callId: pendingOffer.callId,
+                pcId,
+                tracks: summarizeStreamTracks(activeStream),
+            });
             logDev('[SocialMobile] Adding local tracks before createAnswer', {
                 callId: pendingOffer.callId,
                 pcId,
                 tracks: summarizeStreamTracks(activeStream),
             });
             activeStream.getTracks().forEach(track => {
+                callLog('CALL_WEBRTC', 'local track added for answer', {
+                    callId: pendingOffer.callId,
+                    pcId,
+                    track: summarizeTrack(track),
+                });
                 logDev('[SocialMobile] addTrack(local)', {
                     callId: pendingOffer.callId,
                     pcId,
@@ -2495,12 +3441,13 @@ export function CallProvider({children}: { children: ReactNode }) {
                 pendingOffer.callId,
                 pcId,
             );
-            await applyAudioSenderQuality(
-                activePc,
-                pendingOffer.callId,
-                pcId,
-            );
+            await applyAudioSenderQuality(activePc, pendingOffer.callId, pcId);
 
+            callLog('CALL_WEBRTC', 'setting remote offer description', {
+                callId: pendingOffer.callId,
+                pcId,
+                remoteDescription: summarizeSdp(pendingOffer.offer.sdp),
+            });
             logDev('[SocialMobile] setRemoteDescription(offer) start', {
                 callId: pendingOffer.callId,
                 pcId,
@@ -2510,31 +3457,80 @@ export function CallProvider({children}: { children: ReactNode }) {
                 new RTCSessionDescription(pendingOffer.offer),
             );
             if (!isCurrentAccept()) {
+                callWarn(
+                    'CALL_START',
+                    'incoming call became stale after remote offer',
+                    {
+                        callId: pendingOffer.callId,
+                        fromId: pendingOffer.fromId,
+                        status: statusRef.current,
+                    },
+                );
                 cleanupStaleAccept();
                 return;
             }
-            logPeerState(activePc, pendingOffer.callId, 'remote-offer-set', pcId);
+            logPeerState(
+                activePc,
+                pendingOffer.callId,
+                'remote-offer-set',
+                pcId,
+            );
             await flushPendingIce();
             if (!isCurrentAccept()) {
                 cleanupStaleAccept();
                 return;
             }
 
+            callLog('CALL_WEBRTC', 'creating call answer', {
+                callId: pendingOffer.callId,
+                pcId,
+                callType: opened.callType,
+            });
             const answer = sessionDescriptionForSignal(
                 (await activePc.createAnswer()) as CallSessionDescription,
             );
             if (!isCurrentAccept()) {
+                callWarn(
+                    'CALL_START',
+                    'incoming call became stale after answer create',
+                    {
+                        callId: pendingOffer.callId,
+                        fromId: pendingOffer.fromId,
+                        status: statusRef.current,
+                    },
+                );
                 cleanupStaleAccept();
                 return;
             }
+            callLog('CALL_WEBRTC', 'call answer created', {
+                callId: pendingOffer.callId,
+                pcId,
+                callType: opened.callType,
+                summary: summarizeSdp(answer.sdp),
+            });
             logDev('[SocialMobile] createAnswer SDP summary', {
                 callId: pendingOffer.callId,
                 pcId,
                 callType: opened.callType,
                 summary: summarizeSdp(answer.sdp),
             });
-            await activePc.setLocalDescription(new RTCSessionDescription(answer));
+            callLog('CALL_WEBRTC', 'setting local answer description', {
+                callId: pendingOffer.callId,
+                pcId,
+            });
+            await activePc.setLocalDescription(
+                new RTCSessionDescription(answer),
+            );
             if (!isCurrentAccept()) {
+                callWarn(
+                    'CALL_START',
+                    'incoming call became stale after local answer',
+                    {
+                        callId: pendingOffer.callId,
+                        fromId: pendingOffer.fromId,
+                        status: statusRef.current,
+                    },
+                );
                 cleanupStaleAccept();
                 return;
             }
@@ -2548,15 +3544,51 @@ export function CallProvider({children}: { children: ReactNode }) {
                 signalingState: activePc.signalingState,
                 localDescription: summarizeSdp(localAnswer.sdp),
             });
+            callLog('CALL_WEBRTC', 'local answer description set', {
+                callId: pendingOffer.callId,
+                pcId,
+                signalingState: activePc.signalingState,
+                localDescription: summarizeSdp(localAnswer.sdp),
+            });
+            callLog('CALL_WS', 'waiting for websocket before answer', {
+                callId: pendingOffer.callId,
+                toId: pendingOffer.fromId,
+                timeoutMs: 8000,
+            });
             const socketReady = await chatSocket.waitUntilConnected(8000);
             if (!isCurrentAccept()) {
+                callWarn(
+                    'CALL_START',
+                    'incoming call became stale while waiting for socket',
+                    {
+                        callId: pendingOffer.callId,
+                        fromId: pendingOffer.fromId,
+                        status: statusRef.current,
+                    },
+                );
                 cleanupStaleAccept();
                 return;
             }
             if (!socketReady) {
+                logCallError(
+                    'CALL_ERROR',
+                    'websocket not connected before answer',
+                    {
+                        callId: pendingOffer.callId,
+                        toId: pendingOffer.fromId,
+                        timeoutMs: 8000,
+                    },
+                );
                 throw new Error('WebSocket is not connected');
             }
 
+            callLog('CALL_WS', 'sending call answer', {
+                callId: pendingOffer.callId,
+                pcId,
+                toId: pendingOffer.fromId,
+                callType: opened.callType,
+                sdp: summarizeSdp(localAnswer.sdp),
+            });
             logDev('[SocialMobile] Sending call answer', {
                 callId: pendingOffer.callId,
                 pcId,
@@ -2570,16 +3602,38 @@ export function CallProvider({children}: { children: ReactNode }) {
                 pendingOffer.callId,
             );
             if (!answerSent) {
+                logCallError('CALL_ERROR', 'call answer was not sent', {
+                    callId: pendingOffer.callId,
+                    pcId,
+                    toId: pendingOffer.fromId,
+                });
                 throw new Error('WebSocket is not connected');
             }
             markCallSignalingReady(pendingOffer.callId, pendingOffer.fromId);
             pendingOfferRef.current = null;
-            logDev('[SocialMobile] Call answer sent; waiting for media connection', {
+            logDev(
+                '[SocialMobile] Call answer sent; waiting for media connection',
+                {
+                    callId: pendingOffer.callId,
+                    pcId,
+                },
+            );
+            callLog('CALL_START', 'call answer sent', {
                 callId: pendingOffer.callId,
                 pcId,
+                toId: pendingOffer.fromId,
             });
         } catch (callError) {
             if (!isCurrentAccept()) {
+                logCallError(
+                    'CALL_ERROR',
+                    'accept call failed after stale state',
+                    {
+                        callId: pendingOffer.callId,
+                        fromId: pendingOffer.fromId,
+                        error: describeCallError(callError),
+                    },
+                );
                 cleanupStaleAccept();
                 return;
             }
@@ -2589,6 +3643,11 @@ export function CallProvider({children}: { children: ReactNode }) {
                 pendingOffer.callId,
             );
             const message = callErrorMessage(callError);
+            logCallError('CALL_ERROR', 'accept call failed', {
+                callId: pendingOffer.callId,
+                fromId: pendingOffer.fromId,
+                error: describeCallError(callError),
+            });
             showCallError(message);
             finishCall('error', message);
         } finally {
@@ -2611,7 +3670,8 @@ export function CallProvider({children}: { children: ReactNode }) {
     ]);
 
     const rejectCall = useCallback(() => {
-        const targetId = peerUserIdRef.current ?? pendingOfferRef.current?.fromId;
+        const targetId =
+            peerUserIdRef.current ?? pendingOfferRef.current?.fromId;
         const callId = callIdRef.current ?? pendingOfferRef.current?.callId;
         if (targetId && callId) {
             sendTerminalCallAction('reject', targetId, callId);
@@ -2631,20 +3691,46 @@ export function CallProvider({children}: { children: ReactNode }) {
     useEffect(() => {
         return registerCallShutdownHandler(async () => {
             const callId = callIdRef.current ?? pendingOfferRef.current?.callId;
-            const targetId = peerUserIdRef.current ?? pendingOfferRef.current?.fromId;
+            const targetId =
+                peerUserIdRef.current ?? pendingOfferRef.current?.fromId;
             const currentStatus = statusRef.current;
             if (!callId || !targetId || currentStatus === 'idle') {
+                callWarn(
+                    'CALL_START',
+                    'call shutdown skipped terminal signaling',
+                    {
+                        callId: callId ?? null,
+                        targetId: targetId ?? null,
+                        currentStatus,
+                    },
+                );
                 resetCall();
                 return;
             }
 
             try {
+                callLog('CALL_API', 'call shutdown terminal API started', {
+                    callId,
+                    targetId,
+                    currentStatus,
+                    action: currentStatus === 'incoming' ? 'reject' : 'end',
+                });
                 if (currentStatus === 'incoming') {
                     await callsApi.rejectCall(callId);
                 } else {
                     await callsApi.endCall(callId);
                 }
-            } catch {
+            } catch (shutdownError) {
+                logCallError(
+                    'CALL_ERROR',
+                    'call shutdown terminal API failed',
+                    {
+                        callId,
+                        targetId,
+                        currentStatus,
+                        error: describeCallError(shutdownError),
+                    },
+                );
                 try {
                     chatSocket.connect();
                     await chatSocket.waitUntilConnected(1200);
@@ -2653,8 +3739,17 @@ export function CallProvider({children}: { children: ReactNode }) {
                     } else {
                         chatSocket.sendCallEnd(targetId, callId);
                     }
-                } catch {
-                    // Logout cleanup is best-effort; local media cleanup must still happen.
+                } catch (sendError) {
+                    logCallError(
+                        'CALL_ERROR',
+                        'call shutdown terminal WS fallback failed',
+                        {
+                            callId,
+                            targetId,
+                            currentStatus,
+                            error: describeCallError(sendError),
+                        },
+                    );
                 }
             }
 
@@ -2685,6 +3780,14 @@ export function CallProvider({children}: { children: ReactNode }) {
             try {
                 nativeCallAudioSession?.setSpeakerphoneOn?.(next);
             } catch (nativeError) {
+                logCallError(
+                    'CALL_ERROR',
+                    'failed to toggle call speakerphone',
+                    {
+                        speakerphoneOn: next,
+                        error: describeCallError(nativeError),
+                    },
+                );
                 warnDev('[SocialMobile] Failed to toggle call speakerphone', {
                     speakerphoneOn: next,
                     error: nativeError,
@@ -2725,13 +3828,40 @@ export function CallProvider({children}: { children: ReactNode }) {
                 return;
             }
 
+            callLog('CALL_WS', 'call event received in context', {
+                type: event.type,
+                payload:
+                    event.payload && typeof event.payload === 'object'
+                        ? {
+                              callId: (event.payload as { call_id?: unknown })
+                                  .call_id,
+                              fromId: (event.payload as { from_id?: unknown })
+                                  .from_id,
+                          }
+                        : null,
+                status: statusRef.current,
+                currentCallId: callIdRef.current,
+                peerUserId: peerUserIdRef.current,
+            });
+
             const dedupKey = callEventDedupKey(event);
             if (dedupKey) {
                 if (seenCallEventsRef.current.has(dedupKey)) {
-                    logDev('[SocialMobile] Duplicate call signaling event ignored', {
-                        type: event.type,
-                        dedupKey,
-                    });
+                    callWarn(
+                        'CALL_WS',
+                        'duplicate call signaling event ignored',
+                        {
+                            type: event.type,
+                            dedupKey,
+                        },
+                    );
+                    logDev(
+                        '[SocialMobile] Duplicate call signaling event ignored',
+                        {
+                            type: event.type,
+                            dedupKey,
+                        },
+                    );
                     return;
                 }
                 seenCallEventsRef.current.add(dedupKey);
@@ -2757,6 +3887,15 @@ export function CallProvider({children}: { children: ReactNode }) {
                 } = payload;
 
                 if (fromId === user?.id || !isCallId(callId)) {
+                    callWarn('CALL_WS', 'incoming call offer ignored', {
+                        fromId,
+                        currentUserId: user?.id ?? null,
+                        callId,
+                        reason:
+                            fromId === user?.id
+                                ? 'self_offer'
+                                : 'missing_call_id',
+                    });
                     return;
                 }
 
@@ -2765,9 +3904,11 @@ export function CallProvider({children}: { children: ReactNode }) {
                         statusRef.current === 'incoming' &&
                         callIdRef.current === callId
                     ) {
-                        const nextCallType = incomingType === 'video' ? 'video' : 'audio';
+                        const nextCallType =
+                            incomingType === 'video' ? 'video' : 'audio';
                         const matchingPushCall =
-                            pendingIncomingCallPushRef.current?.callId === callId
+                            pendingIncomingCallPushRef.current?.callId ===
+                            callId
                                 ? pendingIncomingCallPushRef.current
                                 : null;
                         pendingIncomingCallPushRef.current = null;
@@ -2780,13 +3921,30 @@ export function CallProvider({children}: { children: ReactNode }) {
                         setCallPeer(fromId);
                         setCurrentCallType(nextCallType);
                         setDefaultSpeakerphoneForCallType(nextCallType);
-                        loadPeerName(fromId, matchingPushCall?.callerName, callId).catch(
-                            () => undefined,
-                        );
+                        loadPeerName(
+                            fromId,
+                            matchingPushCall?.callerName,
+                            callId,
+                        ).catch(peerNameError => {
+                            logCallError(
+                                'CALL_ERROR',
+                                'failed to load call peer name',
+                                {
+                                    callId,
+                                    fromId,
+                                    error: describeCallError(peerNameError),
+                                },
+                            );
+                        });
                         return;
                     }
 
                     sendTerminalCallAction('reject', fromId, callId);
+                    callWarn('CALL_WS', 'rejected incoming call while busy', {
+                        callId,
+                        fromId,
+                        status: statusRef.current,
+                    });
                     logDev('[SocialMobile] Rejected incoming call while busy', {
                         callId,
                         fromId,
@@ -2795,7 +3953,8 @@ export function CallProvider({children}: { children: ReactNode }) {
                     return;
                 }
 
-                const nextCallType = incomingType === 'video' ? 'video' : 'audio';
+                const nextCallType =
+                    incomingType === 'video' ? 'video' : 'audio';
                 const matchingPushCall =
                     pendingIncomingCallPushRef.current?.callId === callId
                         ? pendingIncomingCallPushRef.current
@@ -2814,14 +3973,31 @@ export function CallProvider({children}: { children: ReactNode }) {
                 setCurrentCallType(nextCallType);
                 setDefaultSpeakerphoneForCallType(nextCallType);
                 setCallStatus('incoming');
+                callLog('CALL_WS', 'incoming call offer accepted by context', {
+                    callId,
+                    fromId,
+                    callType: nextCallType,
+                });
                 logDev('[SocialMobile] Incoming call offer received', {
                     callId,
                     fromId,
                     callType: nextCallType,
                 });
-                loadPeerName(fromId, matchingPushCall?.callerName, callId).catch(
-                    () => undefined,
-                );
+                loadPeerName(
+                    fromId,
+                    matchingPushCall?.callerName,
+                    callId,
+                ).catch(peerNameError => {
+                    logCallError(
+                        'CALL_ERROR',
+                        'failed to load call peer name',
+                        {
+                            callId,
+                            fromId,
+                            error: describeCallError(peerNameError),
+                        },
+                    );
+                });
                 return;
             }
 
@@ -2832,7 +4008,16 @@ export function CallProvider({children}: { children: ReactNode }) {
                 candidate?: CallIceCandidate;
             };
 
-            if (!isCallId(payload.call_id) || payload.call_id !== callIdRef.current) {
+            if (
+                !isCallId(payload.call_id) ||
+                payload.call_id !== callIdRef.current
+            ) {
+                callWarn('CALL_WS', 'call event ignored for non-current call', {
+                    type: event.type,
+                    eventCallId: payload.call_id,
+                    currentCallId: callIdRef.current,
+                    fromId: payload.from_id,
+                });
                 if (
                     isCallId(payload.call_id) &&
                     (event.type === WS_EVENTS.CALL_END ||
@@ -2841,13 +4026,20 @@ export function CallProvider({children}: { children: ReactNode }) {
                         event.type === WS_EVENTS.CALL_BUSY ||
                         event.type === WS_EVENTS.CALL_REPLACED)
                 ) {
-                    rememberTerminalIncomingCall(payload.call_id).catch(() => undefined);
+                    rememberTerminalIncomingCall(payload.call_id).catch(
+                        () => undefined,
+                    );
                     chatSocket.discardPendingCallEvents(payload.call_id);
                 }
                 return;
             }
 
             if (payload.from_id === user?.id) {
+                callWarn('CALL_WS', 'call event ignored from current user', {
+                    type: event.type,
+                    callId: payload.call_id,
+                    fromId: payload.from_id,
+                });
                 if (!pcRef.current || statusRef.current === 'incoming') {
                     finishCall('ended');
                 }
@@ -2857,33 +4049,73 @@ export function CallProvider({children}: { children: ReactNode }) {
             const currentPeerId =
                 peerUserIdRef.current ?? pendingOfferRef.current?.fromId;
             if (payload.from_id !== currentPeerId) {
+                callWarn('CALL_WS', 'call event ignored from unexpected peer', {
+                    type: event.type,
+                    callId: payload.call_id,
+                    fromId: payload.from_id,
+                    currentPeerId,
+                });
                 return;
             }
 
             if (event.type === WS_EVENTS.CALL_ANSWER) {
                 const pc = pcRef.current;
                 if (!payload.answer || !pc) {
-                    warnDev('[SocialMobile] Call answer ignored without active PC', {
-                        callId: payload.call_id,
-                        fromId: payload.from_id,
-                        hasAnswer: Boolean(payload.answer),
-                    });
+                    logCallError(
+                        'CALL_ERROR',
+                        'call answer ignored without active PC',
+                        {
+                            callId: payload.call_id,
+                            fromId: payload.from_id,
+                            hasAnswer: Boolean(payload.answer),
+                            hasPeerConnection: Boolean(pc),
+                        },
+                    );
+                    warnDev(
+                        '[SocialMobile] Call answer ignored without active PC',
+                        {
+                            callId: payload.call_id,
+                            fromId: payload.from_id,
+                            hasAnswer: Boolean(payload.answer),
+                        },
+                    );
                     return;
                 }
                 const pcId = getPeerConnectionId(pc);
                 const offerPeer = localOfferPeerRef.current;
                 if (pcCallIdRef.current !== payload.call_id) {
-                    warnDev('[SocialMobile] Call answer ignored for non-current PC', {
-                        callId: payload.call_id,
-                        pcCallId: pcCallIdRef.current,
-                        pcId,
-                    });
+                    logCallError(
+                        'CALL_ERROR',
+                        'call answer ignored for non-current PC',
+                        {
+                            callId: payload.call_id,
+                            pcCallId: pcCallIdRef.current,
+                            pcId,
+                        },
+                    );
+                    warnDev(
+                        '[SocialMobile] Call answer ignored for non-current PC',
+                        {
+                            callId: payload.call_id,
+                            pcCallId: pcCallIdRef.current,
+                            pcId,
+                        },
+                    );
                     return;
                 }
                 if (
                     offerPeer?.callId === payload.call_id &&
                     offerPeer.pcId !== (pcId ?? -1)
                 ) {
+                    logCallError(
+                        'CALL_ERROR',
+                        'call answer ignored because offer PC changed',
+                        {
+                            callId: payload.call_id,
+                            offerPcId: offerPeer.pcId,
+                            currentPcId: pcId,
+                        },
+                    );
                     warnDev(
                         '[SocialMobile] Call answer ignored because offer PC changed',
                         {
@@ -2895,6 +4127,12 @@ export function CallProvider({children}: { children: ReactNode }) {
                     return;
                 }
 
+                callLog('CALL_WS', 'call answer received', {
+                    callId: payload.call_id,
+                    pcId,
+                    fromId: payload.from_id,
+                    answer: summarizeSdp(payload.answer.sdp),
+                });
                 logDev('[SocialMobile] Call answer received', {
                     callId: payload.call_id,
                     pcId,
@@ -2908,25 +4146,48 @@ export function CallProvider({children}: { children: ReactNode }) {
                     signalingState: pc.signalingState,
                     remoteDescription: summarizeSdp(payload.answer.sdp),
                 });
-                pc.setRemoteDescription(new RTCSessionDescription(payload.answer))
+                pc.setRemoteDescription(
+                    new RTCSessionDescription(payload.answer),
+                )
                     .then(async () => {
-                        if (pcRef.current !== pc || callIdRef.current !== callId) {
+                        if (
+                            pcRef.current !== pc ||
+                            callIdRef.current !== callId
+                        ) {
                             return;
                         }
                         logPeerState(pc, callId, 'remote-answer-set', pcId);
                         await flushPendingIce();
-                        if (pcRef.current !== pc || callIdRef.current !== callId) {
+                        if (
+                            pcRef.current !== pc ||
+                            callIdRef.current !== callId
+                        ) {
                             return;
                         }
                         if (statusRef.current !== 'active') {
-                            setCallStatus('connecting', 'answer_set_waiting_for_media');
+                            setCallStatus(
+                                'connecting',
+                                'answer_set_waiting_for_media',
+                            );
                         }
                     })
                     .catch(callError => {
-                        if (pcRef.current !== pc || callIdRef.current !== callId) {
+                        if (
+                            pcRef.current !== pc ||
+                            callIdRef.current !== callId
+                        ) {
                             return;
                         }
                         const message = callErrorMessage(callError);
+                        logCallError(
+                            'CALL_ERROR',
+                            'failed to set remote answer',
+                            {
+                                callId,
+                                pcId,
+                                error: describeCallError(callError),
+                            },
+                        );
                         showCallError(message);
                         finishCall('error', message, true);
                     });
@@ -2936,11 +4197,23 @@ export function CallProvider({children}: { children: ReactNode }) {
             if (event.type === WS_EVENTS.CALL_ICE) {
                 const candidate = payload.candidate;
                 if (!isUsableIceCandidate(candidate)) {
-                    logDev('[SocialMobile] Skipping empty incoming ICE candidate', {
-                        callId: payload.call_id,
-                        pcId: getPeerConnectionId(pcRef.current),
-                        fromId: payload.from_id,
-                    });
+                    callWarn(
+                        'CALL_WEBRTC',
+                        'skipping empty incoming ICE candidate',
+                        {
+                            callId: payload.call_id,
+                            pcId: getPeerConnectionId(pcRef.current),
+                            fromId: payload.from_id,
+                        },
+                    );
+                    logDev(
+                        '[SocialMobile] Skipping empty incoming ICE candidate',
+                        {
+                            callId: payload.call_id,
+                            pcId: getPeerConnectionId(pcRef.current),
+                            fromId: payload.from_id,
+                        },
+                    );
                     return;
                 }
 
@@ -2953,29 +4226,60 @@ export function CallProvider({children}: { children: ReactNode }) {
                     payload.from_id,
                 );
                 if (appliedRemoteIceKeysRef.current.has(candidateKey)) {
-                    logDev('[SocialMobile] Duplicate incoming ICE candidate ignored', {
-                        callId: payload.call_id,
-                        pcId: getPeerConnectionId(pcRef.current),
-                        fromId: payload.from_id,
-                        type: iceCandidateType(remoteCandidate),
-                    });
+                    callLog(
+                        'CALL_WEBRTC',
+                        'duplicate incoming ICE candidate ignored',
+                        {
+                            callId: payload.call_id,
+                            pcId: getPeerConnectionId(pcRef.current),
+                            fromId: payload.from_id,
+                            type: iceCandidateType(remoteCandidate),
+                        },
+                    );
+                    logDev(
+                        '[SocialMobile] Duplicate incoming ICE candidate ignored',
+                        {
+                            callId: payload.call_id,
+                            pcId: getPeerConnectionId(pcRef.current),
+                            fromId: payload.from_id,
+                            type: iceCandidateType(remoteCandidate),
+                        },
+                    );
                     return;
                 }
 
                 const pc = pcRef.current;
                 const pcId = getPeerConnectionId(pc);
                 if (pc && pcCallIdRef.current !== payload.call_id) {
-                    warnDev('[SocialMobile] Incoming ICE ignored for non-current PC', {
-                        callId: payload.call_id,
-                        pcCallId: pcCallIdRef.current,
-                        pcId,
-                        fromId: payload.from_id,
-                        type: iceCandidateType(candidate),
-                    });
+                    logCallError(
+                        'CALL_ERROR',
+                        'incoming ICE ignored for non-current PC',
+                        {
+                            callId: payload.call_id,
+                            pcCallId: pcCallIdRef.current,
+                            pcId,
+                            fromId: payload.from_id,
+                            type: iceCandidateType(candidate),
+                        },
+                    );
+                    warnDev(
+                        '[SocialMobile] Incoming ICE ignored for non-current PC',
+                        {
+                            callId: payload.call_id,
+                            pcCallId: pcCallIdRef.current,
+                            pcId,
+                            fromId: payload.from_id,
+                            type: iceCandidateType(candidate),
+                        },
+                    );
                     return;
                 }
                 if (!pc?.remoteDescription) {
-                    queuePendingIceCandidate(remoteCandidate, payload.from_id, 'live');
+                    queuePendingIceCandidate(
+                        remoteCandidate,
+                        payload.from_id,
+                        'live',
+                    );
                     return;
                 }
 
@@ -2989,7 +4293,18 @@ export function CallProvider({children}: { children: ReactNode }) {
                             appliedRemoteIceKeysRef.current.add(candidateKey);
                         }
                     })
-                    .catch(() => undefined);
+                    .catch(iceError => {
+                        logCallError(
+                            'CALL_ERROR',
+                            'failed to add live ICE candidate',
+                            {
+                                callId: payload.call_id,
+                                pcId,
+                                fromId: payload.from_id,
+                                error: describeCallError(iceError),
+                            },
+                        );
+                    });
                 return;
             }
 
@@ -3002,9 +4317,14 @@ export function CallProvider({children}: { children: ReactNode }) {
                     event.type === WS_EVENTS.CALL_BUSY
                         ? 'Пользователь занят.'
                         : event.type === WS_EVENTS.CALL_TIMEOUT
-                            ? 'Звонок не был принят.'
-                            : 'Звонок заменен новым вызовом.';
+                        ? 'Звонок не был принят.'
+                        : 'Звонок заменен новым вызовом.';
                 logDev('[SocialMobile] Server terminal call event received', {
+                    callId: payload.call_id,
+                    fromId: payload.from_id,
+                    eventType: event.type,
+                });
+                callLog('CALL_WS', 'server terminal call event received', {
                     callId: payload.call_id,
                     fromId: payload.from_id,
                     eventType: event.type,
@@ -3022,6 +4342,12 @@ export function CallProvider({children}: { children: ReactNode }) {
                     callId: payload.call_id,
                     fromId: payload.from_id,
                     eventType: event.type,
+                });
+                callLog('CALL_WS', 'remote call ended or rejected', {
+                    callId: payload.call_id,
+                    fromId: payload.from_id,
+                    eventType: event.type,
+                    status: statusRef.current,
                 });
                 finishCall('ended');
             }
@@ -3060,14 +4386,26 @@ export function CallProvider({children}: { children: ReactNode }) {
         }
 
         let mounted = true;
-        hydrateIncomingCall().catch(() => undefined);
+        hydrateIncomingCall().catch(hydrateError => {
+            logCallError('CALL_ERROR', 'initial active call hydrate failed', {
+                error: describeCallError(hydrateError),
+            });
+        });
         consumePendingIncomingCall()
             .then(call => {
                 if (mounted && call) {
                     stagePendingIncomingCallPush(call);
                 }
             })
-            .catch(() => undefined);
+            .catch(pendingCallError => {
+                logCallError(
+                    'CALL_ERROR',
+                    'consume pending incoming call failed',
+                    {
+                        error: describeCallError(pendingCallError),
+                    },
+                );
+            });
 
         return () => {
             mounted = false;
@@ -3094,12 +4432,33 @@ export function CallProvider({children}: { children: ReactNode }) {
 
         return chatSocket.onStatus(connected => {
             if (connected) {
-                logDev('[SocialMobile] WebSocket connected; restoring active call', {
-                    callId: callIdRef.current,
-                    pcId: getPeerConnectionId(pcRef.current),
-                    status: statusRef.current,
+                logDev(
+                    '[SocialMobile] WebSocket connected; restoring active call',
+                    {
+                        callId: callIdRef.current,
+                        pcId: getPeerConnectionId(pcRef.current),
+                        status: statusRef.current,
+                    },
+                );
+                callLog(
+                    'CALL_WS',
+                    'websocket connected; restoring active call',
+                    {
+                        callId: callIdRef.current,
+                        pcId: getPeerConnectionId(pcRef.current),
+                        status: statusRef.current,
+                    },
+                );
+                hydrateIncomingCall().catch(hydrateError => {
+                    logCallError(
+                        'CALL_ERROR',
+                        'active call hydrate after websocket connect failed',
+                        {
+                            callId: callIdRef.current,
+                            error: describeCallError(hydrateError),
+                        },
+                    );
                 });
-                hydrateIncomingCall().catch(() => undefined);
             }
         });
     }, [getPeerConnectionId, hydrateIncomingCall, user?.id]);
@@ -3118,7 +4477,10 @@ export function CallProvider({children}: { children: ReactNode }) {
         };
 
         sendHeartbeat();
-        const heartbeatTimer = setInterval(sendHeartbeat, callHeartbeatIntervalMs);
+        const heartbeatTimer = setInterval(
+            sendHeartbeat,
+            callHeartbeatIntervalMs,
+        );
         return () => clearInterval(heartbeatTimer);
     }, [status]);
 
@@ -3154,17 +4516,26 @@ export function CallProvider({children}: { children: ReactNode }) {
 
             initialVideoQualityProfile(networkConnectedRef.current)
                 .then(async profile => {
-                    for (const fallbackProfile of videoProfileFallbackChain(profile)) {
+                    for (const fallbackProfile of videoProfileFallbackChain(
+                        profile,
+                    )) {
                         if (fallbackProfile.name === 'low') {
                             return;
                         }
-                        const applied = await applyLocalVideoProfile(fallbackProfile);
+                        const applied = await applyLocalVideoProfile(
+                            fallbackProfile,
+                        );
                         if (applied) {
                             return;
                         }
                     }
                 })
-                .catch(() => undefined);
+                .catch(qualityError => {
+                    logCallError('CALL_ERROR', 'video quality upgrade failed', {
+                        callId: callIdRef.current,
+                        error: describeCallError(qualityError),
+                    });
+                });
         }, 20000);
 
         return () => clearTimeout(upgradeTimer);
@@ -3179,7 +4550,16 @@ export function CallProvider({children}: { children: ReactNode }) {
             return;
         }
 
-        applyLocalVideoProfile(videoQualityProfiles.low).catch(() => undefined);
+        applyLocalVideoProfile(videoQualityProfiles.low).catch(degradeError => {
+            logCallError(
+                'CALL_ERROR',
+                'failed to degrade video while offline',
+                {
+                    callId: callIdRef.current,
+                    error: describeCallError(degradeError),
+                },
+            );
+        });
     }, [applyLocalVideoProfile, callType, networkConnected, status]);
 
     useEffect(() => {
@@ -3187,7 +4567,8 @@ export function CallProvider({children}: { children: ReactNode }) {
             Platform.OS !== 'android' ||
             appState === 'active' ||
             callTypeRef.current !== 'video' ||
-            (statusRef.current !== 'active' && statusRef.current !== 'reconnecting')
+            (statusRef.current !== 'active' &&
+                statusRef.current !== 'reconnecting')
         ) {
             return;
         }
@@ -3249,259 +4630,260 @@ export function CallProvider({children}: { children: ReactNode }) {
 }
 
 function CallOverlay({
-                       status,
-                       callType,
-                       peerName,
-                       localStream,
-                       remoteStream,
-                       microphoneOn,
-                       cameraOn,
-                       speakerphoneOn,
-                       frontCamera,
-                       error,
-                       onAccept,
-                       onReject,
-                       onEnd,
-                       onToggleMicrophone,
-                       onToggleCamera,
-                       onToggleSpeakerphone,
-                       onSwitchCamera,
-                     }: {
-  status: CallStatus;
-  callType: CallType;
-  peerName: string;
-  localStream: MediaStream | null;
-  remoteStream: MediaStream | null;
-  microphoneOn: boolean;
-  cameraOn: boolean;
-  speakerphoneOn: boolean;
-  frontCamera: boolean;
-  error: string | null;
-  onAccept: () => void;
-  onReject: () => void;
-  onEnd: () => void;
-  onToggleMicrophone: () => void;
-  onToggleCamera: () => void;
-  onToggleSpeakerphone: () => void;
-  onSwitchCamera: () => void;
+    status,
+    callType,
+    peerName,
+    localStream,
+    remoteStream,
+    microphoneOn,
+    cameraOn,
+    speakerphoneOn,
+    frontCamera,
+    error,
+    onAccept,
+    onReject,
+    onEnd,
+    onToggleMicrophone,
+    onToggleCamera,
+    onToggleSpeakerphone,
+    onSwitchCamera,
+}: {
+    status: CallStatus;
+    callType: CallType;
+    peerName: string;
+    localStream: MediaStream | null;
+    remoteStream: MediaStream | null;
+    microphoneOn: boolean;
+    cameraOn: boolean;
+    speakerphoneOn: boolean;
+    frontCamera: boolean;
+    error: string | null;
+    onAccept: () => void;
+    onReject: () => void;
+    onEnd: () => void;
+    onToggleMicrophone: () => void;
+    onToggleCamera: () => void;
+    onToggleSpeakerphone: () => void;
+    onSwitchCamera: () => void;
 }) {
-  const insets = useSafeAreaInsets();
+    const insets = useSafeAreaInsets();
 
-  if (status === 'idle') {
-    return null;
-  }
+    if (status === 'idle') {
+        return null;
+    }
 
-  const isVideoCall = callType === 'video';
+    const isVideoCall = callType === 'video';
 
-  const remoteVideoTrack = remoteStream
-      ?.getVideoTracks()
-      .find(track => track.readyState === 'live');
+    const remoteVideoTrack = remoteStream
+        ?.getVideoTracks()
+        .find(track => track.readyState === 'live');
 
-  const localVideoTrack = localStream
-      ?.getVideoTracks()
-      .find(track => track.readyState === 'live');
+    const localVideoTrack = localStream
+        ?.getVideoTracks()
+        .find(track => track.readyState === 'live');
 
-  const remoteStreamUrl = remoteStream?.toURL?.();
-  const localStreamUrl = localStream?.toURL?.();
+    const remoteStreamUrl = remoteStream?.toURL?.();
+    const localStreamUrl = localStream?.toURL?.();
 
-  const showRemoteVideo = Boolean(
-      isVideoCall &&
-      remoteStream &&
-      remoteStreamUrl &&
-      remoteVideoTrack,
-  );
+    const showRemoteVideo = Boolean(
+        isVideoCall && remoteStream && remoteStreamUrl && remoteVideoTrack,
+    );
 
-  const showVideoPlaceholder = Boolean(
-      isVideoCall &&
-      !remoteVideoTrack,
-  );
+    const showVideoPlaceholder = Boolean(isVideoCall && !remoteVideoTrack);
 
-  const showLocalPreview = Boolean(
-      isVideoCall &&
-      localStream &&
-      localStreamUrl &&
-      localVideoTrack,
-  );
+    const showLocalPreview = Boolean(
+        isVideoCall && localStream && localStreamUrl && localVideoTrack,
+    );
 
-  const showActiveControls =
-      status === 'connecting' ||
-      status === 'ringing' ||
-      status === 'active' ||
-      status === 'reconnecting';
+    const showActiveControls =
+        status === 'connecting' ||
+        status === 'ringing' ||
+        status === 'active' ||
+        status === 'reconnecting';
 
-  const initial = peerName.slice(0, 1).toUpperCase();
+    const initial = peerName.slice(0, 1).toUpperCase();
 
-  const showSpinner =
-      status === 'connecting' ||
-      status === 'ringing' ||
-      status === 'reconnecting';
+    const showSpinner =
+        status === 'connecting' ||
+        status === 'ringing' ||
+        status === 'reconnecting';
 
-  return (
-      <Modal
-          visible
-          animationType="fade"
-          presentationStyle="fullScreen"
-          statusBarTranslucent
-          navigationBarTranslucent
-      >
-        <StatusBar hidden animated />
+    return (
+        <Modal
+            visible
+            animationType="fade"
+            presentationStyle="fullScreen"
+            statusBarTranslucent
+            navigationBarTranslucent
+        >
+            <StatusBar hidden animated />
 
-        <View style={styles.callRoot}>
-          <View style={styles.remoteStage}>
-            {showRemoteVideo && remoteStreamUrl ? (
-                <RTCView
-                    key={remoteStreamUrl}
-                    streamURL={remoteStreamUrl}
-                    style={styles.remoteVideo}
-                    objectFit="cover"
-                    zOrder={0}
-                />
-            ) : null}
-
-            {showVideoPlaceholder ? (
-                <View style={styles.videoPlaceholder}>
-                  <Text style={styles.videoPlaceholderText}>
-                    Ожидание видео
-                  </Text>
-
-                  {showSpinner ? (
-                      <ActivityIndicator color="#ffffff" size="small" />
-                  ) : null}
-                </View>
-            ) : null}
-
-            {!isVideoCall ? (
-                <View style={styles.audioStage}>
-                  <View style={styles.avatarPulse} />
-
-                  <View style={styles.peerAvatar}>
-                    <Text style={styles.peerInitial}>{initial}</Text>
-                  </View>
-
-                  {showSpinner ? (
-                      <ActivityIndicator color="#ffffff" size="large" />
-                  ) : null}
-                </View>
-            ) : null}
-          </View>
-
-          <View
-              style={[
-                styles.callHeader,
-                { top: Math.max(insets.top, 12) + 12 },
-              ]}
-          >
-            <Text style={styles.callName} numberOfLines={1}>
-              {peerName}
-            </Text>
-
-            <Text style={styles.callStatus}>
-              {error ?? statusText(status, callType)}
-            </Text>
-          </View>
-
-          {showLocalPreview && localStreamUrl ? (
-              <View
-                  style={[
-                    styles.localPreview,
-                    { top: Math.max(insets.top, 12) + 86 },
-                  ]}
-              >
-                <RTCView
-                    key={localStreamUrl}
-                    streamURL={localStreamUrl}
-                    style={styles.localVideo}
-                    mirror={frontCamera}
-                    objectFit="cover"
-                    zOrder={1}
-                />
-              </View>
-          ) : null}
-
-          <View
-              style={[
-                styles.callControls,
-                { bottom: Math.max(insets.bottom, 10) + 10 },
-              ]}
-          >
-            {status === 'incoming' ? (
-                <View style={styles.incomingControlsRow}>
-                  <CallButton
-                      label="Отклонить"
-                      icon={PhoneOff}
-                      danger
-                      large
-                      onPress={onReject}
-                  />
-
-                  <CallButton
-                      label="Ответить"
-                      icon={Phone}
-                      accept
-                      large
-                      onPress={onAccept}
-                  />
-                </View>
-            ) : null}
-
-            {showActiveControls ? (
-                <View style={styles.callButtonsRow}>
-                  <CallButton
-                      label={microphoneOn ? 'Микрофон' : 'Выкл.'}
-                      icon={microphoneOn ? Mic : MicOff}
-                      muted={!microphoneOn}
-                      onPress={onToggleMicrophone}
-                  />
-
-                  {callType === 'audio' ? (
-                      <CallButton
-                          label={speakerphoneOn ? 'Динамик' : 'Телефон'}
-                          icon={speakerphoneOn ? Volume2 : VolumeOff}
-                          muted={!speakerphoneOn}
-                          onPress={onToggleSpeakerphone}
-                      />
-                  ) : null}
-
-                  {callType === 'video' ? (
-                      <>
-                        <CallButton
-                            label={cameraOn ? 'Камера' : 'Выкл.'}
-                            icon={cameraOn ? Video : VideoOff}
-                            muted={!cameraOn}
-                            onPress={onToggleCamera}
+            <View style={styles.callRoot}>
+                <View style={styles.remoteStage}>
+                    {showRemoteVideo && remoteStreamUrl ? (
+                        <RTCView
+                            key={remoteStreamUrl}
+                            streamURL={remoteStreamUrl}
+                            style={styles.remoteVideo}
+                            objectFit="cover"
+                            zOrder={0}
                         />
+                    ) : null}
 
-                        <CallButton
-                            label="Сменить"
-                            icon={RotateCcw}
-                            onPress={onSwitchCamera}
-                        />
-                      </>
-                  ) : null}
+                    {showVideoPlaceholder ? (
+                        <View style={styles.videoPlaceholder}>
+                            <Text style={styles.videoPlaceholderText}>
+                                Ожидание видео
+                            </Text>
 
-                  <CallButton
-                      label="Завершить"
-                      icon={PhoneOff}
-                      danger
-                      onPress={onEnd}
-                  />
+                            {showSpinner ? (
+                                <ActivityIndicator
+                                    color="#ffffff"
+                                    size="small"
+                                />
+                            ) : null}
+                        </View>
+                    ) : null}
+
+                    {!isVideoCall ? (
+                        <View style={styles.audioStage}>
+                            <View style={styles.avatarPulse} />
+
+                            <View style={styles.peerAvatar}>
+                                <Text style={styles.peerInitial}>
+                                    {initial}
+                                </Text>
+                            </View>
+
+                            {showSpinner ? (
+                                <ActivityIndicator
+                                    color="#ffffff"
+                                    size="large"
+                                />
+                            ) : null}
+                        </View>
+                    ) : null}
                 </View>
-            ) : null}
-          </View>
-        </View>
-      </Modal>
-  );
+
+                <View
+                    style={[
+                        styles.callHeader,
+                        { top: Math.max(insets.top, 12) + 12 },
+                    ]}
+                >
+                    <Text style={styles.callName} numberOfLines={1}>
+                        {peerName}
+                    </Text>
+
+                    <Text style={styles.callStatus}>
+                        {error ?? statusText(status, callType)}
+                    </Text>
+                </View>
+
+                {showLocalPreview && localStreamUrl ? (
+                    <View
+                        style={[
+                            styles.localPreview,
+                            { top: Math.max(insets.top, 12) + 86 },
+                        ]}
+                    >
+                        <RTCView
+                            key={localStreamUrl}
+                            streamURL={localStreamUrl}
+                            style={styles.localVideo}
+                            mirror={frontCamera}
+                            objectFit="cover"
+                            zOrder={1}
+                        />
+                    </View>
+                ) : null}
+
+                <View
+                    style={[
+                        styles.callControls,
+                        { bottom: Math.max(insets.bottom, 10) + 10 },
+                    ]}
+                >
+                    {status === 'incoming' ? (
+                        <View style={styles.incomingControlsRow}>
+                            <CallButton
+                                label="Отклонить"
+                                icon={PhoneOff}
+                                danger
+                                large
+                                onPress={onReject}
+                            />
+
+                            <CallButton
+                                label="Ответить"
+                                icon={Phone}
+                                accept
+                                large
+                                onPress={onAccept}
+                            />
+                        </View>
+                    ) : null}
+
+                    {showActiveControls ? (
+                        <View style={styles.callButtonsRow}>
+                            <CallButton
+                                label={microphoneOn ? 'Микрофон' : 'Выкл.'}
+                                icon={microphoneOn ? Mic : MicOff}
+                                muted={!microphoneOn}
+                                onPress={onToggleMicrophone}
+                            />
+
+                            {callType === 'audio' ? (
+                                <CallButton
+                                    label={
+                                        speakerphoneOn ? 'Динамик' : 'Телефон'
+                                    }
+                                    icon={speakerphoneOn ? Volume2 : VolumeOff}
+                                    muted={!speakerphoneOn}
+                                    onPress={onToggleSpeakerphone}
+                                />
+                            ) : null}
+
+                            {callType === 'video' ? (
+                                <>
+                                    <CallButton
+                                        label={cameraOn ? 'Камера' : 'Выкл.'}
+                                        icon={cameraOn ? Video : VideoOff}
+                                        muted={!cameraOn}
+                                        onPress={onToggleCamera}
+                                    />
+
+                                    <CallButton
+                                        label="Сменить"
+                                        icon={RotateCcw}
+                                        onPress={onSwitchCamera}
+                                    />
+                                </>
+                            ) : null}
+
+                            <CallButton
+                                label="Завершить"
+                                icon={PhoneOff}
+                                danger
+                                onPress={onEnd}
+                            />
+                        </View>
+                    ) : null}
+                </View>
+            </View>
+        </Modal>
+    );
 }
 
 function CallButton({
-                        label,
-                        icon: Icon,
-                        danger,
-                        accept,
-                        muted,
-                        large,
-                        onPress,
-                    }: {
+    label,
+    icon: Icon,
+    danger,
+    accept,
+    muted,
+    large,
+    onPress,
+}: {
     label: string;
     icon: React.ComponentType<{
         color?: string;
@@ -3521,7 +4903,7 @@ function CallButton({
             <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={label}
-                style={({pressed}) => [
+                style={({ pressed }) => [
                     styles.callButton,
                     large && styles.callButtonLarge,
                     danger && styles.callButtonDanger,
@@ -3531,7 +4913,11 @@ function CallButton({
                 ]}
                 onPress={onPress}
             >
-                <Icon color={iconColor} size={large ? 30 : 23} strokeWidth={2.5}/>
+                <Icon
+                    color={iconColor}
+                    size={large ? 30 : 23}
+                    strokeWidth={2.5}
+                />
             </Pressable>
             <Text style={styles.callButtonText}>{label}</Text>
         </View>
@@ -3601,7 +4987,7 @@ const styles = StyleSheet.create({
         shadowColor: '#2563eb',
         shadowOpacity: 0.34,
         shadowRadius: 26,
-        shadowOffset: {width: 0, height: 16},
+        shadowOffset: { width: 0, height: 16 },
         elevation: 8,
     },
     peerInitial: {
@@ -3627,7 +5013,7 @@ const styles = StyleSheet.create({
         fontWeight: '900',
         textAlign: 'center',
         textShadowColor: 'rgba(0,0,0,0.5)',
-        textShadowOffset: {width: 0, height: 1},
+        textShadowOffset: { width: 0, height: 1 },
         textShadowRadius: 8,
     },
     callStatus: {
@@ -3637,7 +5023,7 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         textAlign: 'center',
         textShadowColor: 'rgba(0,0,0,0.45)',
-        textShadowOffset: {width: 0, height: 1},
+        textShadowOffset: { width: 0, height: 1 },
         textShadowRadius: 6,
     },
     localPreview: {
@@ -3653,7 +5039,7 @@ const styles = StyleSheet.create({
         shadowColor: '#000000',
         shadowOpacity: 0.32,
         shadowRadius: 18,
-        shadowOffset: {width: 0, height: 10},
+        shadowOffset: { width: 0, height: 10 },
         zIndex: 25,
         elevation: 25,
     },
@@ -3676,7 +5062,7 @@ const styles = StyleSheet.create({
         shadowColor: '#000000',
         shadowOpacity: 0.3,
         shadowRadius: 18,
-        shadowOffset: {width: 0, height: 8},
+        shadowOffset: { width: 0, height: 8 },
         zIndex: 35,
         elevation: 35,
     },
@@ -3727,7 +5113,7 @@ const styles = StyleSheet.create({
     },
     callButtonPressed: {
         opacity: 0.78,
-        transform: [{scale: 0.96}],
+        transform: [{ scale: 0.96 }],
     },
     callButtonText: {
         color: '#ffffff',

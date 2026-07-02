@@ -21,10 +21,13 @@
 
 # WebRTC calls need native peer connection, media constraints and track classes.
 -keep class org.webrtc.** { *; }
+-keep class com.oney.WebRTCModule.** { *; }
 -dontwarn org.webrtc.**
+-dontwarn com.oney.WebRTCModule.**
 
 # Push, notifications and native RN modules publish consumer rules, but these
 # keeps make release minification conservative for the current critical paths.
+-keep class com.socialmobile.** { *; }
 -keep class io.invertase.firebase.** { *; }
 -keep class app.notifee.** { *; }
 -keep class com.reactnativecommunity.netinfo.** { *; }
@@ -36,6 +39,7 @@
 -keep class com.oblador.keychain.** { *; }
 -keep class com.preeternal.reactnativecookiemanager.** { *; }
 -keep class com.brentvatne.** { *; }
+-dontwarn com.socialmobile.**
 -dontwarn io.invertase.firebase.**
 -dontwarn app.notifee.**
 -dontwarn com.reactnativecommunity.netinfo.**

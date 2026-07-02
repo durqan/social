@@ -30,6 +30,7 @@ import { useNotifications } from '../context/NotificationsContext';
 import { useUnread } from '../context/UnreadContext';
 import { useCall } from '../context/CallContext';
 import { IconButton } from '../components/IconButton';
+import { callLog } from '../utils/callDiagnostics';
 import {
   flushPendingNotificationNavigation,
   navigationRef,
@@ -131,7 +132,14 @@ function ChatHeaderActions({
         variant="ghost"
         size="lg"
         disabled={disabled}
-        onPress={() => startAudioCall(normalizedUserId, name)}
+        onPress={() => {
+          callLog('CALL_UI', 'audio call button pressed', {
+            userId: normalizedUserId,
+            hasValidUserId,
+            callStatus: status,
+          });
+          startAudioCall(normalizedUserId, name);
+        }}
         style={stylesStatic.chatHeaderButton}
       />
       <IconButton
@@ -140,7 +148,14 @@ function ChatHeaderActions({
         variant="ghost"
         size="lg"
         disabled={disabled}
-        onPress={() => startVideoCall(normalizedUserId, name)}
+        onPress={() => {
+          callLog('CALL_UI', 'video call button pressed', {
+            userId: normalizedUserId,
+            hasValidUserId,
+            callStatus: status,
+          });
+          startVideoCall(normalizedUserId, name);
+        }}
         style={stylesStatic.chatHeaderButton}
       />
     </View>

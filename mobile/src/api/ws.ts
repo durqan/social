@@ -12,6 +12,14 @@ import type { EncryptedMessagePayload } from '../crypto/encryptMessage';
 import { getCookieHeader, refreshSession } from './http';
 import type { MessageAttachment } from './types';
 import { logDev, warnDev } from '../utils/logger';
+import {
+  callError,
+  callLog,
+  callWarn,
+  describeCallError,
+  logCallEnvOnce,
+  sanitizeEndpoint,
+} from '../utils/callDiagnostics';
 
 export type { CallIceCandidate, CallSessionDescription, CallType, WsEvent };
 
@@ -131,8 +139,10 @@ class ChatSocket {
   }
 
   connect() {
+    logCallEnvOnce('ws_connect');
     this.shouldReconnect = true;
     if (!this.networkOnline) {
+      callWarn('CALL_WS', 'connect skipped while network is offline');
       return;
     }
     if (
@@ -140,10 +150,19 @@ class ChatSocket {
       this.ws?.readyState === WebSocket.OPEN ||
       this.ws?.readyState === WebSocket.CONNECTING
     ) {
+      callLog('CALL_WS', 'connect skipped while socket is already active', {
+        opening: this.opening,
+        readyState: this.ws?.readyState,
+        connected: this.connected,
+      });
       return;
     }
 
-    this.open().catch(() => undefined);
+    this.open().catch(error => {
+      callError('CALL_ERROR', 'websocket open promise rejected', {
+        error: describeCallError(error),
+      });
+    });
   }
 
   recover() {
@@ -366,16 +385,28 @@ class ChatSocket {
     this.opening = true;
     const generation = this.socketGeneration + 1;
     this.socketGeneration = generation;
+    callLog('CALL_WS', 'opening websocket', {
+      generation,
+      url: sanitizeEndpoint(WS_URL),
+    });
 
     try {
       await refreshSession();
       if (!this.shouldReconnect || generation !== this.socketGeneration) {
         this.opening = false;
+        callWarn('CALL_WS', 'open aborted after auth refresh', {
+          generation,
+          shouldReconnect: this.shouldReconnect,
+        });
         return;
       }
       const cookieHeader = await getCookieHeader();
       if (!this.shouldReconnect || generation !== this.socketGeneration) {
         this.opening = false;
+        callWarn('CALL_WS', 'open aborted after cookie read', {
+          generation,
+          shouldReconnect: this.shouldReconnect,
+        });
         return;
       }
       const SocketCtor = WebSocket as unknown as RNWebSocketConstructor;
@@ -390,6 +421,10 @@ class ChatSocket {
       if (!this.shouldReconnect || generation !== this.socketGeneration) {
         this.opening = false;
         socket.close();
+        callWarn('CALL_WS', 'open aborted after socket creation', {
+          generation,
+          shouldReconnect: this.shouldReconnect,
+        });
         return;
       }
 
@@ -404,6 +439,11 @@ class ChatSocket {
         this.opening = false;
         this.reconnectAttempts = 0;
         this.setConnected(true);
+        callLog('CALL_WS', 'websocket connected', {
+          generation,
+          pendingEvents: this.pendingEvents.length,
+          reconnectAttempt,
+        });
         logDev(
           reconnectAttempt > 0
             ? '[SocialMobile] WebSocket reconnect complete'
@@ -426,6 +466,7 @@ class ChatSocket {
         if (!this.isCurrentSocket(socket, generation)) {
           return;
         }
+        callError('CALL_ERROR', 'websocket error', { generation });
         warnDev('[SocialMobile] WebSocket error', { generation });
         this.opening = false;
         this.setConnected(false);
@@ -434,6 +475,11 @@ class ChatSocket {
         if (!this.isCurrentSocket(socket, generation)) {
           return;
         }
+        callLog('CALL_WS', 'websocket closed', {
+          generation,
+          shouldReconnect: this.shouldReconnect,
+          pendingEvents: this.pendingEvents.length,
+        });
         logDev('[SocialMobile] WebSocket closed', {
           generation,
           shouldReconnect: this.shouldReconnect,
@@ -444,10 +490,14 @@ class ChatSocket {
         this.setConnected(false);
         this.scheduleReconnect();
       };
-    } catch {
+    } catch (error) {
       if (generation !== this.socketGeneration) {
         return;
       }
+      callError('CALL_ERROR', 'websocket open failed', {
+        generation,
+        error: describeCallError(error),
+      });
       this.opening = false;
       this.setConnected(false);
       this.scheduleReconnect();
@@ -457,6 +507,13 @@ class ChatSocket {
   private sendEvent(event: OutgoingEvent, queueIfClosed = true) {
     if (!this.isConnected()) {
       if (!queueIfClosed) {
+        if (this.isCallEvent(event)) {
+          callWarn('CALL_WS', 'call event dropped because socket is closed', {
+            type: event.type,
+            callId: this.eventCallId(event),
+            connected: this.isConnected(),
+          });
+        }
         return false;
       }
 
@@ -471,6 +528,11 @@ class ChatSocket {
       this.logSocketSend(event, 'sent');
       return true;
     } catch (error) {
+      callError('CALL_ERROR', 'websocket send failed', {
+        type: event.type,
+        callId: this.eventCallId(event),
+        error: describeCallError(error),
+      });
       warnDev('[SocialMobile] WebSocket send failed', {
         type: event.type,
         callId: this.eventCallId(event),
@@ -490,6 +552,12 @@ class ChatSocket {
     }
 
     logDev('[SocialMobile] Call signaling event ' + mode, {
+      type: event.type,
+      callId: this.eventCallId(event),
+      connected: this.isConnected(),
+      pendingEvents: this.pendingEvents.length,
+    });
+    callLog('CALL_WS', `call signaling event ${mode}`, {
       type: event.type,
       callId: this.eventCallId(event),
       connected: this.isConnected(),
@@ -541,10 +609,27 @@ class ChatSocket {
     try {
       const parsed = JSON.parse(raw) as WsEvent;
       if (parsed && typeof parsed.type === 'string') {
+        if (this.callEventTypes.has(parsed.type)) {
+          callLog('CALL_WS', 'call signaling event received', {
+            type: parsed.type,
+            callId:
+              parsed.payload && typeof parsed.payload === 'object'
+                ? (parsed.payload as { call_id?: unknown }).call_id
+                : null,
+            fromId:
+              parsed.payload && typeof parsed.payload === 'object'
+                ? (parsed.payload as { from_id?: unknown }).from_id
+                : null,
+          });
+        }
         this.handlers.forEach(handler => {
           try {
             handler(parsed);
           } catch (error) {
+            callError('CALL_ERROR', 'websocket handler failed', {
+              type: parsed.type,
+              error: describeCallError(error),
+            });
             warnDev('[SocialMobile] WebSocket handler failed', {
               type: parsed.type,
               error,
@@ -552,8 +637,10 @@ class ChatSocket {
           }
         });
       }
-    } catch {
-      // Ignore malformed events from the socket.
+    } catch (error) {
+      callWarn('CALL_WS', 'malformed websocket event ignored', {
+        error: describeCallError(error),
+      });
     }
   }
 
@@ -563,6 +650,9 @@ class ChatSocket {
     }
 
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      callWarn('CALL_WS', 'websocket reconnect paused after max attempts', {
+        pendingEvents: this.pendingEvents.length,
+      });
       logDev('[SocialMobile] WebSocket reconnect paused after max attempts');
       return;
     }
@@ -576,6 +666,10 @@ class ChatSocket {
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       if (this.shouldReconnect) {
+        callLog('CALL_WS', 'websocket reconnecting', {
+          attempt: this.reconnectAttempts,
+          pendingEvents: this.pendingEvents.length,
+        });
         logDev('[SocialMobile] WebSocket reconnecting', {
           attempt: this.reconnectAttempts,
           pendingEvents: this.pendingEvents.length,
@@ -584,6 +678,11 @@ class ChatSocket {
       }
     }, delay);
 
+    callLog('CALL_WS', 'websocket reconnect scheduled', {
+      attempt: this.reconnectAttempts,
+      delay,
+      pendingEvents: this.pendingEvents.length,
+    });
     logDev('[SocialMobile] WebSocket reconnect scheduled', {
       attempt: this.reconnectAttempts,
       delay,
@@ -715,6 +814,14 @@ class ChatSocket {
       callId: this.eventCallId(event),
       pendingEvents: this.pendingEvents.length,
     });
+    if (this.isCallEvent(event)) {
+      callWarn('CALL_WS', 'pending call event dropped', {
+        type: event.type,
+        reason,
+        callId: this.eventCallId(event),
+        pendingEvents: this.pendingEvents.length,
+      });
+    }
   }
 
   private eventCallId(event: OutgoingEvent) {

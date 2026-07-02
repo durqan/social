@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -10,9 +10,14 @@ import { NotificationsProvider } from './src/context/NotificationsContext';
 import { UnreadProvider } from './src/context/UnreadContext';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { ThemeProvider, useThemeColors } from './src/theme/ThemeContext';
+import { logCallEnvOnce } from './src/utils/callDiagnostics';
 
 function AppContent() {
   const colors = useThemeColors();
+
+  useEffect(() => {
+    logCallEnvOnce('app_start');
+  }, []);
 
   return (
     <>
