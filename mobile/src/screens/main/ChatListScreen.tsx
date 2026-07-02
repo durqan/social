@@ -52,6 +52,11 @@ function sortConversations(conversations: Conversation[]) {
   });
 }
 
+function conversationPeerId(conversation: Conversation) {
+  const peerId = Number(conversation.user_id);
+  return Number.isFinite(peerId) && peerId > 0 ? peerId : null;
+}
+
 export default function ChatListScreen({ navigation }: Props) {
   const isFocused = useIsFocused();
   const { chatRefreshVersion, refreshUnreadCount } = useUnread();
@@ -200,9 +205,15 @@ export default function ChatListScreen({ navigation }: Props) {
   });
 
   function openConversation(conversation: Conversation) {
+    const peerId = conversationPeerId(conversation);
+    if (!peerId) {
+      setError('Не удалось открыть диалог: не найден собеседник.');
+      return;
+    }
+
     setSelectedConversation(null);
     navigation.navigate('Chat', {
-      userId: conversation.user_id,
+      userId: peerId,
       name: conversation.name,
     });
   }

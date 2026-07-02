@@ -70,6 +70,31 @@ describe('notification navigation', () => {
     });
   });
 
+  it('prefers actorId over conversationId for chat peer routing', async () => {
+    mockNavigationRef.isReady.mockReturnValue(true);
+    const { navigateFromNotification } = require('./navigation');
+
+    navigateFromNotification({
+      type: 'message_received',
+      actorId: 12,
+      conversationId: 77,
+    });
+
+    expect(mockNavigationRef.navigate).toHaveBeenCalledWith('MainTabs', {
+      screen: 'Chats',
+      params: {
+        initial: false,
+        screen: 'Chat',
+        params: {
+          userId: 12,
+          name: 'Чат',
+          incomingCall: false,
+          callId: undefined,
+        },
+      },
+    });
+  });
+
   it('keeps callId when opening incoming call notification', async () => {
     mockNavigationRef.isReady.mockReturnValue(true);
     mockPendingIncomingCall.rememberPendingIncomingCall.mockResolvedValue(null);

@@ -246,6 +246,17 @@ function isCallId(value: unknown): value is string {
     return typeof value === 'string' && value.length > 0;
 }
 
+function normalizeCallUserId(value: unknown) {
+    const parsed =
+        typeof value === 'number'
+            ? value
+            : typeof value === 'string'
+              ? Number(value)
+              : NaN;
+
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 function callEventDedupKey(event: WsEvent) {
     const payload = event.payload as {
         from_id?: unknown;
@@ -2187,13 +2198,19 @@ export function CallProvider({children}: { children: ReactNode }) {
 
     const startCall = useCallback(
         async (toId: number, name: string | undefined, nextCallType: CallType) => {
+            const targetId = normalizeCallUserId(toId);
+            if (!targetId) {
+                showCallError('Не удалось определить собеседника для звонка.');
+                return;
+            }
+
             if (
                 !user?.id ||
                 statusRef.current !== 'idle' ||
                 startInFlightRef.current
             ) {
                 logDev('[SocialMobile] Ignoring duplicate or invalid call start', {
-                    toId,
+                    toId: targetId,
                     callType: nextCallType,
                     status: statusRef.current,
                     startInFlight: startInFlightRef.current,
@@ -2206,7 +2223,7 @@ export function CallProvider({children}: { children: ReactNode }) {
             setError(null);
             const callId = createCallId();
             callIdRef.current = callId;
-            setCallPeer(toId);
+            setCallPeer(targetId);
             setPeerName(name || 'Пользователь');
             setCurrentCallType(nextCallType);
             setDefaultSpeakerphoneForCallType(nextCallType);
@@ -2215,7 +2232,7 @@ export function CallProvider({children}: { children: ReactNode }) {
             try {
                 const isCurrentStart = () =>
                     callIdRef.current === callId &&
-                    peerUserIdRef.current === toId &&
+                    peerUserIdRef.current === targetId &&
                     statusRef.current !== 'idle' &&
                     statusRef.current !== 'ended' &&
                     statusRef.current !== 'error';
@@ -2251,7 +2268,7 @@ export function CallProvider({children}: { children: ReactNode }) {
                 setCurrentCallType(effectiveCallType);
                 setDefaultSpeakerphoneForCallType(effectiveCallType);
 
-                const pc = createPeerConnection(toId, callId);
+                const pc = createPeerConnection(targetId, callId);
                 if (!isCurrentStart()) {
                     cleanupStaleStart(stream, pc);
                     return;
@@ -2332,12 +2349,12 @@ export function CallProvider({children}: { children: ReactNode }) {
                 logDev('[SocialMobile] Sending call offer', {
                     callId,
                     pcId,
-                    toId,
+                    toId: targetId,
                     callType: effectiveCallType,
                     sdp: summarizeSdp(localOffer.sdp),
                 });
                 const offerSent = chatSocket.sendCallOffer(
-                    toId,
+                    targetId,
                     localOffer,
                     effectiveCallType,
                     callId,
@@ -2345,7 +2362,7 @@ export function CallProvider({children}: { children: ReactNode }) {
                 if (!offerSent) {
                     throw new Error('WebSocket is not connected');
                 }
-                markCallSignalingReady(callId, toId);
+                markCallSignalingReady(callId, targetId);
                 setCallStatus('ringing', 'offer_sent');
             } catch (callError) {
                 const message = callErrorMessage(callError);

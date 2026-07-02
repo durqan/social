@@ -118,7 +118,10 @@ function ChatHeaderActions({
   name?: string;
 }) {
   const { status, startAudioCall, startVideoCall } = useCall();
-  const disabled = status !== 'idle';
+  const normalizedUserId = Number(userId);
+  const hasValidUserId =
+    Number.isFinite(normalizedUserId) && normalizedUserId > 0;
+  const disabled = status !== 'idle' || !hasValidUserId;
 
   return (
     <View style={stylesStatic.chatHeaderActions}>
@@ -128,7 +131,7 @@ function ChatHeaderActions({
         variant="ghost"
         size="lg"
         disabled={disabled}
-        onPress={() => startAudioCall(userId, name)}
+        onPress={() => startAudioCall(normalizedUserId, name)}
         style={stylesStatic.chatHeaderButton}
       />
       <IconButton
@@ -137,7 +140,7 @@ function ChatHeaderActions({
         variant="ghost"
         size="lg"
         disabled={disabled}
-        onPress={() => startVideoCall(userId, name)}
+        onPress={() => startVideoCall(normalizedUserId, name)}
         style={stylesStatic.chatHeaderButton}
       />
     </View>

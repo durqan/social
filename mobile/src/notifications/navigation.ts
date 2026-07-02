@@ -100,15 +100,15 @@ export function notificationRouteFromPayload(
     notification.actorId ??
     notification.senderId ??
     actorFromChatURL(notification.url);
-  const conversationId = notification.conversationId ?? actorId;
+  const chatPeerId = actorId ?? notification.conversationId;
 
   switch (notification.type) {
     case 'message_received':
     case 'incoming_call':
-      if (conversationId) {
+      if (chatPeerId) {
         return {
           kind: 'chat',
-          userId: conversationId,
+          userId: chatPeerId,
           name:
             options.actorName ||
             (notification.type === 'incoming_call' ? 'Входящий звонок' : 'Чат'),
