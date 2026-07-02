@@ -116,11 +116,58 @@ export function resetPostAuthBootstrapState() {
     return Promise.allSettled(pendingPush).then(() => undefined);
 }
 
-export function ensureE2EEReady(userId: number, _unusedSecret?: string): Promise<E2EEBootstrapStatus> {
+export async function ensureE2EEReady(userId: number, secret?: string): Promise<E2EEBootstrapStatus> {
     const version = ensureStateUser(userId);
-    updateE2EE(userId, version, 'idle');
-    void _unusedSecret;
-    return Promise.resolve('idle');
+    updateE2EE(userId, version, 'checking');
+
+    try {
+        const [
+            { e2eeService },
+            { getLocalE2EEKeyBundle },
+            { createEncryptedMasterKeyBackup, enableE2EEForUser, restoreE2EEFromBackup },
+        ] = await Promise.all([
+            import("@/shared/api/e2eeService.js"),
+            import("@/crypto/masterKey.js"),
+            import("@/crypto/keyBackup.js"),
+        ]);
+        const [backup, localKey] = await Promise.all([
+            e2eeService.getBackup(),
+            getLocalE2EEKeyBundle(userId),
+        ]);
+
+        if (!isCurrentBootstrap(userId, version)) {
+            return state.e2ee.status;
+        }
+
+        if (backup.enabled && localKey) {
+            updateE2EE(userId, version, 'ready');
+            return 'ready';
+        }
+        if (!secret) {
+            const status = backup.enabled ? 'needs-secret' : 'idle';
+            updateE2EE(userId, version, status);
+            return status;
+        }
+
+        if (backup.enabled) {
+            if (!backup.encrypted_master_key) {
+                throw new Error('E2EE backup is missing');
+            }
+            await restoreE2EEFromBackup(userId, secret, backup.encrypted_master_key);
+        } else {
+            const encryptedBackup = localKey
+                ? await createEncryptedMasterKeyBackup(localKey, secret)
+                : await enableE2EEForUser(userId, secret);
+            await e2eeService.enable(encryptedBackup);
+        }
+
+        updateE2EE(userId, version, 'ready');
+        return 'ready';
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'E2EE bootstrap failed';
+        updateE2EE(userId, version, 'error', message);
+        throw error;
+    }
 }
 
 export function ensureWebPushForUser(userId: number): Promise<WebPushBootstrapStatus> {

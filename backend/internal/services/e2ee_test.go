@@ -58,6 +58,33 @@ func TestSaveEncryptedKeyBackupDoesNotOverwriteAnotherUser(t *testing.T) {
 	}
 }
 
+func TestE2EEPublicStatusForUserReturnsPublicKey(t *testing.T) {
+	db := newE2EEServiceTestDB(t)
+	if err := SaveEncryptedKeyBackup(db, 1, `{"publicKey":"user-1-public"}`); err != nil {
+		t.Fatal(err)
+	}
+
+	status, err := E2EEPublicStatusForUser(db, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !status.Enabled || status.PublicKey != "user-1-public" {
+		t.Fatalf("status = %+v, want enabled public key", status)
+	}
+}
+
+func TestE2EEPublicStatusForUserReturnsDisabledWithoutBackup(t *testing.T) {
+	db := newE2EEServiceTestDB(t)
+
+	status, err := E2EEPublicStatusForUser(db, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Enabled || status.PublicKey != "" {
+		t.Fatalf("status = %+v, want disabled", status)
+	}
+}
+
 func newE2EEServiceTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 

@@ -67,13 +67,27 @@ func SaveE2EEBackup(db *gorm.DB) gin.HandlerFunc {
 
 func GetE2EEBackup(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if _, ok := authenticatedUserID(c); !ok {
+		userID, ok := authenticatedUserID(c)
+		if !ok {
+			return
+		}
+
+		backup, err := repository.GetEncryptedKeyBackupByUserID(db, userID)
+		if err != nil {
+			if err == gorm.ErrRecordNotFound {
+				c.JSON(http.StatusOK, gin.H{
+					"enabled":              false,
+					"encrypted_master_key": nil,
+				})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get e2ee backup"})
 			return
 		}
 
 		c.JSON(http.StatusOK, gin.H{
-			"enabled":              false,
-			"encrypted_master_key": nil,
+			"enabled":              true,
+			"encrypted_master_key": backup.EncryptedMasterKey,
 		})
 	}
 }
@@ -95,9 +109,41 @@ func DisableE2EE(db *gorm.DB) gin.HandlerFunc {
 }
 
 func saveE2EEBackup(c *gin.Context, db *gorm.DB, statusCode int) {
-	if _, ok := authenticatedUserID(c); !ok {
+	userID, ok := authenticatedUserID(c)
+	if !ok {
 		return
 	}
 
-	c.JSON(statusCode, gin.H{"enabled": false})
+	var req struct {
+		EncryptedMasterKey      string `json:"encrypted_master_key"`
+		EncryptedMasterKeyCamel string `json:"encryptedMasterKey"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	encryptedMasterKey := req.EncryptedMasterKey
+	if encryptedMasterKey == "" {
+		encryptedMasterKey = req.EncryptedMasterKeyCamel
+	}
+	if err := services.SaveEncryptedKeyBackup(db, userID, encryptedMasterKey); err != nil {
+		if err == services.ErrEncryptedKeyBackupInvalid {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid encrypted master key backup"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save e2ee backup"})
+		return
+	}
+
+	status, err := services.E2EEPublicStatusForUser(db, userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get e2ee status"})
+		return
+	}
+
+	c.JSON(statusCode, gin.H{
+		"enabled":    status.Enabled,
+		"public_key": status.PublicKey,
+	})
 }

@@ -36,11 +36,10 @@ Full-stack социальная сеть с веб-клиентом, React Nativ
 ### Шифрование сообщений на сервере
 
 * Messages are encrypted at rest on the server before being stored in the database.
-* This is not end-to-end encryption.
-* The backend can decrypt messages when serving them to authenticated clients.
-* Клиент отправляет и получает обычный текст сообщений.
+* Legacy/plaintext chat sends still use backend AES-256-GCM encryption-at-rest.
+* Client E2EE is active when both chat participants have an E2EE backup/public key.
+* For client E2EE messages and attachments, the backend stores opaque ciphertext and encrypted blobs.
 * Старые plaintext-сообщения с `encryption_version = 0` остаются читаемыми.
-* E2EE endpoints and frontend crypto helpers are disabled/experimental and are not active for normal chat flow.
 
 ### Уведомления
 
@@ -129,18 +128,15 @@ packages/       shared TypeScript-типы и helpers
 
 ## Message Encryption
 
-Личные сообщения защищаются server-side encryption / encryption at rest.
+Личные сообщения поддерживают два режима: legacy server-side encryption / encryption at rest и client-side E2EE для диалогов, где у обоих участников есть E2EE backup/public key.
 
 Особенности реализации:
 
-* Клиент отправляет обычный текст сообщения.
-* Backend шифрует текст перед сохранением в таблицу `messages`.
-* В БД для новых текстовых сообщений хранится `ciphertext`, `nonce` и `encryption_version`, а `content` остается пустым.
-* Backend расшифровывает сообщение перед отдачей клиенту.
-* Это защищает содержимое сообщений при утечке БД.
-* Это не защищает сообщения от backend-сервера или администратора с доступом к `MESSAGE_ENCRYPTION_KEY`.
-* Для шифрования сообщений используется AES-256-GCM.
-* E2EE-заготовки (`/e2ee/*`, key backup и frontend crypto helpers) сейчас disabled/experimental и не являются активной end-to-end encryption системой.
+* В legacy-режиме клиент отправляет обычный текст, backend шифрует его перед сохранением и расшифровывает перед отдачей клиенту.
+* В client E2EE-режиме клиент отправляет `ciphertext`, `nonce`, `encryption_version = 1`; backend не расшифровывает payload.
+* Новые E2EE-вложения шифруются на клиенте до upload, сохраняются как opaque `.bin`, а file key хранится только в `encrypted_file_key`.
+* Старые вложения с `message_attachments.encryption_version = 0` остаются legacy и открываются как раньше.
+* Для legacy encryption-at-rest и client E2EE payload используется AES-256-GCM; file/message keys заворачиваются клиентом через RSA-OAEP-SHA-256.
 
 Важно:
 
@@ -243,7 +239,7 @@ npm test -- --runInBand
 
 * Full-stack приложение на Go + React + React Native.
 * WebSocket чат в реальном времени.
-* Server-side encryption / encryption at rest для текстовых сообщений.
+* Server-side encryption-at-rest и client-side E2EE для чата/вложений.
 * WebRTC аудио и видеозвонки.
 * Push-уведомления.
 * RabbitMQ.

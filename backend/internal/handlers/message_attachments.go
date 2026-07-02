@@ -523,12 +523,16 @@ func encryptedAttachmentInputFromForm(c *gin.Context) (services.MessageAttachmen
 		return services.MessageAttachmentInput{}, false, errors.New("encrypted attachment metadata is too large")
 	}
 
-	return services.MessageAttachmentInput{
+	input := services.MessageAttachmentInput{
 		EncryptionVersion: version,
 		EncryptedFileKey:  encryptedFileKey,
 		FileNonce:         fileNonce,
 		EncryptedMetadata: encryptedMetadata,
-	}, true, nil
+	}
+	if err := services.ValidateEncryptedAttachmentInputFields(input); err != nil {
+		return services.MessageAttachmentInput{}, false, err
+	}
+	return input, true, nil
 }
 
 func imageDimensionsFromForm(c *gin.Context) (int, int, error) {

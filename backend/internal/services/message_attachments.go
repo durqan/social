@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
@@ -33,6 +34,9 @@ const (
 	ChatVideoMaxSize             = 500 << 20 // 500 MB
 	ChatAudioMaxSize             = 100 << 20 // 100 MB
 	ChatFileMaxSize              = 100 << 20 // 100 MB
+	encryptedAttachmentAlgorithm = "AES-256-GCM"
+	encryptedAttachmentKeyAlg    = "RSA-OAEP-SHA-256"
+	encryptedAttachmentNonceSize = 12
 	encryptedAttachmentOverhead  = 64 << 10
 	MaxEncryptedAttachmentField  = 64 << 10
 	ChatAttachmentMaxRequestSize = ChatVideoMaxSize + 1<<20 + MaxEncryptedAttachmentField
@@ -68,6 +72,19 @@ type MessageAttachmentInput struct {
 	EncryptedFileKey  string `json:"encrypted_file_key,omitempty"`
 	FileNonce         string `json:"file_nonce,omitempty"`
 	EncryptedMetadata string `json:"encrypted_metadata,omitempty"`
+}
+
+type encryptedAttachmentKeyEnvelope struct {
+	Version int               `json:"version"`
+	KeyAlg  string            `json:"keyAlg"`
+	Keys    map[string]string `json:"keys"`
+}
+
+type encryptedAttachmentMetadataEnvelope struct {
+	Version int    `json:"version"`
+	Alg     string `json:"alg"`
+	Nonce   string `json:"nonce"`
+	Data    string `json:"data"`
 }
 
 var allowedChatImageTypes = map[string]string{
@@ -624,7 +641,74 @@ func validateEncryptedAttachmentFields(item MessageAttachmentInput) error {
 		len(item.EncryptedMetadata) > MaxEncryptedAttachmentField {
 		return errors.New("encrypted attachment metadata is too large")
 	}
+	if err := validateEncryptedAttachmentCryptoFields(
+		strings.TrimSpace(item.EncryptedFileKey),
+		strings.TrimSpace(item.FileNonce),
+		strings.TrimSpace(item.EncryptedMetadata),
+	); err != nil {
+		return errors.New("invalid encrypted attachment metadata")
+	}
 	return nil
+}
+
+func ValidateEncryptedAttachmentInputFields(item MessageAttachmentInput) error {
+	return validateEncryptedAttachmentFields(item)
+}
+
+func validateEncryptedAttachmentCryptoFields(encryptedFileKey string, fileNonce string, encryptedMetadata string) error {
+	if _, err := parseEncryptedAttachmentKeyEnvelope(encryptedFileKey); err != nil {
+		return err
+	}
+	fileNonceBytes, err := decodeBase64Strict(fileNonce)
+	if err != nil || len(fileNonceBytes) != encryptedAttachmentNonceSize {
+		return errors.New("invalid encrypted attachment file nonce")
+	}
+	if _, err := parseEncryptedAttachmentMetadataEnvelope(encryptedMetadata); err != nil {
+		return err
+	}
+	return nil
+}
+
+func parseEncryptedAttachmentKeyEnvelope(value string) (encryptedAttachmentKeyEnvelope, error) {
+	var envelope encryptedAttachmentKeyEnvelope
+	if err := json.Unmarshal([]byte(value), &envelope); err != nil {
+		return encryptedAttachmentKeyEnvelope{}, err
+	}
+	if envelope.Version != 1 ||
+		envelope.KeyAlg != encryptedAttachmentKeyAlg ||
+		len(envelope.Keys) == 0 {
+		return encryptedAttachmentKeyEnvelope{}, errors.New("invalid encrypted attachment key envelope")
+	}
+	for userID, wrappedKey := range envelope.Keys {
+		if strings.TrimSpace(userID) == "" || strings.TrimSpace(wrappedKey) == "" {
+			return encryptedAttachmentKeyEnvelope{}, errors.New("invalid encrypted attachment key envelope")
+		}
+		if _, err := decodeBase64Strict(wrappedKey); err != nil {
+			return encryptedAttachmentKeyEnvelope{}, err
+		}
+	}
+	return envelope, nil
+}
+
+func parseEncryptedAttachmentMetadataEnvelope(value string) (encryptedAttachmentMetadataEnvelope, error) {
+	var envelope encryptedAttachmentMetadataEnvelope
+	if err := json.Unmarshal([]byte(value), &envelope); err != nil {
+		return encryptedAttachmentMetadataEnvelope{}, err
+	}
+	if envelope.Version != 1 ||
+		envelope.Alg != encryptedAttachmentAlgorithm ||
+		envelope.Nonce == "" ||
+		envelope.Data == "" {
+		return encryptedAttachmentMetadataEnvelope{}, errors.New("invalid encrypted attachment metadata envelope")
+	}
+	metadataNonce, err := decodeBase64Strict(envelope.Nonce)
+	if err != nil || len(metadataNonce) != encryptedAttachmentNonceSize {
+		return encryptedAttachmentMetadataEnvelope{}, errors.New("invalid encrypted attachment metadata nonce")
+	}
+	if _, err := decodeBase64Strict(envelope.Data); err != nil {
+		return encryptedAttachmentMetadataEnvelope{}, err
+	}
+	return envelope, nil
 }
 
 func encryptedImageAttachmentStorageMetadata(key string, item MessageAttachmentInput) (string, int, int, int64, error) {

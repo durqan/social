@@ -2,6 +2,8 @@ package services
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"log"
 	"path/filepath"
@@ -32,8 +34,14 @@ var (
 	ErrMessageInvalidReaction             = errors.New("invalid message reaction")
 )
 
-const MaxMessageContentLength = 1000
-const MessageDecryptFailureText = "Не удалось расшифровать сообщение"
+const (
+	MaxMessageContentLength    = 1000
+	MaxMessageCiphertextLength = 256 * 1024
+	MaxMessageNonceLength      = 256
+	MessageDecryptFailureText  = "Не удалось расшифровать сообщение"
+	e2eeMessageAlgorithm       = "AES-256-GCM"
+	e2eeMessageKeyAlgorithm    = "RSA-OAEP-SHA-256"
+)
 
 var allowedMessageReactions = map[string]struct{}{
 	"👍":  {},
@@ -55,6 +63,14 @@ type MessageEncryptionInput struct {
 	Version    int
 	Ciphertext string
 	Nonce      string
+}
+
+type clientE2EEMessageEnvelope struct {
+	Version int               `json:"version"`
+	Alg     string            `json:"alg"`
+	KeyAlg  string            `json:"keyAlg"`
+	Data    string            `json:"data"`
+	Keys    map[string]string `json:"keys"`
 }
 
 type EncryptedForwardInput struct {
@@ -124,11 +140,23 @@ func SendMessage(db *gorm.DB, fromID, toID uint, content string, attachments []m
 	if status != "accepted" {
 		return models.Message{}, ErrMessageNotFriends
 	}
-	if err := rejectClientMessageEncryption(encryption, attachments); err != nil {
+
+	e2eePolicy, err := E2EEPolicyForConversation(db, fromID, toID)
+	if err != nil {
+		return models.Message{}, err
+	}
+	normalizedEncryption, err := normalizeClientMessageEncryption(encryption)
+	if err != nil {
+		return models.Message{}, err
+	}
+	if err := validateMessageEncryptionPolicy(e2eePolicy, normalizedContent, normalizedEncryption, attachments); err != nil {
+		return models.Message{}, err
+	}
+	if err := validateEncryptedAttachmentKeysForParticipants(attachments, fromID, toID); err != nil {
 		return models.Message{}, err
 	}
 
-	storedContent, storedEncryption, err := encryptedContentForStorage(normalizedContent)
+	storedContent, storedEncryption, err := messageContentForStorage(normalizedContent, normalizedEncryption)
 	if err != nil {
 		return models.Message{}, err
 	}
@@ -349,6 +377,10 @@ func ForwardEncryptedMessage(db *gorm.DB, userID uint, sourceMessageID uint, inp
 			if sourceHasEncryptedAttachments && len(input.Attachments) != len(source.Attachments) {
 				return ErrMessageInvalidEncryption
 			}
+			normalizedEncryption, err := normalizeClientMessageEncryption(input.Encryption)
+			if err != nil {
+				return err
+			}
 
 			status, err := repository.GetFriendshipStatus(tx, userID, toID)
 			if err != nil {
@@ -357,6 +389,16 @@ func ForwardEncryptedMessage(db *gorm.DB, userID uint, sourceMessageID uint, inp
 			if status != "accepted" {
 				return ErrMessageNotFriends
 			}
+			e2eePolicy, err := E2EEPolicyForConversation(tx, userID, toID)
+			if err != nil {
+				return err
+			}
+			if err := validateMessageEncryptionPolicy(e2eePolicy, "", normalizedEncryption, input.Attachments); err != nil {
+				return err
+			}
+			if err := validateEncryptedAttachmentKeysForParticipants(input.Attachments, userID, toID); err != nil {
+				return err
+			}
 
 			sourceID := source.ID
 			sourceUserID := source.FromID
@@ -364,6 +406,9 @@ func ForwardEncryptedMessage(db *gorm.DB, userID uint, sourceMessageID uint, inp
 				FromID:                 userID,
 				ToID:                   toID,
 				Content:                "",
+				EncryptionVersion:      normalizedEncryption.Version,
+				Ciphertext:             normalizedEncryption.Ciphertext,
+				Nonce:                  normalizedEncryption.Nonce,
 				ForwardedFromMessageID: &sourceID,
 				ForwardedFromUserID:    &sourceUserID,
 			}
@@ -664,10 +709,19 @@ func UpdateMessage(db *gorm.DB, userID, messageID uint, content string, encrypti
 	if err != nil {
 		return models.Message{}, err
 	}
-	if err := rejectClientMessageEncryption(encryption, nil); err != nil {
-		return models.Message{}, ErrMessageInvalidEncryption
+
+	e2eePolicy, err := E2EEPolicyForConversation(db, message.FromID, message.ToID)
+	if err != nil {
+		return models.Message{}, err
 	}
-	storedContent, storedEncryption, err := encryptedContentForStorage(normalizedContent)
+	normalizedEncryption, err := normalizeClientMessageEncryption(encryption)
+	if err != nil {
+		return models.Message{}, err
+	}
+	if err := validateMessageEncryptionPolicy(e2eePolicy, normalizedContent, normalizedEncryption, nil); err != nil {
+		return models.Message{}, err
+	}
+	storedContent, storedEncryption, err := messageContentForStorage(normalizedContent, normalizedEncryption)
 	if err != nil {
 		return models.Message{}, err
 	}
@@ -690,7 +744,10 @@ func UpdateMessage(db *gorm.DB, userID, messageID uint, content string, encrypti
 
 func normalizeMessageContent(content string, attachmentCount int, encryption MessageEncryptionInput) (string, error) {
 	if encryption.Enabled() {
-		return "", ErrMessageInvalidEncryption
+		if strings.TrimSpace(content) != "" {
+			return "", ErrMessageInvalidEncryption
+		}
+		return "", nil
 	}
 
 	content = strings.TrimSpace(content)
@@ -703,11 +760,117 @@ func normalizeMessageContent(content string, attachmentCount int, encryption Mes
 	return content, nil
 }
 
-func rejectClientMessageEncryption(encryption MessageEncryptionInput, attachments []models.MessageAttachment) error {
-	if encryption.Enabled() {
+func normalizeClientMessageEncryption(encryption MessageEncryptionInput) (MessageEncryptionInput, error) {
+	if !encryption.Enabled() {
+		return MessageEncryptionInput{}, nil
+	}
+
+	normalized := MessageEncryptionInput{
+		Version:    encryption.Version,
+		Ciphertext: strings.TrimSpace(encryption.Ciphertext),
+		Nonce:      strings.TrimSpace(encryption.Nonce),
+	}
+	if normalized.Version != 1 ||
+		normalized.Ciphertext == "" ||
+		normalized.Nonce == "" ||
+		len(normalized.Ciphertext) > MaxMessageCiphertextLength ||
+		len(normalized.Nonce) > MaxMessageNonceLength {
+		return MessageEncryptionInput{}, ErrMessageInvalidEncryption
+	}
+	if _, err := decodeBase64Strict(normalized.Nonce); err != nil {
+		return MessageEncryptionInput{}, ErrMessageInvalidEncryption
+	}
+	if err := validateClientE2EEMessageEnvelope(normalized.Ciphertext); err != nil {
+		return MessageEncryptionInput{}, ErrMessageInvalidEncryption
+	}
+	return normalized, nil
+}
+
+func validateClientE2EEMessageEnvelope(value string) error {
+	var envelope clientE2EEMessageEnvelope
+	if err := json.Unmarshal([]byte(value), &envelope); err != nil {
+		return err
+	}
+	if envelope.Version != 1 ||
+		envelope.Alg != e2eeMessageAlgorithm ||
+		envelope.KeyAlg != e2eeMessageKeyAlgorithm ||
+		envelope.Data == "" ||
+		len(envelope.Keys) == 0 {
+		return ErrMessageInvalidEncryption
+	}
+	if _, err := decodeBase64Strict(envelope.Data); err != nil {
+		return err
+	}
+	for userID, wrappedKey := range envelope.Keys {
+		if strings.TrimSpace(userID) == "" || strings.TrimSpace(wrappedKey) == "" {
+			return ErrMessageInvalidEncryption
+		}
+		if _, err := decodeBase64Strict(wrappedKey); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func isClientE2EEMessageCiphertext(value string) bool {
+	return validateClientE2EEMessageEnvelope(strings.TrimSpace(value)) == nil
+}
+
+func decodeBase64Strict(value string) ([]byte, error) {
+	value = strings.TrimSpace(value)
+	decoded, err := base64.StdEncoding.DecodeString(value)
+	if err == nil {
+		return decoded, nil
+	}
+	return base64.RawStdEncoding.DecodeString(value)
+}
+
+func validateMessageEncryptionPolicy(policy ConversationE2EEPolicy, plaintextContent string, encryption MessageEncryptionInput, attachments []models.MessageAttachment) error {
+	hasEncryptedAttachments := messageAttachmentsHaveEncryption(attachments)
+	hasPlaintextAttachments := attachmentsHavePlaintext(attachments)
+	hasEncryptedPayload := encryption.Enabled() || hasEncryptedAttachments
+
+	if hasEncryptedPayload && !policy.Ready {
+		return ErrMessageInvalidEncryption
+	}
+	if !policy.Required {
+		return nil
+	}
+	if !policy.Ready {
+		return ErrMessageInvalidEncryption
+	}
+	if strings.TrimSpace(plaintextContent) != "" || hasPlaintextAttachments {
 		return ErrMessageInvalidEncryption
 	}
 	return nil
+}
+
+func validateEncryptedAttachmentKeysForParticipants(attachments []models.MessageAttachment, fromID uint, toID uint) error {
+	if len(attachments) == 0 {
+		return nil
+	}
+	fromKey := strconv.FormatUint(uint64(fromID), 10)
+	toKey := strconv.FormatUint(uint64(toID), 10)
+	for _, attachment := range attachments {
+		if attachment.EncryptionVersion <= 0 {
+			continue
+		}
+		envelope, err := parseEncryptedAttachmentKeyEnvelope(attachment.EncryptedFileKey)
+		if err != nil {
+			return ErrMessageInvalidEncryption
+		}
+		if strings.TrimSpace(envelope.Keys[fromKey]) == "" || strings.TrimSpace(envelope.Keys[toKey]) == "" {
+			return ErrMessageInvalidEncryption
+		}
+	}
+	return nil
+}
+
+func messageContentForStorage(content string, encryption MessageEncryptionInput) (string, MessageEncryptionInput, error) {
+	if encryption.Enabled() {
+		return "", encryption, nil
+	}
+	return encryptedContentForStorage(content)
 }
 
 func encryptedContentForStorage(content string) (string, MessageEncryptionInput, error) {
@@ -771,6 +934,9 @@ func DecryptMessagesForClient(messages []models.Message) []models.Message {
 
 func decryptSingleMessageForClient(message models.Message) models.Message {
 	if message.EncryptionVersion <= 0 {
+		return message
+	}
+	if isClientE2EEMessageCiphertext(message.Ciphertext) {
 		return message
 	}
 

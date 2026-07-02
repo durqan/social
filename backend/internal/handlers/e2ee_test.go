@@ -14,7 +14,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestSaveE2EEBackupDoesNotPersistUserKey(t *testing.T) {
+func TestSaveE2EEBackupPersistsAuthenticatedUserKey(t *testing.T) {
 	database := newE2EEHandlerTestDB(t)
 	context, recorder := newE2EEHandlerContext(
 		http.MethodPost,
@@ -27,15 +27,15 @@ func TestSaveE2EEBackupDoesNotPersistUserKey(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
 	}
-	if recorder.Body.String() != `{"enabled":false}` {
-		t.Fatalf("body = %s, want disabled response", recorder.Body.String())
+	if recorder.Body.String() != `{"enabled":true,"public_key":"user-1"}` {
+		t.Fatalf("body = %s, want enabled response", recorder.Body.String())
 	}
-	var count int64
-	if err := database.Model(&models.EncryptedKeyBackup{}).Count(&count).Error; err != nil {
-		t.Fatalf("count backups: %v", err)
+	var backup models.EncryptedKeyBackup
+	if err := database.Where("user_id = ?", 1).First(&backup).Error; err != nil {
+		t.Fatalf("load saved backup: %v", err)
 	}
-	if count != 0 {
-		t.Fatalf("disabled E2EE endpoint persisted %d backups", count)
+	if backup.EncryptedMasterKey != `{"publicKey":"user-1"}` {
+		t.Fatalf("backup = %q, want user-1 backup", backup.EncryptedMasterKey)
 	}
 }
 
@@ -58,6 +58,27 @@ func TestGetE2EEBackupCannotReadAnotherUsersBackup(t *testing.T) {
 	}
 	if recorder.Body.String() != `{"enabled":false,"encrypted_master_key":null}` {
 		t.Fatalf("foreign backup leaked: %s", recorder.Body.String())
+	}
+}
+
+func TestGetE2EEBackupReturnsAuthenticatedUsersBackup(t *testing.T) {
+	database := newE2EEHandlerTestDB(t)
+	if err := database.Create(&models.EncryptedKeyBackup{
+		UserID:             1,
+		EncryptedMasterKey: `{"publicKey":"user-1"}`,
+	}).Error; err != nil {
+		t.Fatalf("seed backup: %v", err)
+	}
+	context, recorder := newE2EEHandlerContext(http.MethodGet, "")
+	context.Set("user_id", uint(1))
+
+	GetE2EEBackup(database)(context)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	if recorder.Body.String() != `{"enabled":true,"encrypted_master_key":"{\"publicKey\":\"user-1\"}"}` {
+		t.Fatalf("backup response = %s", recorder.Body.String())
 	}
 }
 

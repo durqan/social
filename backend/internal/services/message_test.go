@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -291,6 +292,99 @@ func TestSendMessageDoesNotStorePlaintextInMessagesContent(t *testing.T) {
 	}
 	if stored.EncryptionVersion != 1 || stored.Ciphertext == "" || stored.Nonce == "" {
 		t.Fatalf("stored encrypted fields = %+v, want version/ciphertext/nonce", stored)
+	}
+}
+
+func TestSendMessageStoresClientEncryptedPayloadWithoutServerDecrypt(t *testing.T) {
+	db := newMessageServiceTestDB(t)
+	seedAcceptedFriendship(t, db, 1, 2)
+	seedE2EEBackup(t, db, 1)
+	seedE2EEBackup(t, db, 2)
+
+	encryption := testClientE2EEMessageEncryption(1, 2)
+	message, err := SendMessage(db, 1, 2, "", nil, nil, encryption)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if message.Content != "" ||
+		message.EncryptionVersion != 1 ||
+		message.Ciphertext != encryption.Ciphertext ||
+		message.Nonce != encryption.Nonce {
+		t.Fatalf("stored client E2EE message = %+v", message)
+	}
+
+	response := WithPrivateAttachmentURLs(message)
+	if response.Content != "" ||
+		response.EncryptionVersion != 1 ||
+		response.Ciphertext != encryption.Ciphertext ||
+		response.Nonce != encryption.Nonce {
+		t.Fatalf("client E2EE response was server-decrypted or cleared: %+v", response)
+	}
+}
+
+func TestSendMessageRejectsPlaintextWhenE2EERequired(t *testing.T) {
+	db := newMessageServiceTestDB(t)
+	seedAcceptedFriendship(t, db, 1, 2)
+	seedE2EEBackup(t, db, 1)
+
+	_, err := SendMessage(db, 1, 2, "plaintext must not be accepted", nil, nil, MessageEncryptionInput{})
+	if !errors.Is(err, ErrMessageInvalidEncryption) {
+		t.Fatalf("SendMessage error = %v, want %v", err, ErrMessageInvalidEncryption)
+	}
+}
+
+func TestSendMessagePersistsEncryptedAttachmentMetadata(t *testing.T) {
+	db := newMessageServiceTestDB(t)
+	seedAcceptedFriendship(t, db, 1, 2)
+	seedE2EEBackup(t, db, 1)
+	seedE2EEBackup(t, db, 2)
+
+	message, err := SendMessage(db, 1, 2, "", []models.MessageAttachment{
+		{
+			FileURL:           "encrypted/user_1/attachment.bin",
+			FileType:          "image",
+			Size:              128,
+			EncryptionVersion: 1,
+			EncryptedFileKey:  `{"version":1,"keyAlg":"RSA-OAEP-SHA-256","keys":{"1":"a2V5","2":"a2V5"}}`,
+			FileNonce:         "MTIzNDU2Nzg5MDEy",
+			EncryptedMetadata: `{"version":1,"alg":"AES-256-GCM","nonce":"MTIzNDU2Nzg5MDEy","data":"bWV0YQ=="}`,
+		},
+	}, nil, MessageEncryptionInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(message.Attachments) != 1 {
+		t.Fatalf("attachments = %d, want 1", len(message.Attachments))
+	}
+	attachment := message.Attachments[0]
+	if attachment.EncryptionVersion != 1 ||
+		attachment.EncryptedFileKey == "" ||
+		attachment.FileNonce == "" ||
+		attachment.EncryptedMetadata == "" {
+		t.Fatalf("encrypted attachment fields were not persisted: %+v", attachment)
+	}
+	if attachment.OriginalFilename != "" || attachment.ContentType != "" {
+		t.Fatalf("encrypted attachment leaked plaintext metadata: %+v", attachment)
+	}
+}
+
+func TestSendMessageRejectsPlaintextAttachmentWhenE2EERequired(t *testing.T) {
+	db := newMessageServiceTestDB(t)
+	seedAcceptedFriendship(t, db, 1, 2)
+	seedE2EEBackup(t, db, 1)
+	seedE2EEBackup(t, db, 2)
+
+	_, err := SendMessage(db, 1, 2, "", []models.MessageAttachment{
+		{
+			FileURL:          "messages/user_1/plain.jpg",
+			FileType:         "image",
+			OriginalFilename: "plain.jpg",
+			ContentType:      "image/jpeg",
+			Size:             128,
+		},
+	}, nil, MessageEncryptionInput{})
+	if !errors.Is(err, ErrMessageInvalidEncryption) {
+		t.Fatalf("SendMessage error = %v, want %v", err, ErrMessageInvalidEncryption)
 	}
 }
 
@@ -962,5 +1056,17 @@ func seedE2EEBackup(t *testing.T, db *gorm.DB, userID uint) {
 		EncryptedMasterKey: `{"publicKey":"test-public-key"}`,
 	}).Error; err != nil {
 		t.Fatal(err)
+	}
+}
+
+func testClientE2EEMessageEncryption(fromID, toID uint) MessageEncryptionInput {
+	return MessageEncryptionInput{
+		Version: 1,
+		Ciphertext: fmt.Sprintf(
+			`{"version":1,"alg":"AES-256-GCM","keyAlg":"RSA-OAEP-SHA-256","data":"Y2lwaGVydGV4dA==","keys":{"%d":"a2V5","%d":"a2V5"}}`,
+			fromID,
+			toID,
+		),
+		Nonce: "MTIzNDU2Nzg5MDEy",
 	}
 }

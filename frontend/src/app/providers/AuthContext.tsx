@@ -4,6 +4,7 @@ import { userService } from "@/shared/api/userService.js";
 import type { User } from "@/shared/types/domain.js";
 import { useWebSocket } from "@/app/providers/WebSocketContext.js";
 import {
+    ensureE2EEReady,
     resetPostAuthBootstrapState,
     runPostAuthBootstrap,
 } from "@/features/bootstrap/postAuthBootstrap.js";
@@ -49,6 +50,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         const response = await authService.login(data);
         setCurrentUser(response.user);
         if (response.user.id) {
+            await ensureE2EEReady(response.user.id, data.password).catch(error => {
+                console.warn('E2EE bootstrap failed', error);
+            });
             void runPostAuthBootstrap(response.user.id);
         }
         wsService.connect();
@@ -59,6 +63,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         const response = await authService.register(data);
         setCurrentUser(response.user);
         if (response.user.id) {
+            await ensureE2EEReady(response.user.id, data.password).catch(error => {
+                console.warn('E2EE bootstrap failed', error);
+            });
             void runPostAuthBootstrap(response.user.id);
         }
         wsService.connect();

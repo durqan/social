@@ -20,6 +20,7 @@ import type { LoginPayload, RegisterPayload, User } from '../api/types';
 import { userApi } from '../api/users';
 import { chatSocket } from '../api/ws';
 import {
+  ensureE2EEReady,
   resetPostAuthBootstrap,
   runPostAuthBootstrap,
 } from '../bootstrap/postAuthBootstrap';
@@ -168,6 +169,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         setUser(response.user);
         if (response.user.id) {
+          await ensureE2EEReady(response.user.id, payload.password);
           runPostAuthBootstrap(response.user.id).catch(() => undefined);
         }
       } catch (error) {
@@ -191,6 +193,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         setUser(response.user);
         if (response.user.id) {
+          await ensureE2EEReady(response.user.id, payload.password);
           runPostAuthBootstrap(response.user.id).catch(() => undefined);
         }
       } catch (error) {

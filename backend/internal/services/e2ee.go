@@ -25,6 +25,9 @@ func NormalizeEncryptedKeyBackup(value string) (string, error) {
 	if value == "" || len(value) > MaxEncryptedKeyBackupLength {
 		return "", ErrEncryptedKeyBackupInvalid
 	}
+	if publicKeyFromBackupBundle(value) == "" {
+		return "", ErrEncryptedKeyBackupInvalid
+	}
 	return value, nil
 }
 
@@ -45,7 +48,19 @@ func DeleteEncryptedKeyBackup(db *gorm.DB, userID uint) error {
 }
 
 func E2EEPublicStatusForUser(db *gorm.DB, userID uint) (E2EEPublicStatus, error) {
-	return E2EEPublicStatus{Enabled: false}, nil
+	backup, err := repository.GetEncryptedKeyBackupByUserID(db, userID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return E2EEPublicStatus{Enabled: false}, nil
+	}
+	if err != nil {
+		return E2EEPublicStatus{}, err
+	}
+
+	publicKey := publicKeyFromBackupBundle(backup.EncryptedMasterKey)
+	if publicKey == "" {
+		return E2EEPublicStatus{Enabled: false}, nil
+	}
+	return E2EEPublicStatus{Enabled: true, PublicKey: publicKey}, nil
 }
 
 func publicKeyFromBackupBundle(value string) string {
