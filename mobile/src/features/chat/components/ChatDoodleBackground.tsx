@@ -20,13 +20,13 @@ export function ChatDoodleBackground({ children, isDark = false }: Props) {
   const patternId = isDark
     ? 'chat-doodle-pattern-dark'
     : 'chat-doodle-pattern-light';
-  const backgroundColor = isDark ? '#101914' : '#edf7ed';
+  const backgroundColor = isDark ? '#050713' : '#f7f9ff';
   const strokeColor = isDark
-    ? 'rgba(203, 232, 214, 0.34)'
-    : 'rgba(79, 111, 91, 0.24)';
+    ? 'rgba(124, 92, 255, 0.34)'
+    : 'rgba(124, 92, 255, 0.16)';
   const dotColor = isDark
-    ? 'rgba(203, 232, 214, 0.16)'
-    : 'rgba(79, 111, 91, 0.12)';
+    ? 'rgba(79, 140, 255, 0.18)'
+    : 'rgba(91, 140, 255, 0.10)';
 
   return (
     <View style={[styles.root, { backgroundColor }]}>
@@ -61,6 +61,8 @@ export function ChatDoodleBackground({ children, isDark = false }: Props) {
               <Path d="M43 80l14-14M56 67l1 11M56 67l-11 1" />
               <Path d="M86 88l10-10 6 6-10 10-8 2 2-8Z" />
               <Path d="M95 79l6 6" />
+              <Path d="M12 12l6 8-6 8-6-8 6-8Z" />
+              <Path d="M98 16l4 6-4 6-4-6 4-6Z" />
             </G>
             <Circle cx={9} cy={68} r={2} fill={dotColor} />
             <Circle cx={102} cy={42} r={2.2} fill={dotColor} />

@@ -3650,8 +3650,8 @@ export default function ChatScreen({ route, navigation }: Props) {
                   event.nativeEvent.contentSize.height,
                 )
               }
-              placeholder="Сообщение…"
-              placeholderTextColor="#9aa6b2"
+              placeholder="Сообщение..."
+              placeholderTextColor={themeColors.soft}
               multiline
               scrollEnabled={inputHeight >= COMPOSER_INPUT_MAX_HEIGHT}
               maxLength={1000}

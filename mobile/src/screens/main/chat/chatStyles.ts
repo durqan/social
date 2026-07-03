@@ -5,21 +5,13 @@ import { radius, spacing, typography } from '../../../theme/layout';
 import type { ThemeColors } from '../../../theme/themes';
 
 export const createChatThemeStyles = (theme: ThemeColors) => {
-  const ownBubbleBg = theme.isDark
-    ? theme.id === 'amoled-void'
-      ? '#163d37'
-      : '#24594f'
-    : '#d8fdd2';
-  const ownBubbleText = theme.isDark ? '#f5faf7' : '#173026';
-  const otherBubbleBg = theme.isDark
-    ? theme.id === 'amoled-void'
-      ? '#0c1112'
-      : '#1d2729'
-    : '#ffffff';
-  const otherBubbleText = theme.isDark ? '#f4f7fb' : '#172033';
+  const ownBubbleBg = theme.messageOwnBg;
+  const ownBubbleText = theme.messageOwnText;
+  const otherBubbleBg = theme.messageOtherBg;
+  const otherBubbleText = theme.messageOtherText;
   const otherBubbleBorder = theme.isDark
     ? 'rgba(218, 228, 220, 0.1)'
-    : 'rgba(69, 80, 64, 0.08)';
+    : theme.messageOtherBorder;
 
   return StyleSheet.create({
     chatBackground: {
@@ -39,16 +31,16 @@ export const createChatThemeStyles = (theme: ThemeColors) => {
       borderTopColor: theme.border,
     },
     composerDock: {
-      backgroundColor: theme.surface,
-      borderTopColor: theme.border,
+      backgroundColor: theme.background,
+      borderTopColor: 'transparent',
       zIndex: 2,
     },
     composerSurface: {
-      backgroundColor: 'transparent',
-      borderColor: 'transparent',
+      backgroundColor: theme.surface,
+      borderColor: theme.border,
       shadowColor: theme.shadow,
-      shadowOpacity: 0,
-      elevation: 0,
+      shadowOpacity: theme.isDark ? 0.34 : 0.13,
+      elevation: 6,
     },
     surfaceMutedBar: {
       backgroundColor: theme.surfaceMuted,
@@ -122,9 +114,7 @@ export const createChatThemeStyles = (theme: ThemeColors) => {
     },
     outgoingBubble: {
       backgroundColor: ownBubbleBg,
-      borderColor: theme.isDark
-        ? 'rgba(83, 190, 155, 0.24)'
-        : 'rgba(83, 154, 91, 0.2)',
+      borderColor: theme.messageOwnBorder,
       borderWidth: StyleSheet.hairlineWidth,
     },
     replyPreview: {
@@ -224,7 +214,7 @@ export const styles = StyleSheet.create({
   chatHeaderTitleText: {
     fontSize: 18,
     lineHeight: 22,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   messageListContainer: {
     flex: 1,
@@ -238,9 +228,9 @@ export const styles = StyleSheet.create({
     display: 'none',
   },
   messageList: {
-    paddingHorizontal: 10,
-    paddingTop: 8,
-    paddingBottom: 8,
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 14,
     flexGrow: 1,
     backgroundColor: 'transparent',
   },
@@ -284,26 +274,26 @@ export const styles = StyleSheet.create({
     justifyContent: 'flex-start',
   },
   bubbleRowSpacing: {
-    marginBottom: 4,
+    marginBottom: 7,
   },
   bubbleRowGroupedSpacing: {
-    marginBottom: 2,
+    marginBottom: 3,
   },
   bubbleRowOutgoing: {
     justifyContent: 'flex-end',
   },
   bubble: {
-    maxWidth: '78%',
-    borderRadius: 18,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    maxWidth: '82%',
+    borderRadius: 22,
+    paddingHorizontal: 13,
+    paddingVertical: 9,
     gap: spacing.xs,
     position: 'relative',
     shadowColor: colors.shadow,
-    shadowOpacity: 0.02,
-    shadowRadius: 2,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 0,
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 7 },
+    elevation: 2,
   },
   bubbleWithFloatingFooter: {
     paddingBottom: 22,
@@ -312,11 +302,11 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    borderBottomLeftRadius: 6,
+    borderBottomLeftRadius: 7,
   },
   outgoing: {
     backgroundColor: colors.accent,
-    borderBottomRightRadius: 6,
+    borderBottomRightRadius: 7,
   },
   messageText: {
     fontSize: 16,
@@ -348,7 +338,7 @@ export const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 14,
     fontWeight: '900',
-    letterSpacing: -1,
+    letterSpacing: 0,
   },
   outgoingText: {
     color: colors.white,
@@ -372,7 +362,7 @@ export const styles = StyleSheet.create({
   replyPreview: {
     borderLeftWidth: 3,
     borderLeftColor: colors.accent,
-    borderRadius: radius.md,
+    borderRadius: 16,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.sm,
     backgroundColor: colors.surfaceMuted,
@@ -413,15 +403,15 @@ export const styles = StyleSheet.create({
     alignSelf: 'flex-end',
   },
   messageImage: {
-    width: 210,
-    height: 150,
-    borderRadius: radius.lg,
+    width: 224,
+    height: 158,
+    borderRadius: 18,
     backgroundColor: colors.surfaceMuted,
   },
   messageImageFrame: {
-    width: 210,
-    height: 150,
-    borderRadius: radius.lg,
+    width: 224,
+    height: 158,
+    borderRadius: 18,
     overflow: 'hidden',
     backgroundColor: colors.surfaceMuted,
   },
@@ -441,14 +431,14 @@ export const styles = StyleSheet.create({
     top: 6,
   },
   genericVideoAttachment: {
-    width: 230,
-    borderRadius: radius.lg,
+    width: 236,
+    borderRadius: 18,
     overflow: 'hidden',
     backgroundColor: colors.surfaceMuted,
   },
   genericVideo: {
-    width: 230,
-    height: 150,
+    width: 236,
+    height: 156,
     backgroundColor: '#000',
   },
   genericVideoPlaceholder: {
@@ -478,8 +468,8 @@ export const styles = StyleSheet.create({
   },
   linkPreviewCard: {
     marginTop: spacing.sm,
-    width: 230,
-    borderRadius: radius.lg,
+    width: 236,
+    borderRadius: 18,
     overflow: 'hidden',
     padding: spacing.sm,
     gap: spacing.xs,
@@ -553,7 +543,7 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    borderRadius: radius.lg,
+    borderRadius: 18,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.sm,
     backgroundColor: colors.surfaceMuted,
@@ -593,7 +583,7 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    borderRadius: radius.lg,
+    borderRadius: 18,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.sm,
     backgroundColor: colors.surfaceMuted,
@@ -728,7 +718,7 @@ export const styles = StyleSheet.create({
     color: colors.white,
   },
   previewStrip: {
-    marginHorizontal: spacing.md,
+    marginHorizontal: 2,
     marginBottom: spacing.sm,
     borderRadius: 22,
     paddingHorizontal: spacing.sm,
@@ -737,8 +727,8 @@ export const styles = StyleSheet.create({
     borderColor: colors.border,
     backgroundColor: colors.surface,
     shadowColor: colors.shadow,
-    shadowOpacity: colors.isDark ? 0.08 : 0.12,
-    shadowRadius: 18,
+    shadowOpacity: colors.isDark ? 0.28 : 0.12,
+    shadowRadius: 22,
     shadowOffset: { width: 0, height: 8 },
     elevation: colors.isDark ? 1 : 3,
   },
@@ -914,7 +904,10 @@ export const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    marginHorizontal: 2,
+    marginBottom: spacing.sm,
+    borderRadius: 18,
+    borderTopWidth: 0,
     borderColor: colors.border,
     backgroundColor: colors.surface,
   },
@@ -927,7 +920,7 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    marginHorizontal: spacing.md,
+    marginHorizontal: 2,
     marginBottom: spacing.sm,
     borderRadius: 22,
     paddingHorizontal: spacing.md,
@@ -936,7 +929,7 @@ export const styles = StyleSheet.create({
     borderColor: colors.border,
     backgroundColor: colors.surface,
     shadowColor: colors.shadow,
-    shadowOpacity: colors.isDark ? 0.06 : 0.1,
+    shadowOpacity: colors.isDark ? 0.24 : 0.1,
     shadowRadius: 14,
     shadowOffset: { width: 0, height: 7 },
     elevation: colors.isDark ? 1 : 2,
@@ -962,7 +955,7 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    marginHorizontal: spacing.md,
+    marginHorizontal: 2,
     marginBottom: spacing.sm,
     borderRadius: 22,
     paddingHorizontal: spacing.md,
@@ -971,7 +964,7 @@ export const styles = StyleSheet.create({
     borderColor: colors.border,
     backgroundColor: colors.surface,
     shadowColor: colors.shadow,
-    shadowOpacity: colors.isDark ? 0.06 : 0.1,
+    shadowOpacity: colors.isDark ? 0.24 : 0.1,
     shadowRadius: 14,
     shadowOffset: { width: 0, height: 7 },
     elevation: colors.isDark ? 1 : 2,
@@ -1011,10 +1004,13 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+    marginHorizontal: 2,
+    marginBottom: spacing.sm,
+    borderRadius: 22,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
+    borderWidth: 1,
+    borderColor: colors.border,
     backgroundColor: colors.surfaceMuted,
   },
   recordingDot: {
@@ -1059,7 +1055,7 @@ export const styles = StyleSheet.create({
     fontWeight: '800',
   },
   previewVideoNoteCard: {
-    marginHorizontal: spacing.md,
+    marginHorizontal: 2,
     marginBottom: spacing.sm,
     padding: spacing.sm,
     borderRadius: radius.xl,
@@ -1090,7 +1086,7 @@ export const styles = StyleSheet.create({
   },
   // Preview voice card (new UX: record -> preview -> send/delete)
   previewVoiceCard: {
-    marginHorizontal: spacing.md,
+    marginHorizontal: 2,
     marginBottom: spacing.sm,
     padding: spacing.sm,
     borderRadius: radius.xl,
@@ -1149,10 +1145,13 @@ export const styles = StyleSheet.create({
     paddingTop: 4,
   },
   typingBar: {
+    marginHorizontal: 2,
+    marginBottom: spacing.sm,
+    borderRadius: 18,
     paddingHorizontal: 14,
     paddingVertical: 7,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
+    borderWidth: 1,
+    borderColor: colors.border,
     backgroundColor: colors.surface,
   },
   typingText: {
@@ -1163,31 +1162,32 @@ export const styles = StyleSheet.create({
   },
   composerDock: {
     flexShrink: 0,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 8,
-    paddingTop: 7,
-    paddingBottom: 7,
+    borderTopWidth: 0,
+    paddingHorizontal: 10,
+    paddingTop: 8,
+    paddingBottom: 10,
     backgroundColor: colors.surface,
   },
   composer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    gap: 6,
-    minHeight: 46,
-    borderWidth: 0,
-    paddingHorizontal: 0,
-    paddingVertical: 0,
+    gap: 7,
+    minHeight: 56,
+    borderWidth: 1,
+    borderRadius: 29,
+    paddingHorizontal: 7,
+    paddingVertical: 6,
     backgroundColor: 'transparent',
     shadowColor: colors.shadow,
-    shadowOpacity: 0,
-    shadowRadius: 0,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 0,
+    shadowOpacity: 0.34,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 6,
   },
   composerSideButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     borderWidth: 0,
     marginBottom: 2,
     backgroundColor: colors.cardMuted,
@@ -1200,7 +1200,7 @@ export const styles = StyleSheet.create({
     alignItems: 'flex-end',
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 22,
+    borderRadius: 23,
     paddingLeft: 12,
     paddingRight: 2,
     backgroundColor: colors.input,

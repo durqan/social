@@ -1,17 +1,27 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
   Image,
   Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { CommonActions, useFocusEffect, useIsFocused } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { MessageCircle, Pin, PinOff, Trash2 } from 'lucide-react-native';
+import {
+  MessageCircle,
+  Plus,
+  Search,
+  SlidersHorizontal,
+  Pin,
+  PinOff,
+  Trash2,
+} from 'lucide-react-native';
 
 import { getApiErrorMessage } from '../../api/http';
 import { messageApi } from '../../api/messages';
@@ -35,7 +45,9 @@ import type { ChatStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'ChatList'>;
 type LoadMode = 'refresh' | 'silent';
+type ConversationFilter = 'all' | 'unread' | 'pinned';
 const CONVERSATION_PAGE_SIZE = 50;
+const ONLINE_WINDOW_MS = 5 * 60 * 1000;
 
 function conversationTimestamp(conversation: Conversation) {
   const timestamp = Date.parse(conversation.last_message_at || '');
@@ -57,6 +69,17 @@ function conversationPeerId(conversation: Conversation) {
   return Number.isFinite(peerId) && peerId > 0 ? peerId : null;
 }
 
+function conversationOnline(conversation: Conversation) {
+  if (!conversation.last_seen_at) {
+    return false;
+  }
+
+  const timestamp = Date.parse(conversation.last_seen_at);
+  return (
+    Number.isFinite(timestamp) && Date.now() - timestamp <= ONLINE_WINDOW_MS
+  );
+}
+
 export default function ChatListScreen({ navigation }: Props) {
   const isFocused = useIsFocused();
   const { chatRefreshVersion, refreshUnreadCount } = useUnread();
@@ -71,6 +94,8 @@ export default function ChatListScreen({ navigation }: Props) {
     useState<Conversation | null>(null);
   const [profileConversation, setProfileConversation] =
     useState<Conversation | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeFilter, setActiveFilter] = useState<ConversationFilter>('all');
   const [busyConversationId, setBusyConversationId] = useState<number | null>(
     null,
   );
@@ -204,6 +229,45 @@ export default function ChatListScreen({ navigation }: Props) {
     load('silent').catch(() => undefined);
   });
 
+  const filteredConversations = useMemo(() => {
+    const normalizedQuery = searchQuery.trim().toLowerCase();
+
+    return conversations.filter(conversation => {
+      const matchesFilter =
+        activeFilter === 'all' ||
+        (activeFilter === 'unread' && conversation.unread_count > 0) ||
+        (activeFilter === 'pinned' && conversation.is_pinned);
+      if (!matchesFilter) {
+        return false;
+      }
+
+      if (!normalizedQuery) {
+        return true;
+      }
+
+      return (
+        conversation.name.toLowerCase().includes(normalizedQuery) ||
+        conversation.last_message.toLowerCase().includes(normalizedQuery) ||
+        (conversation.last_sender_name || '')
+          .toLowerCase()
+          .includes(normalizedQuery)
+      );
+    });
+  }, [activeFilter, conversations, searchQuery]);
+
+  const storyConversations = useMemo(
+    () => conversations.slice(0, 12),
+    [conversations],
+  );
+  const unreadConversationsCount = useMemo(
+    () => conversations.filter(item => item.unread_count > 0).length,
+    [conversations],
+  );
+  const pinnedConversationsCount = useMemo(
+    () => conversations.filter(item => item.is_pinned).length,
+    [conversations],
+  );
+
   function openConversation(conversation: Conversation) {
     const peerId = conversationPeerId(conversation);
     if (!peerId) {
@@ -216,6 +280,14 @@ export default function ChatListScreen({ navigation }: Props) {
       userId: peerId,
       name: conversation.name,
     });
+  }
+
+  function openUserSearch() {
+    navigation.getParent()?.getParent()?.dispatch(
+      CommonActions.navigate({
+        name: 'UserSearch',
+      }),
+    );
   }
 
   async function togglePinConversation(conversation: Conversation) {
@@ -281,7 +353,7 @@ export default function ChatListScreen({ navigation }: Props) {
       <SuccessBanner message={success} />
 
       <FlatList
-        data={conversations}
+        data={filteredConversations}
         keyExtractor={item => String(item.user_id)}
         refreshing={loading && hasLoaded}
         onRefresh={load}
@@ -293,11 +365,33 @@ export default function ChatListScreen({ navigation }: Props) {
         onEndReachedThreshold={0.6}
         contentContainerStyle={[
           styles.listContent,
-          conversations.length === 0 && styles.emptyListContent,
+          filteredConversations.length === 0 && styles.emptyListContent,
         ]}
+        ListHeaderComponent={
+          <ChatListHeader
+            conversations={storyConversations}
+            totalCount={conversations.length}
+            unreadCount={unreadConversationsCount}
+            pinnedCount={pinnedConversationsCount}
+            searchQuery={searchQuery}
+            activeFilter={activeFilter}
+            onSearchChange={setSearchQuery}
+            onFilterChange={setActiveFilter}
+            onCreatePress={openUserSearch}
+            onOpenConversation={openConversation}
+            onOpenProfile={setProfileConversation}
+            colors={colors}
+          />
+        }
         ListEmptyComponent={
           loading && !hasLoaded ? (
             <ConversationListSkeleton />
+          ) : searchQuery.trim() || activeFilter !== 'all' ? (
+            <EmptyState
+              icon={Search}
+              title="Ничего не найдено"
+              text="Измените запрос или сбросьте фильтр."
+            />
           ) : (
             <EmptyState
               icon={MessageCircle}
@@ -313,76 +407,15 @@ export default function ChatListScreen({ navigation }: Props) {
             </View>
           ) : null
         }
-        renderItem={({ item }) => {
-          const isUnread = item.unread_count > 0;
-          const preview = item.last_message.trim() || 'Изображение';
-          const previewAuthor = item.last_is_mine
-            ? 'Вы'
-            : item.last_sender_name || item.name || 'Пользователь';
-
-          return (
-            <Pressable
-              style={({ pressed }) => [
-                styles.row,
-                isUnread && styles.rowUnread,
-                pressed && styles.rowPressed,
-              ]}
-              onPress={() => openConversation(item)}
-              onLongPress={() => setSelectedConversation(item)}
-              delayLongPress={280}
-            >
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Открыть мини-профиль"
-                onPress={event => {
-                  event.stopPropagation();
-                  setProfileConversation(item);
-                }}
-              >
-                <ConversationAvatar
-                  conversation={item}
-                  isUnread={isUnread}
-                  colors={colors}
-                />
-              </Pressable>
-              <View style={styles.meta}>
-                <View style={styles.rowHeader}>
-                  <View style={styles.nameBox}>
-                    {item.is_pinned ? (
-                      <Pin
-                        color={colors.accentStrong}
-                        size={13}
-                        strokeWidth={2.5}
-                      />
-                    ) : null}
-                    <Text
-                      style={[styles.name, isUnread && styles.nameUnread]}
-                      numberOfLines={1}
-                    >
-                      {item.name}
-                    </Text>
-                  </View>
-                  <Text style={styles.date} numberOfLines={1}>
-                    {formatDateTime(item.last_message_at)}
-                  </Text>
-                </View>
-                <Text
-                  style={[styles.preview, isUnread && styles.previewUnread]}
-                  numberOfLines={1}
-                >
-                  <Text style={styles.previewAuthor}>{previewAuthor}: </Text>
-                  {preview}
-                  {item.last_is_mine ? ` ${item.last_read ? '✓✓' : '✓'}` : ''}
-                </Text>
-              </View>
-              {isUnread ? (
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>{item.unread_count}</Text>
-                </View>
-              ) : null}
-            </Pressable>
-          );
-        }}
+        renderItem={({ item }) => (
+          <ChatListItem
+            conversation={item}
+            onPress={openConversation}
+            onLongPress={setSelectedConversation}
+            onOpenProfile={setProfileConversation}
+            colors={colors}
+          />
+        )}
         initialNumToRender={10}
         windowSize={7}
         maxToRenderPerBatch={8}
@@ -439,31 +472,315 @@ export default function ChatListScreen({ navigation }: Props) {
   );
 }
 
+function ChatListHeader({
+  conversations,
+  totalCount,
+  unreadCount,
+  pinnedCount,
+  searchQuery,
+  activeFilter,
+  onSearchChange,
+  onFilterChange,
+  onCreatePress,
+  onOpenConversation,
+  onOpenProfile,
+  colors,
+}: {
+  conversations: Conversation[];
+  totalCount: number;
+  unreadCount: number;
+  pinnedCount: number;
+  searchQuery: string;
+  activeFilter: ConversationFilter;
+  onSearchChange: (value: string) => void;
+  onFilterChange: (filter: ConversationFilter) => void;
+  onCreatePress: () => void;
+  onOpenConversation: (conversation: Conversation) => void;
+  onOpenProfile: (conversation: Conversation) => void;
+  colors: ThemeColors;
+}) {
+  const styles = createStyles(colors);
+
+  return (
+    <View style={styles.headerBlock}>
+      <View style={styles.titleRow}>
+        <View>
+          <Text style={styles.kicker}>Durqan</Text>
+          <Text style={styles.title}>Сообщения</Text>
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Найти пользователя"
+          style={({ pressed }) => [
+            styles.createButton,
+            pressed && styles.rowPressed,
+          ]}
+          onPress={onCreatePress}
+        >
+          <Plus color={colors.white} size={22} strokeWidth={2.7} />
+        </Pressable>
+      </View>
+
+      <View style={styles.searchRow}>
+        <View style={styles.searchBox}>
+          <Search color={colors.soft} size={19} strokeWidth={2.4} />
+          <TextInput
+            value={searchQuery}
+            onChangeText={onSearchChange}
+            placeholder="Поиск"
+            placeholderTextColor={colors.soft}
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={styles.searchInput}
+          />
+        </View>
+        <View style={styles.filterRoundButton}>
+          <SlidersHorizontal
+            color={colors.muted}
+            size={20}
+            strokeWidth={2.5}
+          />
+        </View>
+      </View>
+
+      {conversations.length > 0 ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.storyStrip}
+        >
+          {conversations.map((conversation, index) => (
+            <Pressable
+              key={conversation.user_id}
+              accessibilityRole="button"
+              style={({ pressed }) => [
+                styles.storyItem,
+                pressed && styles.storyPressed,
+              ]}
+              onPress={() => onOpenConversation(conversation)}
+              onLongPress={() => onOpenProfile(conversation)}
+              delayLongPress={280}
+            >
+              <ConversationAvatar
+                conversation={conversation}
+                isUnread={conversation.unread_count > 0}
+                colors={colors}
+                online={conversationOnline(conversation)}
+                size={58}
+                story
+              />
+              {index === 0 ? (
+                <View style={styles.storyAddBadge}>
+                  <Plus color={colors.white} size={13} strokeWidth={3} />
+                </View>
+              ) : null}
+              <Text style={styles.storyName} numberOfLines={1}>
+                {index === 0 ? 'Моя история' : conversation.name}
+              </Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      ) : null}
+
+      <View style={styles.filterRow}>
+        <FilterChip
+          label="Все"
+          count={totalCount}
+          selected={activeFilter === 'all'}
+          onPress={() => onFilterChange('all')}
+          colors={colors}
+        />
+        <FilterChip
+          label="Непрочитанные"
+          count={unreadCount}
+          selected={activeFilter === 'unread'}
+          onPress={() => onFilterChange('unread')}
+          colors={colors}
+        />
+        <FilterChip
+          label="Избранные"
+          count={pinnedCount}
+          selected={activeFilter === 'pinned'}
+          onPress={() => onFilterChange('pinned')}
+          colors={colors}
+        />
+      </View>
+    </View>
+  );
+}
+
+function FilterChip({
+  label,
+  count,
+  selected,
+  onPress,
+  colors,
+}: {
+  label: string;
+  count: number;
+  selected: boolean;
+  onPress: () => void;
+  colors: ThemeColors;
+}) {
+  const styles = createStyles(colors);
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      style={({ pressed }) => [
+        styles.filterChip,
+        selected && styles.filterChipSelected,
+        pressed && styles.rowPressed,
+      ]}
+      onPress={onPress}
+    >
+      <Text style={[styles.filterText, selected && styles.filterTextSelected]}>
+        {label}
+      </Text>
+      {count > 0 ? (
+        <View style={[styles.filterCount, selected && styles.filterCountActive]}>
+          <Text
+            style={[
+              styles.filterCountText,
+              selected && styles.filterCountTextActive,
+            ]}
+          >
+            {count}
+          </Text>
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
+
+function ChatListItem({
+  conversation,
+  onPress,
+  onLongPress,
+  onOpenProfile,
+  colors,
+}: {
+  conversation: Conversation;
+  onPress: (conversation: Conversation) => void;
+  onLongPress: (conversation: Conversation) => void;
+  onOpenProfile: (conversation: Conversation) => void;
+  colors: ThemeColors;
+}) {
+  const styles = createStyles(colors);
+  const isUnread = conversation.unread_count > 0;
+  const preview = conversation.last_message.trim() || 'Вложение';
+  const previewAuthor = conversation.last_is_mine
+    ? 'Вы'
+    : conversation.last_sender_name || conversation.name || 'Пользователь';
+
+  return (
+    <Pressable
+      style={({ pressed }) => [
+        styles.row,
+        isUnread && styles.rowUnread,
+        pressed && styles.rowPressed,
+      ]}
+      onPress={() => onPress(conversation)}
+      onLongPress={() => onLongPress(conversation)}
+      delayLongPress={280}
+    >
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Открыть мини-профиль"
+        onPress={event => {
+          event.stopPropagation();
+          onOpenProfile(conversation);
+        }}
+      >
+        <ConversationAvatar
+          conversation={conversation}
+          isUnread={isUnread}
+          colors={colors}
+          online={conversationOnline(conversation)}
+        />
+      </Pressable>
+      <View style={styles.meta}>
+        <View style={styles.rowHeader}>
+          <View style={styles.nameBox}>
+            {conversation.is_pinned ? (
+              <Pin color={colors.accentStrong} size={13} strokeWidth={2.7} />
+            ) : null}
+            <Text
+              style={[styles.name, isUnread && styles.nameUnread]}
+              numberOfLines={1}
+            >
+              {conversation.name}
+            </Text>
+          </View>
+          <Text style={styles.date} numberOfLines={1}>
+            {formatDateTime(conversation.last_message_at)}
+          </Text>
+        </View>
+        <Text
+          style={[styles.preview, isUnread && styles.previewUnread]}
+          numberOfLines={1}
+        >
+          <Text style={styles.previewAuthor}>{previewAuthor}: </Text>
+          {preview}
+          {conversation.last_is_mine
+            ? ` ${conversation.last_read ? '✓✓' : '✓'}`
+            : ''}
+        </Text>
+      </View>
+      {isUnread ? (
+        <View style={styles.badge}>
+          <Text style={styles.badgeText}>{conversation.unread_count}</Text>
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
+
 function ConversationAvatar({
   conversation,
   isUnread,
   colors,
+  online,
+  size = 52,
+  story = false,
 }: {
   conversation: Conversation;
   isUnread: boolean;
   colors: ThemeColors;
+  online?: boolean;
+  size?: number;
+  story?: boolean;
 }) {
   const styles = createStyles(colors);
   const avatarUrl = buildAvatarUrl(conversation);
+  const avatarSizeStyle = {
+    width: size,
+    height: size,
+    borderRadius: size / 2,
+  };
 
   return (
-    <View style={[styles.avatar, isUnread && styles.avatarUnread]}>
+    <View
+      style={[
+        styles.avatar,
+        avatarSizeStyle,
+        story && styles.storyAvatar,
+        isUnread && styles.avatarUnread,
+      ]}
+    >
       {avatarUrl ? (
         <Image
           source={{ uri: avatarUrl }}
           style={[
             styles.avatarImage,
             avatarImageStyle({
-              size: 52,
+              size,
               positionX: conversation.avatar_position_x,
               positionY: conversation.avatar_position_y,
               scale: conversation.avatar_scale,
             }),
+            avatarSizeStyle,
           ]}
         />
       ) : (
@@ -471,6 +788,7 @@ function ConversationAvatar({
           {conversation.name.slice(0, 1).toUpperCase()}
         </Text>
       )}
+      {online ? <View style={styles.onlineDot} /> : null}
     </View>
   );
 }
@@ -565,13 +883,178 @@ const createStyles = (colors: ThemeColors) =>
     },
     listContent: {
       paddingHorizontal: spacing.lg,
-      paddingTop: spacing.sm,
+      paddingTop: spacing.lg,
       paddingBottom: 124,
-      gap: 0,
+      gap: spacing.sm,
     },
     emptyListContent: {
       flexGrow: 1,
+    },
+    headerBlock: {
+      gap: spacing.md,
+      marginBottom: spacing.sm,
+    },
+    titleRow: {
+      minHeight: 72,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: spacing.md,
+    },
+    kicker: {
+      ...typography.caption,
+      color: colors.accentStrong,
+      fontWeight: '900',
+      textTransform: 'uppercase',
+    },
+    title: {
+      ...typography.h1,
+      color: colors.text,
+      fontSize: 30,
+      lineHeight: 36,
+    },
+    createButton: {
+      width: 48,
+      height: 48,
+      borderRadius: 16,
+      alignItems: 'center',
       justifyContent: 'center',
+      backgroundColor: colors.accent,
+      borderWidth: 1,
+      borderColor: colors.accentBorder,
+      shadowColor: colors.accent,
+      shadowOpacity: 0.44,
+      shadowRadius: 18,
+      shadowOffset: { width: 0, height: 8 },
+      elevation: 5,
+    },
+    searchRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+    },
+    searchBox: {
+      flex: 1,
+      minHeight: 48,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      borderRadius: 15,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.input,
+      paddingHorizontal: spacing.md,
+    },
+    searchInput: {
+      flex: 1,
+      minWidth: 0,
+      paddingVertical: spacing.sm,
+      color: colors.text,
+      ...typography.body,
+      fontWeight: '700',
+    },
+    filterRoundButton: {
+      width: 48,
+      height: 48,
+      borderRadius: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.cardMuted,
+    },
+    storyStrip: {
+      gap: spacing.md,
+      paddingRight: spacing.lg,
+      paddingVertical: spacing.xs,
+    },
+    storyItem: {
+      width: 72,
+      alignItems: 'center',
+      gap: 7,
+      position: 'relative',
+    },
+    storyPressed: {
+      opacity: 0.74,
+      transform: [{ scale: 0.98 }],
+    },
+    storyAvatar: {
+      borderWidth: 2,
+      borderColor: colors.accent,
+      backgroundColor: colors.card,
+      shadowColor: colors.accent,
+      shadowOpacity: 0.34,
+      shadowRadius: 15,
+      shadowOffset: { width: 0, height: 6 },
+      elevation: 4,
+    },
+    storyAddBadge: {
+      position: 'absolute',
+      right: 4,
+      top: 42,
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.accent,
+      borderWidth: 2,
+      borderColor: colors.background,
+    },
+    storyName: {
+      width: 72,
+      ...typography.tiny,
+      color: colors.muted,
+      fontWeight: '800',
+      textAlign: 'center',
+    },
+    filterRow: {
+      flexDirection: 'row',
+      gap: spacing.sm,
+    },
+    filterChip: {
+      minHeight: 38,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 7,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.pill,
+      paddingLeft: 14,
+      paddingRight: 9,
+      backgroundColor: colors.cardMuted,
+    },
+    filterChipSelected: {
+      borderColor: colors.accentBorder,
+      backgroundColor: colors.accentSoft,
+    },
+    filterText: {
+      color: colors.muted,
+      ...typography.caption,
+      fontWeight: '900',
+    },
+    filterTextSelected: {
+      color: colors.text,
+    },
+    filterCount: {
+      minWidth: 22,
+      height: 22,
+      borderRadius: 11,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 7,
+      backgroundColor: colors.surface,
+    },
+    filterCountActive: {
+      backgroundColor: colors.accent,
+    },
+    filterCountText: {
+      color: colors.muted,
+      ...typography.tiny,
+      fontWeight: '900',
+    },
+    filterCountTextActive: {
+      color: colors.white,
     },
     loadingMore: {
       paddingVertical: spacing.lg,
@@ -580,24 +1063,28 @@ const createStyles = (colors: ThemeColors) =>
     row: {
       flexDirection: 'row',
       alignItems: 'center',
-      borderWidth: 0,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: colors.border,
-      borderRadius: 0,
-      backgroundColor: 'transparent',
-      paddingHorizontal: spacing.xs,
-      paddingVertical: 12,
+      minHeight: 76,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 18,
+      backgroundColor: colors.card,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.md,
       gap: spacing.md,
+      shadowColor: colors.shadow,
+      shadowOpacity: 0.22,
+      shadowRadius: 14,
+      shadowOffset: { width: 0, height: 8 },
+      elevation: 2,
     },
     rowUnread: {
-      borderBottomColor: colors.accentBorder,
-      borderRadius: radius.xl,
+      borderColor: colors.accentBorder,
       backgroundColor: colors.selected,
-      paddingHorizontal: spacing.md,
-      marginVertical: 3,
+      shadowColor: colors.accent,
+      shadowOpacity: 0.2,
     },
     rowPressed: {
-      backgroundColor: colors.pressed,
+      opacity: 0.78,
     },
     avatar: {
       width: 52,
@@ -609,16 +1096,16 @@ const createStyles = (colors: ThemeColors) =>
       backgroundColor: colors.accentSoft,
       overflow: 'hidden',
       borderWidth: 2,
-      borderColor: colors.white,
+      borderColor: colors.borderStrong,
       shadowColor: colors.shadow,
-      shadowOpacity: colors.isDark ? 0 : 0.1,
+      shadowOpacity: colors.isDark ? 0.28 : 0.1,
       shadowRadius: 10,
       shadowOffset: { width: 0, height: 5 },
       elevation: colors.isDark ? 0 : 2,
     },
     avatarUnread: {
       backgroundColor: colors.accent,
-      borderColor: colors.accentBorder,
+      borderColor: colors.accent,
     },
     avatarImage: {
       width: 52,
@@ -631,6 +1118,17 @@ const createStyles = (colors: ThemeColors) =>
     },
     avatarTextUnread: {
       color: colors.white,
+    },
+    onlineDot: {
+      position: 'absolute',
+      right: 1,
+      bottom: 1,
+      width: 13,
+      height: 13,
+      borderRadius: 7,
+      backgroundColor: colors.success,
+      borderWidth: 2,
+      borderColor: colors.background,
     },
     meta: {
       flex: 1,
@@ -655,7 +1153,7 @@ const createStyles = (colors: ThemeColors) =>
       fontWeight: '900',
     },
     nameUnread: {
-      color: colors.accentStrong,
+      color: colors.text,
     },
     date: {
       ...typography.tiny,
@@ -680,6 +1178,10 @@ const createStyles = (colors: ThemeColors) =>
       justifyContent: 'center',
       backgroundColor: colors.accent,
       paddingHorizontal: 7,
+      shadowColor: colors.accent,
+      shadowOpacity: 0.36,
+      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 4 },
     },
     badgeText: {
       color: colors.white,

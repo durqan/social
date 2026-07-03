@@ -10,7 +10,7 @@ import {
 
 import { useThemeColors } from '../theme/ThemeContext';
 import type { ThemeColors } from '../theme/themes';
-import { elevation, radius, spacing, typography } from '../theme/layout';
+import { radius, spacing, typography } from '../theme/layout';
 
 type TileIcon = React.ComponentType<{
   color?: string;
@@ -121,11 +121,14 @@ const createStyles = (colors: ThemeColors) =>
     card: {
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: radius.xl,
+      borderRadius: 24,
       backgroundColor: colors.card,
       padding: spacing.lg,
       shadowColor: colors.shadow,
-      ...(colors.isDark ? elevation.none : elevation.card),
+      shadowOpacity: colors.isDark ? 0.24 : 0.1,
+      shadowRadius: 22,
+      shadowOffset: { width: 0, height: 12 },
+      elevation: colors.isDark ? 4 : 2,
     },
     section: { gap: spacing.md },
     sectionHeader: { gap: spacing.xs },
@@ -136,7 +139,7 @@ const createStyles = (colors: ThemeColors) =>
       padding: spacing.xl,
       overflow: 'hidden',
       borderColor: colors.accentBorder,
-      backgroundColor: colors.surface,
+      backgroundColor: colors.card,
       position: 'relative',
     },
     heroAccentLine: {
@@ -162,12 +165,12 @@ const createStyles = (colors: ThemeColors) =>
       minHeight: 94,
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: radius.xl,
+      borderRadius: 22,
       backgroundColor: colors.card,
       padding: spacing.md,
       gap: spacing.sm,
       shadowColor: colors.shadow,
-      shadowOpacity: colors.isDark ? 0 : 0.06,
+      shadowOpacity: colors.isDark ? 0.2 : 0.06,
       shadowRadius: 14,
       shadowOffset: { width: 0, height: 8 },
       elevation: colors.isDark ? 0 : 1,

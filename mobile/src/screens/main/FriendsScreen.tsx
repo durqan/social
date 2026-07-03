@@ -32,7 +32,7 @@ import { Screen } from '../../components/Screen';
 import { useNotifications } from '../../context/NotificationsContext';
 import { useThemeColors } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/themes';
-import { radius, spacing, typography } from '../../theme/layout';
+import { spacing, typography } from '../../theme/layout';
 import { avatarImageStyle, buildAvatarUrl } from '../../utils/avatar';
 import { useAppResumeEffect } from '../../utils/useAppResumeEffect';
 import type {
@@ -391,6 +391,17 @@ const createStyles = (colors: ThemeColors) =>
       alignItems: 'center',
       justifyContent: 'space-between',
       gap: spacing.md,
+      minHeight: 74,
+      borderRadius: 28,
+      borderWidth: 1,
+      borderColor: colors.borderStrong,
+      backgroundColor: colors.card,
+      padding: spacing.lg,
+      shadowColor: colors.shadow,
+      shadowOpacity: colors.isDark ? 0.28 : 0.08,
+      shadowRadius: 22,
+      shadowOffset: { width: 0, height: 12 },
+      elevation: colors.isDark ? 4 : 1,
     },
     headerActions: {
       flexDirection: 'row',
@@ -410,9 +421,14 @@ const createStyles = (colors: ThemeColors) =>
     listCard: {
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: radius.xl,
-      backgroundColor: colors.surface,
+      borderRadius: 24,
+      backgroundColor: colors.card,
       overflow: 'hidden',
+      shadowColor: colors.shadow,
+      shadowOpacity: colors.isDark ? 0.2 : 0.06,
+      shadowRadius: 18,
+      shadowOffset: { width: 0, height: 10 },
+      elevation: colors.isDark ? 3 : 1,
     },
     requestRow: {
       padding: spacing.md,
@@ -437,11 +453,16 @@ const createStyles = (colors: ThemeColors) =>
       alignItems: 'center',
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: radius.xl,
+      borderRadius: 22,
       backgroundColor: colors.card,
       padding: spacing.md,
       gap: spacing.md,
       marginBottom: spacing.sm,
+      shadowColor: colors.shadow,
+      shadowOpacity: colors.isDark ? 0.2 : 0,
+      shadowRadius: 16,
+      shadowOffset: { width: 0, height: 9 },
+      elevation: colors.isDark ? 2 : 0,
     },
     avatar: {
       width: 44,
@@ -453,9 +474,9 @@ const createStyles = (colors: ThemeColors) =>
       backgroundColor: colors.accentSoft,
       overflow: 'hidden',
       borderWidth: 2,
-      borderColor: colors.white,
+      borderColor: colors.borderStrong,
       shadowColor: colors.shadow,
-      shadowOpacity: colors.isDark ? 0 : 0.08,
+      shadowOpacity: colors.isDark ? 0.24 : 0.08,
       shadowRadius: 9,
       shadowOffset: { width: 0, height: 4 },
       elevation: colors.isDark ? 0 : 1,

@@ -17,7 +17,7 @@ import {
 } from '../../notifications/pushNotifications';
 import { useTheme, useThemeColors } from '../../theme/ThemeContext';
 import { themeOrder, themes, type ThemeColors, type ThemeId } from '../../theme/themes';
-import { elevation, spacing, textSizeOptions, textSizeOrder, typography, type TextSizeId } from '../../theme/layout';
+import { spacing, textSizeOptions, textSizeOrder, typography, type TextSizeId } from '../../theme/layout';
 
 type SecurityBusyAction = 'password';
 
@@ -236,41 +236,44 @@ function ThemeOption({ themeId, selected, onPress }: { themeId: ThemeId; selecte
 
 const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
-    screenContent: { gap: 14 },
+    screenContent: { gap: 16 },
     accountCard: {
       flexDirection: 'row',
       alignItems: 'center',
       borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 28,
-      backgroundColor: colors.surface,
+      borderColor: colors.borderStrong,
+      borderRadius: 30,
+      backgroundColor: colors.card,
       padding: spacing.lg,
       gap: spacing.md,
       overflow: 'hidden',
       shadowColor: colors.shadow,
-      ...(colors.isDark ? elevation.none : elevation.card),
+      shadowOpacity: colors.isDark ? 0.32 : 0.1,
+      shadowRadius: 26,
+      shadowOffset: { width: 0, height: 14 },
+      elevation: colors.isDark ? 5 : 2,
     },
     accountAccent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 5, backgroundColor: colors.accent },
-    accountAvatar: { width: 54, height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentSoft, borderWidth: 2, borderColor: colors.white },
+    accountAvatar: { width: 54, height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentSoft, borderWidth: 2, borderColor: colors.borderStrong },
     accountAvatarText: { color: colors.accent, fontSize: 23, fontWeight: '900' },
     accountInfo: { flex: 1, minWidth: 0 },
     accountTitle: { ...typography.h3, color: colors.text },
     accountText: { marginTop: 3, ...typography.caption, color: colors.muted },
-    logoutFullButton: { minHeight: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 10, backgroundColor: colors.dangerSoft, borderWidth: 1, borderColor: 'rgba(255,59,48,0.18)' },
+    logoutFullButton: { minHeight: 58, borderRadius: 24, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 10, backgroundColor: colors.dangerSoft, borderWidth: 1, borderColor: colors.dangerSoft },
     logoutFullText: { color: colors.danger, fontSize: 16, fontWeight: '900' },
-    card: { borderWidth: 1, borderColor: colors.border, borderRadius: 28, backgroundColor: colors.surface, padding: spacing.lg, gap: spacing.md, shadowColor: colors.shadow, shadowOpacity: colors.isDark ? 0 : 0.08, shadowRadius: 18, shadowOffset: { width: 0, height: 9 }, elevation: colors.isDark ? 0 : 1 },
+    card: { borderWidth: 1, borderColor: colors.border, borderRadius: 28, backgroundColor: colors.card, padding: spacing.lg, gap: spacing.md, shadowColor: colors.shadow, shadowOpacity: colors.isDark ? 0.24 : 0.08, shadowRadius: 22, shadowOffset: { width: 0, height: 12 }, elevation: colors.isDark ? 4 : 1 },
     cardHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
     headerIcon: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentSoft },
     headerTextBlock: { flex: 1, minWidth: 0 },
     title: { ...typography.h3, color: colors.text },
     text: { marginTop: 2, fontSize: 13, lineHeight: 18, color: colors.muted },
-    rowItem: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: 58, borderRadius: 22, padding: spacing.md, backgroundColor: colors.cardMuted, borderWidth: 1, borderColor: colors.border },
-    rowIcon: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface },
+    rowItem: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: 58, borderRadius: 20, padding: spacing.md, backgroundColor: colors.cardMuted, borderWidth: 1, borderColor: colors.border },
+    rowIcon: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceMuted },
     rowText: { flex: 1, minWidth: 0 },
     rowTitle: { color: colors.text, fontSize: 14, lineHeight: 18, fontWeight: '900' },
     rowSubtitle: { marginTop: 2, color: colors.muted, fontSize: 12, lineHeight: 16 },
     rowRightText: { color: colors.accent, fontSize: 14, fontWeight: '900' },
-    passwordBox: { gap: spacing.sm, borderWidth: 1, borderColor: colors.border, borderRadius: 22, padding: spacing.md, backgroundColor: colors.card },
+    passwordBox: { gap: spacing.sm, borderWidth: 1, borderColor: colors.border, borderRadius: 22, padding: spacing.md, backgroundColor: colors.surfaceMuted },
     primaryButton: { borderRadius: 18 },
     textSizeGrid: { flexDirection: 'row', gap: spacing.sm },
     textSizeOption: { flex: 1, minHeight: 104, alignItems: 'center', justifyContent: 'center', gap: 4, borderWidth: 1, borderColor: colors.border, borderRadius: 22, backgroundColor: colors.cardMuted, padding: spacing.sm },

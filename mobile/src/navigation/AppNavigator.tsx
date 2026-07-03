@@ -37,7 +37,7 @@ import {
 } from '../notifications/navigation';
 import { useThemeColors } from '../theme/ThemeContext';
 import type { ThemeColors } from '../theme/themes';
-import { elevation, radius, spacing, typography } from '../theme/layout';
+import { radius, spacing, typography } from '../theme/layout';
 import LoginScreen from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
 import ForgotPasswordScreen from '../screens/auth/ForgotPasswordScreen';
@@ -376,8 +376,8 @@ function MainTabsNavigator() {
   const tabBarStyle = [
     styles.tabBar,
     {
-      height: 66 + insets.bottom,
-      paddingBottom: Math.max(insets.bottom, 9),
+      height: 72 + insets.bottom,
+      paddingBottom: Math.max(insets.bottom, 10),
     },
   ];
   const hiddenTabBarStyle = { display: 'none' as const };
@@ -541,7 +541,7 @@ const createStyles = (colors: ThemeColors) =>
       textAlign: 'center',
     },
     header: {
-      backgroundColor: colors.surface,
+      backgroundColor: colors.background,
       borderBottomWidth: 0,
       shadowOpacity: 0,
       elevation: 0,
@@ -553,17 +553,20 @@ const createStyles = (colors: ThemeColors) =>
     },
     tabBar: {
       position: 'absolute',
-      left: 14,
-      right: 14,
-      bottom: 8,
+      left: 16,
+      right: 16,
+      bottom: 10,
       borderTopWidth: 0,
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: 30,
+      borderRadius: 34,
       backgroundColor: colors.surface,
-      paddingTop: 7,
+      paddingTop: 9,
       shadowColor: colors.shadow,
-      ...(colors.isDark ? elevation.none : elevation.bar),
+      shadowOpacity: colors.isDark ? 0.42 : 0.18,
+      shadowRadius: 28,
+      shadowOffset: { width: 0, height: -10 },
+      elevation: 10,
     },
     tabBarItem: {
       minWidth: 0,
@@ -576,7 +579,7 @@ const createStyles = (colors: ThemeColors) =>
       fontSize: 10,
       lineHeight: 12,
       fontWeight: '900',
-      marginTop: 3,
+      marginTop: 4,
     },
     tabBarBadge: {
       minWidth: 18,
@@ -591,10 +594,10 @@ const createStyles = (colors: ThemeColors) =>
       backgroundColor: colors.accent,
       borderColor: colors.accent,
       shadowColor: colors.accent,
-      shadowOpacity: colors.isDark ? 0 : 0.22,
-      shadowRadius: 10,
-      shadowOffset: { width: 0, height: 5 },
-      elevation: colors.isDark ? 0 : 3,
+      shadowOpacity: 0.42,
+      shadowRadius: 18,
+      shadowOffset: { width: 0, height: 8 },
+      elevation: 5,
     },
     loading: {
       flex: 1,

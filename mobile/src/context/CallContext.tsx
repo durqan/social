@@ -4896,7 +4896,7 @@ function CallButton({
     large?: boolean;
     onPress: () => void;
 }) {
-    const iconColor = danger || accept ? '#ffffff' : '#0f172a';
+    const iconColor = danger || accept || muted ? '#ffffff' : '#0f172a';
 
     return (
         <View style={styles.callButtonWrap}>
@@ -4935,14 +4935,14 @@ export function useCall() {
 const styles = StyleSheet.create({
     callRoot: {
         flex: 1,
-        backgroundColor: '#020617',
+        backgroundColor: '#050713',
         overflow: 'hidden',
     },
     remoteStage: {
         ...absoluteFillObject,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: '#020617',
+        backgroundColor: '#050713',
     },
     remoteVideo: {
         ...absoluteFillObject,
@@ -4952,7 +4952,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         gap: 14,
-        backgroundColor: '#020617',
+        backgroundColor: '#050713',
     },
     videoPlaceholderText: {
         color: '#f8fafc',
@@ -4966,14 +4966,14 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         gap: 22,
-        backgroundColor: '#020617',
+        backgroundColor: '#050713',
     },
     avatarPulse: {
         position: 'absolute',
         width: 190,
         height: 190,
         borderRadius: 95,
-        backgroundColor: 'rgba(14, 165, 233, 0.14)',
+        backgroundColor: 'rgba(124, 92, 255, 0.18)',
     },
     peerAvatar: {
         width: 132,
@@ -4981,12 +4981,12 @@ const styles = StyleSheet.create({
         borderRadius: 66,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: '#38bdf8',
+        backgroundColor: '#7c5cff',
         borderWidth: 10,
-        borderColor: '#e0f2fe',
-        shadowColor: '#2563eb',
-        shadowOpacity: 0.34,
-        shadowRadius: 26,
+        borderColor: 'rgba(255,255,255,0.18)',
+        shadowColor: '#7c5cff',
+        shadowOpacity: 0.52,
+        shadowRadius: 32,
         shadowOffset: { width: 0, height: 16 },
         elevation: 8,
     },
@@ -5056,9 +5056,9 @@ const styles = StyleSheet.create({
         paddingHorizontal: 14,
         paddingVertical: 12,
         borderRadius: 24,
-        backgroundColor: 'rgba(15,23,42,0.74)',
+        backgroundColor: 'rgba(13,16,33,0.84)',
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.18)',
+        borderColor: 'rgba(135,117,255,0.24)',
         shadowColor: '#000000',
         shadowOpacity: 0.3,
         shadowRadius: 18,
@@ -5090,9 +5090,9 @@ const styles = StyleSheet.create({
         borderRadius: 27,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: '#ffffff',
+        backgroundColor: 'rgba(255,255,255,0.92)',
         borderWidth: 1,
-        borderColor: 'rgba(15,23,42,0.08)',
+        borderColor: 'rgba(255,255,255,0.16)',
     },
     callButtonLarge: {
         width: 66,
@@ -5104,12 +5104,12 @@ const styles = StyleSheet.create({
         borderColor: '#ef4444',
     },
     callButtonAccept: {
-        backgroundColor: '#22c55e',
-        borderColor: '#22c55e',
+        backgroundColor: '#27d58a',
+        borderColor: '#27d58a',
     },
     callButtonMuted: {
-        backgroundColor: '#e2e8f0',
-        borderColor: '#cbd5e1',
+        backgroundColor: 'rgba(255,255,255,0.18)',
+        borderColor: 'rgba(255,255,255,0.18)',
     },
     callButtonPressed: {
         opacity: 0.78,

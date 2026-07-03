@@ -59,7 +59,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         }
 
         if (isThemeId(storedThemeId)) {
-          setThemeId(themes[storedThemeId].isDark ? defaultThemeId : storedThemeId);
+          setThemeId(storedThemeId);
         } else if (storedThemeId) {
           AsyncStorage.removeItem(themeStorageKey).catch(() => undefined);
         }

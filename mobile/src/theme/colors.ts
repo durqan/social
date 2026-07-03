@@ -1,6 +1,6 @@
 import { themes } from './themes';
 
-export const colors = themes['classic-light'];
+export const colors = themes['neo-tokyo'];
 
 export const spacing = {
   xs: 4,
