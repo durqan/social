@@ -40,6 +40,8 @@ import type { ThemeColors } from '../theme/themes';
 import { elevation, radius, spacing, typography } from '../theme/layout';
 import LoginScreen from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
+import ForgotPasswordScreen from '../screens/auth/ForgotPasswordScreen';
+import ResetPasswordScreen from '../screens/auth/ResetPasswordScreen';
 import VerifyEmailScreen from '../screens/auth/VerifyEmailScreen';
 import HomeScreen from '../screens/main/HomeScreen';
 import ProfileScreen from '../screens/main/ProfileScreen';
@@ -69,6 +71,9 @@ const linking = {
     screens: {
       Login: 'login',
       Register: 'register',
+      ForgotPassword: 'forgot-password',
+      // TODO: Add universal/app links for web reset URLs when mobile deep linking is configured.
+      ResetPassword: 'reset-password',
       VerifyEmail: 'verify-email/:token',
       MainTabs: '',
       UserProfile: 'users/:userId',
@@ -100,6 +105,16 @@ function AuthNavigator() {
         name="Register"
         component={RegisterScreen}
         options={{ title: 'Регистрация' }}
+      />
+      <AuthStack.Screen
+        name="ForgotPassword"
+        component={ForgotPasswordScreen}
+        options={{ title: 'Восстановление пароля' }}
+      />
+      <AuthStack.Screen
+        name="ResetPassword"
+        component={ResetPasswordScreen}
+        options={{ title: 'Новый пароль' }}
       />
       <AuthStack.Screen
         name="VerifyEmail"
@@ -262,6 +277,11 @@ function MainNavigator() {
         name="VerifyEmail"
         component={VerifyEmailScreen}
         options={{ title: 'Подтверждение email' }}
+      />
+      <MainStack.Screen
+        name="ResetPassword"
+        component={ResetPasswordScreen}
+        options={{ title: 'Новый пароль' }}
       />
     </MainStack.Navigator>
   );

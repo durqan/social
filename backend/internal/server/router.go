@@ -78,6 +78,8 @@ func registerAuthRoutes(router *gin.Engine, database *gorm.DB) {
 
 	auth.POST("/register", middleware.RateLimitMiddleware(5, time.Hour), handlers.Register(database))
 	auth.POST("/login", middleware.RateLimitMiddleware(10, 10*time.Minute), handlers.Login(database))
+	auth.POST("/forgot-password", middleware.RateLimitMiddleware(5, time.Hour), handlers.ForgotPassword(database))
+	auth.POST("/reset-password", middleware.RateLimitMiddleware(10, 10*time.Minute), handlers.ResetPassword(database))
 	auth.GET("/csrf", handlers.GetCSRFToken())
 	auth.POST("/refresh", middleware.CSRFMiddleware(), handlers.Refresh(database))
 	auth.POST("/logout", middleware.CSRFMiddleware(), handlers.Logout(database))

@@ -28,6 +28,7 @@ func TestMigrateCleanDatabaseIsRepeatable(t *testing.T) {
 	assertBackendIndex(t, database, &models.Message{}, "idx_messages_to_unread_from_active")
 	assertBackendIndex(t, database, &models.MessageAttachment{}, "idx_message_attachments_message_type_encryption")
 	assertBackendIndex(t, database, &models.MessageReaction{}, "idx_message_reactions_message_created_id")
+	assertBackendUniqueIndex(t, database, &models.PasswordResetToken{}, "idx_password_reset_tokens_token_hash")
 }
 
 func TestMigrateRemovesOldEncryptedBackupDuplicates(t *testing.T) {

@@ -24,6 +24,7 @@ func Migrate(database *gorm.DB) error {
 		&models.CallLog{},
 		&models.Friendship{},
 		&models.EmailVerification{},
+		&models.PasswordResetToken{},
 		&models.NotificationOutbox{},
 	); err != nil {
 		return err

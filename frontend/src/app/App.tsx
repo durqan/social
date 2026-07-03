@@ -14,6 +14,8 @@ import { PushPermissionBanner } from "@/features/notifications/components/PushPe
 
 const Login = lazy(() => import("@/features/auth/components/Login.js"));
 const Register = lazy(() => import("@/features/auth/components/Register.js"));
+const ForgotPassword = lazy(() => import("@/features/auth/components/ForgotPassword.js"));
+const ResetPassword = lazy(() => import("@/features/auth/components/ResetPassword.js"));
 const Profile = lazy(() => import("@/features/profile/components/Profile.js"));
 const ProfileMain = lazy(() => import("@/features/profile/components/ProfileMain.js"));
 const ProfileEdit = lazy(() => import("@/features/profile/components/ProfileEdit.js"));
@@ -33,6 +35,8 @@ function AppRoutes() {
             <Routes>
                 <Route path="/privacy" element={<PrivacyPolicy />} />
                 <Route path="/account-deletion" element={<AccountDeletion />} />
+                <Route path="/forgot-password" element={<ForgotPassword />} />
+                <Route path="/reset-password" element={<ResetPassword />} />
                 <Route element={<RequireGuest />}>
                     <Route path="/login" element={<Login />} />
                     <Route path="/register" element={<Register />} />

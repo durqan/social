@@ -19,6 +19,15 @@ export interface AuthResponse {
     user: User;
 }
 
+export interface ForgotPasswordData {
+    email: string;
+}
+
+export interface ResetPasswordData {
+    token: string;
+    password: string;
+}
+
 export const authService = {
     async login(data: LoginData): Promise<AuthResponse> {
         const response = await request.post<AuthResponse>('/auth/login', data);
@@ -46,5 +55,13 @@ export const authService = {
 
     async verifyEmail(token: string): Promise<string> {
         return (await request.get<{ message: string }>(`/auth/verify-email/${token}`)).message;
+    },
+
+    async forgotPassword(data: ForgotPasswordData): Promise<string> {
+        return (await request.post<{ message: string }>('/auth/forgot-password', data)).message;
+    },
+
+    async resetPassword(data: ResetPasswordData): Promise<string> {
+        return (await request.post<{ message: string }>('/auth/reset-password', data)).message;
     },
 };

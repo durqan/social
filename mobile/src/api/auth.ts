@@ -53,6 +53,28 @@ export const authApi = {
     );
     return response.message;
   },
+
+  async forgotPassword(email: string) {
+    const response = await apiRequest<{ message: string }>(
+      '/auth/forgot-password',
+      {
+        method: 'POST',
+        body: { email },
+      },
+    );
+    return response.message;
+  },
+
+  async resetPassword(token: string, password: string) {
+    const response = await apiRequest<{ message: string }>(
+      '/auth/reset-password',
+      {
+        method: 'POST',
+        body: { token, password },
+      },
+    );
+    return response.message;
+  },
 };
 
 export function isEmailVerified(user: User | null) {

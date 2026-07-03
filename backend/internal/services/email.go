@@ -3,6 +3,7 @@ package services
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -16,6 +17,16 @@ import (
 	"gorm.io/gorm"
 )
 
+var sendEmailMessage = sendSMTPEmail
+
+func SetEmailSenderForTest(sender func(to, subject, htmlBody, textBody string) error) func() {
+	previous := sendEmailMessage
+	sendEmailMessage = sender
+	return func() {
+		sendEmailMessage = previous
+	}
+}
+
 func SendVerificationEmail(db *gorm.DB, user *models.User) error {
 	token, err := utils.GenerateVerificationToken()
 	if err != nil {
@@ -28,6 +39,30 @@ func SendVerificationEmail(db *gorm.DB, user *models.User) error {
 
 	verifyURL := fmt.Sprintf("%s/verify-email/%s", frontendURL(), token)
 
+	htmlBody := fmt.Sprintf(`<h2>Привет, %s!</h2>
+				<p>Спасибо за регистрацию.</p>
+				<p>Чтобы подтвердить email, перейдите по ссылке:</p>
+				<p><a href="%s">%s</a></p>
+				<p>Ссылка действует 2 часа.</p>`, user.Name, verifyURL, verifyURL)
+	textBody := "Привет, " + user.Name + "!\nПерейди по ссылке: " + verifyURL
+
+	return sendEmailMessage(user.Email, "Подтвердите ваш email — Social", htmlBody, textBody)
+}
+
+func SendPasswordResetEmail(user *models.User, token string) error {
+	resetURL := fmt.Sprintf("%s/reset-password?token=%s", frontendURL(), url.QueryEscape(token))
+	htmlBody := fmt.Sprintf(`<h2>Привет, %s!</h2>
+				<p>Мы получили запрос на восстановление пароля.</p>
+				<p>Чтобы задать новый пароль, перейдите по ссылке:</p>
+				<p><a href="%s">%s</a></p>
+				<p>Ссылка действует 30 минут и может быть использована только один раз.</p>
+				<p>Если вы не запрашивали восстановление пароля, просто проигнорируйте это письмо.</p>`, user.Name, resetURL, resetURL)
+	textBody := "Привет, " + user.Name + "!\nВосстановить пароль: " + resetURL + "\nСсылка действует 30 минут."
+
+	return sendEmailMessage(user.Email, "Восстановление пароля — Social", htmlBody, textBody)
+}
+
+func sendSMTPEmail(to, subject, htmlBody, textBody string) error {
 	username := os.Getenv("GMAIL_USERNAME")
 	password := os.Getenv("GMAIL_PASSWORD")
 
@@ -37,17 +72,11 @@ func SendVerificationEmail(db *gorm.DB, user *models.User) error {
 
 	m := mail.NewMsg()
 	m.From(username)
-	m.To(user.Email)
-	m.Subject("Подтвердите ваш email — Social")
-
-	htmlBody := fmt.Sprintf(`<h2>Привет, %s!</h2>
-				<p>Спасибо за регистрацию.</p>
-				<p>Чтобы подтвердить email, перейдите по ссылке:</p>
-				<p><a href="%s">%s</a></p>
-				<p>Ссылка действует 2 часа.</p>`, user.Name, verifyURL, verifyURL)
+	m.To(to)
+	m.Subject(subject)
 
 	m.SetBodyString(mail.TypeTextHTML, htmlBody)
-	m.SetBodyString(mail.TypeTextPlain, "Привет, "+user.Name+"!\nПерейди по ссылке: "+verifyURL)
+	m.SetBodyString(mail.TypeTextPlain, textBody)
 
 	client, err := mail.NewClient("smtp.gmail.com",
 		mail.WithPort(587),

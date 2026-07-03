@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { LogIn, MessageCircle, UserPlus } from 'lucide-react-native';
+import { KeyRound, LogIn, MessageCircle, UserPlus } from 'lucide-react-native';
 
 import { AppButton } from '../../components/AppButton';
 import { ErrorBanner } from '../../components/Feedback';
@@ -83,6 +83,12 @@ export default function LoginScreen({ navigation }: Props) {
           icon={LogIn}
           loading={loading}
           onPress={handleSubmit}
+        />
+        <AppButton
+          title="Забыли пароль?"
+          variant="ghost"
+          icon={KeyRound}
+          onPress={() => navigation.navigate('ForgotPassword')}
         />
         <AppButton
           title="Создать аккаунт"

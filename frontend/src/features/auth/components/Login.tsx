@@ -77,8 +77,13 @@ function Login() {
                     value={formData.password}
                     onChange={handleChange}
                     autoComplete="current-password"
-                    className="mb-6"
+                    className="mb-3"
                 />
+                <div className="mb-6 text-right text-sm">
+                    <Link to="/forgot-password" className="text-sky-600 hover:underline">
+                        Забыли пароль?
+                    </Link>
+                </div>
                 <button
                     type="submit"
                     disabled={loading}
