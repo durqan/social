@@ -66,14 +66,14 @@ export const createChatThemeStyles = (theme: ThemeColors = colors) => {
     },
     composerSideButton: {
       backgroundColor: theme.isDark
-        ? 'rgba(20,20,24,0.94)'
-        : 'rgba(255,255,255,0.94)',
+        ? 'rgba(20,20,24,0.72)'
+        : 'rgba(255,255,255,0.72)',
       borderColor: 'transparent',
     },
     composerInputContainer: {
       backgroundColor: theme.isDark
-        ? 'rgba(20,20,24,0.94)'
-        : 'rgba(255,255,255,0.94)',
+        ? 'rgba(20,20,24,0.72)'
+        : 'rgba(255,255,255,0.72)',
       borderColor: 'transparent',
     },
     composerEmojiButton: {
@@ -1333,7 +1333,7 @@ export const styles = StyleSheet.create({
     borderWidth: 0,
     borderColor: 'transparent',
     marginBottom: 0,
-    backgroundColor: 'rgba(255,255,255,0.94)',
+    backgroundColor: 'rgba(255,255,255,0.72)',
   },
   composerInputContainer: {
     flex: 1,
@@ -1346,7 +1346,7 @@ export const styles = StyleSheet.create({
     borderRadius: 20,
     paddingLeft: 12,
     paddingRight: 2,
-    backgroundColor: 'rgba(255,255,255,0.94)',
+    backgroundColor: 'transparent',
     overflow: 'hidden',
   },
   composerBlur: {
@@ -1357,6 +1357,28 @@ export const styles = StyleSheet.create({
     bottom: 0,
     borderRadius: 20,
   },
+
+  composerGlassTint: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.58)',
+  },
+
+  input: {
+    flex: 1,
+    minWidth: 0,
+    paddingHorizontal: 0,
+    paddingVertical: 6,
+    color: colors.text,
+    fontSize: 15,
+    lineHeight: 20,
+    zIndex: 2,
+  },
+
   composerEmojiButton: {
     width: 36,
     height: 36,
@@ -1364,6 +1386,7 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 2,
+    zIndex: 2,
   },
   composerButtonPressed: {
     opacity: 0.72,
@@ -1381,15 +1404,6 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.danger,
     borderColor: colors.danger,
     opacity: 1,
-  },
-  input: {
-    flex: 1,
-    minWidth: 0,
-    paddingHorizontal: 0,
-    paddingVertical: 6,
-    color: colors.text,
-    fontSize: 15,
-    lineHeight: 20,
   },
   lightbox: {
     flex: 1,

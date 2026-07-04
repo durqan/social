@@ -3651,6 +3651,18 @@ export default function ChatScreen({ route, navigation }: Props) {
             />
 
             <View style={[styles.composerInputContainer, themed.composerInputContainer]}>
+              <BlurView
+                  pointerEvents="none"
+                  style={styles.composerBlur}
+                  blurType={themeColors.isDark ? 'dark' : 'light'}
+                  blurAmount={32}
+                  reducedTransparencyFallbackColor={
+                    themeColors.isDark
+                        ? 'rgba(20,20,24,0.72)'
+                        : 'rgba(255,255,255,0.72)'
+                  }
+              />
+
               <TextInput
                   value={input}
                   onChangeText={handleComposerTextChange}
