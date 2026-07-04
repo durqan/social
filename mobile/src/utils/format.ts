@@ -1,20 +1,20 @@
 export { formatDuration } from '@social/shared';
 
-export function formatDateTime(value?: string) {
+export function formatDateTime(value?: string | Date | null) {
   if (!value) {
-    return '';
+    return '—';
   }
 
-  const date = new Date(value);
+  const date = value instanceof Date ? value : new Date(value);
+
   if (Number.isNaN(date.getTime())) {
-    return value;
+    return '—';
   }
 
   return new Intl.DateTimeFormat('ru-RU', {
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
   }).format(date);
 }
 

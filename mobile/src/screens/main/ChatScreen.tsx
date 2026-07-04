@@ -22,6 +22,7 @@ import {
   View,
 } from 'react-native';
 import Clipboard from '@react-native-clipboard/clipboard';
+import { BlurView } from '@react-native-community/blur';
 import {
   errorCodes as documentPickerErrorCodes,
   isErrorWithCode as isDocumentPickerErrorWithCode,
@@ -402,6 +403,7 @@ export default function ChatScreen({ route, navigation }: Props) {
   const [messageActionPending, setMessageActionPending] = useState(false);
   const [showScrollToLatest, setShowScrollToLatest] = useState(false);
   const [newMessagesBelow, setNewMessagesBelow] = useState(false);
+  const [composerDockHeight, setComposerDockHeight] = useState(0);
   const [miniProfileVisible, setMiniProfileVisible] = useState(false);
 
   const [pendingVoice, setPendingVoice] = useState<LocalVoiceMessage | null>(
@@ -3186,35 +3188,35 @@ export default function ChatScreen({ route, navigation }: Props) {
       <ErrorBanner message={error} />
       <SuccessBanner message={copyNotice} />
 
-      {pinnedMessage?.message ? (
-        <Pressable
-          accessibilityRole="button"
-          style={[styles.pinnedBar, themed.card]}
-          onPress={() => {
-            const targetId = pinnedMessage.message_id;
-            const index = messages.findIndex(
-              message => message.id === targetId,
-            );
-            if (index >= 0) {
-              listRef.current?.scrollToIndex({ index, animated: true });
-            }
-          }}
-          onLongPress={unpinCurrentMessage}
-        >
-          <View style={[styles.pinnedStripe, themed.accentBg]} />
-          <View style={styles.pinnedInfo}>
-            <Text style={[styles.pinnedTitle, themed.accentText]}>
-              Закрепленное сообщение
-            </Text>
-            <Text style={[styles.pinnedText, themed.text]} numberOfLines={1}>
-              {messagePreviewText(pinnedMessage.message)}
-            </Text>
-          </View>
-          <Text style={[styles.pinnedHint, themed.softText]}>удерж. снять</Text>
-        </Pressable>
-      ) : null}
+      <ChatDoodleBackground theme={themeColors}>
+        {pinnedMessage?.message ? (
+          <Pressable
+            accessibilityRole="button"
+            style={[styles.pinnedBar, themed.card]}
+            onPress={() => {
+              const targetId = pinnedMessage.message_id;
+              const index = messages.findIndex(
+                message => message.id === targetId,
+              );
+              if (index >= 0) {
+                listRef.current?.scrollToIndex({ index, animated: true });
+              }
+            }}
+            onLongPress={unpinCurrentMessage}
+          >
+            <View style={[styles.pinnedStripe, themed.accentBg]} />
+            <View style={styles.pinnedInfo}>
+              <Text style={[styles.pinnedTitle, themed.accentText]}>
+                Закрепленное сообщение
+              </Text>
+              <Text style={[styles.pinnedText, themed.text]} numberOfLines={1}>
+                {messagePreviewText(pinnedMessage.message)}
+              </Text>
+            </View>
+            <Text style={[styles.pinnedHint, themed.softText]}>удерж. снять</Text>
+          </Pressable>
+        ) : null}
 
-      <ChatDoodleBackground isDark={themeColors.isDark}>
         {loading && !hasLoaded ? (
           <ChatMessagesSkeleton />
         ) : (
@@ -3237,12 +3239,12 @@ export default function ChatScreen({ route, navigation }: Props) {
               onScroll={handleMessagesScroll}
               scrollEventThrottle={SCROLL_EVENT_THROTTLE_MS}
               renderItem={renderMessageItem}
-              extraData={{ playingVoiceUrl, themeColors, userId: user?.id }}
+              extraData={{ playingVoiceUrl, themeColors, userId: user?.id, composerDockHeight }}
               initialNumToRender={12}
               windowSize={7}
               maxToRenderPerBatch={8}
               updateCellsBatchingPeriod={50}
-              removeClippedSubviews={Platform.OS === 'android'}
+              removeClippedSubviews={false}
               onLayout={handleMessageListLayout}
               contentContainerStyle={[
                 styles.messageList,
@@ -3256,6 +3258,9 @@ export default function ChatScreen({ route, navigation }: Props) {
                     <ActivityIndicator color={themeColors.accent} />
                   </View>
                 ) : null
+              }
+              ListFooterComponent={
+                <View style={{ height: composerDockHeight + 10 }} />
               }
               ListEmptyComponent={
                 <EmptyState
@@ -3276,6 +3281,7 @@ export default function ChatScreen({ route, navigation }: Props) {
                 style={[
                   styles.scrollToLatestButton,
                   themed.scrollToLatestButton,
+                  { bottom: composerDockHeight + 10 },
                   newMessagesBelow && styles.scrollToLatestButtonNew,
                   newMessagesBelow && themed.scrollToLatestButtonNew,
                 ]}
@@ -3293,439 +3299,443 @@ export default function ChatScreen({ route, navigation }: Props) {
             ) : null}
           </>
         )}
-      </ChatDoodleBackground>
+        <View
+          style={[styles.composerDock, themed.composerDock]}
+          onLayout={event => {
+            setComposerDockHeight(event.nativeEvent.layout.height);
+          }}
+        >
+          {pendingAttachments.length > 0 ? (
+              <View style={styles.previewStrip}>
+                <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.previewStripContent}
+                >
+                  {pendingAttachments.map(attachment => {
+                    const AttachmentIcon =
+                        attachment.fileType === 'audio'
+                            ? FileAudio
+                            : attachment.fileType === 'file'
+                                ? FileText
+                                : FileIcon;
 
-      <View style={[styles.composerDock, themed.composerDock]}>
-        {pendingAttachments.length > 0 ? (
-          <View style={[styles.previewStrip, themed.surfaceBar]}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.previewStripContent}
-            >
-              {pendingAttachments.map(attachment => {
-                const AttachmentIcon =
-                  attachment.fileType === 'audio'
-                    ? FileAudio
-                    : attachment.fileType === 'file'
-                    ? FileText
-                    : FileIcon;
-
-                return (
-                  <View
-                    key={attachment.id}
-                    style={[
-                      styles.previewItem,
-                      (attachment.fileType === 'audio' ||
-                        attachment.fileType === 'file') &&
-                        styles.previewFileItem,
-                    ]}
-                  >
-                    {attachment.fileType === 'image' ? (
-                      <Image
-                        source={{ uri: attachment.uri }}
-                        style={styles.previewImage}
-                      />
-                    ) : attachment.fileType === 'video' ? (
-                      <View style={styles.previewVideoTile}>
-                        <Video
-                          source={{ uri: attachment.uri }}
-                          style={styles.previewVideoThumbnail}
-                          paused
-                          muted
-                          resizeMode="cover"
-                        />
-                        <View style={styles.previewVideoBadge}>
-                          <VideoIcon
-                            color={themeColors.white}
-                            size={18}
-                            strokeWidth={2.5}
-                          />
-                        </View>
-                      </View>
-                    ) : (
-                      <View style={[styles.previewFileTile, themed.cardMuted]}>
-                        <View style={[styles.previewFileIcon, themed.accentBg]}>
-                          <AttachmentIcon
-                            color={themeColors.white}
-                            size={20}
-                            strokeWidth={2.4}
-                          />
-                        </View>
-                        <View style={styles.previewFileMeta}>
-                          <Text
-                            style={[styles.previewFileName, themed.text]}
-                            numberOfLines={1}
+                    return (
+                        <View
+                            key={attachment.id}
+                            style={[
+                              styles.previewItem,
+                              (attachment.fileType === 'audio' ||
+                                  attachment.fileType === 'file') &&
+                              styles.previewFileItem,
+                            ]}
+                        >
+                          {attachment.fileType === 'image' ? (
+                              <Image
+                                  source={{ uri: attachment.uri }}
+                                  style={styles.previewImage}
+                              />
+                          ) : attachment.fileType === 'video' ? (
+                              <View style={styles.previewVideoTile}>
+                                <Video
+                                    source={{ uri: attachment.uri }}
+                                    style={styles.previewVideoThumbnail}
+                                    paused
+                                    muted
+                                    resizeMode="cover"
+                                />
+                                <View style={styles.previewVideoBadge}>
+                                  <VideoIcon
+                                      color={themeColors.white}
+                                      size={18}
+                                      strokeWidth={2.5}
+                                  />
+                                </View>
+                              </View>
+                          ) : (
+                              <View style={[styles.previewFileTile, themed.cardMuted]}>
+                                <View style={[styles.previewFileIcon, themed.accentBg]}>
+                                  <AttachmentIcon
+                                      color={themeColors.white}
+                                      size={20}
+                                      strokeWidth={2.4}
+                                  />
+                                </View>
+                                <View style={styles.previewFileMeta}>
+                                  <Text
+                                      style={[styles.previewFileName, themed.text]}
+                                      numberOfLines={1}
+                                  >
+                                    {attachment.fileName}
+                                  </Text>
+                                  <Text
+                                      style={[styles.previewFileDetail, themed.mutedText]}
+                                      numberOfLines={1}
+                                  >
+                                    {pendingAttachmentSubtitle(attachment)}
+                                  </Text>
+                                </View>
+                              </View>
+                          )}
+                          <Pressable
+                              accessibilityRole="button"
+                              accessibilityLabel="Убрать вложение"
+                              style={styles.previewRemove}
+                              onPress={() => removePendingAttachment(attachment.id)}
                           >
-                            {attachment.fileName}
-                          </Text>
-                          <Text
-                            style={[styles.previewFileDetail, themed.mutedText]}
-                            numberOfLines={1}
-                          >
-                            {pendingAttachmentSubtitle(attachment)}
-                          </Text>
+                            <Text style={styles.previewRemoveText}>×</Text>
+                          </Pressable>
                         </View>
-                      </View>
-                    )}
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel="Убрать вложение"
-                      style={styles.previewRemove}
-                      onPress={() => removePendingAttachment(attachment.id)}
-                    >
-                      <Text style={styles.previewRemoveText}>×</Text>
-                    </Pressable>
-                  </View>
-                );
-              })}
-            </ScrollView>
-          </View>
-        ) : null}
-
-        {sending ? (
-          <View style={[styles.sendStatus, themed.surfaceBar]}>
-            <ActivityIndicator color={themeColors.accent} />
-            <Text style={[styles.sendStatusText, themed.mutedText]}>
-              {sending === 'uploadingVoice'
-                ? 'Загружаем голосовое сообщение'
-                : sending === 'preparingVideo'
-                ? 'Подготовка видео...'
-                : sending === 'compressingVideo'
-                ? 'Сжатие видео...'
-                : sending === 'uploadingVideo'
-                ? 'Загрузка видео...'
-                : sending === 'uploadingVideoNote'
-                ? 'Загружаем видео-сообщение'
-                : sending === 'uploading'
-                ? uploadProgress
-                  ? `Загружаем вложения: ${uploadProgress.current} из ${uploadProgress.total}`
-                  : 'Загружаем вложение'
-                : 'Отправляем сообщение'}
-            </Text>
-          </View>
-        ) : null}
-
-        {editingMessage ? (
-          <View style={[styles.editingBar, themed.surfaceBar]}>
-            <View style={[styles.editingInfo, themed.accentLeftBorder]}>
-              <Text style={[styles.editingTitle, themed.accentText]}>
-                Редактирование
-              </Text>
-              <Text
-                style={[styles.editingText, themed.mutedText]}
-                numberOfLines={1}
-              >
-                {editingMessage.content}
-              </Text>
-            </View>
-            <Pressable
-              accessibilityRole="button"
-              style={[styles.editingCancel, themed.surfaceMuted]}
-              onPress={cancelEditingMessage}
-            >
-              <Text style={[styles.editingCancelText, themed.mutedText]}>
-                ×
-              </Text>
-            </Pressable>
-          </View>
-        ) : null}
-
-        {replyToMessage && !editingMessage ? (
-          <View style={[styles.replyBar, themed.surfaceBar]}>
-            <View style={[styles.replyInfo, themed.accentLeftBorder]}>
-              <Text style={[styles.replyTitle, themed.accentText]}>
-                Ответ {messageAuthorName(replyToMessage)}
-              </Text>
-              <Text
-                style={[styles.replyText, themed.mutedText]}
-                numberOfLines={1}
-              >
-                {messagePreviewText(replyToMessage)}
-              </Text>
-            </View>
-            <Pressable
-              accessibilityRole="button"
-              style={[styles.editingCancel, themed.surfaceMuted]}
-              onPress={() => setReplyToMessage(null)}
-            >
-              <Text style={[styles.editingCancelText, themed.mutedText]}>
-                ×
-              </Text>
-            </Pressable>
-          </View>
-        ) : null}
-
-        {recording ? (
-          <View style={[styles.recordingBar, themed.surfaceMutedBar]}>
-            <View style={[styles.recordingDot, themed.accentBg]} />
-            <Text style={[styles.recordingTime, themed.accentText]}>
-              {formatDuration(recordingSeconds)}
-            </Text>
-            <Text style={styles.recordingText} numberOfLines={1}>
-              Идет запись
-            </Text>
-            <Pressable
-              accessibilityRole="button"
-              style={styles.recordingCancel}
-              disabled={recordingBusy}
-              onPress={() => {
-                stopVoiceRecording(false).catch(() => undefined);
-              }}
-            >
-              <Text style={styles.recordingCancelText}>Отмена</Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              style={styles.recordingSend}
-              disabled={recordingBusy}
-              onPress={() => {
-                stopVoiceRecording(true).catch(() => undefined);
-              }}
-            >
-              <Text style={styles.recordingSendText}>Готово</Text>
-            </Pressable>
-          </View>
-        ) : null}
-
-        {pendingVideoNote ? (
-          <View style={[styles.previewVideoNoteCard, themed.cardMuted]}>
-            <VideoNoteAttachment
-              url={pendingVideoNote.uri}
-              duration={pendingVideoNote.durationSeconds}
-              outgoing={false}
-              themeColors={themeColors}
-            />
-            <View style={styles.previewVideoNoteMeta}>
-              <Text style={[styles.previewMetaText, themed.mutedText]}>
-                Запись · {formatDuration(pendingVideoNote.durationSeconds)}
-              </Text>
-              <Text style={[styles.previewHint, themed.softText]}>
-                Проверьте запись перед отправкой.
-              </Text>
-            </View>
-            <View
-              style={[styles.previewActions, styles.previewVideoNoteActions]}
-            >
-              <IconButton
-                icon={Trash2}
-                label="Удалить видео-сообщение"
-                variant="danger"
-                size="sm"
-                onPress={() => setPendingVideoNote(null)}
-                disabled={Boolean(sending)}
-              />
-              <IconButton
-                icon={Send}
-                label="Отправить видео-сообщение"
-                variant="primary"
-                size="sm"
-                onPress={() => {
-                  sendPendingVideoNote().catch(() => undefined);
-                }}
-                disabled={Boolean(sending)}
-              />
-            </View>
-          </View>
-        ) : null}
-
-        {pendingVoice ? (
-          <View style={[styles.previewVoiceCard, themed.cardMuted]}>
-            <View style={styles.previewVoiceRow}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={
-                  previewPlaying
-                    ? 'Остановить прослушивание'
-                    : 'Прослушать голосовое сообщение'
-                }
-                onPress={() => {
-                  togglePreviewPlayback().catch(() => undefined);
-                }}
-                style={[
-                  styles.previewPlayButton,
-                  previewPlaying && styles.previewPlayButtonActive,
-                ]}
-                disabled={Boolean(sending)}
-              >
-                {previewPlaying ? (
-                  <Pause
-                    color={themeColors.white}
-                    size={16}
-                    strokeWidth={2.6}
-                  />
-                ) : (
-                  <Play color={themeColors.white} size={16} strokeWidth={2.6} />
-                )}
-              </Pressable>
-
-              <View
-                ref={previewProgressBarRef}
-                style={styles.previewProgressBar}
-                onStartShouldSetResponder={() => true}
-                onResponderRelease={handlePreviewProgressPress}
-              >
-                <View
-                  style={[
-                    styles.previewProgressFill,
-                    {
-                      width: `${Math.min(
-                        100,
-                        ((previewPosition || 0) /
-                          (pendingVoice.durationSeconds || 1)) *
-                          100,
-                      )}%`,
-                    },
-                  ]}
-                />
+                    );
+                  })}
+                </ScrollView>
               </View>
+          ) : null}
 
-              <Text style={[styles.previewDuration, themed.mutedText]}>
-                {formatDuration(previewPosition || 0)} /{' '}
-                {formatDuration(pendingVoice.durationSeconds)}
-              </Text>
-            </View>
+          {sending ? (
+              <View style={[styles.sendStatus, themed.surfaceBar]}>
+                <ActivityIndicator color={themeColors.accent} />
+                <Text style={[styles.sendStatusText, themed.mutedText]}>
+                  {sending === 'uploadingVoice'
+                      ? 'Загружаем голосовое сообщение'
+                      : sending === 'preparingVideo'
+                          ? 'Подготовка видео...'
+                          : sending === 'compressingVideo'
+                              ? 'Сжатие видео...'
+                              : sending === 'uploadingVideo'
+                                  ? 'Загрузка видео...'
+                                  : sending === 'uploadingVideoNote'
+                                      ? 'Загружаем видео-сообщение'
+                                      : sending === 'uploading'
+                                          ? uploadProgress
+                                              ? `Загружаем вложения: ${uploadProgress.current} из ${uploadProgress.total}`
+                                              : 'Загружаем вложение'
+                                          : 'Отправляем сообщение'}
+                </Text>
+              </View>
+          ) : null}
 
-            <View style={styles.previewMeta}>
-              <Text style={[styles.previewMetaText, themed.mutedText]}>
-                {formatDuration(pendingVoice.durationSeconds)}
-              </Text>
-            </View>
+          {editingMessage ? (
+              <View style={[styles.editingBar, themed.surfaceBar]}>
+                <View style={[styles.editingInfo, themed.accentLeftBorder]}>
+                  <Text style={[styles.editingTitle, themed.accentText]}>
+                    Редактирование
+                  </Text>
+                  <Text
+                      style={[styles.editingText, themed.mutedText]}
+                      numberOfLines={1}
+                  >
+                    {editingMessage.content}
+                  </Text>
+                </View>
+                <Pressable
+                    accessibilityRole="button"
+                    style={[styles.editingCancel, themed.surfaceMuted]}
+                    onPress={cancelEditingMessage}
+                >
+                  <Text style={[styles.editingCancelText, themed.mutedText]}>
+                    ×
+                  </Text>
+                </Pressable>
+              </View>
+          ) : null}
 
-            <View style={styles.previewActions}>
-              <IconButton
-                icon={Trash2}
-                label="Удалить голосовое сообщение"
-                variant="danger"
-                size="sm"
-                onPress={() => {
-                  deletePendingVoice().catch(() => undefined);
-                }}
-                disabled={Boolean(sending)}
-              />
-              <IconButton
-                icon={Send}
-                label="Отправить голосовое сообщение"
-                variant="primary"
-                size="sm"
-                onPress={() => {
-                  sendPendingVoice().catch(() => undefined);
-                }}
-                disabled={Boolean(sending)}
-              />
-            </View>
-          </View>
-        ) : null}
+          {replyToMessage && !editingMessage ? (
+              <View style={[styles.replyBar, themed.surfaceBar]}>
+                <View style={[styles.replyInfo, themed.accentLeftBorder]}>
+                  <Text style={[styles.replyTitle, themed.accentText]}>
+                    Ответ {messageAuthorName(replyToMessage)}
+                  </Text>
+                  <Text
+                      style={[styles.replyText, themed.mutedText]}
+                      numberOfLines={1}
+                  >
+                    {messagePreviewText(replyToMessage)}
+                  </Text>
+                </View>
+                <Pressable
+                    accessibilityRole="button"
+                    style={[styles.editingCancel, themed.surfaceMuted]}
+                    onPress={() => setReplyToMessage(null)}
+                >
+                  <Text style={[styles.editingCancelText, themed.mutedText]}>
+                    ×
+                  </Text>
+                </Pressable>
+              </View>
+          ) : null}
 
-        {otherTyping ? (
-          <View style={[styles.typingBar, themed.surfaceBar]}>
-            <Text style={[styles.typingText, themed.mutedText]}>
-              {route.params.name} печатает...
-            </Text>
-          </View>
-        ) : null}
+          {recording ? (
+              <View style={[styles.recordingBar, themed.surfaceMutedBar]}>
+                <View style={[styles.recordingDot, themed.accentBg]} />
+                <Text style={[styles.recordingTime, themed.accentText]}>
+                  {formatDuration(recordingSeconds)}
+                </Text>
+                <Text style={styles.recordingText} numberOfLines={1}>
+                  Идет запись
+                </Text>
+                <Pressable
+                    accessibilityRole="button"
+                    style={styles.recordingCancel}
+                    disabled={recordingBusy}
+                    onPress={() => {
+                      stopVoiceRecording(false).catch(() => undefined);
+                    }}
+                >
+                  <Text style={styles.recordingCancelText}>Отмена</Text>
+                </Pressable>
+                <Pressable
+                    accessibilityRole="button"
+                    style={styles.recordingSend}
+                    disabled={recordingBusy}
+                    onPress={() => {
+                      stopVoiceRecording(true).catch(() => undefined);
+                    }}
+                >
+                  <Text style={styles.recordingSendText}>Готово</Text>
+                </Pressable>
+              </View>
+          ) : null}
 
-        <View style={[styles.composer, themed.composerSurface]}>
-          <IconButton
-            label="Прикрепить"
-            variant="ghost"
-            icon={Paperclip}
-            disabled={
-              Boolean(sending) ||
-              Boolean(editingMessage) ||
-              recording ||
-              recordingBusy
-            }
-            onPress={openComposerAttachments}
-            style={styles.composerSideButton}
-          />
+          {pendingVideoNote ? (
+              <View style={[styles.previewVideoNoteCard, themed.cardMuted]}>
+                <VideoNoteAttachment
+                    url={pendingVideoNote.uri}
+                    duration={pendingVideoNote.durationSeconds}
+                    outgoing={false}
+                    themeColors={themeColors}
+                />
+                <View style={styles.previewVideoNoteMeta}>
+                  <Text style={[styles.previewMetaText, themed.mutedText]}>
+                    Запись · {formatDuration(pendingVideoNote.durationSeconds)}
+                  </Text>
+                  <Text style={[styles.previewHint, themed.softText]}>
+                    Проверьте запись перед отправкой.
+                  </Text>
+                </View>
+                <View
+                    style={[styles.previewActions, styles.previewVideoNoteActions]}
+                >
+                  <IconButton
+                      icon={Trash2}
+                      label="Удалить видео-сообщение"
+                      variant="danger"
+                      size="sm"
+                      onPress={() => setPendingVideoNote(null)}
+                      disabled={Boolean(sending)}
+                  />
+                  <IconButton
+                      icon={Send}
+                      label="Отправить видео-сообщение"
+                      variant="primary"
+                      size="sm"
+                      onPress={() => {
+                        sendPendingVideoNote().catch(() => undefined);
+                      }}
+                      disabled={Boolean(sending)}
+                  />
+                </View>
+              </View>
+          ) : null}
 
-          <View style={styles.composerInputContainer}>
-            <TextInput
-              value={input}
-              onChangeText={handleComposerTextChange}
-              onFocus={handleComposerFocus}
-              onContentSizeChange={event =>
-                handleComposerContentSizeChange(
-                  event.nativeEvent.contentSize.height,
-                )
-              }
-              placeholder="Сообщение..."
-              placeholderTextColor={themeColors.soft}
-              multiline
-              scrollEnabled={inputHeight >= COMPOSER_INPUT_MAX_HEIGHT}
-              maxLength={1000}
-              editable={!sending && !recording && !recordingBusy}
-              textAlignVertical="top"
-              style={[
-                styles.input,
-                themed.text,
-                themed.composerInputText,
-                { height: inputHeight },
-              ]}
-            />
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Стикеры"
-              accessibilityState={{
-                disabled: Boolean(sending) || recording || recordingBusy,
-              }}
-              disabled={Boolean(sending) || recording || recordingBusy}
-              hitSlop={6}
-              onPress={showComposerStickerNotice}
-              style={({ pressed }) => [
-                styles.composerEmojiButton,
-                pressed && styles.composerButtonPressed,
-                (Boolean(sending) || recording || recordingBusy) &&
-                  styles.composerButtonDisabled,
-              ]}
-            >
-              <Smile color={themeColors.muted} size={21} strokeWidth={2.35} />
-            </Pressable>
-          </View>
+          {pendingVoice ? (
+              <View style={[styles.previewVoiceCard, themed.cardMuted]}>
+                <View style={styles.previewVoiceRow}>
+                  <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={
+                        previewPlaying
+                            ? 'Остановить прослушивание'
+                            : 'Прослушать голосовое сообщение'
+                      }
+                      onPress={() => {
+                        togglePreviewPlayback().catch(() => undefined);
+                      }}
+                      style={[
+                        styles.previewPlayButton,
+                        previewPlaying && styles.previewPlayButtonActive,
+                      ]}
+                      disabled={Boolean(sending)}
+                  >
+                    {previewPlaying ? (
+                        <Pause
+                            color={themeColors.white}
+                            size={16}
+                            strokeWidth={2.6}
+                        />
+                    ) : (
+                        <Play color={themeColors.white} size={16} strokeWidth={2.6} />
+                    )}
+                  </Pressable>
 
-          {showComposerSendButton ? (
+                  <View
+                      ref={previewProgressBarRef}
+                      style={[styles.previewProgressBar, themed.previewProgressBar]}
+                      onStartShouldSetResponder={() => true}
+                      onResponderRelease={handlePreviewProgressPress}
+                  >
+                    <View
+                        style={[
+                          styles.previewProgressFill,
+                          themed.previewProgressFill,
+                          {
+                            width: `${Math.min(
+                                100,
+                                ((previewPosition || 0) /
+                                    (pendingVoice.durationSeconds || 1)) *
+                                100,
+                            )}%`,
+                          },
+                        ]}
+                    />
+                  </View>
+
+                  <Text style={[styles.previewDuration, themed.mutedText]}>
+                    {formatDuration(previewPosition || 0)} /{' '}
+                    {formatDuration(pendingVoice.durationSeconds)}
+                  </Text>
+                </View>
+
+                <View style={styles.previewMeta}>
+                  <Text style={[styles.previewMetaText, themed.mutedText]}>
+                    {formatDuration(pendingVoice.durationSeconds)}
+                  </Text>
+                </View>
+
+                <View style={styles.previewActions}>
+                  <IconButton
+                      icon={Trash2}
+                      label="Удалить голосовое сообщение"
+                      variant="danger"
+                      size="sm"
+                      onPress={() => {
+                        deletePendingVoice().catch(() => undefined);
+                      }}
+                      disabled={Boolean(sending)}
+                  />
+                  <IconButton
+                      icon={Send}
+                      label="Отправить голосовое сообщение"
+                      variant="primary"
+                      size="sm"
+                      onPress={() => {
+                        sendPendingVoice().catch(() => undefined);
+                      }}
+                      disabled={Boolean(sending)}
+                  />
+                </View>
+              </View>
+          ) : null}
+
+          {otherTyping ? (
+              <View style={[styles.typingBar, themed.surfaceBar]}>
+                <Text style={[styles.typingText, themed.mutedText]}>
+                  {route.params.name} печатает...
+                </Text>
+              </View>
+          ) : null}
+
+          <View style={[styles.composer, themed.composerSurface]}>
             <IconButton
-              label={editingMessage ? 'Сохранить сообщение' : 'Отправить'}
-              icon={editingMessage ? Pencil : Send}
-              variant="primary"
-              disabled={
-                Boolean(sending) ||
-                messageActionPending ||
-                recording ||
-                recordingBusy ||
-                (!trimmedInput &&
-                  !editingMessage &&
-                  pendingAttachments.length === 0) ||
-                Boolean(pendingVoice) ||
-                Boolean(pendingVideoNote)
-              }
-              loading={Boolean(sending)}
-              onPress={sendMessage}
-              style={styles.composerActionButton}
+                label="Прикрепить"
+                variant="ghost"
+                icon={Paperclip}
+                disabled={
+                    Boolean(sending) ||
+                    Boolean(editingMessage) ||
+                    recording ||
+                    recordingBusy
+                }
+                onPress={openComposerAttachments}
+                style={[styles.composerSideButton, themed.composerSideButton]}
             />
-          ) : (
-            <IconButton
-              label={composerMediaLabel}
-              variant="primary"
-              icon={composerMediaIcon}
-              disabled={composerMediaDisabled}
-              loading={recordingBusy}
-              delayLongPress={LONG_PRESS_DELAY_MS}
-              onPress={toggleComposerMediaMode}
-              onLongPress={() => {
-                startComposerMediaRecording().catch(() => undefined);
-              }}
-              onPressOut={stopComposerMediaRecording}
-              style={[
-                styles.composerActionButton,
-                recording ? styles.composerActionRecording : undefined,
-              ]}
-            />
-          )}
+
+            <View style={[styles.composerInputContainer, themed.composerInputContainer]}>
+              <TextInput
+                  value={input}
+                  onChangeText={handleComposerTextChange}
+                  onFocus={handleComposerFocus}
+                  onContentSizeChange={event =>
+                      handleComposerContentSizeChange(
+                          event.nativeEvent.contentSize.height,
+                      )
+                  }
+                  placeholder="Сообщение..."
+                  placeholderTextColor={themeColors.soft}
+                  multiline
+                  scrollEnabled={inputHeight >= COMPOSER_INPUT_MAX_HEIGHT}
+                  maxLength={1000}
+                  editable={!sending && !recording && !recordingBusy}
+                  textAlignVertical="top"
+                  style={[
+                    styles.input,
+                    themed.text,
+                    themed.composerInputText,
+                    { height: inputHeight },
+                  ]}
+              />
+              <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Стикеры"
+                  accessibilityState={{
+                    disabled: Boolean(sending) || recording || recordingBusy,
+                  }}
+                  disabled={Boolean(sending) || recording || recordingBusy}
+                  hitSlop={6}
+                  onPress={showComposerStickerNotice}
+                  style={({ pressed }) => [
+                    styles.composerEmojiButton,
+                    pressed && styles.composerButtonPressed,
+                    (Boolean(sending) || recording || recordingBusy) &&
+                    styles.composerButtonDisabled,
+                  ]}
+              >
+                <Smile color={themeColors.muted} size={21} strokeWidth={2.35} />
+              </Pressable>
+            </View>
+
+            {showComposerSendButton ? (
+                <IconButton
+                    label={editingMessage ? 'Сохранить сообщение' : 'Отправить'}
+                    icon={editingMessage ? Pencil : Send}
+                    variant="primary"
+                    disabled={
+                        Boolean(sending) ||
+                        messageActionPending ||
+                        recording ||
+                        recordingBusy ||
+                        (!trimmedInput &&
+                            !editingMessage &&
+                            pendingAttachments.length === 0) ||
+                        Boolean(pendingVoice) ||
+                        Boolean(pendingVideoNote)
+                    }
+                    loading={Boolean(sending)}
+                    onPress={sendMessage}
+                    style={styles.composerActionButton}
+                />
+            ) : (
+                <IconButton
+                    label={composerMediaLabel}
+                    variant="primary"
+                    icon={composerMediaIcon}
+                    disabled={composerMediaDisabled}
+                    loading={recordingBusy}
+                    delayLongPress={LONG_PRESS_DELAY_MS}
+                    onPress={toggleComposerMediaMode}
+                    onLongPress={() => {
+                      startComposerMediaRecording().catch(() => undefined);
+                    }}
+                    onPressOut={stopComposerMediaRecording}
+                    style={[
+                      styles.composerActionButton,
+                      recording ? styles.composerActionRecording : undefined,
+                    ]}
+                />
+            )}
+          </View>
         </View>
-      </View>
-
+      </ChatDoodleBackground>
       <Modal
         visible={Boolean(selectedImageUrl)}
         transparent

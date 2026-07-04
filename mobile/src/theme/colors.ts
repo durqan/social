@@ -1,6 +1,6 @@
-import { themes } from './themes';
+import { defaultThemeId, themes } from './themes';
 
-export const colors = themes['neo-tokyo'];
+export const colors = themes[defaultThemeId];
 
 export const spacing = {
   xs: 4,

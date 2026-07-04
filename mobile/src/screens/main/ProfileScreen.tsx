@@ -3,6 +3,7 @@ import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { launchImageLibrary } from 'react-native-image-picker';
 import type { Asset } from 'react-native-image-picker';
+import LinearGradient from 'react-native-linear-gradient';
 import {
   Camera,
   Mail,
@@ -217,7 +218,13 @@ export default function ProfileScreen() {
       contentContainerStyle={styles.screenContent}
     >
       <View style={styles.profileTopCard}>
-        <View pointerEvents="none" style={styles.profileCover} />
+        <LinearGradient
+          pointerEvents="none"
+          colors={colors.gradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.profileCover}
+        />
         <Pressable
           accessibilityRole="button"
           style={styles.mainAvatar}
@@ -516,7 +523,6 @@ const createStyles = (colors: ThemeColors) =>
       left: 0,
       right: 0,
       height: 122,
-      backgroundColor: colors.profileCover,
       opacity: colors.isDark ? 0.72 : 0.52,
     },
     mainAvatar: {

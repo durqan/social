@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Image,
   Linking,
@@ -7,15 +7,12 @@ import {
   View,
   type LayoutChangeEvent,
   type GestureResponderEvent,
-  type NativeSyntheticEvent,
-  type TextLayoutEventData,
-  useWindowDimensions,
 } from 'react-native';
 import Video from 'react-native-video';
 import { Download, Video as VideoIcon } from 'lucide-react-native';
 
 import { assetURL } from '../../../config/env';
-import type { Message, MessageAttachment } from '../../../api/types';
+import type { Message, MessageAttachment } from '@social/shared';
 import type { ThemeColors } from '../../../theme/themes';
 import { formatDuration, formatMessageTime } from '../../../utils/format';
 import { createChatThemeStyles, styles } from './chatStyles';
@@ -29,12 +26,12 @@ import {
 } from './chatUtils';
 
 function LinkPreviewCard({
-  message,
-  outgoing,
-  hasVideo,
-  onImport,
-  themeColors,
-}: {
+                           message,
+                           outgoing,
+                           hasVideo,
+                           onImport,
+                           themeColors,
+                         }: {
   message: Message;
   outgoing: boolean;
   hasVideo: boolean;
@@ -42,115 +39,120 @@ function LinkPreviewCard({
   themeColors: ThemeColors;
 }) {
   const themed = useMemo(
-    () => createChatThemeStyles(themeColors),
-    [themeColors],
+      () => createChatThemeStyles(themeColors),
+      [themeColors],
   );
+
   const preview = message.link_preview;
+
   if (!preview) {
     return null;
   }
+
   if (preview.status === 'ready' && hasVideo) {
     return (
-      <Text
-        style={[
-          styles.linkPreviewSource,
-          outgoing ? themed.outgoingSoftText : themed.mutedText,
-        ]}
-      >
-        Источник: {linkPreviewProviderLabel(preview.provider)}
-      </Text>
+        <Text
+            style={[
+              styles.linkPreviewSource,
+              outgoing ? themed.outgoingSoftText : themed.mutedText,
+            ]}
+        >
+          Источник: {linkPreviewProviderLabel(preview.provider)}
+        </Text>
     );
   }
 
   const importing = preview.status === 'importing';
   const failed = preview.status === 'failed';
+
   return (
-    <View style={[styles.linkPreviewCard, themed.voiceAttachment]}>
-      {preview.thumbnail_url ? (
-        <Image
-          source={{ uri: preview.thumbnail_url }}
-          style={styles.linkPreviewThumb}
-        />
-      ) : (
-        <View
-          style={[styles.linkPreviewThumb, styles.linkPreviewThumbPlaceholder]}
-        >
-          <VideoIcon size={30} color={themeColors.muted} />
-        </View>
-      )}
-      <Text
-        style={[
-          styles.linkPreviewProvider,
-          outgoing ? themed.outgoingSoftText : themed.mutedText,
-        ]}
-      >
-        {linkPreviewProviderLabel(preview.provider)}
-      </Text>
-      <Text
-        style={[
-          styles.linkPreviewTitle,
-          outgoing ? themed.outgoingMessageText : themed.text,
-        ]}
-        numberOfLines={2}
-      >
-        {preview.title || 'Видео по ссылке'}
-      </Text>
-      <Text
-        style={[
-          styles.linkPreviewUrl,
-          outgoing ? themed.outgoingSoftText : themed.mutedText,
-        ]}
-        numberOfLines={1}
-      >
-        {linkPreviewDomain(preview.original_url)}
-      </Text>
-      {importing ? (
-        <Text
-          style={[
-            styles.linkPreviewStatus,
-            outgoing ? themed.outgoingSoftText : themed.mutedText,
-          ]}
-        >
-          Видео обрабатывается...
+      <View style={[styles.linkPreviewCard, themed.linkPreviewCard]}>
+        {preview.thumbnail_url ? (
+            <Image
+                source={{ uri: preview.thumbnail_url }}
+                style={styles.linkPreviewThumb}
+            />
+        ) : (
+            <View
+                style={[
+                  styles.linkPreviewThumb,
+                  styles.linkPreviewThumbPlaceholder,
+                  themed.linkPreviewThumb,
+                ]}
+            >
+              <VideoIcon size={30} color={themeColors.muted} />
+            </View>
+        )}
+
+        <Text style={[styles.linkPreviewProvider, themed.linkPreviewProvider]}>
+          {linkPreviewProviderLabel(preview.provider)}
         </Text>
-      ) : null}
-      {failed ? (
-        <Text style={styles.linkPreviewFailed}>Не удалось сохранить видео</Text>
-      ) : null}
-      <View style={styles.linkPreviewActions}>
-        {preview.status !== 'ready' ? (
+
+        <Text
+            style={[styles.linkPreviewTitle, themed.linkPreviewTitle]}
+            numberOfLines={2}
+        >
+          {preview.title || 'Видео по ссылке'}
+        </Text>
+
+        <Text
+            style={[styles.linkPreviewUrl, themed.linkPreviewUrl]}
+            numberOfLines={1}
+        >
+          {linkPreviewDomain(preview.original_url)}
+        </Text>
+
+        {importing ? (
+            <Text style={[styles.linkPreviewStatus, themed.linkPreviewStatus]}>
+              Видео обрабатывается...
+            </Text>
+        ) : null}
+
+        {failed ? (
+            <Text style={[styles.linkPreviewFailed, themed.linkPreviewFailed]}>
+              Не удалось сохранить видео
+            </Text>
+        ) : null}
+
+        <View style={styles.linkPreviewActions}>
+          {preview.status !== 'ready' ? (
+              <Pressable
+                  accessibilityRole="button"
+                  disabled={importing}
+                  style={[
+                    styles.linkPreviewButton,
+                    themed.linkPreviewButton,
+                    importing && styles.linkPreviewButtonDisabled,
+                  ]}
+                  onPress={onImport}
+              >
+                <Text style={[styles.linkPreviewButtonText, themed.linkPreviewButtonText]}>
+                  {failed ? 'Повторить' : 'Сохранить видео в чат'}
+                </Text>
+              </Pressable>
+          ) : null}
+
           <Pressable
-            accessibilityRole="button"
-            disabled={importing}
-            style={[
-              styles.linkPreviewButton,
-              importing && styles.linkPreviewButtonDisabled,
-            ]}
-            onPress={onImport}
+              accessibilityRole="link"
+              style={[
+                styles.linkPreviewSecondaryButton,
+                themed.linkPreviewSecondaryButton,
+              ]}
+              onPress={() =>
+                  Linking.openURL(preview.original_url).catch(() => undefined)
+              }
           >
-            <Text style={styles.linkPreviewButtonText}>
-              {failed ? 'Повторить' : 'Сохранить видео в чат'}
+            <Text
+                style={[
+                  styles.linkPreviewSecondaryText,
+                  themed.linkPreviewSecondaryText,
+                ]}
+            >
+              Открыть
             </Text>
           </Pressable>
-        ) : null}
-        <Pressable
-          accessibilityRole="link"
-          style={styles.linkPreviewSecondaryButton}
-          onPress={() =>
-            Linking.openURL(preview.original_url).catch(() => undefined)
-          }
-        >
-          <Text
-            style={[
-              styles.linkPreviewSecondaryText,
-              outgoing ? themed.outgoingMessageText : themed.text,
-            ]}
-          >
-            Открыть
-          </Text>
-        </Pressable>
+        </View>
       </View>
-    </View>
   );
 }
 
@@ -173,37 +175,53 @@ function statusChecks(status: MessageStatusKind | null) {
 }
 
 function MessageFooterText({
-  time,
-  status,
-  themeColors,
-}: {
-  time: string;
-  status: MessageStatusKind | null;
-  themeColors: ThemeColors;
+                               time,
+                               status,
+                               themeColors,
+                           }: {
+    time: string;
+    status: MessageStatusKind | null;
+    themeColors: ThemeColors;
 }) {
-  const checks = statusChecks(status);
-  const mutedColor = themeColors.isDark
-    ? 'rgba(226, 232, 240, 0.68)'
-    : 'rgba(86, 102, 91, 0.76)';
-  const readColor = themeColors.isDark ? '#64d2c6' : '#229ed9';
+    const checks = statusChecks(status);
+    const isOutgoing = status !== null;
+    const ownTextIsWhite =
+        themeColors.messageOwnText.toLowerCase() === '#ffffff';
 
-  return (
-    <>
-      <Text style={[styles.messageFooterTime, { color: mutedColor }]}>
-        {time}
-      </Text>
-      {checks ? (
-        <Text
-          style={[
-            styles.messageFooterChecks,
-            { color: status === 'read' ? readColor : mutedColor },
-          ]}
-        >
-          {checks}
-        </Text>
-      ) : null}
-    </>
-  );
+    const mutedColor = isOutgoing
+        ? ownTextIsWhite
+            ? 'rgba(255,255,255,0.72)'
+            : themeColors.muted
+        : themeColors.isDark
+            ? 'rgba(226,232,240,0.68)'
+            : 'rgba(86,102,91,0.76)';
+
+    const readColor = isOutgoing
+        ? ownTextIsWhite
+            ? 'rgba(255,255,255,0.9)'
+            : themeColors.accentStrong
+        : themeColors.isDark
+            ? '#64d2c6'
+            : '#229ed9';
+
+    return (
+        <>
+            <Text style={[styles.messageFooterTime, { color: mutedColor }]}>
+                {time}
+            </Text>
+
+            {checks ? (
+                <Text
+                    style={[
+                        styles.messageFooterChecks,
+                        { color: status === 'read' ? readColor : mutedColor },
+                    ]}
+                >
+                    {checks}
+                </Text>
+            ) : null}
+        </>
+    );
 }
 
 function MessageFooterView({
@@ -271,7 +289,6 @@ export const MessageBubble = React.memo(function MessageBubble({
     () => createChatThemeStyles(themeColors),
     [themeColors],
   );
-  const windowDimensions = useWindowDimensions();
   const displayContent =
     message.content ||
     (message.encryption_version && message.encryption_version > 0
@@ -287,62 +304,25 @@ export const MessageBubble = React.memo(function MessageBubble({
       hasAttachments,
   );
   const textOnlyMessage = Boolean(displayContent) && !hasBlockContent;
-  const [footerWidth, setFooterWidth] = useState(0);
-  const [textMetrics, setTextMetrics] = useState({
-    lineCount: 0,
-    lastLineWidth: 0,
-  });
   const textHasHardBreak = displayContent.includes('\n');
-  const maxBubbleContentWidth = Math.max(
-    0,
-    (windowDimensions.width - 20) * 0.78 - 24,
-  );
-  const canInlineFooter =
-    textOnlyMessage &&
-    !textHasHardBreak &&
-    textMetrics.lineCount === 1 &&
-    footerWidth > 0 &&
-    textMetrics.lastLineWidth + footerWidth + 12 <=
-      maxBubbleContentWidth;
-  const showFloatingFooter = !canInlineFooter;
-  const trailingTextNeedsFooterReserve = Boolean(displayContent) &&
+  const shortInlineFooter =
+    textOnlyMessage && !textHasHardBreak && displayContent.trim().length <= 14;
+  const showFloatingFooter = !shortInlineFooter;
+  const [footerWidth, setFooterWidth] = useState(0);
+  const trailingTextNeedsFooterReserve =
+    showFloatingFooter &&
+    Boolean(displayContent) &&
     !message.link_preview &&
     !hasAttachments;
   const floatingFooterReserveStyle =
-    showFloatingFooter && footerWidth > 0 && trailingTextNeedsFooterReserve
-      ? { paddingRight: Math.max(14, footerWidth + 22) }
+    footerWidth > 0 && trailingTextNeedsFooterReserve
+      ? { paddingRight: Math.max(14, footerWidth + 18) }
       : null;
-
-  useEffect(() => {
-    setTextMetrics({ lineCount: 0, lastLineWidth: 0 });
-  }, [displayContent]);
 
   const handleFooterLayout = (event: LayoutChangeEvent) => {
     const nextWidth = event.nativeEvent.layout.width;
     setFooterWidth(current =>
       Math.abs(current - nextWidth) > 0.5 ? nextWidth : current,
-    );
-  };
-
-  const handleTextLayout = (
-    event: NativeSyntheticEvent<TextLayoutEventData>,
-  ) => {
-    if (canInlineFooter) {
-      return;
-    }
-
-    const lines = event.nativeEvent.lines;
-    const lastLine = lines[lines.length - 1];
-    const nextMetrics = {
-      lineCount: lines.length,
-      lastLineWidth: lastLine?.width ?? 0,
-    };
-
-    setTextMetrics(current =>
-      current.lineCount === nextMetrics.lineCount &&
-      Math.abs(current.lastLineWidth - nextMetrics.lastLineWidth) <= 0.5
-        ? current
-        : nextMetrics,
     );
   };
 
@@ -386,11 +366,11 @@ export const MessageBubble = React.memo(function MessageBubble({
     >
       <View
         style={[
-          styles.bubble,
-          outgoing ? styles.outgoing : styles.incoming,
-          outgoing ? themed.outgoingBubble : themed.incomingBubble,
-          showFloatingFooter && styles.bubbleWithFloatingFooter,
-          floatingFooterReserveStyle,
+            styles.bubble,
+            outgoing ? styles.outgoing : styles.incoming,
+            outgoing ? themed.outgoingBubble : themed.incomingBubble,
+            showFloatingFooter && styles.bubbleWithFloatingFooter,
+            floatingFooterReserveStyle,
         ]}
       >
         <MessageFooterView
@@ -447,7 +427,6 @@ export const MessageBubble = React.memo(function MessageBubble({
         {displayContent ? (
           <Text
             selectable
-            onTextLayout={handleTextLayout}
             style={[
               styles.messageText,
               themed.messageBodyText,
@@ -474,7 +453,8 @@ export const MessageBubble = React.memo(function MessageBubble({
 
               return part.value;
             })}
-            {canInlineFooter ? (
+
+            {shortInlineFooter ? (
               <Text style={styles.messageInlineFooter}>
                 {'  '}
                 <MessageFooterText

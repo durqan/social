@@ -4,43 +4,80 @@ import { colors } from '../../../theme/colors';
 import { radius, spacing, typography } from '../../../theme/layout';
 import type { ThemeColors } from '../../../theme/themes';
 
-export const createChatThemeStyles = (theme: ThemeColors) => {
+export const createChatThemeStyles = (theme: ThemeColors = colors) => {
+  const isPremium = theme.id === 'mono-premium';
+  const isWarm = theme.id === 'warm-linen';
+
   const ownBubbleBg = theme.messageOwnBg;
   const ownBubbleText = theme.messageOwnText;
   const otherBubbleBg = theme.messageOtherBg;
   const otherBubbleText = theme.messageOtherText;
   const otherBubbleBorder = theme.isDark
-    ? 'rgba(218, 228, 220, 0.1)'
+    ? 'rgba(255,255,255,0.08)'
     : theme.messageOtherBorder;
+
+  const glassSurface = theme.isDark
+    ? isPremium
+      ? 'rgba(17,19,21,0.92)'
+      : 'rgba(20,18,42,0.88)'
+    : isWarm
+    ? 'rgba(255,250,243,0.94)'
+    : 'rgba(255,255,255,0.88)';
+
+  const glassMuted = theme.isDark
+    ? isPremium
+      ? 'rgba(255,255,255,0.055)'
+      : 'rgba(255,255,255,0.075)'
+    : isWarm
+    ? 'rgba(255,246,236,0.86)'
+    : 'rgba(246,248,255,0.86)';
 
   return StyleSheet.create({
     chatBackground: {
       backgroundColor: theme.background,
     },
     card: {
-      backgroundColor: theme.card,
+      backgroundColor: glassSurface,
       borderColor: theme.border,
+      shadowColor: theme.shadow,
     },
     cardMuted: {
-      backgroundColor: theme.cardMuted,
+      backgroundColor: glassMuted,
       borderColor: theme.border,
     },
     surfaceBar: {
-      backgroundColor: theme.surface,
+      backgroundColor: theme.isDark ? 'rgba(0,0,0,0.18)' : 'rgba(255,255,255,0.72)',
       borderColor: theme.border,
       borderTopColor: theme.border,
     },
     composerDock: {
-      backgroundColor: theme.background,
+      backgroundColor: 'transparent',
       borderTopColor: 'transparent',
-      zIndex: 2,
+      zIndex: 30,
     },
     composerSurface: {
-      backgroundColor: theme.surface,
-      borderColor: theme.border,
-      shadowColor: theme.shadow,
-      shadowOpacity: theme.isDark ? 0.34 : 0.13,
-      elevation: 6,
+      backgroundColor: 'transparent',
+      borderColor: 'transparent',
+      shadowColor: 'transparent',
+      shadowOpacity: 0,
+      shadowRadius: 0,
+      shadowOffset: { width: 0, height: 0 },
+      elevation: 0,
+    },
+    composerSideButton: {
+      backgroundColor: theme.isDark
+        ? 'rgba(20,20,24,0.94)'
+        : 'rgba(255,255,255,0.94)',
+      borderColor: 'transparent',
+    },
+    composerInputContainer: {
+      backgroundColor: theme.isDark
+        ? 'rgba(20,20,24,0.94)'
+        : 'rgba(255,255,255,0.94)',
+      borderColor: 'transparent',
+    },
+    composerEmojiButton: {
+      backgroundColor: 'transparent',
     },
     surfaceMutedBar: {
       backgroundColor: theme.surfaceMuted,
@@ -61,27 +98,28 @@ export const createChatThemeStyles = (theme: ThemeColors) => {
       color: otherBubbleText,
     },
     messageBodyText: {
-      fontSize: 16,
-      lineHeight: 21,
+      fontSize: 14,
+      lineHeight: 19,
     },
     outgoingMessageText: {
       color: ownBubbleText,
     },
     composerInputText: {
-      fontSize: 16,
-      lineHeight: 21,
+      fontSize: 15,
+      lineHeight: 20,
+      color: theme.text,
     },
     outgoingAccentText: {
       color: ownBubbleText,
-      opacity: 0.9,
+      opacity: 0.94,
     },
     outgoingMutedText: {
       color: ownBubbleText,
-      opacity: 0.78,
+      opacity: 0.8,
     },
     outgoingSoftText: {
       color: ownBubbleText,
-      opacity: 0.68,
+      opacity: 0.7,
     },
     outgoingLink: {
       color: ownBubbleText,
@@ -94,7 +132,7 @@ export const createChatThemeStyles = (theme: ThemeColors) => {
       color: theme.soft,
     },
     accentText: {
-      color: theme.accent,
+      color: theme.accentStrong,
     },
     dangerText: {
       color: theme.danger,
@@ -111,17 +149,36 @@ export const createChatThemeStyles = (theme: ThemeColors) => {
     incomingBubble: {
       backgroundColor: otherBubbleBg,
       borderColor: otherBubbleBorder,
+      shadowColor: theme.shadow,
+      shadowOpacity: theme.isDark ? 0.22 : 0.08,
     },
     outgoingBubble: {
       backgroundColor: ownBubbleBg,
       borderColor: theme.messageOwnBorder,
       borderWidth: StyleSheet.hairlineWidth,
+      shadowColor: theme.shadow,
+      shadowOpacity: theme.isDark ? 0.22 : 0.08,
     },
     replyPreview: {
-      backgroundColor: theme.surfaceMuted,
+      backgroundColor: theme.isDark ? 'rgba(255,255,255,0.07)' : theme.surfaceMuted,
       borderLeftColor: theme.accent,
     },
     voiceAttachment: {
+      backgroundColor: theme.isDark ? 'rgba(255,255,255,0.07)' : theme.surfaceMuted,
+    },
+    genericVideoAttachment: {
+      backgroundColor: theme.isDark ? 'rgba(255,255,255,0.07)' : theme.surfaceMuted,
+    },
+    genericFileAttachment: {
+      backgroundColor: theme.isDark ? 'rgba(255,255,255,0.07)' : theme.surfaceMuted,
+    },
+    messageImageFrame: {
+      backgroundColor: theme.surfaceMuted,
+    },
+    messageImage: {
+      backgroundColor: theme.surfaceMuted,
+    },
+    videoNoteAttachment: {
       backgroundColor: theme.surfaceMuted,
     },
     videoNoteOrbit: {
@@ -134,16 +191,91 @@ export const createChatThemeStyles = (theme: ThemeColors) => {
     },
     videoNoteGlassButton: {
       borderColor: theme.isDark
-        ? 'rgba(255, 255, 255, 0.34)'
-        : 'rgba(255, 255, 255, 0.72)',
+        ? 'rgba(255,255,255,0.34)'
+        : 'rgba(255,255,255,0.72)',
     },
     videoNotePill: {
       backgroundColor: theme.isDark
-        ? 'rgba(2, 6, 23, 0.68)'
-        : 'rgba(15, 23, 42, 0.56)',
+        ? 'rgba(2,6,23,0.68)'
+        : 'rgba(15,23,42,0.56)',
     },
     videoNotePillProgress: {
       backgroundColor: theme.accentSoft,
+    },
+    previewStrip: {
+      backgroundColor: 'transparent',
+      borderColor: 'transparent',
+      shadowColor: 'transparent',
+      shadowOpacity: 0,
+      shadowRadius: 0,
+      shadowOffset: { width: 0, height: 0 },
+      elevation: 0,
+    },
+    previewFileTile: {
+      backgroundColor: theme.surfaceMuted,
+      borderColor: theme.border,
+    },
+    previewVideoCard: {
+      backgroundColor: glassSurface,
+      borderColor: theme.border,
+    },
+    previewVideoNoteCard: {
+      backgroundColor: theme.surfaceMuted,
+      borderColor: theme.border,
+    },
+    previewVoiceCard: {
+      backgroundColor: theme.surfaceMuted,
+      borderColor: theme.border,
+    },
+    previewProgressBar: {
+      backgroundColor: theme.border,
+    },
+    previewProgressFill: {
+      backgroundColor: theme.accent,
+    },
+    linkPreviewCard: {
+      backgroundColor: theme.isDark
+        ? isPremium
+          ? 'rgba(255,255,255,0.075)'
+          : 'rgba(255,255,255,0.09)'
+        : 'rgba(255,255,255,0.94)',
+      borderColor: theme.isDark
+        ? 'rgba(255,255,255,0.12)'
+        : 'rgba(17,24,39,0.10)',
+      borderWidth: StyleSheet.hairlineWidth,
+    },
+    linkPreviewThumb: {
+      backgroundColor: theme.isDark
+        ? 'rgba(255,255,255,0.08)'
+        : 'rgba(15,23,42,0.08)',
+    },
+    linkPreviewProvider: {
+      color: theme.muted,
+    },
+    linkPreviewTitle: {
+      color: theme.text,
+    },
+    linkPreviewUrl: {
+      color: theme.muted,
+    },
+    linkPreviewStatus: {
+      color: theme.soft,
+    },
+    linkPreviewFailed: {
+      color: theme.danger,
+    },
+    linkPreviewButton: {
+      backgroundColor: theme.accent,
+    },
+    linkPreviewButtonText: {
+      color: theme.white,
+    },
+    linkPreviewSecondaryButton: {
+      borderColor: theme.border,
+      backgroundColor: theme.surface,
+    },
+    linkPreviewSecondaryText: {
+      color: theme.text,
     },
     sheetBackdrop: {
       backgroundColor: theme.overlay,
@@ -175,7 +307,7 @@ export const createChatThemeStyles = (theme: ThemeColors) => {
       color: theme.white,
     },
     scrollToLatestButton: {
-      backgroundColor: theme.surface,
+      backgroundColor: glassSurface,
       borderColor: theme.border,
       shadowColor: theme.shadow,
     },
@@ -191,7 +323,6 @@ export const styles = StyleSheet.create({
     flex: 1,
     padding: 0,
     position: 'relative',
-    overflow: 'hidden',
   },
   loading: {
     flex: 1,
@@ -257,7 +388,7 @@ export const styles = StyleSheet.create({
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 8 },
     elevation: colors.isDark ? 2 : 6,
-    zIndex: 6,
+    zIndex: 40,
   },
   scrollToLatestButtonNew: {
     backgroundColor: colors.accent,
@@ -284,61 +415,67 @@ export const styles = StyleSheet.create({
   },
   bubble: {
     maxWidth: '82%',
+    minWidth: 74,
     borderRadius: 22,
     paddingHorizontal: 13,
-    paddingVertical: 9,
+    paddingTop: 8,
+    paddingBottom: 8,
     gap: spacing.xs,
     position: 'relative',
     shadowColor: colors.shadow,
-    shadowOpacity: 0.18,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 7 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 },
     elevation: 2,
   },
+
   bubbleWithFloatingFooter: {
-    paddingBottom: 22,
+    paddingBottom: 16,
   },
-  incoming: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderBottomLeftRadius: 7,
-  },
-  outgoing: {
-    backgroundColor: colors.accent,
-    borderBottomRightRadius: 7,
-  },
-  messageText: {
-    fontSize: 16,
-    lineHeight: 21,
-    color: colors.text,
-  },
+
   messageInlineFooter: {
-    fontSize: 12,
-    lineHeight: 14,
+    fontSize: 10,
+    lineHeight: 12,
+  },
+
+  messageFooterTime: {
+    fontSize: 10,
+    lineHeight: 12,
+    fontWeight: '500',
+  },
+
+  messageFooterChecks: {
+    marginLeft: 1,
+    fontSize: 10,
+    lineHeight: 12,
+    fontWeight: '900',
   },
   messageFooter: {
     position: 'absolute',
-    right: 8,
-    bottom: 4,
+    right: 9,
+    bottom: 5,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
   },
+  incoming: {
+    backgroundColor: colors.messageOtherBg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.messageOtherBorder,
+    borderBottomLeftRadius: 7,
+  },
+  outgoing: {
+    backgroundColor: colors.messageOwnBg,
+    borderBottomRightRadius: 7,
+  },
+  messageText: {
+    fontSize: 14,
+    lineHeight: 19,
+    letterSpacing: -0.1,
+    color: colors.text,
+  },
   messageFooterMeasure: {
     opacity: 0,
-  },
-  messageFooterTime: {
-    fontSize: 12,
-    lineHeight: 14,
-    fontWeight: '500',
-  },
-  messageFooterChecks: {
-    marginLeft: 1,
-    fontSize: 11,
-    lineHeight: 14,
-    fontWeight: '900',
-    letterSpacing: 0,
   },
   outgoingText: {
     color: colors.white,
@@ -473,6 +610,9 @@ export const styles = StyleSheet.create({
     overflow: 'hidden',
     padding: spacing.sm,
     gap: spacing.xs,
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
   },
   linkPreviewThumb: {
     width: '100%',
@@ -488,16 +628,20 @@ export const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
     textTransform: 'uppercase',
+    color: colors.muted,
   },
   linkPreviewTitle: {
     fontSize: 14,
     fontWeight: '700',
+    color: colors.text,
   },
   linkPreviewUrl: {
     fontSize: 12,
+    color: colors.muted,
   },
   linkPreviewStatus: {
     fontSize: 12,
+    color: colors.soft,
   },
   linkPreviewFailed: {
     color: colors.danger,
@@ -529,10 +673,12 @@ export const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
     borderWidth: 1,
     borderColor: colors.border,
+    backgroundColor: colors.surface,
   },
   linkPreviewSecondaryText: {
     fontSize: 12,
     fontWeight: '700',
+    color: colors.text,
   },
   linkPreviewSource: {
     marginTop: spacing.xs,
@@ -719,18 +865,18 @@ export const styles = StyleSheet.create({
   },
   previewStrip: {
     marginHorizontal: 2,
-    marginBottom: spacing.sm,
-    borderRadius: 22,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    shadowColor: colors.shadow,
-    shadowOpacity: colors.isDark ? 0.28 : 0.12,
-    shadowRadius: 22,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: colors.isDark ? 1 : 3,
+    marginBottom: spacing.xs,
+    borderRadius: 0,
+    paddingHorizontal: 0,
+    paddingVertical: spacing.xs,
+    borderWidth: 0,
+    borderColor: 'transparent',
+    backgroundColor: 'transparent',
+    shadowColor: 'transparent',
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 0,
   },
   previewStripContent: {
     gap: spacing.sm,
@@ -1084,7 +1230,6 @@ export const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
   },
-  // Preview voice card (new UX: record -> preview -> send/delete)
   previewVoiceCard: {
     marginHorizontal: 2,
     marginBottom: spacing.sm,
@@ -1161,57 +1306,64 @@ export const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   composerDock: {
-    flexShrink: 0,
-    borderTopWidth: 0,
-    paddingHorizontal: 10,
-    paddingTop: 8,
-    paddingBottom: 10,
-    backgroundColor: colors.surface,
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 30,
+    paddingHorizontal: 8,
+    paddingTop: 4,
+    paddingBottom: 6,
+    backgroundColor: 'transparent',
   },
   composer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    gap: 7,
-    minHeight: 56,
-    borderWidth: 1,
-    borderRadius: 29,
-    paddingHorizontal: 7,
-    paddingVertical: 6,
+    gap: 6,
+    minHeight: 42,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
     backgroundColor: 'transparent',
-    shadowColor: colors.shadow,
-    shadowOpacity: 0.34,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 12 },
-    elevation: 6,
+    elevation: 0,
   },
   composerSideButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     borderWidth: 0,
-    marginBottom: 2,
-    backgroundColor: colors.cardMuted,
+    borderColor: 'transparent',
+    marginBottom: 0,
+    backgroundColor: 'rgba(255,255,255,0.94)',
   },
   composerInputContainer: {
     flex: 1,
     minWidth: 0,
-    minHeight: 44,
+    minHeight: 40,
     flexDirection: 'row',
     alignItems: 'flex-end',
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 23,
+    borderWidth: 0,
+    borderColor: 'transparent',
+    borderRadius: 20,
     paddingLeft: 12,
     paddingRight: 2,
-    backgroundColor: colors.input,
+    backgroundColor: 'rgba(255,255,255,0.94)',
+    overflow: 'hidden',
+  },
+  composerBlur: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    borderRadius: 20,
   },
   composerEmojiButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 3,
+    marginBottom: 2,
   },
   composerButtonPressed: {
     opacity: 0.72,
@@ -1220,10 +1372,10 @@ export const styles = StyleSheet.create({
     opacity: 0.42,
   },
   composerActionButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    marginBottom: 1,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    marginBottom: 0,
   },
   composerActionRecording: {
     backgroundColor: colors.danger,
@@ -1234,10 +1386,10 @@ export const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     paddingHorizontal: 0,
-    paddingVertical: 7,
+    paddingVertical: 6,
     color: colors.text,
-    fontSize: 16,
-    lineHeight: 21,
+    fontSize: 15,
+    lineHeight: 20,
   },
   lightbox: {
     flex: 1,
@@ -1281,7 +1433,7 @@ export const styles = StyleSheet.create({
   sheetBackdrop: {
     flex: 1,
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(8, 19, 31, 0.48)',
+    backgroundColor: colors.overlay,
   },
   sheet: {
     borderTopLeftRadius: 30,

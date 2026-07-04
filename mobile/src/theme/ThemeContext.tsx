@@ -91,16 +91,18 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   applyTypographyScale(textSizeOptions[textSizeId].scale);
 
-  const value = useMemo(
-    () => ({
-      themeId,
-      colors: themes[themeId],
+  const value = useMemo(() => {
+    const safeThemeId = isThemeId(themeId) ? themeId : defaultThemeId;
+    const safeColors = themes[safeThemeId] ?? themes[defaultThemeId];
+
+    return {
+      themeId: safeThemeId,
+      colors: safeColors,
       setThemeId: persistThemeId,
       textSizeId,
       setTextSizeId: persistTextSizeId,
-    }),
-    [persistTextSizeId, persistThemeId, textSizeId, themeId],
-  );
+    };
+  }, [persistTextSizeId, persistThemeId, textSizeId, themeId]);
 
   return (
     <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
@@ -116,5 +118,5 @@ export function useTheme() {
 }
 
 export function useThemeColors() {
-  return useTheme().colors;
+  return useTheme().colors ?? themes[defaultThemeId];
 }

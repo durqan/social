@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Bell, ChevronRight, KeyRound, Lock, LogOut, MonitorSmartphone, Palette, ShieldCheck, Type } from 'lucide-react-native';
+import LinearGradient from 'react-native-linear-gradient';
 
 import { getApiErrorMessage } from '../../api/http';
 import { userApi } from '../../api/users';
@@ -223,7 +224,12 @@ function ThemeOption({ themeId, selected, onPress }: { themeId: ThemeId; selecte
   return (
     <Pressable accessibilityRole="button" accessibilityState={{ selected }} style={({ pressed }) => [styles.themeOption, selected && styles.themeOptionSelected, pressed && styles.themeOptionPressed]} onPress={onPress}>
       <View style={[styles.themeSwatch, { backgroundColor: theme.background }]}>
-        <View style={[styles.themeSwatchAccent, { backgroundColor: theme.accent }]} />
+        <LinearGradient
+          colors={theme.gradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.themeSwatchAccent}
+        />
       </View>
       <View style={styles.themeMeta}>
         <Text style={styles.themeName} numberOfLines={1}>{theme.name}</Text>

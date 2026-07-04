@@ -1,23 +1,20 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   FlatList,
   Image,
   Modal,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { CommonActions, useFocusEffect, useIsFocused } from '@react-navigation/native';
+import LinearGradient from 'react-native-linear-gradient';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import {
   MessageCircle,
-  Plus,
   Search,
-  SlidersHorizontal,
   Pin,
   PinOff,
   Trash2,
@@ -106,21 +103,49 @@ export default function ChatListScreen({ navigation }: Props) {
   const nextOffsetRef = useRef(0);
   const screenActiveRef = useRef(false);
   const loadAbortRef = useRef<AbortController | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const loadMoreAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    if (!success) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setSuccess(null);
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, [success]);
+
+  useEffect(() => {
+    if (!error) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setError(null);
+    }, 3000);
+
+    return () => clearTimeout(timer);
+  }, [error]);
 
   const load = useCallback(
     async (mode: LoadMode | 'more' = 'refresh') => {
       const requestSeq = ++loadSeq.current;
-      if (mode !== 'more') {
+
+      if (mode === 'more') {
+        loadMoreAbortRef.current?.abort();
+      } else {
         loadAbortRef.current?.abort();
       }
+
       const controller = new AbortController();
-      loadAbortRef.current = controller;
-      if (mode !== 'silent') {
-        if (mode === 'more') {
-          setLoadingMore(true);
-        } else {
-          setLoading(true);
-        }
+
+      if (mode === 'more') {
+        loadMoreAbortRef.current = controller;
+      } else {
+        loadAbortRef.current = controller;
       }
       setError(null);
       try {
@@ -164,15 +189,24 @@ export default function ChatListScreen({ navigation }: Props) {
           setError(getApiErrorMessage(apiError));
         }
       } finally {
-        if (loadAbortRef.current === controller) {
+        if (mode === 'more') {
+          if (loadMoreAbortRef.current === controller) {
+            loadMoreAbortRef.current = null;
+          }
+        } else if (loadAbortRef.current === controller) {
           loadAbortRef.current = null;
         }
-        if (screenActiveRef.current && loadSeq.current === requestSeq) {
-          setHasLoaded(true);
+
+        if (screenActiveRef.current) {
           if (mode === 'more') {
             setLoadingMore(false);
           } else if (mode !== 'silent') {
             setLoading(false);
+            setRefreshing(false);
+          }
+
+          if (loadSeq.current === requestSeq) {
+            setHasLoaded(true);
           }
         }
       }
@@ -209,6 +243,7 @@ export default function ChatListScreen({ navigation }: Props) {
         setHasMore(false);
         setLoadingMore(false);
         setLoading(false);
+        setRefreshing(false);
       };
     }, [load]),
   );
@@ -355,8 +390,10 @@ export default function ChatListScreen({ navigation }: Props) {
       <FlatList
         data={filteredConversations}
         keyExtractor={item => String(item.user_id)}
-        refreshing={loading && hasLoaded}
-        onRefresh={load}
+        refreshing={refreshing}
+        onRefresh={() => {
+          load('refresh').catch(() => undefined);
+        }}
         onEndReached={() => {
           if (!loadingMore && hasMore) {
             load('more').catch(() => undefined);
@@ -473,17 +510,11 @@ export default function ChatListScreen({ navigation }: Props) {
 }
 
 function ChatListHeader({
-  conversations,
   totalCount,
   unreadCount,
   pinnedCount,
-  searchQuery,
   activeFilter,
-  onSearchChange,
   onFilterChange,
-  onCreatePress,
-  onOpenConversation,
-  onOpenProfile,
   colors,
 }: {
   conversations: Conversation[];
@@ -503,85 +534,6 @@ function ChatListHeader({
 
   return (
     <View style={styles.headerBlock}>
-      <View style={styles.titleRow}>
-        <View>
-          <Text style={styles.kicker}>Durqan</Text>
-          <Text style={styles.title}>Сообщения</Text>
-        </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Найти пользователя"
-          style={({ pressed }) => [
-            styles.createButton,
-            pressed && styles.rowPressed,
-          ]}
-          onPress={onCreatePress}
-        >
-          <Plus color={colors.white} size={22} strokeWidth={2.7} />
-        </Pressable>
-      </View>
-
-      <View style={styles.searchRow}>
-        <View style={styles.searchBox}>
-          <Search color={colors.soft} size={19} strokeWidth={2.4} />
-          <TextInput
-            value={searchQuery}
-            onChangeText={onSearchChange}
-            placeholder="Поиск"
-            placeholderTextColor={colors.soft}
-            autoCapitalize="none"
-            autoCorrect={false}
-            style={styles.searchInput}
-          />
-        </View>
-        <View style={styles.filterRoundButton}>
-          <SlidersHorizontal
-            color={colors.muted}
-            size={20}
-            strokeWidth={2.5}
-          />
-        </View>
-      </View>
-
-      {conversations.length > 0 ? (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.storyStrip}
-        >
-          {conversations.map((conversation, index) => (
-            <Pressable
-              key={conversation.user_id}
-              accessibilityRole="button"
-              style={({ pressed }) => [
-                styles.storyItem,
-                pressed && styles.storyPressed,
-              ]}
-              onPress={() => onOpenConversation(conversation)}
-              onLongPress={() => onOpenProfile(conversation)}
-              delayLongPress={280}
-            >
-              <ConversationAvatar
-                conversation={conversation}
-                isUnread={conversation.unread_count > 0}
-                colors={colors}
-                online={conversationOnline(conversation)}
-                size={58}
-                story
-              />
-              {index === 0 ? (
-                <View style={styles.storyAddBadge}>
-                  <Plus color={colors.white} size={13} strokeWidth={3} />
-                </View>
-              ) : null}
-              <Text style={styles.storyName} numberOfLines={1}>
-                {index === 0 ? 'Моя история' : conversation.name}
-              </Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-      ) : null}
-
       <View style={styles.filterRow}>
         <FilterChip
           label="Все"
@@ -760,34 +712,73 @@ function ConversationAvatar({
     borderRadius: size / 2,
   };
 
-  return (
-    <View
+  const avatarContent = avatarUrl ? (
+    <Image
+      source={{ uri: avatarUrl }}
       style={[
-        styles.avatar,
+        styles.avatarImage,
+        avatarImageStyle({
+          size,
+          positionX: conversation.avatar_position_x,
+          positionY: conversation.avatar_position_y,
+          scale: conversation.avatar_scale,
+        }),
         avatarSizeStyle,
-        story && styles.storyAvatar,
-        isUnread && styles.avatarUnread,
       ]}
-    >
-      {avatarUrl ? (
-        <Image
-          source={{ uri: avatarUrl }}
-          style={[
-            styles.avatarImage,
-            avatarImageStyle({
-              size,
-              positionX: conversation.avatar_position_x,
-              positionY: conversation.avatar_position_y,
-              scale: conversation.avatar_scale,
-            }),
-            avatarSizeStyle,
-          ]}
-        />
-      ) : (
-        <Text style={[styles.avatarText, isUnread && styles.avatarTextUnread]}>
-          {conversation.name.slice(0, 1).toUpperCase()}
-        </Text>
-      )}
+    />
+  ) : (
+    <Text style={[styles.avatarText, isUnread && styles.avatarTextUnread]}>
+      {conversation.name.slice(0, 1).toUpperCase()}
+    </Text>
+  );
+
+  if (story) {
+    const ringSize = size + 8;
+    const gapSize = size + 3;
+    return (
+      <View style={{ width: ringSize, height: ringSize }}>
+        <LinearGradient
+          colors={colors.gradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={{
+            width: ringSize,
+            height: ringSize,
+            borderRadius: ringSize / 2,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <View
+            style={{
+              width: gapSize,
+              height: gapSize,
+              borderRadius: gapSize / 2,
+              backgroundColor: colors.background,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <View
+              style={[
+                styles.avatar,
+                avatarSizeStyle,
+                { borderWidth: 0 },
+                isUnread && styles.avatarUnread,
+              ]}
+            >
+              {avatarContent}
+            </View>
+          </View>
+        </LinearGradient>
+        {online ? <View style={styles.onlineDot} /> : null}
+      </View>
+    );
+  }
+
+  return (
+    <View style={[styles.avatar, avatarSizeStyle, isUnread && styles.avatarUnread]}>
+      {avatarContent}
       {online ? <View style={styles.onlineDot} /> : null}
     </View>
   );
@@ -919,7 +910,6 @@ const createStyles = (colors: ThemeColors) =>
       borderRadius: 16,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: colors.accent,
       borderWidth: 1,
       borderColor: colors.accentBorder,
       shadowColor: colors.accent,
