@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 
 import { AppLifecycleProvider } from './src/context/AppLifecycleContext';
 import { PostAuthBootstrapManager } from './src/components/PostAuthBootstrapManager';
@@ -42,13 +43,15 @@ function AppContent() {
 }
 
 function App() {
-  return (
-    <SafeAreaProvider>
-      <ThemeProvider>
-        <AppContent />
-      </ThemeProvider>
-    </SafeAreaProvider>
-  );
+    return (
+        <SafeAreaProvider>
+            <KeyboardProvider>
+                <ThemeProvider>
+                    <AppContent />
+                </ThemeProvider>
+            </KeyboardProvider>
+        </SafeAreaProvider>
+    );
 }
 
 export default App;

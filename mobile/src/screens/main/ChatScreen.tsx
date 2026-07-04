@@ -156,6 +156,7 @@ import {
   messageAuthorName,
   messagePreviewText,
 } from './chat/chatUtils';
+import { KeyboardStickyView } from 'react-native-keyboard-controller';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'Chat'>;
 type LoadMode = 'initial' | 'refresh' | 'silent';
@@ -3299,11 +3300,13 @@ export default function ChatScreen({ route, navigation }: Props) {
             ) : null}
           </>
         )}
-        <View
-          style={[styles.composerDock, themed.composerDock]}
-          onLayout={event => {
-            setComposerDockHeight(event.nativeEvent.layout.height);
-          }}
+        <KeyboardStickyView
+            enabled={Platform.OS === 'android'}
+            offset={{ closed: 0, opened: 0 }}
+            style={[styles.composerDock, themed.composerDock]}
+            onLayout={event => {
+              setComposerDockHeight(event.nativeEvent.layout.height);
+            }}
         >
           {pendingAttachments.length > 0 ? (
               <View style={styles.previewStrip}>
@@ -3746,7 +3749,7 @@ export default function ChatScreen({ route, navigation }: Props) {
                 />
             )}
           </View>
-        </View>
+        </KeyboardStickyView>
       </ChatDoodleBackground>
       <Modal
         visible={Boolean(selectedImageUrl)}
