@@ -156,7 +156,12 @@ import {
   messageAuthorName,
   messagePreviewText,
 } from './chat/chatUtils';
-import { KeyboardStickyView } from 'react-native-keyboard-controller';
+import Animated, { useAnimatedStyle } from 'react-native-reanimated';
+import {
+  AndroidSoftInputModes,
+  KeyboardController,
+  useReanimatedKeyboardAnimation,
+} from 'react-native-keyboard-controller';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'Chat'>;
 type LoadMode = 'initial' | 'refresh' | 'silent';
@@ -433,6 +438,16 @@ export default function ChatScreen({ route, navigation }: Props) {
       e2eeState.recipientPublicKey &&
       e2eeState.localKey,
   );
+
+  const { height: keyboardHeight } = useReanimatedKeyboardAnimation();
+
+  const composerKeyboardStyle = useAnimatedStyle(() => ({
+    transform: [
+      {
+        translateY: Platform.OS === 'android' ? -keyboardHeight.value : 0,
+      },
+    ],
+  }));
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -1269,6 +1284,22 @@ export default function ChatScreen({ route, navigation }: Props) {
         loadPinnedAbortRef.current = null;
       };
     }, [loadMessages, loadPinnedMessage]),
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      if (Platform.OS !== 'android') {
+        return undefined;
+      }
+
+      KeyboardController.setInputMode(
+        AndroidSoftInputModes.SOFT_INPUT_ADJUST_RESIZE,
+      );
+
+      return () => {
+        KeyboardController.setDefaultMode();
+      };
+    }, []),
   );
 
   useEffect(() => {
@@ -3300,13 +3331,15 @@ export default function ChatScreen({ route, navigation }: Props) {
             ) : null}
           </>
         )}
-        <KeyboardStickyView
-            enabled={Platform.OS === 'android'}
-            offset={{ closed: 0, opened: 0 }}
-            style={[styles.composerDock, themed.composerDock]}
-            onLayout={event => {
-              setComposerDockHeight(event.nativeEvent.layout.height);
-            }}
+        <Animated.View
+          style={[
+            styles.composerDock,
+            themed.composerDock,
+            composerKeyboardStyle,
+          ]}
+          onLayout={event => {
+            setComposerDockHeight(event.nativeEvent.layout.height);
+          }}
         >
           {pendingAttachments.length > 0 ? (
               <View style={styles.previewStrip}>
@@ -3749,7 +3782,7 @@ export default function ChatScreen({ route, navigation }: Props) {
                 />
             )}
           </View>
-        </KeyboardStickyView>
+        </Animated.View>
       </ChatDoodleBackground>
       <Modal
         visible={Boolean(selectedImageUrl)}
