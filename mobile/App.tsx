@@ -45,7 +45,7 @@ function AppContent() {
 function App() {
     return (
         <SafeAreaProvider>
-            <KeyboardProvider>
+            <KeyboardProvider statusBarTranslucent navigationBarTranslucent>
                 <ThemeProvider>
                     <AppContent />
                 </ThemeProvider>
