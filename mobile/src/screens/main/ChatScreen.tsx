@@ -156,11 +156,9 @@ import {
   messageAuthorName,
   messagePreviewText,
 } from './chat/chatUtils';
-import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import {
   AndroidSoftInputModes,
   KeyboardController,
-  useReanimatedKeyboardAnimation,
 } from 'react-native-keyboard-controller';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'Chat'>;
@@ -438,16 +436,6 @@ export default function ChatScreen({ route, navigation }: Props) {
       e2eeState.recipientPublicKey &&
       e2eeState.localKey,
   );
-
-  const { height: keyboardHeight } = useReanimatedKeyboardAnimation();
-
-  const composerKeyboardStyle = useAnimatedStyle(() => ({
-    transform: [
-      {
-        translateY: Platform.OS === 'android' ? -keyboardHeight.value : 0,
-      },
-    ],
-  }));
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -3331,11 +3319,10 @@ export default function ChatScreen({ route, navigation }: Props) {
             ) : null}
           </>
         )}
-        <Animated.View
+        <View
           style={[
             styles.composerDock,
             themed.composerDock,
-            composerKeyboardStyle,
           ]}
           onLayout={event => {
             setComposerDockHeight(event.nativeEvent.layout.height);
@@ -3782,7 +3769,7 @@ export default function ChatScreen({ route, navigation }: Props) {
                 />
             )}
           </View>
-        </Animated.View>
+        </View>
       </ChatDoodleBackground>
       <Modal
         visible={Boolean(selectedImageUrl)}
