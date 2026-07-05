@@ -239,3 +239,54 @@ dependencies {
         implementation jscFlavor
     }
 }
+tasks.register("patchAndroidAutolinkingCmake") {
+    doLast {
+        def cmakeFile = file("$buildDir/generated/autolinking/src/main/jni/Android-autolinking.cmake")
+
+        if (!cmakeFile.exists()) {
+            println("[patchAndroidAutolinkingCmake] file not found: ${cmakeFile}")
+            return
+        }
+
+        def text = cmakeFile.text
+
+        // 1) add_subdirectory(".../jni/" ".../build") -> if(EXISTS ".../jni/CMakeLists.txt") add_subdirectory(...)
+        text = text.replaceAll(
+                /add_subdirectory\("([^"]+)"\s+"([^"]+)"\)/,
+                'if(EXISTS "$1/CMakeLists.txt")\n  add_subdirectory("$1" "$2")\nendif()'
+        )
+
+        // 2) set(AUTOLINKED_LIBRARIES a b c) -> append only targets that exist
+        def matcher = text =~ /set\(AUTOLINKED_LIBRARIES\s*([\s\S]*?)\)/
+        if (matcher.find()) {
+            def body = matcher.group(1)
+            def libs = body
+                    .split(/\s+/)
+                    .collect { it.trim() }
+                    .findAll { it && !it.startsWith("#") }
+
+            def replacement = new StringBuilder()
+            replacement.append("set(AUTOLINKED_LIBRARIES)\n")
+
+            libs.each { lib ->
+                replacement.append("if(TARGET ${lib})\n")
+                replacement.append("  list(APPEND AUTOLINKED_LIBRARIES ${lib})\n")
+                replacement.append("endif()\n")
+            }
+
+            text = text.replace(matcher.group(0), replacement.toString())
+        }
+
+        cmakeFile.text = text
+        println("[patchAndroidAutolinkingCmake] patched ${cmakeFile}")
+    }
+}
+
+afterEvaluate {
+    tasks.matching { task ->
+        task.name.startsWith("configureCMake") ||
+        task.name.startsWith("externalNativeBuild")
+    }.configureEach {
+        dependsOn("patchAndroidAutolinkingCmake")
+    }
+}

@@ -21,7 +21,7 @@ import {
   View,
 } from 'react-native';
 import Clipboard from '@react-native-clipboard/clipboard';
-import { BlurView } from '@react-native-community/blur';
+import { LiquidGlassView } from '@sbaiahmed1/react-native-blur';
 import {
   errorCodes as documentPickerErrorCodes,
   isErrorWithCode as isDocumentPickerErrorWithCode,
@@ -3730,16 +3730,13 @@ export default function ChatScreen({ route, navigation }: Props) {
             />
 
             <View style={[styles.composerInputContainer, themed.composerInputContainer]}>
-              <BlurView
+              <LiquidGlassView
                   pointerEvents="none"
                   style={styles.composerBlur}
-                  blurType={themeColors.isDark ? 'dark' : 'light'}
-                  blurAmount={32}
-                  reducedTransparencyFallbackColor={
-                    themeColors.isDark
-                        ? 'rgba(20,20,24,0.72)'
-                        : 'rgba(255,255,255,0.72)'
-                  }
+                  glassType={themeColors.isDark ? 'ultraThin' : 'regular' as any}
+                  glassTintColor={themeColors.isDark ? '#1C1C22' : '#FFFFFF'}
+                  glassOpacity={0.8}
+                  blurAmount={30}
               />
 
               <TextInput
