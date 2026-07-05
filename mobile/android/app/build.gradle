@@ -239,60 +239,75 @@ dependencies {
         implementation jscFlavor
     }
 }
-tasks.register("patchAndroidAutolinkingCmake") {
-    dependsOn("generateAutolinkingNewArchitectureFiles")
+def patchGeneratedAndroidAutolinkingCmake = {
+    def cmakeFile = file("$buildDir/generated/autolinking/src/main/jni/Android-autolinking.cmake")
 
-    doLast {
-        def cmakeFile = file("$buildDir/generated/autolinking/src/main/jni/Android-autolinking.cmake")
-
-        if (!cmakeFile.exists()) {
-            throw new GradleException("[patchAndroidAutolinkingCmake] file not found: ${cmakeFile}")
-        }
-
-        def text = cmakeFile.text
-        def originalText = text
-
-        // 1) Не даем CMake падать, если RN autolinking добавил jni-папку, которой нет.
-        text = text.replaceAll(
-                /add_subdirectory\("([^"]+)"\s+"([^"]+)"\)/,
-                'if(EXISTS "$1/CMakeLists.txt")\n  add_subdirectory("$1" "$2")\nendif()'
-        )
-
-        // 2) Не линкуем react_codegen_* target, если он реально не был создан.
-        def matcher = text =~ /set\(AUTOLINKED_LIBRARIES\s*([\s\S]*?)\)/
-        if (matcher.find()) {
-            def body = matcher.group(1)
-            def libs = body
-                    .split(/\s+/)
-                    .collect { it.trim() }
-                    .findAll { it && !it.startsWith("#") }
-
-            def replacement = new StringBuilder()
-            replacement.append("set(AUTOLINKED_LIBRARIES)\n")
-
-            libs.each { lib ->
-                replacement.append("if(TARGET ${lib})\n")
-                replacement.append("  list(APPEND AUTOLINKED_LIBRARIES ${lib})\n")
-                replacement.append("endif()\n")
-            }
-
-            text = text.replace(matcher.group(0), replacement.toString())
-        }
-
-        if (text == originalText) {
-            println("[patchAndroidAutolinkingCmake] no changes needed: ${cmakeFile}")
-        } else {
-            cmakeFile.text = text
-            println("[patchAndroidAutolinkingCmake] patched ${cmakeFile}")
-        }
+    if (!cmakeFile.exists()) {
+        throw new GradleException("[durqan-patched-autolinking] file not found: ${cmakeFile}")
     }
+
+    def text = cmakeFile.getText("UTF-8")
+
+    if (text.contains("# [durqan-patched-autolinking]")) {
+        println("[durqan-patched-autolinking] already patched ${cmakeFile}")
+        return
+    }
+
+    def skippedDirs = []
+
+    text = text.readLines().collect { line ->
+        def matcher = line =~ /^\s*add_subdirectory\("([^"]+)"\s+"?([^")]+)"?\)\s*$/
+
+        if (!matcher.matches()) {
+            return line
+        }
+
+        def sourceDir = matcher[0][1].replace('\\ ', ' ')
+        def cmakeLists = new File(sourceDir, "CMakeLists.txt")
+
+        if (cmakeLists.exists()) {
+            return line
+        }
+
+        skippedDirs.add(sourceDir)
+        return "# [durqan-patched-autolinking] skipped missing CMake dir: ${sourceDir}\n# ${line}"
+    }.join("\n")
+
+    def librariesMatcher = text =~ /set\(AUTOLINKED_LIBRARIES\s*([\s\S]*?)\)/
+    if (librariesMatcher.find()) {
+        def body = librariesMatcher.group(1)
+        def libs = body
+                .split(/\s+/)
+                .collect { it.trim() }
+                .findAll { it && !it.startsWith("#") }
+                .unique()
+
+        def replacement = new StringBuilder()
+        replacement.append("# [durqan-patched-autolinking] guarded AUTOLINKED_LIBRARIES\n")
+        replacement.append("set(AUTOLINKED_LIBRARIES)\n")
+
+        libs.each { lib ->
+            replacement.append("if(TARGET ${lib})\n")
+            replacement.append("  list(APPEND AUTOLINKED_LIBRARIES ${lib})\n")
+            replacement.append("endif()\n")
+        }
+
+        text = text.replace(librariesMatcher.group(0), replacement.toString())
+    }
+
+    cmakeFile.write(text + "\n", "UTF-8")
+    println("[durqan-patched-autolinking] patched ${cmakeFile}; skipped missing dirs: ${skippedDirs.size()}")
+    skippedDirs.each { println("[durqan-patched-autolinking] skipped: ${it}") }
 }
 
-afterEvaluate {
-    tasks.matching { task ->
+tasks.configureEach { task ->
+    if (
         task.name.startsWith("configureCMake") ||
         task.name.startsWith("externalNativeBuild")
-    }.configureEach {
-        dependsOn("patchAndroidAutolinkingCmake")
+    ) {
+        task.dependsOn("generateAutolinkingNewArchitectureFiles")
+        task.doFirst {
+            patchGeneratedAndroidAutolinkingCmake()
+        }
     }
 }
