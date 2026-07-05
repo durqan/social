@@ -1,5 +1,6 @@
 import java.net.URI
 import java.util.Locale
+import java.util.regex.Pattern
 
 apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
@@ -239,23 +240,24 @@ dependencies {
         implementation jscFlavor
     }
 }
-def patchGeneratedAndroidAutolinkingCmake = {
-    def cmakeFile = file("$buildDir/generated/autolinking/src/main/jni/Android-autolinking.cmake")
+def patchGeneratedAndroidAutolinkingFiles = {
+    def jniDir = file("$buildDir/generated/autolinking/src/main/jni")
+    def cmakeFile = file("${jniDir}/Android-autolinking.cmake")
+    def cppFile = file("${jniDir}/autolinking.cpp")
 
     if (!cmakeFile.exists()) {
-        throw new GradleException("[durqan-patched-autolinking] file not found: ${cmakeFile}")
+        throw new GradleException("[durqan-patched-autolinking] CMake file not found: ${cmakeFile}")
+    }
+    if (!cppFile.exists()) {
+        throw new GradleException("[durqan-patched-autolinking] C++ autolinking file not found: ${cppFile}")
     }
 
-    def text = cmakeFile.getText("UTF-8")
-
-    if (text.contains("# [durqan-patched-autolinking]")) {
-        println("[durqan-patched-autolinking] already patched ${cmakeFile}")
-        return
-    }
-
+    def cmakeText = cmakeFile.getText("UTF-8")
+    def cmakeOriginalText = cmakeText
     def skippedDirs = []
+    def skippedSpecs = [] as Set
 
-    text = text.readLines().collect { line ->
+    cmakeText = cmakeText.readLines().collect { line ->
         def matcher = line =~ /^\s*add_subdirectory\("([^"]+)"\s+"?([^")]+)"?\)\s*$/
 
         if (!matcher.matches()) {
@@ -263,6 +265,7 @@ def patchGeneratedAndroidAutolinkingCmake = {
         }
 
         def sourceDir = matcher[0][1].replace('\\ ', ' ')
+        def buildTarget = matcher[0][2].trim()
         def cmakeLists = new File(sourceDir, "CMakeLists.txt")
 
         if (cmakeLists.exists()) {
@@ -270,10 +273,15 @@ def patchGeneratedAndroidAutolinkingCmake = {
         }
 
         skippedDirs.add(sourceDir)
+
+        if (buildTarget.endsWith("_autolinked_build")) {
+            skippedSpecs.add(buildTarget.substring(0, buildTarget.length() - "_autolinked_build".length()))
+        }
+
         return "# [durqan-patched-autolinking] skipped missing CMake dir: ${sourceDir}\n# ${line}"
     }.join("\n")
 
-    def librariesMatcher = text =~ /set\(AUTOLINKED_LIBRARIES\s*([\s\S]*?)\)/
+    def librariesMatcher = cmakeText =~ /set\(AUTOLINKED_LIBRARIES\s*([\s\S]*?)\)/
     if (librariesMatcher.find()) {
         def body = librariesMatcher.group(1)
         def libs = body
@@ -292,22 +300,62 @@ def patchGeneratedAndroidAutolinkingCmake = {
             replacement.append("endif()\n")
         }
 
-        text = text.replace(librariesMatcher.group(0), replacement.toString())
+        cmakeText = cmakeText.replace(librariesMatcher.group(0), replacement.toString())
     }
 
-    cmakeFile.write(text + "\n", "UTF-8")
-    println("[durqan-patched-autolinking] patched ${cmakeFile}; skipped missing dirs: ${skippedDirs.size()}")
-    skippedDirs.each { println("[durqan-patched-autolinking] skipped: ${it}") }
+    if (cmakeText != cmakeOriginalText) {
+        cmakeFile.write(cmakeText + "\n", "UTF-8")
+        println("[durqan-patched-autolinking] patched ${cmakeFile}; skipped missing dirs: ${skippedDirs.size()}")
+        skippedDirs.each { println("[durqan-patched-autolinking] skipped dir: ${it}") }
+    } else {
+        println("[durqan-patched-autolinking] no CMake changes needed: ${cmakeFile}")
+    }
+
+    if (skippedSpecs.isEmpty()) {
+        println("[durqan-patched-autolinking] no missing codegen specs to remove from autolinking.cpp")
+        return
+    }
+
+    def cppText = cppFile.getText("UTF-8")
+    def cppOriginalText = cppText
+
+    skippedSpecs.each { spec ->
+        def quotedSpec = Pattern.quote(spec)
+
+        // Remove missing generated header, for example: #include <NitroModulesSpec.h>
+        cppText = cppText.replaceAll("(?m)^\\s*#include\\s+<${quotedSpec}\\.h>\\s*\\r?\\n?", "")
+
+        // Remove Java TurboModule provider block, for example:
+        // auto module_NitroModulesSpec = NitroModulesSpec_ModuleProvider(moduleName, params);
+        // if (module_NitroModulesSpec != nullptr) { return module_NitroModulesSpec; }
+        cppText = cppText.replaceAll(
+                "(?s)\\s*auto\\s+([A-Za-z0-9_]+)\\s*=\\s*${quotedSpec}_ModuleProvider\\s*\\([^;]*\\);\\s*if\\s*\\(\\s*\\1\\s*!=\\s*nullptr\\s*\\)\\s*\\{\\s*return\\s+\\1\\s*;\\s*\\}",
+                "\n"
+        )
+
+        // Remove any remaining single-line generated references to that missing spec.
+        cppText = cppText.readLines()
+                .findAll { !it.contains(spec) }
+                .join("\n")
+    }
+
+    if (cppText != cppOriginalText) {
+        cppFile.write(cppText + "\n", "UTF-8")
+        println("[durqan-patched-autolinking] patched ${cppFile}; removed missing specs: ${skippedSpecs.join(', ')}")
+    } else {
+        println("[durqan-patched-autolinking] no C++ autolinking changes needed: ${cppFile}")
+    }
 }
 
 tasks.configureEach { task ->
     if (
         task.name.startsWith("configureCMake") ||
-        task.name.startsWith("externalNativeBuild")
+        task.name.startsWith("externalNativeBuild") ||
+        task.name.startsWith("buildCMake")
     ) {
         task.dependsOn("generateAutolinkingNewArchitectureFiles")
         task.doFirst {
-            patchGeneratedAndroidAutolinkingCmake()
+            patchGeneratedAndroidAutolinkingFiles()
         }
     }
 }
