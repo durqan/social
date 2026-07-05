@@ -187,7 +187,13 @@ jobs:
         working-directory: mobile/android
         run: |
           chmod +x ./gradlew
-          ./gradlew assembleRelease
+
+          rm -rf app/.cxx
+          rm -rf app/build
+          rm -rf build
+          rm -rf ../node_modules/react-native-nitro-modules/android/build
+
+          ./gradlew :app:assembleRelease --no-configuration-cache
 
       - name: Upload release APK
         uses: actions/upload-artifact@v4
