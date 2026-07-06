@@ -252,7 +252,9 @@ ChatScrollView.displayName = 'ChatScrollView';
 
 const COMPOSER_INPUT_MIN_HEIGHT = 44;
 const COMPOSER_INPUT_MAX_HEIGHT = 112;
-const COMPOSER_ESTIMATED_DOCK_HEIGHT = 80;
+const COMPOSER_ESTIMATED_DOCK_HEIGHT = 24;
+const MESSAGE_LIST_BOTTOM_GAP = 24;
+const SCROLL_TO_LATEST_BUTTON_GAP = 18;
 const MESSAGE_PAGE_SIZE = 50;
 const LOAD_OLDER_THRESHOLD = 56;
 const NEAR_LATEST_THRESHOLD = 96;
@@ -482,6 +484,10 @@ export default function ChatScreen({ route, navigation }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [copyNotice, setCopyNotice] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
+  const messageListBottomPadding =
+    COMPOSER_ESTIMATED_DOCK_HEIGHT + insets.bottom + MESSAGE_LIST_BOTTOM_GAP;
+  const scrollToLatestBottomOffset =
+    COMPOSER_ESTIMATED_DOCK_HEIGHT + insets.bottom + SCROLL_TO_LATEST_BUTTON_GAP;
   const [e2eeState, setE2eeState] = useState<ChatE2EEState>({
     loading: true,
     selfEnabled: false,
@@ -3425,6 +3431,7 @@ export default function ChatScreen({ route, navigation }: Props) {
               contentContainerStyle={[
                 styles.messageList,
                 styles.transparentBackground,
+                { paddingBottom: messageListBottomPadding },
                 messages.length === 0 && styles.emptyMessageList,
               ]}
               onContentSizeChange={handleMessageListContentSizeChange}
@@ -3454,7 +3461,7 @@ export default function ChatScreen({ route, navigation }: Props) {
                 style={[
                   styles.scrollToLatestButton,
                   themed.scrollToLatestButton,
-                  { bottom: 10 },
+                  { bottom: scrollToLatestBottomOffset },
                   newMessagesBelow && styles.scrollToLatestButtonNew,
                   newMessagesBelow && themed.scrollToLatestButtonNew,
                 ]}
@@ -3828,12 +3835,12 @@ export default function ChatScreen({ route, navigation }: Props) {
 
             <View style={[styles.composerInputContainer, themed.composerInputContainer]}>
               <LiquidGlassView
-                  pointerEvents="none"
                   style={styles.composerBlur}
-                  glassType={themeColors.isDark ? 'ultraThin' : 'regular' as any}
+                  glassType="regular"
                   glassTintColor={themeColors.isDark ? '#1C1C22' : '#FFFFFF'}
-                  glassOpacity={0.8}
-                  blurAmount={30}
+                  glassOpacity={themeColors.isDark ? 0.64 : 0.78}
+                  isInteractive={false}
+                  ignoreSafeArea={false}
               />
 
               <TextInput

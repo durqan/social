@@ -49,13 +49,15 @@ function AppInner() {
 function App() {
     return (
         <SafeAreaProvider>
-            <KeyboardProvider statusBarTranslucent navigationBarTranslucent>
-                <NavigationContainer>
-                    <ThemeProvider>
-                        <AppInner/>
-                    </ThemeProvider>
-                </NavigationContainer>
-            </KeyboardProvider>
+            <GestureHandlerRootView style={{flex: 1}}>
+                <KeyboardProvider statusBarTranslucent navigationBarTranslucent>
+                    <NavigationContainer>
+                        <ThemeProvider>
+                            <AppInner/>
+                        </ThemeProvider>
+                    </NavigationContainer>
+                </KeyboardProvider>
+            </GestureHandlerRootView>
         </SafeAreaProvider>
     );
 }
