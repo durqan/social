@@ -2,7 +2,6 @@ import React from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  NavigationContainer,
   getFocusedRouteNameFromRoute,
 } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -13,7 +12,6 @@ import type {
 } from '@react-navigation/native-stack';
 import { enableScreens } from 'react-native-screens';
 import {
-  Bell,
   ChevronLeft,
   Home,
   Menu,
@@ -26,15 +24,10 @@ import {
 
 import { useAppLifecycle } from '../context/AppLifecycleContext';
 import { useAuth } from '../context/AuthContext';
-import { useNotifications } from '../context/NotificationsContext';
 import { useUnread } from '../context/UnreadContext';
 import { useCall } from '../context/CallContext';
 import { IconButton } from '../components/IconButton';
 import { callLog } from '../utils/callDiagnostics';
-import {
-  flushPendingNotificationNavigation,
-  navigationRef,
-} from '../notifications/navigation';
 import { useThemeColors } from '../theme/ThemeContext';
 import type { ThemeColors } from '../theme/themes';
 import { radius, spacing, typography } from '../theme/layout';
@@ -48,7 +41,6 @@ import ProfileScreen from '../screens/main/ProfileScreen';
 import FriendsScreen from '../screens/main/FriendsScreen';
 import ChatListScreen from '../screens/main/ChatListScreen';
 import ChatScreen from '../screens/main/ChatScreen';
-import NotificationsScreen from '../screens/main/NotificationsScreen';
 import SettingsScreen from '../screens/main/SettingsScreen';
 import UserProfileScreen from '../screens/main/UserProfileScreen';
 import UserSearchScreen from '../screens/main/UserSearchScreen';
@@ -65,22 +57,6 @@ const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const ChatStack = createNativeStackNavigator<ChatStackParamList>();
 const MainStack = createNativeStackNavigator<MainStackParamList>();
 const MainTabs = createBottomTabNavigator<MainTabParamList>();
-const linking = {
-  prefixes: ['social://'],
-  config: {
-    screens: {
-      Login: 'login',
-      Register: 'register',
-      ForgotPassword: 'forgot-password',
-      // TODO: Add universal/app links for web reset URLs when mobile deep linking is configured.
-      ResetPassword: 'reset-password',
-      VerifyEmail: 'verify-email/:token',
-      MainTabs: '',
-      UserProfile: 'users/:userId',
-      UserSearch: 'users/search',
-    },
-  },
-};
 
 function AuthNavigator() {
   const colors = useThemeColors();
@@ -231,7 +207,10 @@ function ChatNavigator() {
       <ChatStack.Screen
         name="ChatList"
         component={ChatListScreen}
-        options={{ title: 'Чаты' }}
+        options={{
+          title: '',
+          headerTitle: () => null,
+        }}
       />
       <ChatStack.Screen
         name="Chat"
@@ -346,16 +325,6 @@ function ChatsTabIcon({ color, focused }: { color: string; focused: boolean }) {
   return <TabIcon color={color} focused={focused} Icon={MessageCircle} />;
 }
 
-function NotificationsTabIcon({
-  color,
-  focused,
-}: {
-  color: string;
-  focused: boolean;
-}) {
-  return <TabIcon color={color} focused={focused} Icon={Bell} />;
-}
-
 function SettingsTabIcon({
   color,
   focused,
@@ -368,7 +337,6 @@ function SettingsTabIcon({
 
 function MainTabsNavigator() {
   const { unreadCount } = useUnread();
-  const { unreadNotificationCount } = useNotifications();
   const colors = useThemeColors();
   const insets = useSafeAreaInsets();
   const styles = createStyles(colors);
@@ -403,7 +371,8 @@ function MainTabsNavigator() {
         name="Home"
         component={HomeScreen}
         options={{
-          title: 'Главная',
+          title: '',
+          headerTitle: () => null,
           tabBarLabel: 'Главная',
           tabBarIcon: HomeTabIcon,
         }}
@@ -412,7 +381,8 @@ function MainTabsNavigator() {
         name="Profile"
         component={ProfileScreen}
         options={{
-          title: 'Профиль',
+          title: '',
+          headerTitle: () => null,
           tabBarLabel: 'Профиль',
           tabBarIcon: ProfileTabIcon,
         }}
@@ -421,7 +391,8 @@ function MainTabsNavigator() {
         name="Friends"
         component={FriendsScreen}
         options={{
-          title: 'Друзья',
+          title: '',
+          headerTitle: () => null,
           tabBarLabel: 'Друзья',
           tabBarIcon: FriendsTabIcon,
         }}
@@ -442,22 +413,12 @@ function MainTabsNavigator() {
         }}
       />
       <MainTabs.Screen
-        name="Notifications"
-        component={NotificationsScreen}
-        options={{
-          title: 'Уведомления',
-          tabBarLabel: 'Увед.',
-          tabBarIcon: NotificationsTabIcon,
-          tabBarBadge:
-            unreadNotificationCount > 0 ? unreadNotificationCount : undefined,
-        }}
-      />
-      <MainTabs.Screen
         name="Settings"
         component={SettingsScreen}
         options={{
-          title: 'Настройки',
-          tabBarLabel: 'Еще',
+          title: '',
+          headerTitle: () => null,
+          tabBarLabel: 'Настройки',
           tabBarIcon: SettingsTabIcon,
         }}
       />
@@ -507,13 +468,7 @@ export function AppNavigator() {
   return (
     <View style={styles.root}>
       <ConnectionBanner />
-      <NavigationContainer
-        ref={navigationRef}
-        linking={linking}
-        onReady={flushPendingNotificationNavigation}
-      >
-        {!user ? <AuthNavigator /> : <MainNavigator />}
-      </NavigationContainer>
+      {!user ? <AuthNavigator /> : <MainNavigator />}
     </View>
   );
 }

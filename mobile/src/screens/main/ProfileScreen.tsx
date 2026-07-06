@@ -1,41 +1,37 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { launchImageLibrary } from 'react-native-image-picker';
 import type { Asset } from 'react-native-image-picker';
 import LinearGradient from 'react-native-linear-gradient';
 import {
   Camera,
-  Mail,
   Minus,
   Move,
   Plus,
   Save,
-  UserRound,
+  X,
 } from 'lucide-react-native';
 
-import { isEmailVerified } from '../../api/auth';
 import {
   AVATAR_IMAGE_MAX_BYTES,
   AVATAR_IMAGE_MIME_TYPES,
-} from '../../config/env';
+} from '@social/shared';
 import { getApiErrorMessage } from '../../api/http';
 import { userApi } from '../../api/users';
 import { AppButton } from '../../components/AppButton';
 import { EmailVerificationNotice } from '../../components/EmailVerificationNotice';
-import {
-  ErrorBanner,
-  SuccessBanner,
-} from '../../components/Feedback';
+import { ErrorBanner, SuccessBanner } from '../../components/Feedback';
+import { Card } from '../../components/Layout';
 import { ProfileSkeleton } from '../../components/Skeleton';
 import { Screen } from '../../components/Screen';
 import { TextField } from '../../components/TextField';
 import { useAuth } from '../../context/AuthContext';
 import { useThemeColors } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/themes';
-import { radius, spacing, typography } from '../../theme/layout';
+import { radius, spacing, touchTarget, typography } from '../../theme/layout';
 import { avatarImageStyle, buildAvatarUrl } from '../../utils/avatar';
-import { formatDateTime } from '../../utils/format';
+import { lightHaptic } from '../../utils/haptics';
 import { useAppResumeEffect } from '../../utils/useAppResumeEffect';
 
 type ProfileForm = {
@@ -61,6 +57,7 @@ export default function ProfileScreen() {
   const [avatarX, setAvatarX] = useState(50);
   const [avatarY, setAvatarY] = useState(50);
   const [avatarScale, setAvatarScale] = useState(1);
+  const [avatarEditorOpen, setAvatarEditorOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
@@ -148,6 +145,7 @@ export default function ProfileScreen() {
           ? 'Профиль сохранен. Новый email нужно будет подтвердить.'
           : 'Профиль сохранен.',
       );
+      setAvatarEditorOpen(false);
     } catch (apiError) {
       setError(getApiErrorMessage(apiError));
     } finally {
@@ -191,7 +189,8 @@ export default function ProfileScreen() {
     try {
       await userApi.uploadAvatar(user.id, image);
       await refreshUser();
-      setSuccess('Аватар обновлен.');
+      setSuccess('Аватар обновлен. Положение можно настроить в редакторе.');
+      setAvatarEditorOpen(true);
     } catch (apiError) {
       setError(getApiErrorMessage(apiError));
     } finally {
@@ -227,9 +226,13 @@ export default function ProfileScreen() {
         />
         <Pressable
           accessibilityRole="button"
-          style={styles.mainAvatar}
+          accessibilityLabel="Открыть редактор аватара"
+          style={({ pressed }) => [styles.mainAvatar, pressed && styles.pressed]}
           disabled={avatarUploading}
-          onPress={handlePickAvatar}
+          onPress={() => {
+            lightHaptic();
+            setAvatarEditorOpen(true);
+          }}
         >
           {avatarUrl ? (
             <Image
@@ -260,14 +263,18 @@ export default function ProfileScreen() {
         </View>
         <Pressable
           accessibilityRole="button"
-          style={styles.changePhotoButton}
+          style={({ pressed }) => [
+            styles.changePhotoButton,
+            pressed && styles.pressed,
+          ]}
           disabled={avatarUploading}
-          onPress={handlePickAvatar}
+          onPress={() => {
+            lightHaptic();
+            setAvatarEditorOpen(true);
+          }}
         >
-          <Camera color={colors.accent} size={16} strokeWidth={2.5} />
-          <Text style={styles.changePhotoText}>
-            {avatarUploading ? 'Загрузка...' : 'Изменить фото'}
-          </Text>
+          <Camera color={colors.accentStrong} size={16} strokeWidth={2.5} />
+          <Text style={styles.changePhotoText}>Изменить фото</Text>
         </Pressable>
       </View>
 
@@ -275,7 +282,7 @@ export default function ProfileScreen() {
       <SuccessBanner message={success} />
       <EmailVerificationNotice />
 
-      <View style={styles.card}>
+      <Card style={styles.card}>
         <View style={styles.cardHeaderRow}>
           <Text style={styles.sectionTitle}>О себе</Text>
           <Text style={styles.counter}>{form.bio.length}/160</Text>
@@ -289,104 +296,9 @@ export default function ProfileScreen() {
           placeholder="Расскажите пару слов о себе"
           style={styles.bioInput}
         />
-      </View>
+      </Card>
 
-      <View style={styles.card}>
-        <View style={styles.cardHeaderRow}>
-          <View style={styles.titleWithIcon}>
-            <View style={styles.softIcon}>
-              <Move color={colors.accent} size={18} strokeWidth={2.5} />
-            </View>
-            <Text style={styles.sectionTitle}>Аватар</Text>
-          </View>
-          <Text style={styles.helperText}>двигайте и масштабируйте</Text>
-        </View>
-
-        <View style={styles.avatarEditorRow}>
-          <View style={styles.cropArea}>
-            <View style={styles.gridLineVertical} />
-            <View style={styles.gridLineHorizontal} />
-            <View style={styles.cropAvatar}>
-              {avatarUrl ? (
-                <Image
-                  source={{ uri: avatarUrl }}
-                  style={[
-                    styles.cropAvatarImage,
-                    avatarImageStyle({
-                      size: 112,
-                      positionX: avatarX,
-                      positionY: avatarY,
-                      scale: avatarScale,
-                    }),
-                  ]}
-                />
-              ) : (
-                <Text style={styles.cropAvatarText}>{initial}</Text>
-              )}
-            </View>
-          </View>
-          <View style={styles.positionControls}>
-            <NudgeButton
-              label="Вверх"
-              onPress={() => setAvatarY(value => clamp(value - 5, 0, 100))}
-            >
-              ↑
-            </NudgeButton>
-            <View style={styles.sideControlsRow}>
-              <NudgeButton
-                label="Влево"
-                onPress={() => setAvatarX(value => clamp(value - 5, 0, 100))}
-              >
-                ←
-              </NudgeButton>
-              <NudgeButton
-                label="Вправо"
-                onPress={() => setAvatarX(value => clamp(value + 5, 0, 100))}
-              >
-                →
-              </NudgeButton>
-            </View>
-            <NudgeButton
-              label="Вниз"
-              onPress={() => setAvatarY(value => clamp(value + 5, 0, 100))}
-            >
-              ↓
-            </NudgeButton>
-          </View>
-        </View>
-
-        <View style={styles.scaleRow}>
-          <Pressable
-            accessibilityRole="button"
-            style={styles.scaleButton}
-            onPress={() =>
-              setAvatarScale(value => round(clamp(value - 0.1, 1, 3)))
-            }
-          >
-            <Minus color={colors.text} size={17} strokeWidth={2.5} />
-          </Pressable>
-          <View style={styles.scaleTrack}>
-            <View
-              style={[
-                styles.scaleFill,
-                { width: `${((avatarScale - 1) / 2) * 100}%` },
-              ]}
-            />
-          </View>
-          <Pressable
-            accessibilityRole="button"
-            style={styles.scaleButton}
-            onPress={() =>
-              setAvatarScale(value => round(clamp(value + 0.1, 1, 3)))
-            }
-          >
-            <Plus color={colors.text} size={17} strokeWidth={2.5} />
-          </Pressable>
-          <Text style={styles.scaleValue}>{avatarScale.toFixed(1)}x</Text>
-        </View>
-      </View>
-
-      <View style={styles.card}>
+      <Card style={styles.card}>
         <Text style={styles.sectionTitle}>Профиль</Text>
         <TextField
           label="Имя"
@@ -408,20 +320,7 @@ export default function ProfileScreen() {
             После смены email нужно будет подтвердить новый адрес.
           </Text>
         ) : null}
-      </View>
-
-      <View style={styles.infoGrid}>
-        <InfoTile
-          icon={Mail}
-          label="Email"
-          value={isEmailVerified(user) ? 'Подтвержден' : 'Не подтвержден'}
-        />
-        <InfoTile
-          icon={UserRound}
-          label="С нами"
-          value={formatDateTime(user.createdAt ?? user.created_at)}
-        />
-      </View>
+      </Card>
 
       <AppButton
         title="Сохранить изменения"
@@ -430,14 +329,32 @@ export default function ProfileScreen() {
         onPress={handleSave}
         style={styles.saveButton}
       />
+
+      <AvatarEditorSheet
+        visible={avatarEditorOpen}
+        avatarUrl={avatarUrl}
+        initial={initial}
+        avatarX={avatarX}
+        avatarY={avatarY}
+        avatarScale={avatarScale}
+        uploading={avatarUploading}
+        saving={saving}
+        onClose={() => setAvatarEditorOpen(false)}
+        onPickAvatar={handlePickAvatar}
+        onSave={handleSave}
+        onChangeX={setAvatarX}
+        onChangeY={setAvatarY}
+        onChangeScale={setAvatarScale}
+      />
     </Screen>
   );
 }
 
 function assetToAvatarImage(asset?: Asset) {
   if (!asset?.uri || !asset.type) return null;
-  if (!(AVATAR_IMAGE_MIME_TYPES as readonly string[]).includes(asset.type))
+  if (!(AVATAR_IMAGE_MIME_TYPES as readonly string[]).includes(asset.type)) {
     return null;
+  }
   return {
     uri: asset.uri,
     type: asset.type,
@@ -446,34 +363,179 @@ function assetToAvatarImage(asset?: Asset) {
   };
 }
 
-type InfoIcon = React.ComponentType<{
-  color?: string;
-  size?: number;
-  strokeWidth?: number;
-}>;
-
-function InfoTile({
-  icon: Icon,
-  label,
-  value,
+function AvatarEditorSheet({
+  visible,
+  avatarUrl,
+  initial,
+  avatarX,
+  avatarY,
+  avatarScale,
+  uploading,
+  saving,
+  onClose,
+  onPickAvatar,
+  onSave,
+  onChangeX,
+  onChangeY,
+  onChangeScale,
 }: {
-  icon: InfoIcon;
-  label: string;
-  value?: string;
+  visible: boolean;
+  avatarUrl: string | null;
+  initial: string;
+  avatarX: number;
+  avatarY: number;
+  avatarScale: number;
+  uploading: boolean;
+  saving: boolean;
+  onClose: () => void;
+  onPickAvatar: () => void;
+  onSave: () => void;
+  onChangeX: React.Dispatch<React.SetStateAction<number>>;
+  onChangeY: React.Dispatch<React.SetStateAction<number>>;
+  onChangeScale: React.Dispatch<React.SetStateAction<number>>;
 }) {
   const colors = useThemeColors();
   const styles = createStyles(colors);
 
   return (
-    <View style={styles.infoTile}>
-      <View style={styles.infoIcon}>
-        <Icon color={colors.accent} size={18} strokeWidth={2.4} />
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent
+      statusBarTranslucent
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalRoot}>
+        <Pressable style={styles.modalBackdrop} onPress={onClose} />
+        <View style={styles.sheet}>
+          <View style={styles.sheetHandle} />
+          <View style={styles.sheetHeader}>
+            <View style={styles.titleWithIcon}>
+              <View style={styles.softIcon}>
+                <Move color={colors.accentStrong} size={18} strokeWidth={2.5} />
+              </View>
+              <View>
+                <Text style={styles.sectionTitle}>Редактор аватара</Text>
+                <Text style={styles.helperText}>двигайте и масштабируйте</Text>
+              </View>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Закрыть редактор аватара"
+              style={styles.closeButton}
+              onPress={onClose}
+            >
+              <X color={colors.text} size={20} strokeWidth={2.5} />
+            </Pressable>
+          </View>
+
+          <View style={styles.avatarEditorRow}>
+            <View style={styles.cropArea}>
+              <View style={styles.gridLineVertical} />
+              <View style={styles.gridLineHorizontal} />
+              <View style={styles.cropAvatar}>
+                {avatarUrl ? (
+                  <Image
+                    source={{ uri: avatarUrl }}
+                    style={[
+                      styles.cropAvatarImage,
+                      avatarImageStyle({
+                        size: 120,
+                        positionX: avatarX,
+                        positionY: avatarY,
+                        scale: avatarScale,
+                      }),
+                    ]}
+                  />
+                ) : (
+                  <Text style={styles.cropAvatarText}>{initial}</Text>
+                )}
+              </View>
+            </View>
+            <View style={styles.positionControls}>
+              <NudgeButton
+                label="Вверх"
+                onPress={() => onChangeY(value => clamp(value - 5, 0, 100))}
+              >
+                ↑
+              </NudgeButton>
+              <View style={styles.sideControlsRow}>
+                <NudgeButton
+                  label="Влево"
+                  onPress={() => onChangeX(value => clamp(value - 5, 0, 100))}
+                >
+                  ←
+                </NudgeButton>
+                <NudgeButton
+                  label="Вправо"
+                  onPress={() => onChangeX(value => clamp(value + 5, 0, 100))}
+                >
+                  →
+                </NudgeButton>
+              </View>
+              <NudgeButton
+                label="Вниз"
+                onPress={() => onChangeY(value => clamp(value + 5, 0, 100))}
+              >
+                ↓
+              </NudgeButton>
+            </View>
+          </View>
+
+          <View style={styles.scaleRow}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Уменьшить аватар"
+              style={styles.scaleButton}
+              onPress={() => {
+                lightHaptic();
+                onChangeScale(value => round(clamp(value - 0.1, 1, 3)));
+              }}
+            >
+              <Minus color={colors.text} size={17} strokeWidth={2.5} />
+            </Pressable>
+            <View style={styles.scaleTrack}>
+              <View
+                style={[
+                  styles.scaleFill,
+                  { width: `${((avatarScale - 1) / 2) * 100}%` },
+                ]}
+              />
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Увеличить аватар"
+              style={styles.scaleButton}
+              onPress={() => {
+                lightHaptic();
+                onChangeScale(value => round(clamp(value + 0.1, 1, 3)));
+              }}
+            >
+              <Plus color={colors.text} size={17} strokeWidth={2.5} />
+            </Pressable>
+            <Text style={styles.scaleValue}>{avatarScale.toFixed(1)}x</Text>
+          </View>
+
+          <View style={styles.sheetActions}>
+            <AppButton
+              title={uploading ? 'Загрузка...' : 'Выбрать фото'}
+              variant="secondary"
+              icon={Camera}
+              loading={uploading}
+              onPress={onPickAvatar}
+              style={styles.sheetButton}
+            />
+            <AppButton
+              title="Сохранить"
+              icon={Save}
+              loading={saving}
+              onPress={onSave}
+              style={styles.sheetButton}
+            />
+          </View>
+        </View>
       </View>
-      <Text style={styles.infoLabel}>{label}</Text>
-      <Text style={styles.infoValue} numberOfLines={1}>
-        {value || 'Нет данных'}
-      </Text>
-    </View>
+    </Modal>
   );
 }
 
@@ -482,7 +544,7 @@ function NudgeButton({
   label,
   onPress,
 }: {
-  children: string;
+  children: React.ReactNode;
   label: string;
   onPress: () => void;
 }) {
@@ -492,8 +554,11 @@ function NudgeButton({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
-      style={styles.nudgeButton}
-      onPress={onPress}
+      style={({ pressed }) => [styles.nudgeButton, pressed && styles.pressed]}
+      onPress={() => {
+        lightHaptic();
+        onPress();
+      }}
     >
       <Text style={styles.nudgeText}>{children}</Text>
     </Pressable>
@@ -502,20 +567,21 @@ function NudgeButton({
 
 const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
-    screenContent: { gap: 16 },
+    screenContent: { gap: spacing.lg },
+    pressed: { opacity: 0.82, transform: [{ scale: 0.99 }] },
     profileTopCard: {
       alignItems: 'center',
       borderWidth: 1,
       borderColor: colors.borderStrong,
-      borderRadius: 30,
+      borderRadius: radius.xxl,
       backgroundColor: colors.card,
       padding: spacing.xl,
       overflow: 'hidden',
       shadowColor: colors.shadow,
-      shadowOpacity: colors.isDark ? 0.38 : 0.12,
+      shadowOpacity: colors.isDark ? 0.38 : 0.14,
       shadowRadius: 30,
       shadowOffset: { width: 0, height: 16 },
-      elevation: colors.isDark ? 6 : 3,
+      elevation: colors.isDark ? 6 : 4,
     },
     profileCover: {
       position: 'absolute',
@@ -523,7 +589,7 @@ const createStyles = (colors: ThemeColors) =>
       left: 0,
       right: 0,
       height: 122,
-      opacity: colors.isDark ? 0.72 : 0.52,
+      opacity: colors.isDark ? 0.72 : 0.56,
     },
     mainAvatar: {
       width: 88,
@@ -558,9 +624,9 @@ const createStyles = (colors: ThemeColors) =>
       borderColor: colors.card,
     },
     name: {
-      marginTop: 12,
-      ...typography.h3,
-      color: colors.text,
+      marginTop: spacing.md,
+      ...typography.subtitle,
+      color: colors.textPrimary,
       textAlign: 'center',
       zIndex: 1,
     },
@@ -579,56 +645,117 @@ const createStyles = (colors: ThemeColors) =>
     },
     onlineText: { ...typography.tiny, color: colors.muted, fontWeight: '700' },
     changePhotoButton: {
-      marginTop: 14,
+      minHeight: touchTarget.sm,
+      marginTop: spacing.md,
       flexDirection: 'row',
       alignItems: 'center',
       gap: 7,
       borderWidth: 1,
       borderColor: colors.accentBorder,
       borderRadius: radius.pill,
-      paddingHorizontal: 14,
-      paddingVertical: 9,
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.sm,
       backgroundColor: colors.accentSoft,
       zIndex: 1,
     },
-    changePhotoText: { color: colors.accent, fontSize: 13, fontWeight: '900' },
+    changePhotoText: {
+      color: colors.accentStrong,
+      ...typography.caption,
+      fontWeight: '900',
+    },
     card: {
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 24,
-      backgroundColor: colors.card,
-      padding: spacing.lg,
       gap: spacing.md,
-      shadowColor: colors.shadow,
-      shadowOpacity: colors.isDark ? 0.22 : 0.06,
-      shadowRadius: 18,
-      shadowOffset: { width: 0, height: 10 },
-      elevation: colors.isDark ? 3 : 1,
+      borderRadius: radius.xl,
     },
     cardHeaderRow: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      gap: 10,
+      gap: spacing.sm,
     },
-    titleWithIcon: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+    titleWithIcon: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
     softIcon: {
-      width: 34,
-      height: 34,
-      borderRadius: 17,
+      width: 36,
+      height: 36,
+      borderRadius: radius.pill,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: colors.accentSoft,
     },
-    sectionTitle: { ...typography.h3, color: colors.text },
+    sectionTitle: { ...typography.subtitle, color: colors.textPrimary },
     counter: { ...typography.tiny, color: colors.soft, fontWeight: '800' },
     helperText: {
-      ...typography.tiny,
+      ...typography.caption,
       color: colors.muted,
-      flexShrink: 1,
-      textAlign: 'right',
+      marginTop: 1,
     },
     bioInput: { minHeight: 82, textAlignVertical: 'top' },
+    warningText: {
+      ...typography.caption,
+      color: colors.text,
+      borderRadius: radius.lg,
+      backgroundColor: colors.warningSoft,
+      padding: spacing.md,
+    },
+    infoGrid: { flexDirection: 'row', gap: spacing.md },
+    infoTile: {
+      flex: 1,
+      minHeight: 86,
+      alignItems: 'flex-start',
+    },
+    saveButton: { marginTop: -2, borderRadius: radius.lg },
+    modalRoot: {
+      flex: 1,
+      justifyContent: 'flex-end',
+    },
+    modalBackdrop: {
+      position: 'absolute',
+      top: 0,
+      right: 0,
+      bottom: 0,
+      left: 0,
+      backgroundColor: colors.overlay,
+    },
+    sheet: {
+      borderTopLeftRadius: radius.xxl,
+      borderTopRightRadius: radius.xxl,
+      backgroundColor: colors.card,
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.sm,
+      paddingBottom: spacing.xl,
+      gap: spacing.lg,
+      borderWidth: 1,
+      borderColor: colors.borderStrong,
+      shadowColor: colors.shadow,
+      shadowOpacity: colors.isDark ? 0.48 : 0.2,
+      shadowRadius: 30,
+      shadowOffset: { width: 0, height: -14 },
+      elevation: 16,
+    },
+    sheetHandle: {
+      alignSelf: 'center',
+      width: 42,
+      height: 5,
+      borderRadius: radius.pill,
+      backgroundColor: colors.borderStrong,
+      marginBottom: spacing.xs,
+    },
+    sheetHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: spacing.md,
+    },
+    closeButton: {
+      width: touchTarget.sm,
+      height: touchTarget.sm,
+      borderRadius: radius.pill,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.cardMuted,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
     avatarEditorRow: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -636,19 +763,14 @@ const createStyles = (colors: ThemeColors) =>
     },
     cropArea: {
       flex: 1,
-      minHeight: 150,
-      borderRadius: 24,
+      minHeight: 166,
+      borderRadius: radius.xl,
       alignItems: 'center',
       justifyContent: 'center',
       overflow: 'hidden',
       backgroundColor: colors.surfaceMuted,
       borderWidth: 1,
       borderColor: colors.border,
-      shadowColor: colors.shadow,
-      shadowOpacity: colors.isDark ? 0.18 : 0.06,
-      shadowRadius: 14,
-      shadowOffset: { width: 0, height: 7 },
-      elevation: colors.isDark ? 0 : 1,
     },
     gridLineVertical: {
       position: 'absolute',
@@ -667,9 +789,9 @@ const createStyles = (colors: ThemeColors) =>
       backgroundColor: colors.borderStrong,
     },
     cropAvatar: {
-      width: 112,
-      height: 112,
-      borderRadius: 56,
+      width: 120,
+      height: 120,
+      borderRadius: 60,
       alignItems: 'center',
       justifyContent: 'center',
       overflow: 'hidden',
@@ -677,14 +799,14 @@ const createStyles = (colors: ThemeColors) =>
       borderWidth: 4,
       borderColor: colors.borderStrong,
     },
-    cropAvatarImage: { width: 112, height: 112 },
+    cropAvatarImage: { width: 120, height: 120 },
     cropAvatarText: { color: colors.accent, fontSize: 40, fontWeight: '900' },
-    positionControls: { width: 94, alignItems: 'center', gap: 8 },
-    sideControlsRow: { flexDirection: 'row', gap: 8 },
+    positionControls: { width: 96, alignItems: 'center', gap: spacing.sm },
+    sideControlsRow: { flexDirection: 'row', gap: spacing.sm },
     nudgeButton: {
-      width: 42,
-      height: 42,
-      borderRadius: 21,
+      width: touchTarget.sm,
+      height: touchTarget.sm,
+      borderRadius: radius.pill,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: colors.cardMuted,
@@ -697,11 +819,11 @@ const createStyles = (colors: ThemeColors) =>
       elevation: 2,
     },
     nudgeText: { color: colors.text, fontSize: 17, fontWeight: '900' },
-    scaleRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+    scaleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
     scaleButton: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
+      width: touchTarget.sm,
+      height: touchTarget.sm,
+      borderRadius: radius.pill,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: colors.surfaceMuted,
@@ -711,60 +833,18 @@ const createStyles = (colors: ThemeColors) =>
     scaleTrack: {
       flex: 1,
       height: 6,
-      borderRadius: 999,
+      borderRadius: radius.pill,
       backgroundColor: colors.surfaceMuted,
       overflow: 'hidden',
     },
     scaleFill: { height: '100%', backgroundColor: colors.accent },
     scaleValue: {
       width: 44,
-      color: colors.text,
-      fontSize: 13,
+      color: colors.textPrimary,
+      ...typography.caption,
       fontWeight: '900',
       textAlign: 'right',
     },
-    warningText: {
-      fontSize: 13,
-      lineHeight: 18,
-      color: colors.text,
-      borderRadius: radius.lg,
-      backgroundColor: colors.warningSoft,
-      padding: spacing.md,
-    },
-    infoGrid: { flexDirection: 'row', gap: spacing.md },
-    infoTile: {
-      flex: 1,
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 24,
-      backgroundColor: colors.card,
-      padding: spacing.md,
-      gap: 7,
-      shadowColor: colors.shadow,
-      shadowOpacity: colors.isDark ? 0.2 : 0.05,
-      shadowRadius: 16,
-      shadowOffset: { width: 0, height: 9 },
-      elevation: colors.isDark ? 3 : 1,
-    },
-    infoIcon: {
-      width: 34,
-      height: 34,
-      borderRadius: 17,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: colors.accentSoft,
-    },
-    infoLabel: {
-      fontSize: 12,
-      lineHeight: 16,
-      color: colors.muted,
-      fontWeight: '800',
-    },
-    infoValue: {
-      fontSize: 14,
-      lineHeight: 18,
-      color: colors.text,
-      fontWeight: '800',
-    },
-    saveButton: { marginTop: -2, borderRadius: 18 },
+    sheetActions: { flexDirection: 'row', gap: spacing.sm },
+    sheetButton: { flex: 1, borderRadius: radius.lg },
   });

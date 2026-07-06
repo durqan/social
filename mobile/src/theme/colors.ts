@@ -1,11 +1,4 @@
 import { defaultThemeId, themes } from './themes';
+export { spacing, radius, typography } from './layout';
 
 export const colors = themes[defaultThemeId];
-
-export const spacing = {
-  xs: 4,
-  sm: 8,
-  md: 12,
-  lg: 16,
-  xl: 24,
-};

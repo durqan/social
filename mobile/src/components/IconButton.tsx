@@ -3,14 +3,16 @@ import {
   ActivityIndicator,
   Pressable,
   StyleSheet,
+  type GestureResponderEvent,
   type PressableProps,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
 
 import { useThemeColors } from '../theme/ThemeContext';
-import { radius } from '../theme/layout';
+import { radius, touchTarget } from '../theme/layout';
 import type { ThemeColors } from '../theme/themes';
+import { lightHaptic } from '../utils/haptics';
 
 type IconButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
 type IconButtonSize = 'sm' | 'md' | 'lg';
@@ -27,6 +29,7 @@ type IconButtonProps = Omit<PressableProps, 'style'> & {
   size?: IconButtonSize;
   loading?: boolean;
   selected?: boolean;
+  haptic?: boolean;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -38,7 +41,9 @@ export function IconButton({
   loading = false,
   selected = false,
   disabled,
+  haptic = true,
   style,
+  onPress,
   ...props
 }: IconButtonProps) {
   const colors = useThemeColors();
@@ -48,11 +53,19 @@ export function IconButton({
     variant === 'primary'
       ? colors.white
       : variant === 'danger'
-      ? colors.danger
-      : selected
-      ? colors.accentStrong
-      : colors.text;
+        ? colors.danger
+        : selected
+          ? colors.accentStrong
+          : colors.text;
   const iconSize = size === 'sm' ? 17 : size === 'lg' ? 23 : 20;
+
+  function handlePress(event: GestureResponderEvent) {
+    if (haptic) {
+      lightHaptic();
+    }
+
+    onPress?.(event);
+  }
 
   return (
     <Pressable
@@ -60,6 +73,7 @@ export function IconButton({
       accessibilityLabel={label}
       accessibilityState={{ disabled: isDisabled, selected }}
       disabled={isDisabled}
+      onPress={handlePress}
       style={({ pressed }) => [
         styles.base,
         styles[size],
@@ -93,18 +107,18 @@ const createStyles = (colors: ThemeColors) =>
       shadowColor: colors.shadow,
     },
     sm: {
-      width: 36,
-      height: 36,
+      width: touchTarget.sm,
+      height: touchTarget.sm,
       borderRadius: radius.pill,
     },
     md: {
-      width: 44,
-      height: 44,
+      width: touchTarget.md,
+      height: touchTarget.md,
       borderRadius: radius.pill,
     },
     lg: {
-      width: 52,
-      height: 52,
+      width: touchTarget.lg,
+      height: touchTarget.lg,
       borderRadius: radius.pill,
     },
     primary: {
@@ -112,7 +126,7 @@ const createStyles = (colors: ThemeColors) =>
       borderColor: colors.accent,
     },
     secondary: {
-      backgroundColor: colors.surface,
+      backgroundColor: colors.surfaceElevated,
       borderColor: colors.border,
     },
     ghost: {

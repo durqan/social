@@ -8,16 +8,11 @@ import {
 } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import {
-  MessageCircle,
-  Settings,
-  UserRound,
-  UsersRound,
-} from 'lucide-react-native';
+import { MailCheck, MailWarning, MessageCircle } from 'lucide-react-native';
 
 import { isEmailVerified } from '../../api/auth';
 import type { PostUser } from '../../api/types';
-import { ActionTile, Card, HeroCard, Section } from '../../components/Layout';
+import { Card, HeroCard, ListRow, Section } from '../../components/Layout';
 import { EmailVerificationNotice } from '../../components/EmailVerificationNotice';
 import { ErrorBanner } from '../../components/Feedback';
 import { Screen } from '../../components/Screen';
@@ -100,59 +95,23 @@ export default function HomeScreen() {
         ListHeaderComponent={
           <>
             <HeroCard
-              kicker="Главная"
               title={`Привет, ${user?.name || user?.email || 'друг'}`}
-              subtitle="Лента, быстрые действия и статус аккаунта в одном месте."
             />
 
             <ErrorBanner message={error} />
             {!emailVerified ? <EmailVerificationNotice /> : null}
 
-            <Section title="Сводка" subtitle="Самое важное сейчас">
-              <View style={styles.grid}>
-                <Card style={styles.statCard}>
-                  <Text style={styles.statValue}>{unreadCount}</Text>
-                  <Text style={styles.statLabel}>непрочитанных сообщений</Text>
-                </Card>
-                <Card style={styles.statCard}>
-                  <Text style={styles.statValue}>
-                    {emailVerified ? 'Готов' : 'Ждет'}
-                  </Text>
-                  <Text style={styles.statLabel}>статус email</Text>
-                </Card>
-              </View>
-            </Section>
-
-            <Section
-              title="Быстрый доступ"
-              subtitle="Частые действия в один тап"
-            >
-              <View style={styles.quickGrid}>
-                <ActionTile
-                  title="Профиль"
-                  text="Данные аккаунта"
-                  icon={UserRound}
-                  onPress={() => navigation.navigate('Profile')}
-                />
-                <ActionTile
-                  title="Друзья"
-                  text="Список и заявки"
-                  icon={UsersRound}
-                  onPress={() => navigation.navigate('Friends')}
-                />
-                <ActionTile
-                  title="Чаты"
-                  text="Сообщения"
-                  icon={MessageCircle}
-                  onPress={() =>
-                    navigation.navigate('Chats', { screen: 'ChatList' })
+            <Section title="Активность" subtitle="То, ради чего пользователь открывает главную">
+              <View style={styles.activityCard}>
+                <ListRow
+                  icon={emailVerified ? MailCheck : MailWarning}
+                  title={emailVerified ? 'Аккаунт готов' : 'Подтвердите email'}
+                  subtitle={
+                    emailVerified
+                      ? 'Публикация и общение доступны.'
+                      : 'После подтверждения письмо можно будет использовать без ограничений.'
                   }
-                />
-                <ActionTile
-                  title="Настройки"
-                  text="Тема и выход"
-                  icon={Settings}
-                  onPress={() => navigation.navigate('Settings')}
+                  selected={!emailVerified}
                 />
               </View>
             </Section>
@@ -168,32 +127,40 @@ const createStyles = (colors: ThemeColors) =>
     screen: {
       backgroundColor: colors.background,
     },
-    content: {
-      gap: spacing.xl,
-      paddingBottom: 124,
-    },
-    grid: {
+    summaryGrid: {
       flexDirection: 'row',
       gap: spacing.md,
     },
     statCard: {
       flex: 1,
-      minHeight: 90,
+      minHeight: 104,
+      justifyContent: 'space-between',
+      gap: spacing.sm,
+      borderRadius: radius.xl,
+    },
+    statTopRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: spacing.sm,
+    },
+    statIcon: {
+      width: 36,
+      height: 36,
+      borderRadius: radius.pill,
+      alignItems: 'center',
       justifyContent: 'center',
-      gap: spacing.xs,
-      borderRadius: radius.lg,
+      backgroundColor: colors.accentSoft,
     },
     statValue: {
-      ...typography.h2,
-      color: colors.text,
+      ...typography.title,
+      color: colors.textPrimary,
     },
     statLabel: {
       ...typography.caption,
       color: colors.muted,
     },
-    quickGrid: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: spacing.md,
+    activityCard: {
+      gap: spacing.sm,
     },
   });

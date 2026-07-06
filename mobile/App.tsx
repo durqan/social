@@ -2,6 +2,7 @@ import React, {useEffect} from 'react';
 import {StatusBar} from 'react-native';
 import {SafeAreaProvider} from 'react-native-safe-area-context';
 import {KeyboardProvider} from 'react-native-keyboard-controller';
+import {GestureHandlerRootView} from 'react-native-gesture-handler';
 
 import {AppLifecycleProvider} from './src/context/AppLifecycleContext';
 import {PostAuthBootstrapManager} from './src/components/PostAuthBootstrapManager';
@@ -14,7 +15,7 @@ import {ThemeProvider, useThemeColors} from './src/theme/ThemeContext';
 import {logCallEnvOnce} from './src/utils/callDiagnostics';
 import {NavigationContainer} from "@react-navigation/native";
 
-function AppContent() {
+function AppInner() {
     const colors = useThemeColors();
 
     useEffect(() => {
@@ -26,7 +27,9 @@ function AppContent() {
             <StatusBar
                 barStyle={colors.statusBarStyle}
                 backgroundColor={colors.background}
+                translucent={true}
             />
+
             <AuthProvider>
                 <AppLifecycleProvider>
                     <PostAuthBootstrapManager/>
@@ -49,7 +52,7 @@ function App() {
             <KeyboardProvider statusBarTranslucent navigationBarTranslucent>
                 <NavigationContainer>
                     <ThemeProvider>
-                        <AppContent/>
+                        <AppInner/>
                     </ThemeProvider>
                 </NavigationContainer>
             </KeyboardProvider>

@@ -19,7 +19,7 @@ import { Check, Search, Trash2, UserRound, UsersRound, X } from 'lucide-react-na
 
 import { friendsApi } from '../../api/friends';
 import { getApiErrorMessage } from '../../api/http';
-import type { Friendship, User } from '../../api/types';
+import type { Friendship, User } from '@social/shared';
 import { AppButton } from '../../components/AppButton';
 import { IconButton } from '../../components/IconButton';
 import {
@@ -186,31 +186,23 @@ export default function FriendsScreen() {
     <Screen refreshing={refreshing} onRefresh={() => load('refresh')}>
       <ErrorBanner message={error} />
 
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Друзья</Text>
-        <View style={styles.headerActions}>
-          <AppButton
-            title="Поиск"
-            variant="secondary"
-            icon={Search}
-            onPress={() => navigation.navigate('UserSearch')}
-          />
-        </View>
+      <View style={styles.topActions}>
+        <AppButton
+          title="Найти"
+          variant="secondary"
+          icon={Search}
+          style={styles.searchButton}
+          onPress={() => navigation.navigate('UserSearch')}
+        />
       </View>
 
       {loading && !hasLoaded ? (
         <FriendsListSkeleton />
       ) : (
         <>
-          <View style={styles.subsection}>
-            <Text style={styles.subsectionTitle}>Заявки в друзья</Text>
-            {requests.length === 0 ? (
-              <EmptyState
-                icon={UsersRound}
-                title="Заявок пока нет"
-                text="Когда кто-то отправит вам заявку, она появится здесь."
-              />
-            ) : (
+          {requests.length > 0 ? (
+            <View style={styles.subsection}>
+              <Text style={styles.subsectionTitle}>Заявки в друзья</Text>
               <View style={styles.listCard}>
                 {requests.map(request => (
                   <View key={request.id} style={styles.requestRow}>
@@ -270,8 +262,8 @@ export default function FriendsScreen() {
                   </View>
                 ))}
               </View>
-            )}
-          </View>
+            </View>
+          ) : null}
 
           <View style={styles.subsection}>
             <Text style={styles.subsectionTitle}>Мои друзья</Text>
@@ -386,19 +378,27 @@ function UserAvatar({ user, colors }: { user?: User; colors: ThemeColors }) {
 
 const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
+    topActions: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      marginBottom: spacing.md,
+    },
+    searchButton: {
+      alignSelf: 'flex-end',
+    },
     sectionHeader: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
       gap: spacing.md,
       minHeight: 74,
-      borderRadius: 28,
+      borderRadius: 24,
       borderWidth: 1,
       borderColor: colors.borderStrong,
       backgroundColor: colors.card,
       padding: spacing.lg,
       shadowColor: colors.shadow,
-      shadowOpacity: colors.isDark ? 0.28 : 0.08,
+      shadowOpacity: colors.isDark ? 0.28 : 0.12,
       shadowRadius: 22,
       shadowOffset: { width: 0, height: 12 },
       elevation: colors.isDark ? 4 : 1,
@@ -409,7 +409,7 @@ const createStyles = (colors: ThemeColors) =>
     },
     sectionTitle: {
       ...typography.h2,
-      color: colors.text,
+      color: colors.textPrimary,
     },
     subsection: {
       gap: spacing.sm,
@@ -496,15 +496,12 @@ const createStyles = (colors: ThemeColors) =>
     },
     userName: {
       ...typography.body,
-      color: colors.text,
+      color: colors.textPrimary,
       fontWeight: '700',
     },
     userEmail: {
       ...typography.caption,
       color: colors.muted,
     },
-    friendAction: {
-      width: 38,
-      height: 38,
-    },
+    friendAction: {},
   });

@@ -5,6 +5,7 @@ import {
   StyleSheet,
   Text,
   View,
+  type GestureResponderEvent,
   type PressableProps,
   type StyleProp,
   type ViewStyle,
@@ -12,7 +13,8 @@ import {
 
 import { useThemeColors } from '../theme/ThemeContext';
 import type { ThemeColors } from '../theme/themes';
-import { radius, spacing, typography } from '../theme/layout';
+import { radius, spacing, touchTarget, typography } from '../theme/layout';
+import { lightHaptic } from '../utils/haptics';
 
 type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost';
 type ButtonIcon = React.ComponentType<{
@@ -26,6 +28,7 @@ type AppButtonProps = Omit<PressableProps, 'style'> & {
   variant?: ButtonVariant;
   loading?: boolean;
   icon?: ButtonIcon;
+  haptic?: boolean;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -35,7 +38,9 @@ export function AppButton({
   loading = false,
   disabled,
   icon: Icon,
+  haptic = true,
   style,
+  onPress,
   ...props
 }: AppButtonProps) {
   const isDisabled = disabled || loading;
@@ -45,10 +50,19 @@ export function AppButton({
   const iconColor =
     variant === 'primary' || variant === 'danger' ? colors.white : colors.text;
 
+  function handlePress(event: GestureResponderEvent) {
+    if (haptic) {
+      lightHaptic();
+    }
+
+    onPress?.(event);
+  }
+
   return (
     <Pressable
       accessibilityRole="button"
       disabled={isDisabled}
+      onPress={handlePress}
       style={({ pressed }) => [
         styles.base,
         styles[variant],
@@ -79,7 +93,7 @@ export function AppButton({
 const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     base: {
-      minHeight: 48,
+      minHeight: touchTarget.md,
       borderRadius: radius.pill,
       alignItems: 'center',
       justifyContent: 'center',
