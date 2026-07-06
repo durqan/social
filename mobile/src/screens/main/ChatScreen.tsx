@@ -1,4 +1,5 @@
 import React, {
+  forwardRef,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -34,13 +35,9 @@ import type {
   LayoutChangeEvent,
   NativeScrollEvent,
   NativeSyntheticEvent,
+  ScrollViewProps,
 } from 'react-native';
-import {
-  KeyboardAwareLegendList,
-  useKeyboardChatComposerInset,
-  useKeyboardScrollToEnd,
-} from '@legendapp/list/keyboard';
-import type { LegendListRef } from '@legendapp/list/react-native';
+import { LegendList, type LegendListRef } from '@legendapp/list/react-native';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import type { Asset, ImagePickerResponse } from 'react-native-image-picker';
 import {
@@ -162,11 +159,14 @@ import {
   messagePreviewText,
 } from './chat/chatUtils';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSharedValue, withTiming } from 'react-native-reanimated';
 import {
   AndroidSoftInputModes,
+  KeyboardChatScrollView,
   KeyboardController,
   KeyboardGestureArea,
   KeyboardStickyView,
+  type KeyboardChatScrollViewProps,
 } from 'react-native-keyboard-controller';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'Chat'>;
@@ -202,6 +202,53 @@ type PendingChatAttachment = LocalAttachmentSource & {
   id: string;
   fileType: ChatUploadAttachmentType;
 };
+
+type ChatScrollViewRef = React.ElementRef<typeof KeyboardChatScrollView>;
+type ChatScrollViewProps = ScrollViewProps &
+  KeyboardChatScrollViewProps & {
+    chatScrollViewRef?: React.MutableRefObject<ChatScrollViewRef | null>;
+  };
+
+const CHAT_INPUT_NATIVE_ID = 'chat-composer-input';
+
+function assignRef<T>(ref: React.ForwardedRef<T>, value: T | null) {
+  if (typeof ref === 'function') {
+    ref(value);
+    return;
+  }
+
+  if (ref) {
+    ref.current = value;
+  }
+}
+
+const ChatScrollView = forwardRef<ChatScrollViewRef, ChatScrollViewProps>(
+  ({ chatScrollViewRef, ...props }, ref) => {
+    const { bottom } = useSafeAreaInsets();
+    const combinedRef = useCallback(
+      (instance: ChatScrollViewRef | null) => {
+        assignRef(ref, instance);
+        if (chatScrollViewRef) {
+          chatScrollViewRef.current = instance;
+        }
+      },
+      [chatScrollViewRef, ref],
+    );
+
+    return (
+      <KeyboardChatScrollView
+        {...props}
+        ref={combinedRef}
+        automaticallyAdjustContentInsets={false}
+        contentInsetAdjustmentBehavior="never"
+        keyboardDismissMode="interactive"
+        keyboardLiftBehavior="whenAtEnd"
+        offset={bottom}
+      />
+    );
+  },
+);
+ChatScrollView.displayName = 'ChatScrollView';
 
 const COMPOSER_INPUT_MIN_HEIGHT = 44;
 const COMPOSER_INPUT_MAX_HEIGHT = 112;
@@ -337,8 +384,10 @@ export default function ChatScreen({ route, navigation }: Props) {
   const { markMatchingAsRead } = useNotifications();
   const otherUserId = route.params.userId;
   const listRef = useRef<LegendListRef>(null);
+  const chatScrollViewRef = useRef<ChatScrollViewRef | null>(null);
   const composerInputRef = useRef<TextInput>(null);
   const composerRef = useRef<View>(null);
+  const composerBaseHeightRef = useRef(COMPOSER_ESTIMATED_DOCK_HEIGHT);
   const hasLoadedRef = useRef(false);
   const isLoadingOlderRef = useRef(false);
   const pendingLatestScrollRef = useRef<PendingLatestScroll | null>(null);
@@ -418,7 +467,6 @@ export default function ChatScreen({ route, navigation }: Props) {
   const [messageActionPending, setMessageActionPending] = useState(false);
   const [showScrollToLatest, setShowScrollToLatest] = useState(false);
   const [newMessagesBelow, setNewMessagesBelow] = useState(false);
-  const [composerDockHeight, setComposerDockHeight] = useState(0);
   const [miniProfileVisible, setMiniProfileVisible] = useState(false);
 
   const [pendingVoice, setPendingVoice] = useState<LocalVoiceMessage | null>(
@@ -449,13 +497,56 @@ export default function ChatScreen({ route, navigation }: Props) {
       e2eeState.localKey,
   );
 
-  const { contentInsetEndAdjustment, onComposerLayout } =
-    useKeyboardChatComposerInset(
-      listRef,
-      composerRef,
-      COMPOSER_ESTIMATED_DOCK_HEIGHT,
-    );
-  const { freeze, scrollMessageToEnd } = useKeyboardScrollToEnd({ listRef });
+  const extraContentPadding = useSharedValue(0);
+  const composerHasExtraContent = useMemo(
+    () =>
+      pendingAttachments.length > 0 ||
+      Boolean(sending) ||
+      Boolean(editingMessage) ||
+      Boolean(replyToMessage) ||
+      recording ||
+      Boolean(pendingVideoNote) ||
+      Boolean(pendingVoice) ||
+      otherTyping,
+    [
+      editingMessage,
+      otherTyping,
+      pendingAttachments.length,
+      pendingVideoNote,
+      pendingVoice,
+      recording,
+      replyToMessage,
+      sending,
+    ],
+  );
+  const renderScrollComponent = useCallback(
+    (props: ScrollViewProps) => (
+      <ChatScrollView
+        {...props}
+        chatScrollViewRef={chatScrollViewRef}
+        extraContentPadding={extraContentPadding}
+      />
+    ),
+    [extraContentPadding],
+  );
+  const handleComposerDockLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      const height = Math.ceil(event.nativeEvent.layout.height);
+
+      if (
+        !composerHasExtraContent &&
+        inputHeight === COMPOSER_INPUT_MIN_HEIGHT
+      ) {
+        composerBaseHeightRef.current = height;
+      }
+
+      extraContentPadding.value = withTiming(
+        Math.max(height - composerBaseHeightRef.current, 0),
+        { duration: 250 },
+      );
+    },
+    [composerHasExtraContent, extraContentPadding, inputHeight],
+  );
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -594,7 +685,7 @@ export default function ChatScreen({ route, navigation }: Props) {
 
       pendingScrollFrameRef.current = requestAnimationFrame(() => {
         pendingScrollFrameRef.current = null;
-        void scrollMessageToEnd({ animated, closeKeyboard: false });
+        chatScrollViewRef.current?.scrollToEnd({ animated });
         pendingLatestScrollRef.current = null;
         isInitialScrollPendingRef.current = false;
         isUserNearBottomRef.current = true;
@@ -602,7 +693,7 @@ export default function ChatScreen({ route, navigation }: Props) {
         setNewMessagesBelow(false);
       });
     },
-    [scrollMessageToEnd],
+    [],
   );
 
   useEffect(() => {
@@ -2781,7 +2872,7 @@ export default function ChatScreen({ route, navigation }: Props) {
 
     if (isUserNearBottomRef.current) {
       requestAnimationFrame(() => {
-        void scrollMessageToEnd({ animated: false, closeKeyboard: false });
+        chatScrollViewRef.current?.scrollToEnd({ animated: false });
       });
     }
   }
@@ -2792,7 +2883,7 @@ export default function ChatScreen({ route, navigation }: Props) {
     }
 
     requestAnimationFrame(() => {
-      void scrollMessageToEnd({ animated: false, closeKeyboard: false });
+      chatScrollViewRef.current?.scrollToEnd({ animated: false });
     });
   }
 
@@ -3289,12 +3380,19 @@ export default function ChatScreen({ route, navigation }: Props) {
           </Pressable>
         ) : null}
 
-        {loading && !hasLoaded ? (
-          <ChatMessagesSkeleton />
-        ) : (
+        {/* eslint-disable-next-line react-native/no-inline-styles */}
+        <KeyboardGestureArea
+          interpolator="ios"
+          offset={COMPOSER_INPUT_MIN_HEIGHT}
+          style={{ flex: 1 }}
+          textInputNativeID={CHAT_INPUT_NATIVE_ID}
+        >
+          {loading && !hasLoaded ? (
+            <ChatMessagesSkeleton />
+          ) : (
             // eslint-disable-next-line react-native/no-inline-styles
-          <KeyboardGestureArea interpolator="ios" offset={60} style={{ flex: 1 }}>
-            <KeyboardAwareLegendList
+            <View style={{ flex: 1 }}>
+              <LegendList
               ref={listRef}
               style={[
                 styles.messageListContainer,
@@ -3302,6 +3400,7 @@ export default function ChatScreen({ route, navigation }: Props) {
               ]}
               data={messages}
               keyExtractor={messageKeyExtractor}
+              renderScrollComponent={renderScrollComponent}
               refreshing={refreshing}
               onRefresh={() => loadMessages('refresh')}
               keyboardShouldPersistTaps="handled"
@@ -3311,9 +3410,6 @@ export default function ChatScreen({ route, navigation }: Props) {
               maintainScrollAtEnd
               maintainScrollAtEndThreshold={0.15}
               estimatedItemSize={96}
-              contentInsetEndAdjustment={contentInsetEndAdjustment}
-              freeze={freeze}
-              keyboardOffset={insets.bottom}
               onTouchStart={handleMessageListTouchStart}
               onTouchMove={handleMessageListTouchMove}
               onTouchEnd={handleMessageListTouchEnd}
@@ -3324,7 +3420,6 @@ export default function ChatScreen({ route, navigation }: Props) {
                 playingVoiceUrl,
                 themeColors,
                 userId: user?.id,
-                composerDockHeight,
               }}
               onLayout={handleMessageListLayout}
               contentContainerStyle={[
@@ -3359,7 +3454,7 @@ export default function ChatScreen({ route, navigation }: Props) {
                 style={[
                   styles.scrollToLatestButton,
                   themed.scrollToLatestButton,
-                  { bottom: composerDockHeight + 10 },
+                  { bottom: 10 },
                   newMessagesBelow && styles.scrollToLatestButtonNew,
                   newMessagesBelow && themed.scrollToLatestButtonNew,
                 ]}
@@ -3375,19 +3470,16 @@ export default function ChatScreen({ route, navigation }: Props) {
                 />
               </Pressable>
             ) : null}
-          </KeyboardGestureArea>
-        )}
-        <KeyboardStickyView offset={{ closed: 0, opened: insets.bottom }}>
+            </View>
+          )}
+          <KeyboardStickyView offset={{ closed: 0, opened: insets.bottom }}>
           <View
             ref={composerRef}
             style={[
               styles.composerDock,
               themed.composerDock,
             ]}
-            onLayout={event => {
-              setComposerDockHeight(event.nativeEvent.layout.height);
-              onComposerLayout(event);
-            }}
+            onLayout={handleComposerDockLayout}
           >
           {pendingAttachments.length > 0 ? (
               <View style={styles.previewStrip}>
@@ -3746,8 +3838,10 @@ export default function ChatScreen({ route, navigation }: Props) {
 
               <TextInput
                   ref={composerInputRef}
+                  nativeID={CHAT_INPUT_NATIVE_ID}
                   value={input}
                   onChangeText={handleComposerTextChange}
+                  onFocus={handleComposerFocus}
                   onContentSizeChange={event =>
                       handleComposerContentSizeChange(
                           event.nativeEvent.contentSize.height,
@@ -3828,7 +3922,8 @@ export default function ChatScreen({ route, navigation }: Props) {
             )}
           </View>
         </View>
-        </KeyboardStickyView>
+          </KeyboardStickyView>
+        </KeyboardGestureArea>
       </ChatDoodleBackground>
       <Modal
         visible={Boolean(selectedImageUrl)}

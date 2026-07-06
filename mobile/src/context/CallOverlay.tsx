@@ -223,10 +223,6 @@ export function CallOverlay({
 
                     {showVideoPlaceholder ? (
                         <View style={styles.videoPlaceholder}>
-                            <Text style={styles.videoPlaceholderText}>
-                                Ожидание видео
-                            </Text>
-
                             {showSpinner ? (
                                 <ActivityIndicator
                                     color="#ffffff"
@@ -271,12 +267,6 @@ export function CallOverlay({
                         <Text style={styles.callStatus}>
                             {error ?? callStatusText(status, callType)}
                         </Text>
-
-                        {showActiveControls ? (
-                            <Text style={styles.callHint}>
-                                Тап — скрыть интерфейс · свайп вниз — завершить
-                            </Text>
-                        ) : null}
                     </View>
                 ) : null}
 
