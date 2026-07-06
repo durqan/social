@@ -161,9 +161,11 @@ import {
   messageAuthorName,
   messagePreviewText,
 } from './chat/chatUtils';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   AndroidSoftInputModes,
   KeyboardController,
+  KeyboardGestureArea,
   KeyboardStickyView,
 } from 'react-native-keyboard-controller';
 
@@ -431,6 +433,7 @@ export default function ChatScreen({ route, navigation }: Props) {
   const [otherTyping, setOtherTyping] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copyNotice, setCopyNotice] = useState<string | null>(null);
+  const insets = useSafeAreaInsets();
   const [e2eeState, setE2eeState] = useState<ChatE2EEState>({
     loading: true,
     selfEnabled: false,
@@ -3289,7 +3292,8 @@ export default function ChatScreen({ route, navigation }: Props) {
         {loading && !hasLoaded ? (
           <ChatMessagesSkeleton />
         ) : (
-          <>
+            // eslint-disable-next-line react-native/no-inline-styles
+          <KeyboardGestureArea interpolator="ios" offset={60} style={{ flex: 1 }}>
             <KeyboardAwareLegendList
               ref={listRef}
               style={[
@@ -3309,6 +3313,7 @@ export default function ChatScreen({ route, navigation }: Props) {
               estimatedItemSize={96}
               contentInsetEndAdjustment={contentInsetEndAdjustment}
               freeze={freeze}
+              keyboardOffset={insets.bottom}
               onTouchStart={handleMessageListTouchStart}
               onTouchMove={handleMessageListTouchMove}
               onTouchEnd={handleMessageListTouchEnd}
@@ -3370,9 +3375,9 @@ export default function ChatScreen({ route, navigation }: Props) {
                 />
               </Pressable>
             ) : null}
-          </>
+          </KeyboardGestureArea>
         )}
-        <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
+        <KeyboardStickyView offset={{ closed: 0, opened: insets.bottom }}>
           <View
             ref={composerRef}
             style={[
@@ -3743,7 +3748,6 @@ export default function ChatScreen({ route, navigation }: Props) {
                   ref={composerInputRef}
                   value={input}
                   onChangeText={handleComposerTextChange}
-                  onFocus={handleComposerFocus}
                   onContentSizeChange={event =>
                       handleComposerContentSizeChange(
                           event.nativeEvent.contentSize.height,
