@@ -219,6 +219,7 @@ services:
       - "80:80"
       - "443:443"
     volumes:
+      - ./frontend/nginx.prod.main.conf:/etc/nginx/nginx.conf:ro
       - ./frontend/nginx.prod.conf:/etc/nginx/conf.d/default.conf:ro
       - ./certbot/www:/var/www/certbot:ro
       - ./certbot/conf:/etc/letsencrypt:ro
@@ -240,7 +241,46 @@ services:
     volumes:
       - ./certbot/www:/var/www/certbot:rw
       - ./certbot/conf:/etc/letsencrypt:rw
-    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+      - ./ops/certbot/restart-coturn-on-renew.sh:/usr/local/bin/restart-coturn-on-renew.sh:ro
+      - coturn_cert_reload:/var/run/certbot-hooks:rw
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        trap 'exit 0' TERM INT
+        while :; do
+          certbot renew --deploy-hook 'sh /usr/local/bin/restart-coturn-on-renew.sh'
+          sleep 12h &
+          wait "$!"
+        done
+    networks:
+      - social_network
+
+  coturn-cert-reloader:
+    image: docker:27-cli
+    container_name: social_coturn_cert_reloader
+    restart: unless-stopped
+    profiles:
+      - turn
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - coturn_cert_reload:/var/run/certbot-hooks:rw
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        marker=/var/run/certbot-hooks/coturn-cert-renewed
+        mkdir -p /var/run/certbot-hooks
+        touch "$$marker"
+        last="$$(stat -c %Y "$$marker" 2>/dev/null || echo 0)"
+        while :; do
+          current="$$(stat -c %Y "$$marker" 2>/dev/null || echo 0)"
+          if [ "$$current" != "$$last" ]; then
+            last="$$current"
+            docker restart social_coturn >/dev/null || true
+          fi
+          sleep 60
+        done
     networks:
       - social_network
 
@@ -248,6 +288,7 @@ services:
     image: coturn/coturn:4.6.2
     container_name: social_coturn
     restart: unless-stopped
+    user: root
     profiles:
       - turn
     ports:
@@ -255,11 +296,18 @@ services:
       - "3478:3478/udp"
       - "49160-49200:49160-49200/udp"
       - "49160-49200:49160-49200/tcp"
+    expose:
+      - "5349/tcp"
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt:ro
     environment:
-      TURN_REALM: ${TURN_REALM:-localhost}
+      TURN_REALM: ${TURN_REALM:-turn.durqan.ru}
       TURN_USERNAME: ${TURN_USERNAME:-social_turn}
       TURN_PASSWORD: ${TURN_PASSWORD:?TURN_PASSWORD is required}
       TURN_EXTERNAL_IP: ${TURN_EXTERNAL_IP:-}
+      TURN_TLS_LISTENING_PORT: ${TURN_TLS_LISTENING_PORT:-5349}
+      TURN_TLS_CERT: ${TURN_TLS_CERT:-/etc/letsencrypt/live/turn.durqan.ru/fullchain.pem}
+      TURN_TLS_PKEY: ${TURN_TLS_PKEY:-/etc/letsencrypt/live/turn.durqan.ru/privkey.pem}
     entrypoint: /bin/sh
     command:
       - -c
@@ -267,7 +315,11 @@ services:
         exec turnserver \
         -n \
         --log-file=stdout \
+        --listening-ip=0.0.0.0 \
         --listening-port=3478 \
+        --tls-listening-port="$$TURN_TLS_LISTENING_PORT" \
+        --cert="$$TURN_TLS_CERT" \
+        --pkey="$$TURN_TLS_PKEY" \
         --min-port=49160 \
         --max-port=49200 \
         --realm="$$TURN_REALM" \
@@ -293,6 +345,8 @@ volumes:
     name: social_uploads_data
   video_import_tmp:
     name: social_video_import_tmp
+  coturn_cert_reload:
+    name: social_coturn_cert_reload
 
 networks:
   social_network:

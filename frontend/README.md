@@ -31,10 +31,10 @@ Vite читает переменные с префиксом `VITE_`:
 VITE_API_BASE_URL=/api
 VITE_NOTIFICATIONS_URL=/notifications-api
 VITE_VAPID_PUBLIC_KEY=
-VITE_TURN_URLS=turn:localhost:3478?transport=udp,turn:localhost:3478?transport=tcp
+VITE_TURN_URLS=turn:turn.example.com:3478?transport=udp,turns:turn.example.com:443?transport=tcp
 VITE_TURN_USERNAME=social_turn
 VITE_TURN_CREDENTIAL=change_me_turn_password
 ```
 
 В локальной разработке значения по умолчанию рассчитаны на Vite proxy и backend на `http://localhost:8080`. Для production маршрутизацию API и notifications выполняет nginx.
-Для production TURN указывайте UDP URL и TCP/TLS fallback на 443 порту, например `turn:turn.example.com:3478?transport=udp,turn:turn.example.com:443?transport=tcp,turns:turn.example.com:443?transport=tcp`.
+Для production TURN указывайте UDP URL и TLS fallback на 443 порту, например `turn:turn.example.com:3478?transport=udp,turns:turn.example.com:443?transport=tcp`.

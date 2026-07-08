@@ -42,13 +42,13 @@ export SOCIAL_NOTIFICATIONS_BASE_URL=https://example.com/notifications-api
 Optional call connectivity inputs:
 
 ```sh
-export SOCIAL_TURN_URLS='turn:turn.example.com:3478?transport=udp,turn:turn.example.com:443?transport=tcp,turns:turn.example.com:443?transport=tcp'
+export SOCIAL_TURN_URLS='turn:turn.example.com:3478?transport=udp,turns:turn.example.com:443?transport=tcp'
 export SOCIAL_TURN_USERNAME='turn-user'
 export SOCIAL_TURN_CREDENTIAL='turn-credential'
 ```
 
 Do not put a privileged long-lived TURN secret in the mobile bundle. If TURN requires credentials, use short-lived/limited credentials issued by backend, or a non-privileged deployment-specific credential that is safe to distribute to app clients.
-For mobile networks, configure both UDP TURN and TCP/TLS TURN on port 443. TODO: place TURN in a region close to the primary users, or use a managed TURN provider with regional POPs.
+For mobile networks, configure both UDP TURN on 3478 and TLS TURN on port 443, for example `turns:turn.example.com:443?transport=tcp`. TODO: place TURN in a region close to the primary users, or use a managed TURN provider with regional POPs.
 
 ## Local Checks
 
