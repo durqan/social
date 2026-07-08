@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"tester/internal/storage"
@@ -95,6 +96,30 @@ func TestResolveVideoLinkPreviewMetadataFailureReturnsError(t *testing.T) {
 	_, err := ResolveVideoLinkPreviewMetadata(context.Background(), "https://youtu.be/abc", "youtube")
 	if err == nil {
 		t.Fatal("expected resolver error")
+	}
+}
+
+func TestBuildYTDLPMetadataArgsUsesWorkerNetworkSettings(t *testing.T) {
+	t.Setenv("YTDLP_PROXY", "http://proxy.example:8080")
+	t.Setenv("YTDLP_IMPERSONATE", "chrome")
+	t.Setenv("YTDLP_COOKIES_FILE", "/tmp/instagram-cookies.txt")
+
+	joined := strings.Join(
+		buildYTDLPMetadataArgs("https://www.instagram.com/reel/abc/"),
+		"\x00",
+	)
+	for _, expected := range []string{
+		"--dump-single-json",
+		"--socket-timeout\x0020",
+		"--retries\x002",
+		"--proxy\x00http://proxy.example:8080",
+		"--impersonate\x00chrome",
+		"--cookies\x00/tmp/instagram-cookies.txt",
+		"https://www.instagram.com/reel/abc/",
+	} {
+		if !strings.Contains(joined, expected) {
+			t.Fatalf("metadata args %q do not contain %q", joined, expected)
+		}
 	}
 }
 

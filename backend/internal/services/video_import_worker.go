@@ -142,23 +142,7 @@ func buildYTDLPDownloadArgs(sourceTemplate string, originalURL string) []string 
 		"--retries", "2",
 		"--fragment-retries", "2",
 	}
-
-	if proxy := strings.TrimSpace(os.Getenv("YTDLP_PROXY")); proxy != "" {
-		args = append(args, "--proxy", proxy)
-	}
-
-	impersonate := strings.TrimSpace(os.Getenv("YTDLP_IMPERSONATE"))
-	if impersonate == "" {
-		impersonate = "chrome"
-	}
-	if impersonate != "-" && impersonate != "off" && impersonate != "false" {
-		args = append(args, "--impersonate", impersonate)
-	}
-
-	if cookiesFile := strings.TrimSpace(os.Getenv("YTDLP_COOKIES_FILE")); cookiesFile != "" {
-		args = append(args, "--cookies", cookiesFile)
-	}
-
+	args = appendYTDLPNetworkArgs(args)
 	args = append(args, "-o", sourceTemplate, originalURL)
 
 	return args

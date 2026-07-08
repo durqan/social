@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -27,7 +28,7 @@ var (
 	ErrUnsupportedVideoLink = errors.New("unsupported video link")
 	ErrUnsafeVideoLink      = errors.New("unsafe video link")
 	firstURLPattern         = regexp.MustCompile(`https?://[^\s<>"']+`)
-	linkPreviewMetadataTTL  = 15 * time.Second
+	linkPreviewMetadataTTL  = 45 * time.Second
 	ytDLPMetadataRunner     = runYTDLPMetadata
 	linkPreviewImageFetcher = fetchLinkPreviewImage
 )
@@ -87,7 +88,23 @@ func EnrichMessageLinkPreviewAsync(db *gorm.DB, messageID uint, previewID uint) 
 			return
 		}
 		metadata, err := ResolveVideoLinkPreviewMetadata(ctx, preview.OriginalURL, preview.Provider)
-		if err != nil || metadata.empty() {
+		if err != nil {
+			log.Printf(
+				"link preview metadata failed: message_id=%d preview_id=%d provider=%s error=%v",
+				messageID,
+				previewID,
+				preview.Provider,
+				err,
+			)
+			return
+		}
+		if metadata.empty() {
+			log.Printf(
+				"link preview metadata empty: message_id=%d preview_id=%d provider=%s",
+				messageID,
+				previewID,
+				preview.Provider,
+			)
 			return
 		}
 
@@ -276,7 +293,7 @@ func ResolveVideoLinkPreviewMetadata(ctx context.Context, raw string, provider s
 }
 
 func runYTDLPMetadata(ctx context.Context, raw string) (LinkPreviewMetadata, error) {
-	cmd := exec.CommandContext(ctx, "yt-dlp", "--dump-json", "--skip-download", "--no-playlist", raw)
+	cmd := exec.CommandContext(ctx, "yt-dlp", buildYTDLPMetadataArgs(raw)...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	output, err := cmd.Output()
@@ -287,6 +304,37 @@ func runYTDLPMetadata(ctx context.Context, raw string) (LinkPreviewMetadata, err
 		return LinkPreviewMetadata{}, errors.New(strings.TrimSpace(stderr.String()))
 	}
 	return parseYTDLPMetadata(output)
+}
+
+func buildYTDLPMetadataArgs(raw string) []string {
+	args := []string{
+		"--dump-single-json",
+		"--skip-download",
+		"--no-playlist",
+		"--socket-timeout", "20",
+		"--retries", "2",
+	}
+	args = appendYTDLPNetworkArgs(args)
+	return append(args, raw)
+}
+
+func appendYTDLPNetworkArgs(args []string) []string {
+	if proxy := strings.TrimSpace(os.Getenv("YTDLP_PROXY")); proxy != "" {
+		args = append(args, "--proxy", proxy)
+	}
+
+	impersonate := strings.TrimSpace(os.Getenv("YTDLP_IMPERSONATE"))
+	if impersonate == "" {
+		impersonate = "chrome"
+	}
+	if impersonate != "-" && impersonate != "off" && impersonate != "false" {
+		args = append(args, "--impersonate", impersonate)
+	}
+
+	if cookiesFile := strings.TrimSpace(os.Getenv("YTDLP_COOKIES_FILE")); cookiesFile != "" {
+		args = append(args, "--cookies", cookiesFile)
+	}
+	return args
 }
 
 func parseYTDLPMetadata(output []byte) (LinkPreviewMetadata, error) {
