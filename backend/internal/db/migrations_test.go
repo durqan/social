@@ -3,6 +3,7 @@ package db
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"tester/internal/models"
 
@@ -81,6 +82,105 @@ func TestMigrateRemovesOldEncryptedBackupDuplicates(t *testing.T) {
 		t.Fatalf("unexpected backups after migration: %+v", backups)
 	}
 	assertBackendUniqueIndex(t, database, &models.EncryptedKeyBackup{}, "ux_e2ee_backup_user")
+}
+
+func TestMigrateCleansOrphanLinkPreviewVideoAttachment(t *testing.T) {
+	database := newBackendMigrationTestDB(t)
+	if err := Migrate(database); err != nil {
+		t.Fatalf("initial Migrate failed: %v", err)
+	}
+
+	users := []models.User{
+		{ID: 20, Name: "Sender", Email: "sender@example.com", Password: "hash"},
+		{ID: 21, Name: "Recipient", Email: "recipient@example.com", Password: "hash"},
+	}
+	if err := database.Create(&users).Error; err != nil {
+		t.Fatalf("seed users: %v", err)
+	}
+	messages := []models.Message{
+		{ID: 30, FromID: users[0].ID, ToID: users[1].ID, Content: "valid preview"},
+		{ID: 31, FromID: users[0].ID, ToID: users[1].ID, Content: "orphan preview"},
+	}
+	if err := database.Create(&messages).Error; err != nil {
+		t.Fatalf("seed messages: %v", err)
+	}
+	attachment := models.MessageAttachment{
+		ID:        40,
+		MessageID: messages[0].ID,
+		FileURL:   "messages/video.mp4",
+		FileType:  "video",
+	}
+	if err := database.Create(&attachment).Error; err != nil {
+		t.Fatalf("seed attachment: %v", err)
+	}
+	validAttachmentID := attachment.ID
+	validPreview := models.MessageLinkPreview{
+		ID:                50,
+		MessageID:         messages[0].ID,
+		OriginalURL:       "https://www.instagram.com/reel/valid",
+		Provider:          "instagram",
+		Status:            models.LinkPreviewStatusReady,
+		VideoAttachmentID: &validAttachmentID,
+	}
+	if err := database.Create(&validPreview).Error; err != nil {
+		t.Fatalf("seed valid preview: %v", err)
+	}
+
+	sqlDB, err := database.DB()
+	if err != nil {
+		t.Fatalf("get sql database: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	if err := database.Exec("PRAGMA foreign_keys = OFF").Error; err != nil {
+		t.Fatalf("disable foreign keys: %v", err)
+	}
+	orphanUpdatedAt := time.Date(2025, time.January, 1, 0, 0, 0, 0, time.UTC)
+	if err := database.Exec(`
+		INSERT INTO message_link_previews (
+			id, message_id, original_url, provider, status,
+			video_attachment_id, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`,
+		51,
+		messages[1].ID,
+		"https://www.instagram.com/reel/orphan",
+		"instagram",
+		models.LinkPreviewStatusReady,
+		999,
+		orphanUpdatedAt,
+		orphanUpdatedAt,
+	).Error; err != nil {
+		t.Fatalf("seed orphan preview: %v", err)
+	}
+	if err := database.Exec("PRAGMA foreign_keys = ON").Error; err != nil {
+		t.Fatalf("enable foreign keys: %v", err)
+	}
+
+	if err := Migrate(database); err != nil {
+		t.Fatalf("Migrate with orphan preview failed: %v", err)
+	}
+	if err := Migrate(database); err != nil {
+		t.Fatalf("repeated Migrate failed: %v", err)
+	}
+
+	var gotValid models.MessageLinkPreview
+	if err := database.First(&gotValid, validPreview.ID).Error; err != nil {
+		t.Fatalf("load valid preview: %v", err)
+	}
+	if gotValid.VideoAttachmentID == nil || *gotValid.VideoAttachmentID != attachment.ID {
+		t.Fatalf("valid video_attachment_id changed: %v", gotValid.VideoAttachmentID)
+	}
+
+	var gotOrphan models.MessageLinkPreview
+	if err := database.First(&gotOrphan, 51).Error; err != nil {
+		t.Fatalf("load orphan preview: %v", err)
+	}
+	if gotOrphan.VideoAttachmentID != nil {
+		t.Fatalf("orphan video_attachment_id was not cleared: %v", *gotOrphan.VideoAttachmentID)
+	}
+	if !gotOrphan.UpdatedAt.After(orphanUpdatedAt) {
+		t.Fatalf("orphan updated_at was not refreshed: %v", gotOrphan.UpdatedAt)
+	}
 }
 
 func newBackendMigrationTestDB(t *testing.T) *gorm.DB {

@@ -1,6 +1,8 @@
 package db
 
 import (
+	"log"
+
 	"tester/internal/models"
 	"tester/internal/storage"
 
@@ -8,6 +10,10 @@ import (
 )
 
 func Migrate(database *gorm.DB) error {
+	if err := cleanupOrphanLinkPreviewVideoAttachments(database); err != nil {
+		return err
+	}
+
 	if err := database.AutoMigrate(
 		&models.User{},
 		&models.Post{},
@@ -39,6 +45,36 @@ func Migrate(database *gorm.DB) error {
 	}
 
 	return normalizeStoredUploadKeys(database)
+}
+
+func cleanupOrphanLinkPreviewVideoAttachments(database *gorm.DB) error {
+	migrator := database.Migrator()
+	if !migrator.HasTable("message_link_previews") ||
+		!migrator.HasTable("message_attachments") ||
+		!migrator.HasColumn("message_link_previews", "video_attachment_id") {
+		return nil
+	}
+
+	result := database.Exec(`
+		UPDATE message_link_previews AS mlp
+		SET video_attachment_id = NULL, updated_at = CURRENT_TIMESTAMP
+		WHERE mlp.video_attachment_id IS NOT NULL
+			AND NOT EXISTS (
+				SELECT 1
+				FROM message_attachments AS ma
+				WHERE ma.id = mlp.video_attachment_id
+			)
+	`)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
+		log.Printf(
+			"cleaned orphan message_link_previews video_attachment_id before migration: count=%d",
+			result.RowsAffected,
+		)
+	}
+	return nil
 }
 
 func ensurePerformanceIndexes(database *gorm.DB) error {
