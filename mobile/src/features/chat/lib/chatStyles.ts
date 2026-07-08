@@ -354,6 +354,9 @@ export const styles = StyleSheet.create({
     zIndex: 1,
     backgroundColor: 'transparent',
   },
+  messageListFrame: {
+    flex: 1,
+  },
   transparentBackground: {
     backgroundColor: 'transparent',
   },

@@ -5,6 +5,18 @@ import {
   OutputFormatAndroidType,
 } from 'react-native-nitro-sound';
 
+export type ComposerMediaMode = 'voice' | 'video_note';
+
+export type SendingState =
+  | 'preparingVideo'
+  | 'compressingVideo'
+  | 'uploading'
+  | 'uploadingVoice'
+  | 'uploadingVideo'
+  | 'uploadingVideoNote'
+  | 'sending'
+  | null;
+
 export const CHAT_INPUT_NATIVE_ID = 'chat-composer-input';
 export const COMPOSER_INPUT_MIN_HEIGHT = 44;
 export const COMPOSER_INPUT_MAX_HEIGHT = 112;
