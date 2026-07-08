@@ -39,6 +39,11 @@ const configuredNotificationsBaseURL =
     ? process.env.SOCIAL_NOTIFICATIONS_BASE_URL
     : undefined;
 
+function envValue(value: string | undefined) {
+  const trimmed = value?.trim();
+  return trimmed || undefined;
+}
+
 export const API_BASE_URL = (
   configuredApiBaseURL?.trim() || defaultApiBaseURL
 ).replace(/\/+$/, '');
@@ -83,11 +88,13 @@ export const TURN_URLS =
     : [];
 
 export const TURN_USERNAME =
-  typeof process !== 'undefined' ? process.env.SOCIAL_TURN_USERNAME : undefined;
+  typeof process !== 'undefined'
+    ? envValue(process.env.SOCIAL_TURN_USERNAME)
+    : undefined;
 
 export const TURN_CREDENTIAL =
   typeof process !== 'undefined'
-    ? process.env.SOCIAL_TURN_CREDENTIAL
+    ? envValue(process.env.SOCIAL_TURN_CREDENTIAL)
     : undefined;
 
 export function apiURL(path: string) {

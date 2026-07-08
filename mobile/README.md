@@ -66,7 +66,7 @@ npm run build:android
 
 Production release для Google Play собирается как signed AAB только через GitHub Actions. Полный checklist: [`GOOGLE_PLAY_RELEASE.md`](./GOOGLE_PLAY_RELEASE.md).
 
-Для звонков на реальных телефонах TURN-переменные должны быть переданы именно во время сборки AAB: они инлайнятся Metro/Babel в JS bundle. Не встраивайте в мобильный bundle привилегированный долгоживущий TURN secret; используйте краткоживущие/ограниченные credentials или backend-issued ICE config.
+Для звонков на реальных телефонах TURN-переменные должны быть переданы именно во время сборки AAB: они инлайнятся Metro/Babel в JS bundle. Если `SOCIAL_TURN_URLS` задан, release build требует `SOCIAL_TURN_USERNAME`, `SOCIAL_TURN_CREDENTIAL`, UDP TURN и TCP/TLS TURN на 443 порту. Не встраивайте в мобильный bundle привилегированный долгоживущий TURN secret; используйте краткоживущие/ограниченные credentials или backend-issued ICE config.
 
 Release variant собирает JS bundle внутрь Android artefact, поэтому установленное приложение запускается без Metro. Для release используйте публичный HTTPS backend URL; не используйте `localhost`, `127.0.0.1`, `10.0.2.2` или LAN/private IP.
 

@@ -1,7 +1,9 @@
 package com.socialmobile
 
 import android.content.Context
+import android.media.AudioAttributes
 import android.media.AudioDeviceInfo
+import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
 import android.util.Log
@@ -21,6 +23,10 @@ class CallAudioSessionModule(
   private var savedMode: Int? = null
   private var savedSpeakerphoneOn: Boolean? = null
   private var savedCommunicationDevice: AudioDeviceInfo? = null
+  private var audioFocusRequest: AudioFocusRequest? = null
+  private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+    Log.d(NAME, "Call audio focus changed: $focusChange")
+  }
 
   override fun getName(): String = NAME
 
@@ -33,6 +39,7 @@ class CallAudioSessionModule(
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         savedCommunicationDevice = audioManager.communicationDevice
       }
+      requestCallAudioFocus()
       active = true
     }
 
@@ -64,6 +71,48 @@ class CallAudioSessionModule(
     active = false
     runAudioChange("restore call audio route") {
       restoreAudioRoute()
+      abandonCallAudioFocus()
+    }
+  }
+
+  private fun requestCallAudioFocus() {
+    runAudioChange("request call audio focus") {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+          .setAudioAttributes(
+            AudioAttributes.Builder()
+              .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+              .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+              .build()
+          )
+          .setAcceptsDelayedFocusGain(false)
+          .setOnAudioFocusChangeListener(audioFocusChangeListener)
+          .build()
+
+        audioFocusRequest = request
+        audioManager.requestAudioFocus(request)
+      } else {
+        @Suppress("DEPRECATION")
+        audioManager.requestAudioFocus(
+          audioFocusChangeListener,
+          AudioManager.STREAM_VOICE_CALL,
+          AudioManager.AUDIOFOCUS_GAIN
+        )
+      }
+    }
+  }
+
+  private fun abandonCallAudioFocus() {
+    runAudioChange("abandon call audio focus") {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        audioFocusRequest?.let { request ->
+          audioManager.abandonAudioFocusRequest(request)
+        }
+        audioFocusRequest = null
+      } else {
+        @Suppress("DEPRECATION")
+        audioManager.abandonAudioFocus(audioFocusChangeListener)
+      }
     }
   }
 

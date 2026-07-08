@@ -177,8 +177,60 @@ jobs:
             }
           }
 
+          function parseTurnUrl(raw) {
+            const value = raw.trim();
+            const schemeMatch = value.match(/^(turns?):/i);
+            if (!schemeMatch) {
+              fail(`SOCIAL_TURN_URLS contains a non-TURN URL: ${value}`);
+            }
+            const scheme = schemeMatch[1].toLowerCase();
+            const withoutScheme = value.slice(scheme.length + 1);
+            const [authority = '', query = ''] = withoutScheme.split('?');
+            const hostPort = authority.replace(/^\/\//, '').split('/')[0] || '';
+            const transportMatch = query.match(/(?:^|&)transport=(udp|tcp)(?:&|$)/i);
+            const transport = transportMatch
+              ? transportMatch[1].toLowerCase()
+              : scheme === 'turns'
+                ? 'tcp'
+                : 'udp';
+            let port = null;
+            if (hostPort.startsWith('[')) {
+              const bracketIndex = hostPort.indexOf(']');
+              const portText = bracketIndex >= 0 && hostPort[bracketIndex + 1] === ':'
+                ? hostPort.slice(bracketIndex + 2)
+                : '';
+              port = portText ? Number(portText) : null;
+            } else {
+              const colonIndex = hostPort.lastIndexOf(':');
+              if (colonIndex > 0 && hostPort.indexOf(':') === colonIndex) {
+                port = Number(hostPort.slice(colonIndex + 1));
+              }
+            }
+            return { scheme, transport, port: Number.isFinite(port) ? port : null };
+          }
+
+          function validateTurnConfig() {
+            const turnUrlsValue = (process.env.SOCIAL_TURN_URLS || '').trim();
+            if (!turnUrlsValue) {
+              return;
+            }
+            const username = (process.env.SOCIAL_TURN_USERNAME || '').trim();
+            const credential = (process.env.SOCIAL_TURN_CREDENTIAL || '').trim();
+            if (!username || !credential) {
+              fail('SOCIAL_TURN_USERNAME and SOCIAL_TURN_CREDENTIAL are required when SOCIAL_TURN_URLS is set.');
+            }
+
+            const parsed = turnUrlsValue.split(',').map(parseTurnUrl);
+            const hasUdp = parsed.some(url => url.scheme === 'turn' && url.transport === 'udp');
+            const hasTcp443 = parsed.some(url => url.transport === 'tcp' && url.port === 443);
+            if (!hasUdp || !hasTcp443) {
+              fail('SOCIAL_TURN_URLS must include UDP TURN and TCP/TLS TURN on port 443 fallback.');
+            }
+          }
+
           validatePublicHttpsUrl('SOCIAL_API_BASE_URL', true);
           validatePublicHttpsUrl('SOCIAL_NOTIFICATIONS_BASE_URL', false);
+          validateTurnConfig();
           NODE
 
           echo "Building release AAB version $SOCIAL_VERSION_NAME ($SOCIAL_VERSION_CODE)"

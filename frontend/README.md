@@ -37,3 +37,4 @@ VITE_TURN_CREDENTIAL=change_me_turn_password
 ```
 
 В локальной разработке значения по умолчанию рассчитаны на Vite proxy и backend на `http://localhost:8080`. Для production маршрутизацию API и notifications выполняет nginx.
+Для production TURN указывайте UDP URL и TCP/TLS fallback на 443 порту, например `turn:turn.example.com:3478?transport=udp,turn:turn.example.com:443?transport=tcp,turns:turn.example.com:443?transport=tcp`.

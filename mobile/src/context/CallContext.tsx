@@ -112,6 +112,9 @@ type SdpSummary = {
     hasVideo: boolean;
     audio: SdpMediaSummary;
     video: SdpMediaSummary;
+    audioCodecs: string[];
+    preferredAudioCodec: string | null;
+    hasOpus: boolean;
     hasSendrecv: boolean;
 };
 
@@ -131,6 +134,11 @@ type PeerConnectionHandlers = {
     onicegatheringstatechange?: ((event: unknown) => void) | null;
     onsignalingstatechange?: ((event: unknown) => void) | null;
 };
+type AudioQualityProfileName = 'low' | 'medium' | 'high';
+type AudioQualityProfile = {
+    name: AudioQualityProfileName;
+    maxBitrate: number;
+};
 type VideoQualityProfileName = 'low' | 'medium' | 'high';
 type VideoQualityProfile = {
     name: VideoQualityProfileName;
@@ -148,10 +156,47 @@ type ConstraintCapableTrack = MediaStreamTrack & {
     ) => Promise<void>;
 };
 type CallMediaConstraints = Parameters<typeof mediaDevices.getUserMedia>[0];
+type RtcStatsValue = {
+    id?: string;
+    type?: string;
+    timestamp?: number;
+    kind?: string;
+    mediaType?: string;
+    packetsLost?: number;
+    packetsReceived?: number;
+    packetsSent?: number;
+    jitter?: number;
+    roundTripTime?: number;
+    currentRoundTripTime?: number;
+    bytesSent?: number;
+    bytesReceived?: number;
+    availableOutgoingBitrate?: number;
+    availableIncomingBitrate?: number;
+    selectedCandidatePairId?: string;
+    localCandidateId?: string;
+    remoteCandidateId?: string;
+    state?: string;
+    nominated?: boolean;
+    candidateType?: string;
+    protocol?: string;
+    relayProtocol?: string;
+    url?: string;
+    networkType?: string;
+};
+type CallStatsAccumulator = {
+    byteSamples: Map<
+        string,
+        {
+            bytes: number;
+            timestamp: number;
+        }
+    >;
+};
 
 const CallContext = createContext<CallContextValue | undefined>(undefined);
 const disconnectedCleanupDelayMs = 10000;
 const callHeartbeatIntervalMs = 15000;
+const callStatsIntervalMs = 15000;
 const maxIceRecoveryAttempts = 2;
 const callAudioConstraints = {
     echoCancellation: true,
@@ -162,7 +207,20 @@ const callAudioConstraints = {
     googAutoGainControl: true,
     googHighpassFilter: true,
 } as unknown as CallMediaConstraints['audio'];
-const audioSenderMaxBitrate = 64000;
+const audioQualityProfiles = {
+    low: {
+        name: 'low',
+        maxBitrate: 24000,
+    },
+    medium: {
+        name: 'medium',
+        maxBitrate: 40000,
+    },
+    high: {
+        name: 'high',
+        maxBitrate: 64000,
+    },
+} satisfies Record<AudioQualityProfileName, AudioQualityProfile>;
 const videoQualityProfiles = {
     low: {
         name: 'low',
@@ -261,7 +319,138 @@ function callEventDedupKey(event: WsEvent) {
     return `${payload.call_id}:${event.type}:${String(payload.from_id ?? '')}`;
 }
 
+let turnConfigAudited = false;
+
+function parseTurnUrl(url: string) {
+    const trimmed = url.trim();
+    const schemeMatch = trimmed.match(/^(turns?):/i);
+    if (!schemeMatch) {
+        return null;
+    }
+
+    const scheme = schemeMatch[1].toLowerCase() as 'turn' | 'turns';
+    const withoutScheme = trimmed.slice(scheme.length + 1);
+    const [authority = '', query = ''] = withoutScheme.split('?');
+    const hostPort = authority.replace(/^\/\//, '').split('/')[0] ?? '';
+    const transport =
+        query.match(/(?:^|&)transport=(udp|tcp)(?:&|$)/i)?.[1].toLowerCase() ??
+        (scheme === 'turns' ? 'tcp' : 'udp');
+
+    let host = hostPort;
+    let port: number | null = null;
+    if (hostPort.startsWith('[')) {
+        const bracketIndex = hostPort.indexOf(']');
+        host = bracketIndex >= 0 ? hostPort.slice(1, bracketIndex) : hostPort;
+        const portText =
+            bracketIndex >= 0 && hostPort[bracketIndex + 1] === ':'
+                ? hostPort.slice(bracketIndex + 2)
+                : '';
+        port = portText ? Number(portText) : null;
+    } else {
+        const colonIndex = hostPort.lastIndexOf(':');
+        const hasSingleColon =
+            colonIndex > 0 && hostPort.indexOf(':') === colonIndex;
+        if (hasSingleColon) {
+            host = hostPort.slice(0, colonIndex);
+            port = Number(hostPort.slice(colonIndex + 1));
+        }
+    }
+
+    return {
+        url: trimmed,
+        scheme,
+        transport,
+        host,
+        port: Number.isFinite(port) ? port : null,
+    };
+}
+
+function turnConfigSummary(urls: string[]) {
+    const turnUrls = urls.map(parseTurnUrl).filter(Boolean) as Array<
+        NonNullable<ReturnType<typeof parseTurnUrl>>
+    >;
+
+    return {
+        urlCount: urls.length,
+        hasTurnUdp: turnUrls.some(
+            url => url.scheme === 'turn' && url.transport === 'udp',
+        ),
+        hasTurnTcp: turnUrls.some(url => url.transport === 'tcp'),
+        hasTurnTcp443: turnUrls.some(
+            url => url.transport === 'tcp' && url.port === 443,
+        ),
+        hasTurnsTls443: turnUrls.some(
+            url =>
+                url.scheme === 'turns' &&
+                url.transport === 'tcp' &&
+                url.port === 443,
+        ),
+        transports: Array.from(
+            new Set(turnUrls.map(url => `${url.scheme}/${url.transport}`)),
+        ),
+        ports: Array.from(
+            new Set(
+                turnUrls
+                    .map(url => url.port)
+                    .filter((port): port is number => port !== null),
+            ),
+        ).sort((left, right) => left - right),
+    };
+}
+
+function auditTurnConfiguration() {
+    if (turnConfigAudited) {
+        return;
+    }
+    turnConfigAudited = true;
+
+    const summary = turnConfigSummary(TURN_URLS);
+    callLog('CALL_ENV', 'TURN ICE config audit', {
+        ...summary,
+        hasUsername: Boolean(TURN_USERNAME),
+        hasCredential: Boolean(TURN_CREDENTIAL),
+    });
+
+    if (TURN_URLS.length === 0) {
+        callWarn('CALL_ENV', 'TURN is not configured for mobile calls', {
+            recommendation:
+                'Configure TURN for calls outside LAN/NAT-friendly networks.',
+        });
+        return;
+    }
+
+    if (!TURN_USERNAME || !TURN_CREDENTIAL) {
+        callWarn('CALL_ENV', 'TURN URLs configured without username or credential', {
+            turnUrls: TURN_URLS.length,
+            hasUsername: Boolean(TURN_USERNAME),
+            hasCredential: Boolean(TURN_CREDENTIAL),
+        });
+    }
+
+    if (!summary.hasTurnUdp || !summary.hasTurnTcp443) {
+        callWarn('CALL_ENV', 'TURN transport fallback is incomplete', {
+            ...summary,
+            recommendation:
+                'Use UDP TURN plus TCP/TLS TURN on port 443 for restrictive mobile networks.',
+        });
+    }
+
+    if (!summary.hasTurnsTls443) {
+        callWarn('CALL_ENV', 'TURN TLS 443 URL is missing', {
+            ...summary,
+            recommendation:
+                'Add a turns:host:443?transport=tcp URL when the TURN provider supports TLS.',
+        });
+    }
+
+    callWarn('CALL_ENV', 'TODO verify TURN server geography', {
+        recommendation:
+            'Place TURN close to the primary mobile audience or use a managed provider with regional POPs.',
+    });
+}
+
 function iceServers() {
+    auditTurnConfiguration();
     const servers: Array<{
         urls: string | string[];
         username?: string;
@@ -269,21 +458,6 @@ function iceServers() {
     }> = [{ urls: 'stun:stun.l.google.com:19302' }];
 
     if (TURN_URLS.length > 0) {
-        if (!TURN_USERNAME || !TURN_CREDENTIAL) {
-            callWarn(
-                'CALL_ENV',
-                'TURN URLs configured without username or credential',
-                {
-                    turnUrls: TURN_URLS.length,
-                    hasUsername: Boolean(TURN_USERNAME),
-                    hasCredential: Boolean(TURN_CREDENTIAL),
-                },
-            );
-            warnDev(
-                '[SocialMobile] TURN URLs configured without username or credential',
-            );
-        }
-
         servers.push({
             urls: TURN_URLS,
             username: TURN_USERNAME,
@@ -324,6 +498,35 @@ async function initialVideoQualityProfile(networkConnected: boolean) {
     return Platform.OS === 'android' && Number(Platform.Version) < 26
         ? videoQualityProfiles.medium
         : videoQualityProfiles.high;
+}
+
+async function initialAudioQualityProfile(networkConnected: boolean) {
+    if (!networkConnected) {
+        return audioQualityProfiles.low;
+    }
+
+    try {
+        const state = await NetInfo.fetch();
+        if (state.type === 'cellular') {
+            const generation = state.details?.cellularGeneration;
+            if (generation === '2g' || generation === '3g') {
+                return audioQualityProfiles.low;
+            }
+            if (generation === '4g') {
+                return audioQualityProfiles.medium;
+            }
+            return generation === '5g'
+                ? audioQualityProfiles.high
+                : audioQualityProfiles.medium;
+        }
+        if (state.type === 'wifi' || state.type === 'ethernet') {
+            return audioQualityProfiles.high;
+        }
+    } catch {
+        return audioQualityProfiles.medium;
+    }
+
+    return audioQualityProfiles.medium;
 }
 
 function isSameVideoProfile(
@@ -469,6 +672,120 @@ function sectionDirection(section: string, fallback = 'sendrecv') {
     );
 }
 
+function audioCodecNames(section: string | undefined) {
+    if (!section) {
+        return [];
+    }
+
+    const codecs = new Set<string>();
+    section.split(/\r?\n/).forEach(line => {
+        const match = line.match(/^a=rtpmap:\d+\s+([^/\s]+)/i);
+        if (match?.[1]) {
+            codecs.add(match[1].toLowerCase());
+        }
+    });
+    return Array.from(codecs);
+}
+
+function mergeFmtpParams(
+    payloadId: string,
+    line: string | undefined,
+    additions: Record<string, string>,
+) {
+    const existing = line?.match(/^a=fmtp:(\d+)\s+(.+)$/i);
+    const params = new Map<string, string>();
+
+    existing?.[2]
+        .split(';')
+        .map(param => param.trim())
+        .filter(Boolean)
+        .forEach(param => {
+            const [key, ...valueParts] = param.split('=');
+            if (!key) {
+                return;
+            }
+            params.set(key.toLowerCase(), valueParts.join('=') || '');
+        });
+
+    Object.entries(additions).forEach(([key, value]) => {
+        params.set(key.toLowerCase(), value);
+    });
+
+    const fmtp = Array.from(params.entries())
+        .map(([key, value]) => (value ? `${key}=${value}` : key))
+        .join(';');
+
+    return `a=fmtp:${existing?.[1] ?? payloadId} ${fmtp}`;
+}
+
+function preferOpusInSdp(sdp: string, audioProfile: AudioQualityProfile) {
+    if (!sdp) {
+        return sdp;
+    }
+
+    const lineBreak = sdp.includes('\r\n') ? '\r\n' : '\n';
+    const lines = sdp.split(/\r?\n/);
+    const audioLineIndex = lines.findIndex(line => line.startsWith('m=audio '));
+    if (audioLineIndex < 0) {
+        return sdp;
+    }
+
+    const opusPayloadIds = lines
+        .map(line => line.match(/^a=rtpmap:(\d+)\s+opus\/48000(?:\/2)?/i)?.[1])
+        .filter((payloadId): payloadId is string => Boolean(payloadId));
+
+    if (opusPayloadIds.length === 0) {
+        return sdp;
+    }
+
+    const audioLineParts = lines[audioLineIndex].split(' ');
+    const header = audioLineParts.slice(0, 3);
+    const payloads = audioLineParts.slice(3);
+    const opusPayloadSet = new Set(opusPayloadIds);
+    lines[audioLineIndex] = [
+        ...header,
+        ...opusPayloadIds,
+        ...payloads.filter(payload => !opusPayloadSet.has(payload)),
+    ].join(' ');
+
+    opusPayloadIds.forEach(payloadId => {
+        const fmtpIndex = lines.findIndex(line =>
+            line.toLowerCase().startsWith(`a=fmtp:${payloadId} `),
+        );
+        const nextFmtp = mergeFmtpParams(
+            payloadId,
+            lines[fmtpIndex],
+            {
+                useinbandfec: '1',
+                minptime: '10',
+                maxaveragebitrate: String(audioProfile.maxBitrate),
+            },
+        );
+
+        if (fmtpIndex >= 0) {
+            lines[fmtpIndex] = nextFmtp;
+            return;
+        }
+
+        const rtpmapIndex = lines.findIndex(line =>
+            line.toLowerCase().startsWith(`a=rtpmap:${payloadId} `),
+        );
+        lines.splice(rtpmapIndex + 1, 0, nextFmtp);
+    });
+
+    return lines.join(lineBreak);
+}
+
+function preferOpusInSessionDescription(
+    description: CallSessionDescription,
+    audioProfile: AudioQualityProfile,
+): CallSessionDescription {
+    return {
+        ...description,
+        sdp: preferOpusInSdp(description.sdp, audioProfile),
+    };
+}
+
 function summarizeSdp(sdp?: string | null): SdpSummary {
     const text = sdp ?? '';
     const sessionDirection = sectionDirection(text.split(/\r?\nm=/)[0] ?? '');
@@ -488,6 +805,7 @@ function summarizeSdp(sdp?: string | null): SdpSummary {
     const videoDirection = videoSection
         ? sectionDirection(videoSection, sessionDirection)
         : 'missing';
+    const codecs = audioCodecNames(audioSection);
 
     return {
         hasAudio: Boolean(audioSection),
@@ -500,6 +818,9 @@ function summarizeSdp(sdp?: string | null): SdpSummary {
             present: Boolean(videoSection),
             direction: videoDirection as SdpMediaSummary['direction'],
         },
+        audioCodecs: codecs,
+        preferredAudioCodec: codecs[0] ?? null,
+        hasOpus: codecs.includes('opus'),
         hasSendrecv:
             audioDirection === 'sendrecv' || videoDirection === 'sendrecv',
     };
@@ -788,6 +1109,7 @@ async function applyVideoSenderQuality(
 
 async function applyAudioSenderQuality(
     pc: PeerConnection | null,
+    networkConnected: boolean,
     callId?: string | null,
     pcId?: number | null,
 ) {
@@ -801,23 +1123,32 @@ async function applyAudioSenderQuality(
     }
 
     try {
+        const audioProfile = await initialAudioQualityProfile(networkConnected);
         const parameters = sender.getParameters();
         if (parameters.encodings.length === 0) {
-            return;
+            parameters.encodings = [
+                {
+                    active: true,
+                    maxBitrate: audioProfile.maxBitrate,
+                },
+            ];
+        } else {
+            parameters.encodings.forEach(encoding => {
+                encoding.maxBitrate = audioProfile.maxBitrate;
+            });
         }
-        parameters.encodings.forEach(encoding => {
-            encoding.maxBitrate = audioSenderMaxBitrate;
-        });
         await sender.setParameters(parameters);
         callLog('CALL_WEBRTC', 'audio sender quality applied', {
             callId,
             pcId,
-            maxBitrate: audioSenderMaxBitrate,
+            profile: audioProfile.name,
+            maxBitrate: audioProfile.maxBitrate,
         });
         logDev('[SocialMobile] Audio sender quality applied', {
             callId,
             pcId,
-            maxBitrate: audioSenderMaxBitrate,
+            profile: audioProfile.name,
+            maxBitrate: audioProfile.maxBitrate,
         });
     } catch (qualityError) {
         logCallError('CALL_ERROR', 'failed to apply audio sender quality', {
@@ -831,6 +1162,204 @@ async function applyAudioSenderQuality(
             error: qualityError,
         });
     }
+}
+
+function createCallStatsAccumulator(): CallStatsAccumulator {
+    return {
+        byteSamples: new Map(),
+    };
+}
+
+function statsReportValues(report: unknown) {
+    const values: RtcStatsValue[] = [];
+    const mapLike = report as {
+        forEach?: (callback: (value: unknown) => void) => void;
+    };
+
+    if (typeof mapLike?.forEach === 'function') {
+        mapLike.forEach(value => {
+            if (value && typeof value === 'object') {
+                values.push(value as RtcStatsValue);
+            }
+        });
+        return values;
+    }
+
+    if (report && typeof report === 'object') {
+        Object.values(report as Record<string, unknown>).forEach(value => {
+            if (value && typeof value === 'object') {
+                values.push(value as RtcStatsValue);
+            }
+        });
+    }
+
+    return values;
+}
+
+function statsMediaKind(stat: RtcStatsValue) {
+    return stat.kind ?? stat.mediaType ?? 'unknown';
+}
+
+function metricMs(value: number | undefined) {
+    return typeof value === 'number' ? Math.round(value * 1000) : null;
+}
+
+function packetLossPercent(stat: RtcStatsValue) {
+    if (
+        typeof stat.packetsLost !== 'number' ||
+        typeof stat.packetsReceived !== 'number'
+    ) {
+        return null;
+    }
+
+    const total = stat.packetsLost + stat.packetsReceived;
+    if (total <= 0) {
+        return null;
+    }
+
+    return Math.round((stat.packetsLost / total) * 1000) / 10;
+}
+
+function bitrateFromBytes(
+    stat: RtcStatsValue,
+    field: 'bytesSent' | 'bytesReceived',
+    accumulator: CallStatsAccumulator,
+) {
+    const bytes = stat[field];
+    if (typeof bytes !== 'number') {
+        return null;
+    }
+
+    const timestamp =
+        typeof stat.timestamp === 'number' ? stat.timestamp : Date.now();
+    const key = `${stat.id ?? stat.type}:${field}`;
+    const previous = accumulator.byteSamples.get(key);
+    accumulator.byteSamples.set(key, { bytes, timestamp });
+
+    if (!previous || timestamp <= previous.timestamp || bytes < previous.bytes) {
+        return null;
+    }
+
+    return Math.round(((bytes - previous.bytes) * 8 * 1000) / (timestamp - previous.timestamp));
+}
+
+function summarizeMediaStats(
+    stats: RtcStatsValue[],
+    kind: 'audio' | 'video',
+    accumulator: CallStatsAccumulator,
+) {
+    const inbound = stats.find(
+        stat => stat.type === 'inbound-rtp' && statsMediaKind(stat) === kind,
+    );
+    const outbound = stats.find(
+        stat => stat.type === 'outbound-rtp' && statsMediaKind(stat) === kind,
+    );
+    const remoteInbound = stats.find(
+        stat =>
+            stat.type === 'remote-inbound-rtp' && statsMediaKind(stat) === kind,
+    );
+
+    return {
+        inbound: inbound
+            ? {
+                  packetsLost: inbound.packetsLost ?? null,
+                  packetsReceived: inbound.packetsReceived ?? null,
+                  packetLossPercent: packetLossPercent(inbound),
+                  jitterMs: metricMs(inbound.jitter),
+                  bitrateBps: bitrateFromBytes(
+                      inbound,
+                      'bytesReceived',
+                      accumulator,
+                  ),
+              }
+            : null,
+        outbound: outbound
+            ? {
+                  packetsSent: outbound.packetsSent ?? null,
+                  bitrateBps: bitrateFromBytes(
+                      outbound,
+                      'bytesSent',
+                      accumulator,
+                  ),
+              }
+            : null,
+        remoteInbound: remoteInbound
+            ? {
+                  packetsLost: remoteInbound.packetsLost ?? null,
+                  packetLossPercent: packetLossPercent(remoteInbound),
+                  jitterMs: metricMs(remoteInbound.jitter),
+                  roundTripTimeMs: metricMs(remoteInbound.roundTripTime),
+              }
+            : null,
+    };
+}
+
+function summarizeCandidatePair(stats: RtcStatsValue[]) {
+    const statsById = new Map(
+        stats
+            .filter(stat => stat.id)
+            .map(stat => [stat.id as string, stat] as const),
+    );
+    const selectedPairId = stats.find(
+        stat =>
+            stat.type === 'transport' &&
+            typeof stat.selectedCandidatePairId === 'string',
+    )?.selectedCandidatePairId;
+    const selectedPair =
+        (selectedPairId ? statsById.get(selectedPairId) : undefined) ??
+        stats.find(
+            stat =>
+                stat.type === 'candidate-pair' &&
+                (stat.state === 'succeeded' || stat.nominated === true),
+        );
+
+    if (!selectedPair) {
+        return null;
+    }
+
+    const localCandidate = selectedPair.localCandidateId
+        ? statsById.get(selectedPair.localCandidateId)
+        : undefined;
+    const remoteCandidate = selectedPair.remoteCandidateId
+        ? statsById.get(selectedPair.remoteCandidateId)
+        : undefined;
+
+    return {
+        currentRoundTripTimeMs: metricMs(selectedPair.currentRoundTripTime),
+        availableOutgoingBitrate: selectedPair.availableOutgoingBitrate ?? null,
+        availableIncomingBitrate: selectedPair.availableIncomingBitrate ?? null,
+        localCandidateType: localCandidate?.candidateType ?? null,
+        remoteCandidateType: remoteCandidate?.candidateType ?? null,
+        localProtocol: localCandidate?.protocol ?? null,
+        remoteProtocol: remoteCandidate?.protocol ?? null,
+        relayProtocol:
+            localCandidate?.relayProtocol ?? remoteCandidate?.relayProtocol ?? null,
+        networkType: localCandidate?.networkType ?? null,
+        turnUrl: localCandidate?.url ?? remoteCandidate?.url ?? null,
+        selectedUsesTurn:
+            localCandidate?.candidateType === 'relay' ||
+            remoteCandidate?.candidateType === 'relay',
+    };
+}
+
+async function collectCallQualityStats(
+    pc: PeerConnection,
+    accumulator: CallStatsAccumulator,
+) {
+    const getStats = (pc as PeerConnection & {
+        getStats?: () => Promise<unknown>;
+    }).getStats;
+    if (!getStats) {
+        return null;
+    }
+
+    const stats = statsReportValues(await getStats.call(pc));
+
+    return {
+        audio: summarizeMediaStats(stats, 'audio', accumulator),
+        video: summarizeMediaStats(stats, 'video', accumulator),
+        candidatePair: summarizeCandidatePair(stats),
+    };
 }
 
 const allowedCallTransitions: Record<CallStatus, ReadonlySet<CallStatus>> = {
@@ -958,6 +1487,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
     const disconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
         null,
     );
+    const callStatsTimerRef = useRef<ReturnType<typeof setInterval> | null>(
+        null,
+    );
+    const callStatsAccumulatorRef = useRef(createCallStatsAccumulator());
+    const iceRestartInFlightRef = useRef(false);
     const pcListenerCleanupRef = useRef<(() => void) | null>(null);
 
     useEffect(() => {
@@ -1083,8 +1617,102 @@ export function CallProvider({ children }: { children: ReactNode }) {
         return pcIdsRef.current.get(pc) ?? null;
     }, []);
 
+    useEffect(() => {
+        const pc = pcRef.current;
+        const callId = callIdRef.current;
+        if (!pc || !callId) {
+            return;
+        }
+
+        applyAudioSenderQuality(
+            pc,
+            networkConnected,
+            callId,
+            getPeerConnectionId(pc),
+        ).catch(() => undefined);
+    }, [getPeerConnectionId, networkConnected]);
+
+    const stopCallStatsPolling = useCallback(() => {
+        if (callStatsTimerRef.current) {
+            clearInterval(callStatsTimerRef.current);
+            callStatsTimerRef.current = null;
+        }
+        callStatsAccumulatorRef.current = createCallStatsAccumulator();
+    }, []);
+
+    const sampleCallQualityStats = useCallback(
+        async (
+            pc: PeerConnection,
+            callId: string,
+            pcId: number | null,
+            reason: string,
+        ) => {
+            try {
+                const stats = await collectCallQualityStats(
+                    pc,
+                    callStatsAccumulatorRef.current,
+                );
+                if (!stats) {
+                    callWarn('CALL_WEBRTC', 'getStats is unavailable', {
+                        callId,
+                        pcId,
+                        reason,
+                    });
+                    return;
+                }
+
+                callLog('CALL_WEBRTC', 'call quality stats', {
+                    callId,
+                    pcId,
+                    reason,
+                    connectionState: pc.connectionState,
+                    iceConnectionState: pc.iceConnectionState,
+                    stats,
+                });
+                logDev('[SocialMobile] Call quality stats', {
+                    callId,
+                    pcId,
+                    reason,
+                    stats,
+                });
+            } catch (statsError) {
+                logCallError('CALL_ERROR', 'failed to collect call stats', {
+                    callId,
+                    pcId,
+                    reason,
+                    error: describeCallError(statsError),
+                });
+            }
+        },
+        [],
+    );
+
+    const startCallStatsPolling = useCallback(
+        (pc: PeerConnection, callId: string, pcId: number | null) => {
+            stopCallStatsPolling();
+            callStatsAccumulatorRef.current = createCallStatsAccumulator();
+
+            const sample = (reason = 'interval') => {
+                if (pcRef.current !== pc || callIdRef.current !== callId) {
+                    return;
+                }
+                sampleCallQualityStats(pc, callId, pcId, reason).catch(
+                    () => undefined,
+                );
+            };
+
+            sample('start');
+            callStatsTimerRef.current = setInterval(
+                () => sample(),
+                callStatsIntervalMs,
+            );
+        },
+        [sampleCallQualityStats, stopCallStatsPolling],
+    );
+
     const closePeerConnection = useCallback(() => {
         clearDisconnectTimer();
+        stopCallStatsPolling();
         const pc = pcRef.current;
         if (pc) {
             callLog('CALL_WEBRTC', 'closing peer connection', {
@@ -1103,7 +1731,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
         pc?.close();
         pcRef.current = null;
         pcCallIdRef.current = null;
-    }, [clearDisconnectTimer]);
+        iceRestartInFlightRef.current = false;
+    }, [clearDisconnectTimer, stopCallStatsPolling]);
 
     const sendTerminalCallAction = useCallback(
         (action: 'end' | 'reject', targetId: number, callId: string) => {
@@ -1279,6 +1908,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         startInFlightRef.current = false;
         acceptInFlightRef.current = false;
         iceRecoveryAttemptsRef.current = 0;
+        iceRestartInFlightRef.current = false;
         setLocalStream(null);
         setRemoteStream(null);
         setMicrophoneOn(true);
@@ -1339,6 +1969,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
             startInFlightRef.current = false;
             acceptInFlightRef.current = false;
             iceRecoveryAttemptsRef.current = 0;
+            iceRestartInFlightRef.current = false;
             setLocalStream(null);
             setRemoteStream(null);
             setMicrophoneOn(true);
@@ -2343,6 +2974,132 @@ export function CallProvider({ children }: { children: ReactNode }) {
         [getPeerConnectionId],
     );
 
+    const requestIceRestart = useCallback(
+        async (
+            pc: PeerConnection,
+            toId: number,
+            callId: string,
+            pcId: number | null,
+            reason: string,
+        ) => {
+            if (iceRestartInFlightRef.current) {
+                callWarn('CALL_WEBRTC', 'ICE restart skipped while in flight', {
+                    callId,
+                    pcId,
+                    reason,
+                });
+                return;
+            }
+
+            if (pc.signalingState !== 'stable') {
+                callWarn('CALL_WEBRTC', 'ICE restart skipped outside stable signaling', {
+                    callId,
+                    pcId,
+                    reason,
+                    signalingState: pc.signalingState,
+                });
+                return;
+            }
+
+            iceRestartInFlightRef.current = true;
+            try {
+                const restartIce = (
+                    pc as PeerConnection & { restartIce?: () => void }
+                ).restartIce;
+                restartIce?.call(pc);
+                await applyAudioSenderQuality(
+                    pc,
+                    networkConnectedRef.current,
+                    callId,
+                    pcId,
+                );
+                const audioProfile = await initialAudioQualityProfile(
+                    networkConnectedRef.current,
+                );
+                const createOffer = (
+                    pc as PeerConnection & {
+                        createOffer: (options?: {
+                            iceRestart?: boolean;
+                        }) => Promise<CallSessionDescription>;
+                    }
+                ).createOffer;
+                const restartOffer = preferOpusInSessionDescription(
+                    sessionDescriptionForSignal(
+                        await createOffer.call(pc, { iceRestart: true }),
+                    ),
+                    audioProfile,
+                );
+                const restartSummary = summarizeSdp(restartOffer.sdp);
+
+                callLog('CALL_WEBRTC', 'ICE restart offer created', {
+                    callId,
+                    pcId,
+                    reason,
+                    audioProfile,
+                    summary: restartSummary,
+                });
+                if (!restartSummary.hasOpus) {
+                    callWarn('CALL_WEBRTC', 'ICE restart offer has no Opus codec', {
+                        callId,
+                        pcId,
+                        audioCodecs: restartSummary.audioCodecs,
+                    });
+                }
+
+                await pc.setLocalDescription(
+                    new RTCSessionDescription(restartOffer),
+                );
+
+                if (
+                    pcRef.current !== pc ||
+                    callIdRef.current !== callId ||
+                    pcCallIdRef.current !== callId
+                ) {
+                    callWarn('CALL_WEBRTC', 'ICE restart offer became stale', {
+                        callId,
+                        pcId,
+                        reason,
+                    });
+                    return;
+                }
+
+                localOfferPeerRef.current = {
+                    callId,
+                    pcId: pcId ?? -1,
+                };
+                chatSocket.connect();
+                const localOffer = sessionDescriptionForSignal(
+                    pc.localDescription,
+                    restartOffer,
+                );
+                const sent = chatSocket.sendCallOffer(
+                    toId,
+                    localOffer,
+                    callTypeRef.current,
+                    callId,
+                );
+                callLog('CALL_WS', 'ICE restart offer signaled', {
+                    callId,
+                    pcId,
+                    toId,
+                    reason,
+                    sent,
+                    sdp: summarizeSdp(localOffer.sdp),
+                });
+            } catch (restartError) {
+                logCallError('CALL_ERROR', 'ICE restart renegotiation failed', {
+                    callId,
+                    pcId,
+                    reason,
+                    error: describeCallError(restartError),
+                });
+            } finally {
+                iceRestartInFlightRef.current = false;
+            }
+        },
+        [],
+    );
+
     const createPeerConnection = useCallback(
         (toId: number, callId: string) => {
             const existingPc = pcRef.current;
@@ -2616,37 +3373,39 @@ export function CallProvider({ children }: { children: ReactNode }) {
                             () => undefined,
                         );
                     }
-                    const restartIce = (
-                        pc as PeerConnection & { restartIce?: () => void }
-                    ).restartIce;
                     if (
                         iceRecoveryAttemptsRef.current < maxIceRecoveryAttempts
                     ) {
                         iceRecoveryAttemptsRef.current += 1;
-                        try {
-                            restartIce?.call(pc);
-                            callLog('CALL_WEBRTC', 'ICE restart requested', {
-                                callId,
-                                pcId,
-                                attempt: iceRecoveryAttemptsRef.current,
-                            });
-                            logDev('[SocialMobile] ICE restart requested', {
-                                callId,
-                                pcId,
-                                attempt: iceRecoveryAttemptsRef.current,
-                            });
-                        } catch (restartError) {
-                            logCallError('CALL_ERROR', 'ICE restart failed', {
-                                callId,
-                                pcId,
-                                error: describeCallError(restartError),
-                            });
-                            warnDev('[SocialMobile] ICE restart failed', {
-                                callId,
-                                pcId,
-                                restartError,
-                            });
-                        }
+                        callLog('CALL_WEBRTC', 'ICE restart requested', {
+                            callId,
+                            pcId,
+                            attempt: iceRecoveryAttemptsRef.current,
+                            reason: 'peer_disconnected',
+                        });
+                        requestIceRestart(
+                            pc,
+                            toId,
+                            callId,
+                            pcId,
+                            'peer_disconnected',
+                        ).catch(restartError => {
+                            logCallError(
+                                'CALL_ERROR',
+                                'ICE restart request failed',
+                                {
+                                    callId,
+                                    pcId,
+                                    error: describeCallError(restartError),
+                                },
+                            );
+                        });
+                        logDev('[SocialMobile] ICE restart requested', {
+                            callId,
+                            pcId,
+                            attempt: iceRecoveryAttemptsRef.current,
+                            reason: 'peer_disconnected',
+                        });
                     }
 
                     disconnectTimerRef.current = setTimeout(() => {
@@ -2692,49 +3451,43 @@ export function CallProvider({ children }: { children: ReactNode }) {
                         clearDisconnectTimer();
                         setCallStatus('reconnecting', 'peer_failed_recovering');
                         iceRecoveryAttemptsRef.current += 1;
-                        try {
-                            (
-                                pc as PeerConnection & {
-                                    restartIce?: () => void;
-                                }
-                            ).restartIce?.();
-                            callLog(
-                                'CALL_WEBRTC',
-                                'ICE restart requested after failure',
-                                {
-                                    callId,
-                                    pcId,
-                                    attempt: iceRecoveryAttemptsRef.current,
-                                },
-                            );
-                            logDev(
-                                '[SocialMobile] ICE restart requested after failure',
-                                {
-                                    callId,
-                                    pcId,
-                                    attempt: iceRecoveryAttemptsRef.current,
-                                },
-                            );
-                            return;
-                        } catch (restartError) {
+                        callLog(
+                            'CALL_WEBRTC',
+                            'ICE restart requested after failure',
+                            {
+                                callId,
+                                pcId,
+                                attempt: iceRecoveryAttemptsRef.current,
+                                reason: 'peer_failed',
+                            },
+                        );
+                        requestIceRestart(
+                            pc,
+                            toId,
+                            callId,
+                            pcId,
+                            'peer_failed',
+                        ).catch(restartError => {
                             logCallError(
                                 'CALL_ERROR',
-                                'ICE restart after failure failed',
+                                'ICE restart after failure request failed',
                                 {
                                     callId,
                                     pcId,
                                     error: describeCallError(restartError),
                                 },
                             );
-                            warnDev(
-                                '[SocialMobile] ICE restart after failure failed',
-                                {
-                                    callId,
-                                    pcId,
-                                    restartError,
-                                },
-                            );
-                        }
+                        });
+                        logDev(
+                            '[SocialMobile] ICE restart requested after failure',
+                            {
+                                callId,
+                                pcId,
+                                attempt: iceRecoveryAttemptsRef.current,
+                                reason: 'peer_failed',
+                            },
+                        );
+                        return;
                     }
                     finishCall('error', 'Соединение звонка прервано.', true);
                 }
@@ -2830,6 +3583,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     peerHandlers.onsignalingstatechange = null;
                 }
             };
+            startCallStatsPolling(pc, callId, pcId);
 
             return pc;
         },
@@ -2839,8 +3593,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
             applyLocalVideoProfile,
             finishCall,
             getPeerConnectionId,
+            requestIceRestart,
             sendOrBufferOutgoingIce,
             setCallStatus,
+            startCallStatsPolling,
         ],
     );
 
@@ -3031,15 +3787,26 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     callId,
                     pcId,
                 );
-                await applyAudioSenderQuality(pc, callId, pcId);
+                await applyAudioSenderQuality(
+                    pc,
+                    networkConnectedRef.current,
+                    callId,
+                    pcId,
+                );
 
                 callLog('CALL_WEBRTC', 'creating call offer', {
                     callId,
                     pcId,
                     callType: effectiveCallType,
                 });
-                const offer = sessionDescriptionForSignal(
-                    (await pc.createOffer()) as CallSessionDescription,
+                const offerAudioProfile = await initialAudioQualityProfile(
+                    networkConnectedRef.current,
+                );
+                const offer = preferOpusInSessionDescription(
+                    sessionDescriptionForSignal(
+                        (await pc.createOffer()) as CallSessionDescription,
+                    ),
+                    offerAudioProfile,
                 );
                 if (!isCurrentStart()) {
                     callWarn(
@@ -3059,14 +3826,23 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     callId,
                     pcId,
                     callType: effectiveCallType,
+                    audioProfile: offerAudioProfile,
                     summary: offerSummary,
                 });
                 logDev('[SocialMobile] createOffer SDP summary', {
                     callId,
                     pcId,
                     callType: effectiveCallType,
+                    audioProfile: offerAudioProfile,
                     summary: offerSummary,
                 });
+                if (!offerSummary.hasOpus) {
+                    callWarn('CALL_WEBRTC', 'call offer SDP has no Opus codec', {
+                        callId,
+                        pcId,
+                        audioCodecs: offerSummary.audioCodecs,
+                    });
+                }
                 warnIfOfferSdpNotBidirectional(
                     offerSummary,
                     effectiveCallType,
@@ -3389,7 +4165,12 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 pendingOffer.callId,
                 pcId,
             );
-            await applyAudioSenderQuality(activePc, pendingOffer.callId, pcId);
+            await applyAudioSenderQuality(
+                activePc,
+                networkConnectedRef.current,
+                pendingOffer.callId,
+                pcId,
+            );
 
             callLog('CALL_WEBRTC', 'setting remote offer description', {
                 callId: pendingOffer.callId,
@@ -3434,8 +4215,14 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 pcId,
                 callType: opened.callType,
             });
-            const answer = sessionDescriptionForSignal(
-                (await activePc.createAnswer()) as CallSessionDescription,
+            const answerAudioProfile = await initialAudioQualityProfile(
+                networkConnectedRef.current,
+            );
+            const answer = preferOpusInSessionDescription(
+                sessionDescriptionForSignal(
+                    (await activePc.createAnswer()) as CallSessionDescription,
+                ),
+                answerAudioProfile,
             );
             if (!isCurrentAccept()) {
                 callWarn(
@@ -3454,14 +4241,23 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 callId: pendingOffer.callId,
                 pcId,
                 callType: opened.callType,
+                audioProfile: answerAudioProfile,
                 summary: summarizeSdp(answer.sdp),
             });
             logDev('[SocialMobile] createAnswer SDP summary', {
                 callId: pendingOffer.callId,
                 pcId,
                 callType: opened.callType,
+                audioProfile: answerAudioProfile,
                 summary: summarizeSdp(answer.sdp),
             });
+            if (!summarizeSdp(answer.sdp).hasOpus) {
+                callWarn('CALL_WEBRTC', 'call answer SDP has no Opus codec', {
+                    callId: pendingOffer.callId,
+                    pcId,
+                    audioCodecs: summarizeSdp(answer.sdp).audioCodecs,
+                });
+            }
             callLog('CALL_WEBRTC', 'setting local answer description', {
                 callId: pendingOffer.callId,
                 pcId,
@@ -3761,6 +4557,152 @@ export function CallProvider({ children }: { children: ReactNode }) {
         setFrontCamera(current => !current);
     }, [getPeerConnectionId]);
 
+    const handleRenegotiationOffer = useCallback(
+        (
+            fromId: number,
+            callId: string,
+            offer: CallSessionDescription,
+            incomingType?: CallType,
+        ) => {
+            const pc = pcRef.current;
+            const currentPeerId = peerUserIdRef.current;
+            const currentStatus = statusRef.current;
+            const canRenegotiate =
+                Boolean(pc) &&
+                pcCallIdRef.current === callId &&
+                callIdRef.current === callId &&
+                currentPeerId === fromId &&
+                currentStatus !== 'idle' &&
+                currentStatus !== 'incoming' &&
+                currentStatus !== 'ended' &&
+                currentStatus !== 'error';
+
+            if (!canRenegotiate || !pc) {
+                return false;
+            }
+
+            const pcId = getPeerConnectionId(pc);
+            if (pc.signalingState !== 'stable') {
+                callWarn(
+                    'CALL_WEBRTC',
+                    'renegotiation offer ignored outside stable signaling',
+                    {
+                        callId,
+                        pcId,
+                        fromId,
+                        signalingState: pc.signalingState,
+                    },
+                );
+                return true;
+            }
+
+            callLog('CALL_WEBRTC', 'renegotiation offer received', {
+                callId,
+                pcId,
+                fromId,
+                incomingType: incomingType ?? null,
+                offer: summarizeSdp(offer.sdp),
+            });
+            if (currentStatus === 'active') {
+                setCallStatus('reconnecting', 'renegotiation_offer_received');
+            }
+
+            (async () => {
+                try {
+                    await pc.setRemoteDescription(
+                        new RTCSessionDescription(offer),
+                    );
+                    if (
+                        pcRef.current !== pc ||
+                        callIdRef.current !== callId ||
+                        pcCallIdRef.current !== callId
+                    ) {
+                        return;
+                    }
+
+                    logPeerState(pc, callId, 'renegotiation-offer-set', pcId);
+                    await flushPendingIce();
+                    await applyAudioSenderQuality(
+                        pc,
+                        networkConnectedRef.current,
+                        callId,
+                        pcId,
+                    );
+                    const audioProfile = await initialAudioQualityProfile(
+                        networkConnectedRef.current,
+                    );
+                    const answer = preferOpusInSessionDescription(
+                        sessionDescriptionForSignal(
+                            (await pc.createAnswer()) as CallSessionDescription,
+                        ),
+                        audioProfile,
+                    );
+                    const answerSummary = summarizeSdp(answer.sdp);
+
+                    callLog('CALL_WEBRTC', 'renegotiation answer created', {
+                        callId,
+                        pcId,
+                        audioProfile,
+                        summary: answerSummary,
+                    });
+                    if (!answerSummary.hasOpus) {
+                        callWarn(
+                            'CALL_WEBRTC',
+                            'renegotiation answer has no Opus codec',
+                            {
+                                callId,
+                                pcId,
+                                audioCodecs: answerSummary.audioCodecs,
+                            },
+                        );
+                    }
+
+                    await pc.setLocalDescription(
+                        new RTCSessionDescription(answer),
+                    );
+                    if (
+                        pcRef.current !== pc ||
+                        callIdRef.current !== callId ||
+                        pcCallIdRef.current !== callId
+                    ) {
+                        return;
+                    }
+
+                    const localAnswer = sessionDescriptionForSignal(
+                        pc.localDescription,
+                        answer,
+                    );
+                    const sent = chatSocket.sendCallAnswer(
+                        fromId,
+                        localAnswer,
+                        callId,
+                    );
+                    callLog('CALL_WS', 'renegotiation answer signaled', {
+                        callId,
+                        pcId,
+                        fromId,
+                        sent,
+                        sdp: summarizeSdp(localAnswer.sdp),
+                    });
+                } catch (renegotiationError) {
+                    logCallError(
+                        'CALL_ERROR',
+                        'failed to handle renegotiation offer',
+                        {
+                            callId,
+                            pcId,
+                            fromId,
+                            error: describeCallError(renegotiationError),
+                        },
+                    );
+                }
+            })();
+
+            return true;
+        },
+        [flushPendingIce, getPeerConnectionId, setCallStatus],
+    );
+
     const handleSocketEvent = useCallback(
         (event: WsEvent) => {
             if (
@@ -3844,6 +4786,17 @@ export function CallProvider({ children }: { children: ReactNode }) {
                                 ? 'self_offer'
                                 : 'missing_call_id',
                     });
+                    return;
+                }
+
+                if (
+                    handleRenegotiationOffer(
+                        fromId,
+                        callId,
+                        offer,
+                        incomingType,
+                    )
+                ) {
                     return;
                 }
 
@@ -4304,6 +5257,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
             finishCall,
             flushPendingIce,
             getPeerConnectionId,
+            handleRenegotiationOffer,
             loadPeerName,
             queuePendingIceCandidate,
             sendTerminalCallAction,

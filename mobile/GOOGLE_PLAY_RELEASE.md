@@ -42,11 +42,13 @@ export SOCIAL_NOTIFICATIONS_BASE_URL=https://example.com/notifications-api
 Optional call connectivity inputs:
 
 ```sh
-export SOCIAL_TURN_URLS='turn:turn.example.com:3478?transport=udp,turn:turn.example.com:3478?transport=tcp'
+export SOCIAL_TURN_URLS='turn:turn.example.com:3478?transport=udp,turn:turn.example.com:443?transport=tcp,turns:turn.example.com:443?transport=tcp'
 export SOCIAL_TURN_USERNAME='turn-user'
+export SOCIAL_TURN_CREDENTIAL='turn-credential'
 ```
 
 Do not put a privileged long-lived TURN secret in the mobile bundle. If TURN requires credentials, use short-lived/limited credentials issued by backend, or a non-privileged deployment-specific credential that is safe to distribute to app clients.
+For mobile networks, configure both UDP TURN and TCP/TLS TURN on port 443. TODO: place TURN in a region close to the primary users, or use a managed TURN provider with regional POPs.
 
 ## Local Checks
 
@@ -58,7 +60,7 @@ Allowed local checks that do not build Android:
 - `npm run lint`
 - `npm test -- --runInBand`
 
-Release builds fail fast in CI if signing is missing, if `google-services.json` is missing, if `SOCIAL_API_BASE_URL` is missing/not public HTTPS, or if version inputs are invalid.
+Release builds fail fast in CI if signing is missing, if `google-services.json` is missing, if `SOCIAL_API_BASE_URL` is missing/not public HTTPS, if configured TURN credentials/fallbacks are incomplete, or if version inputs are invalid.
 
 ## GitHub Actions Release Build
 
@@ -70,8 +72,8 @@ Repository variables:
 - `SOCIAL_NOTIFICATIONS_BASE_URL`, if notifications are served from a separate host/path
 - `SOCIAL_VERSION_CODE`, optional; defaults to `github.run_number`
 - `SOCIAL_VERSION_NAME`, optional; defaults to `1.0.0`
-- `SOCIAL_TURN_URLS`, optional
-- `SOCIAL_TURN_USERNAME`, optional
+- `SOCIAL_TURN_URLS`, optional; when set, include UDP TURN and TCP/TLS TURN on port 443
+- `SOCIAL_TURN_USERNAME`, optional; required when `SOCIAL_TURN_URLS` is set
 
 Repository secrets:
 
@@ -80,6 +82,7 @@ Repository secrets:
 - `ANDROID_UPLOAD_KEYSTORE_PASSWORD`
 - `ANDROID_UPLOAD_KEY_ALIAS`
 - `ANDROID_UPLOAD_KEY_PASSWORD`
+- `SOCIAL_TURN_CREDENTIAL`, required when `SOCIAL_TURN_URLS` is set
 
 Encode files:
 
