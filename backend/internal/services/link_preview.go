@@ -116,28 +116,7 @@ func EnrichMessageLinkPreviewAsync(db *gorm.DB, messageID uint, previewID uint) 
 			updates["description"] = metadata.Description
 		}
 		if metadata.ThumbnailURL != nil {
-			thumbnailURL := metadata.ThumbnailURL
-			if store, storageErr := storage.Default(); storageErr == nil {
-				imageCtx, imageCancel := context.WithTimeout(context.Background(), 8*time.Second)
-				if key, cacheErr := cacheLinkPreviewImage(
-					imageCtx,
-					store,
-					messageID,
-					previewID,
-					*metadata.ThumbnailURL,
-				); cacheErr == nil {
-					thumbnailURL = &key
-				} else {
-					log.Printf(
-						"link preview thumbnail cache failed: message_id=%d preview_id=%d error=%v",
-						messageID,
-						previewID,
-						cacheErr,
-					)
-				}
-				imageCancel()
-			}
-			updates["thumbnail_url"] = thumbnailURL
+			updates["thumbnail_url"] = metadata.ThumbnailURL
 		}
 		if metadata.DurationSeconds != nil {
 			updates["duration_seconds"] = metadata.DurationSeconds
@@ -152,6 +131,45 @@ func EnrichMessageLinkPreviewAsync(db *gorm.DB, messageID uint, previewID uint) 
 		if err := db.Model(&models.MessageLinkPreview{}).
 			Where("id = ? AND message_id = ?", previewID, messageID).
 			Updates(updates).Error; err != nil {
+			return
+		}
+		PublishMessageUpdate(context.Background(), messageID)
+
+		if metadata.ThumbnailURL == nil {
+			return
+		}
+		store, err := storage.Default()
+		if err != nil {
+			log.Printf(
+				"link preview thumbnail storage unavailable: message_id=%d preview_id=%d error=%v",
+				messageID,
+				previewID,
+				err,
+			)
+			return
+		}
+
+		imageCtx, imageCancel := context.WithTimeout(context.Background(), 8*time.Second)
+		key, err := cacheLinkPreviewImage(
+			imageCtx,
+			store,
+			messageID,
+			previewID,
+			*metadata.ThumbnailURL,
+		)
+		imageCancel()
+		if err != nil {
+			log.Printf(
+				"link preview thumbnail cache failed: message_id=%d preview_id=%d error=%v",
+				messageID,
+				previewID,
+				err,
+			)
+			return
+		}
+		if err := db.Model(&models.MessageLinkPreview{}).
+			Where("id = ? AND message_id = ?", previewID, messageID).
+			Update("thumbnail_url", key).Error; err != nil {
 			return
 		}
 		PublishMessageUpdate(context.Background(), messageID)

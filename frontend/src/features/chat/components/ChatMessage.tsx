@@ -165,6 +165,10 @@ export function LinkPreviewCard({
         setFailedImageURLs([]);
     }, [previewImageKey]);
 
+    if (preview.status === 'ready' && preview.video_attachment_id) {
+        return null;
+    }
+
     return (
         <div className="mt-2 overflow-hidden rounded-xl border border-[var(--app-border)] bg-[var(--app-card-muted)]">
             {previewImageURL ? (

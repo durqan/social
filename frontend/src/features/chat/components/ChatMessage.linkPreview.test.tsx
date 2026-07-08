@@ -27,7 +27,7 @@ describe('LinkPreviewCard', () => {
         expect(html).toContain('Сохранить видео в чат');
     });
 
-    it('prefers imported video attachment thumbnail when import is ready', () => {
+    it('does not duplicate media after imported attachment is ready', () => {
         const html = renderToStaticMarkup(
             <LinkPreviewCard
                 preview={{
@@ -53,8 +53,6 @@ describe('LinkPreviewCard', () => {
             />,
         );
 
-        expect(html).toContain('Instagram reel');
-        expect(html).toContain('/api/messages/attachments/44/thumbnail');
-        expect(html).not.toContain('https://instagram.example/stale.jpg');
+        expect(html).toBe('');
     });
 });

@@ -71,6 +71,9 @@ function LinkPreviewCard({
   if (!preview) {
     return null;
   }
+  if (preview.status === 'ready' && preview.video_attachment_id) {
+    return null;
+  }
 
   const importing = preview.status === 'importing';
   const failed = preview.status === 'failed';
