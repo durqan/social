@@ -102,6 +102,9 @@ services:
       S3_SECRET_KEY: ${S3_SECRET_KEY:-}
       S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-}
       S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
+      YTDLP_PROXY: ${YTDLP_PROXY:-}
+      YTDLP_IMPERSONATE: ${YTDLP_IMPERSONATE:-chrome}
+      YTDLP_COOKIES_FILE: ${YTDLP_COOKIES_FILE:-}
     healthcheck:
       test: [ "CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health >/dev/null || exit 1" ]
       interval: 30s
