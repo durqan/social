@@ -245,6 +245,34 @@ func TestLinkPreviewVideoAttachmentUsesPrivateThumbnailURL(t *testing.T) {
 	}
 }
 
+func TestLinkPreviewVideoAttachmentFallbackUsesPrivateThumbnailURL(t *testing.T) {
+	attachmentID := uint(44)
+	message := models.Message{
+		Attachments: []models.MessageAttachment{{
+			ID:           attachmentID,
+			FileURL:      "chat-videos/1/video.mp4",
+			ThumbnailURL: "chat-video-thumbnails/1/thumb.jpg",
+			FileType:     "video",
+		}},
+		LinkPreview: &models.MessageLinkPreview{
+			VideoAttachmentID: &attachmentID,
+		},
+	}
+
+	response := WithPrivateAttachmentURLs(message)
+	preview := response.LinkPreview
+	if preview == nil || preview.VideoAttachment == nil {
+		t.Fatal("response link preview has no fallback video attachment")
+	}
+	wantThumb := PrivateAttachmentThumbnailURL(attachmentID)
+	if preview.VideoAttachment.ThumbnailURL != wantThumb {
+		t.Fatalf("video attachment thumbnail = %q, want %q", preview.VideoAttachment.ThumbnailURL, wantThumb)
+	}
+	if preview.ThumbnailURL == nil || *preview.ThumbnailURL != wantThumb {
+		t.Fatalf("preview thumbnail = %v, want %q", preview.ThumbnailURL, wantThumb)
+	}
+}
+
 func TestSendMessageUpdatesSenderLastSeen(t *testing.T) {
 	db := newMessageServiceTestDB(t)
 	seedAcceptedFriendship(t, db, 1, 2)

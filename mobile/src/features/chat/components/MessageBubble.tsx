@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Image,
   Linking,
@@ -25,32 +25,27 @@ import {
   messagePreviewText,
 } from '../lib/chatUtils';
 
-function linkPreviewImageURL(preview: MessageLinkPreview) {
-  const url =
-    preview.image_url ||
-    preview.thumbnail_url ||
-    preview.video_attachment?.thumbnail_url ||
-    null;
+function linkPreviewImageURLs(preview: MessageLinkPreview) {
+  const importedThumbnail = preview.video_attachment?.thumbnail_url;
+  const candidates =
+    preview.status === 'ready'
+      ? [importedThumbnail, preview.image_url, preview.thumbnail_url]
+      : [preview.image_url, preview.thumbnail_url, importedThumbnail];
 
-  if (!url) {
-    return null;
-  }
-
-  if (/^(https?:|data:|blob:)/i.test(url)) {
-    return url;
-  }
-
-  return assetURL(url);
+  return candidates
+    .filter(
+      (url, index): url is string =>
+        Boolean(url) && candidates.indexOf(url) === index,
+    )
+    .map(url => (/^(https?:|data:|blob:)/i.test(url) ? url : assetURL(url)));
 }
 
 function LinkPreviewCard({
                            message,
-                           outgoing,
                            onImport,
                            themeColors,
                          }: {
   message: Message;
-  outgoing: boolean;
   onImport: () => void;
   themeColors: ThemeColors;
 }) {
@@ -60,6 +55,18 @@ function LinkPreviewCard({
   );
 
   const preview = message.link_preview;
+  const previewImageURLs = useMemo(
+    () => (preview ? linkPreviewImageURLs(preview) : []),
+    [preview],
+  );
+  const previewImageKey = previewImageURLs.join('\n');
+  const [failedImageURLs, setFailedImageURLs] = useState<string[]>([]);
+  const previewImageURL =
+    previewImageURLs.find(url => !failedImageURLs.includes(url)) || null;
+
+  useEffect(() => {
+    setFailedImageURLs([]);
+  }, [previewImageKey]);
 
   if (!preview) {
     return null;
@@ -67,7 +74,6 @@ function LinkPreviewCard({
 
   const importing = preview.status === 'importing';
   const failed = preview.status === 'failed';
-  const previewImageURL = linkPreviewImageURL(preview);
 
   return (
       <View style={[styles.linkPreviewCard, themed.linkPreviewCard]}>
@@ -75,6 +81,13 @@ function LinkPreviewCard({
             <Image
                 source={{ uri: previewImageURL }}
                 style={styles.linkPreviewThumb}
+                onError={() =>
+                  setFailedImageURLs(current =>
+                    current.includes(previewImageURL)
+                      ? current
+                      : [...current, previewImageURL],
+                  )
+                }
             />
         ) : (
             <View
@@ -481,7 +494,6 @@ export const MessageBubble = React.memo(function MessageBubbleComponent({
         {message.link_preview ? (
           <LinkPreviewCard
             message={message}
-            outgoing={outgoing}
             themeColors={themeColors}
             onImport={() => onImportLinkPreviewVideo(message)}
           />

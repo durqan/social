@@ -27,7 +27,7 @@ describe('LinkPreviewCard', () => {
         expect(html).toContain('Сохранить видео в чат');
     });
 
-    it('renders imported video attachment thumbnail when preview thumbnail is missing', () => {
+    it('prefers imported video attachment thumbnail when import is ready', () => {
         const html = renderToStaticMarkup(
             <LinkPreviewCard
                 preview={{
@@ -36,7 +36,7 @@ describe('LinkPreviewCard', () => {
                     original_url: 'https://www.instagram.com/reel/abc/',
                     provider: 'instagram',
                     title: 'Instagram reel',
-                    thumbnail_url: null,
+                    thumbnail_url: 'https://instagram.example/stale.jpg',
                     status: 'ready',
                     video_attachment_id: 44,
                     video_attachment: {
@@ -55,5 +55,6 @@ describe('LinkPreviewCard', () => {
 
         expect(html).toContain('Instagram reel');
         expect(html).toContain('/api/messages/attachments/44/thumbnail');
+        expect(html).not.toContain('https://instagram.example/stale.jpg');
     });
 });

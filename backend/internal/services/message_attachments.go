@@ -595,6 +595,7 @@ func withPrivateLinkPreviewAttachmentURLs(preview *models.MessageLinkPreview, at
 		if attachment.ID != *preview.VideoAttachmentID {
 			continue
 		}
+		attachment = withPrivateAttachmentURLs(attachment)
 		preview.VideoAttachment = &attachment
 		if attachment.ThumbnailURL != "" {
 			preview.ThumbnailURL = &attachment.ThumbnailURL

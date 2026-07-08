@@ -1,4 +1,4 @@
-import { memo, useRef, useState, type MouseEvent, type TouchEvent } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, type MouseEvent, type TouchEvent } from 'react';
 import { toast } from 'react-hot-toast';
 import type { Message, MessageAttachment, MessageLinkPreview } from "@/shared/types/domain.js";
 import { Avatar } from "@/shared/ui/Avatar.js";
@@ -98,8 +98,14 @@ function previewDomain(raw: string) {
     }
 }
 
-function linkPreviewImageURL(preview: MessageLinkPreview) {
-    return preview.image_url || preview.thumbnail_url || preview.video_attachment?.thumbnail_url || null;
+function linkPreviewImageURLs(preview: MessageLinkPreview) {
+    const importedThumbnail = preview.video_attachment?.thumbnail_url;
+    const candidates = preview.status === 'ready'
+        ? [importedThumbnail, preview.image_url, preview.thumbnail_url]
+        : [preview.image_url, preview.thumbnail_url, importedThumbnail];
+
+    return candidates.filter((url, index): url is string =>
+        Boolean(url) && candidates.indexOf(url) === index);
 }
 
 type MessageStatusKind = 'sent' | 'read';
@@ -150,11 +156,26 @@ export function LinkPreviewCard({
 }) {
     const importing = preview.status === 'importing';
     const failed = preview.status === 'failed';
-    const previewImageURL = linkPreviewImageURL(preview);
+    const previewImageURLs = useMemo(() => linkPreviewImageURLs(preview), [preview]);
+    const previewImageKey = previewImageURLs.join('\n');
+    const [failedImageURLs, setFailedImageURLs] = useState<string[]>([]);
+    const previewImageURL = previewImageURLs.find(url => !failedImageURLs.includes(url)) || null;
+
+    useEffect(() => {
+        setFailedImageURLs([]);
+    }, [previewImageKey]);
+
     return (
         <div className="mt-2 overflow-hidden rounded-xl border border-[var(--app-border)] bg-[var(--app-card-muted)]">
             {previewImageURL ? (
-                <img src={previewImageURL} alt="" className="max-h-40 w-full object-cover" loading="lazy" />
+                <img
+                    src={previewImageURL}
+                    alt=""
+                    className="h-40 w-full object-cover"
+                    loading="lazy"
+                    onError={() => setFailedImageURLs(current =>
+                        current.includes(previewImageURL) ? current : [...current, previewImageURL])}
+                />
             ) : (
                 <div className="flex h-28 w-full items-center justify-center bg-black/10 text-[var(--app-text-secondary)]">
                     <Icon name="video" className="h-8 w-8" />
