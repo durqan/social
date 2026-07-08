@@ -1,5 +1,4 @@
 import React, {
-  forwardRef,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -12,7 +11,6 @@ import {
   Alert,
   Image,
   Keyboard,
-  Modal,
   PermissionsAndroid,
   Platform,
   Pressable,
@@ -27,8 +25,6 @@ import {
   errorCodes as documentPickerErrorCodes,
   isErrorWithCode as isDocumentPickerErrorWithCode,
   pick as pickDocuments,
-  types as documentPickerTypes,
-  type DocumentPickerResponse,
 } from '@react-native-documents/picker';
 import type {
   GestureResponderEvent,
@@ -39,7 +35,7 @@ import type {
 } from 'react-native';
 import { LegendList, type LegendListRef } from '@legendapp/list/react-native';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
-import type { Asset, ImagePickerResponse } from 'react-native-image-picker';
+import type { ImagePickerResponse } from 'react-native-image-picker';
 import {
   ChevronDown,
   File as FileIcon,
@@ -56,11 +52,7 @@ import {
   Trash2,
   Video as VideoIcon,
 } from 'lucide-react-native';
-import Sound, {
-  AudioEncoderAndroidType,
-  AudioSourceAndroidType,
-  OutputFormatAndroidType,
-} from 'react-native-nitro-sound';
+import Sound from 'react-native-nitro-sound';
 import Video from 'react-native-video';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { CommonActions, useFocusEffect, useIsFocused } from '@react-navigation/native';
@@ -69,12 +61,8 @@ import { WS_EVENTS } from '@social/shared';
 import {
   CHAT_ATTACHMENT_MAX_COUNT,
   CHAT_ATTACHMENT_MAX_TOTAL_BYTES,
-  CHAT_AUDIO_MIME_TYPES,
   CHAT_BLOCKED_ATTACHMENT_EXTENSIONS,
-  CHAT_FILE_MIME_TYPES,
-  CHAT_IMAGE_MIME_TYPES,
   CHAT_VIDEO_NOTE_MAX_DURATION_SECONDS,
-  CHAT_VIDEO_MIME_TYPES,
   CHAT_VOICE_MAX_DURATION_SECONDS,
   formatFileSize,
 } from '@social/shared';
@@ -88,7 +76,6 @@ import {
   validateLocalChatImage,
   validateLocalVideoNoteMessage,
   validateLocalVoiceMessage,
-  type ChatUploadAttachmentType,
   type LocalChatFile,
   type LocalChatImage,
   type LocalChatVideo,
@@ -121,6 +108,7 @@ import { useUnread } from '../../context/UnreadContext';
 import { useThemeColors } from '../../theme/ThemeContext';
 import { formatDuration } from '../../utils/format';
 import { useAppResumeEffect } from '../../utils/useAppResumeEffect';
+import { useLatest } from '../../utils/useLatest';
 import type { ChatStackParamList } from '../../navigation/types';
 import {
   encryptAttachmentForUpload,
@@ -150,23 +138,69 @@ import {
 } from '../../features/chat/lib/attachmentDownload';
 import { ChatDoodleBackground } from '../../features/chat/components/ChatDoodleBackground';
 import { setActivePushConversation } from '../../notifications/activeConversation';
-import { MessageBubble, VideoNoteAttachment } from './chat/MessageBubble';
-import { ForwardMessageModal, MessageActionSheet } from './chat/ChatModals';
-import { createChatThemeStyles, styles } from './chat/chatStyles';
+import {
+  MessageBubble,
+  VideoNoteAttachment,
+} from '../../features/chat/components/MessageBubble';
+import { ChatLightboxes } from '../../features/chat/components/ChatLightboxes';
+import {
+  ChatScrollView,
+  type ChatScrollViewRef,
+} from '../../features/chat/components/ChatScrollView';
+import { ChatPinnedMessageBar } from '../../features/chat/components/ChatPinnedMessageBar';
+import {
+  ForwardMessageModal,
+  MessageActionSheet,
+} from '../../features/chat/components/ChatModals';
+import {
+  createChatThemeStyles,
+  styles,
+} from '../../features/chat/lib/chatStyles';
 import {
   isPersistedMessage,
   messageAuthorName,
   messagePreviewText,
-} from './chat/chatUtils';
+} from '../../features/chat/lib/chatUtils';
+import {
+  chatErrorMessage,
+  mergeMessageLists,
+  messageBelongsToChat,
+  shouldApplyMessageUpdate,
+} from '../../features/chat/lib/messageState';
+import {
+  CHAT_INPUT_NATIVE_ID,
+  COMPOSER_ESTIMATED_DOCK_HEIGHT,
+  COMPOSER_INPUT_MAX_HEIGHT,
+  COMPOSER_INPUT_MIN_HEIGHT,
+  COPY_NOTICE_TIMEOUT_MS,
+  LOAD_OLDER_THRESHOLD,
+  LOCAL_TYPING_STOP_DELAY_MS,
+  LONG_PRESS_DELAY_MS,
+  MESSAGE_LIST_BOTTOM_GAP,
+  MESSAGE_LIST_TAP_MOVE_THRESHOLD,
+  MESSAGE_PAGE_SIZE,
+  NEAR_LATEST_THRESHOLD,
+  REMOTE_TYPING_TIMEOUT_MS,
+  SCROLL_EVENT_THROTTLE_MS,
+  SCROLL_TO_LATEST_BUTTON_GAP,
+  documentPickerMimeTypes,
+  voiceAudioSet,
+} from '../../features/chat/lib/chatScreenConfig';
+import {
+  assetToLocalVideoNote,
+  assetToPendingAttachment,
+  documentToPendingAttachment,
+  extensionFromFileName,
+  pendingAttachmentSubtitle,
+  type PendingChatAttachment,
+} from '../../features/chat/lib/pendingAttachments';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSharedValue, withTiming } from 'react-native-reanimated';
 import {
   AndroidSoftInputModes,
-  KeyboardChatScrollView,
   KeyboardController,
   KeyboardGestureArea,
   KeyboardStickyView,
-  type KeyboardChatScrollViewProps,
 } from 'react-native-keyboard-controller';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'Chat'>;
@@ -198,180 +232,6 @@ type PendingLatestScroll = {
   reason: ScrollToLatestReason;
   animated: boolean;
 };
-type PendingChatAttachment = LocalAttachmentSource & {
-  id: string;
-  fileType: ChatUploadAttachmentType;
-};
-
-type ChatScrollViewRef = React.ElementRef<typeof KeyboardChatScrollView>;
-type ChatScrollViewProps = ScrollViewProps &
-  KeyboardChatScrollViewProps & {
-    chatScrollViewRef?: React.MutableRefObject<ChatScrollViewRef | null>;
-  };
-
-const CHAT_INPUT_NATIVE_ID = 'chat-composer-input';
-
-function assignRef<T>(ref: React.ForwardedRef<T>, value: T | null) {
-  if (typeof ref === 'function') {
-    ref(value);
-    return;
-  }
-
-  if (ref) {
-    ref.current = value;
-  }
-}
-
-const ChatScrollView = forwardRef<ChatScrollViewRef, ChatScrollViewProps>(
-  ({ chatScrollViewRef, ...props }, ref) => {
-    const { bottom } = useSafeAreaInsets();
-    const combinedRef = useCallback(
-      (instance: ChatScrollViewRef | null) => {
-        assignRef(ref, instance);
-        if (chatScrollViewRef) {
-          chatScrollViewRef.current = instance;
-        }
-      },
-      [chatScrollViewRef, ref],
-    );
-
-    return (
-      <KeyboardChatScrollView
-        {...props}
-        ref={combinedRef}
-        automaticallyAdjustContentInsets={false}
-        contentInsetAdjustmentBehavior="never"
-        keyboardDismissMode="interactive"
-        keyboardLiftBehavior="whenAtEnd"
-        offset={bottom}
-      />
-    );
-  },
-);
-ChatScrollView.displayName = 'ChatScrollView';
-
-const COMPOSER_INPUT_MIN_HEIGHT = 44;
-const COMPOSER_INPUT_MAX_HEIGHT = 112;
-const COMPOSER_ESTIMATED_DOCK_HEIGHT = 24;
-const MESSAGE_LIST_BOTTOM_GAP = 24;
-const SCROLL_TO_LATEST_BUTTON_GAP = 18;
-const MESSAGE_PAGE_SIZE = 50;
-const LOAD_OLDER_THRESHOLD = 56;
-const NEAR_LATEST_THRESHOLD = 96;
-const COPY_NOTICE_TIMEOUT_MS = 1600;
-const REMOTE_TYPING_TIMEOUT_MS = 2200;
-const LOCAL_TYPING_STOP_DELAY_MS = 1400;
-const LONG_PRESS_DELAY_MS = 260;
-const SCROLL_EVENT_THROTTLE_MS = 16;
-const MESSAGE_LIST_TAP_MOVE_THRESHOLD = 8;
-const documentPickerMimeTypes = [
-  documentPickerTypes.images,
-  documentPickerTypes.video,
-  documentPickerTypes.audio,
-  documentPickerTypes.pdf,
-  documentPickerTypes.doc,
-  documentPickerTypes.docx,
-  documentPickerTypes.xls,
-  documentPickerTypes.xlsx,
-  documentPickerTypes.zip,
-  documentPickerTypes.plainText,
-  documentPickerTypes.json,
-  documentPickerTypes.csv,
-].flatMap(value => (Array.isArray(value) ? value : [value]));
-const voiceAudioSet = {
-  AudioEncoderAndroid: AudioEncoderAndroidType.AAC,
-  OutputFormatAndroid: OutputFormatAndroidType.MPEG_4,
-  AudioSourceAndroid: AudioSourceAndroidType.MIC,
-  AudioChannels: 1,
-  AudioSamplingRate: 44100,
-  AudioEncodingBitRate: 64000,
-} as const;
-
-function useLatest<T>(value: T) {
-  const ref = useRef(value);
-  ref.current = value;
-  return ref;
-}
-
-function messageUpdateTime(message: Message) {
-  if (!message.updated_at) {
-    return null;
-  }
-
-  const time = Date.parse(message.updated_at);
-  return Number.isFinite(time) ? time : null;
-}
-
-function shouldApplyMessageUpdate(current: Message, updated: Message) {
-  const currentTime = messageUpdateTime(current);
-  const updatedTime = messageUpdateTime(updated);
-
-  if (currentTime === null || updatedTime === null) {
-    return true;
-  }
-
-  return updatedTime >= currentTime;
-}
-
-function messageBelongsToChat(
-  message: Message,
-  currentUserId: number | undefined,
-  otherUserId: number,
-) {
-  return (
-    (message.from_id === otherUserId && message.to_id === currentUserId) ||
-    (message.to_id === otherUserId && message.from_id === currentUserId)
-  );
-}
-
-function mergeMessage(current: Message | undefined, next: Message) {
-  if (!current) {
-    return next;
-  }
-
-  if (!shouldApplyMessageUpdate(current, next)) {
-    return current;
-  }
-
-  return {
-    ...next,
-    reactions: next.reactions ?? current.reactions,
-    reaction_version: next.reaction_version ?? current.reaction_version,
-  };
-}
-
-function mergeMessageLists(current: Message[], next: Message[]) {
-  const byId = new Map<number, Message>();
-  current.forEach(message => {
-    byId.set(message.id, message);
-  });
-  next.forEach(message => {
-    byId.set(message.id, mergeMessage(byId.get(message.id), message));
-  });
-
-  return Array.from(byId.values()).sort((first, second) => {
-    if (first.id !== second.id) {
-      return first.id - second.id;
-    }
-    return Date.parse(first.created_at) - Date.parse(second.created_at);
-  });
-}
-
-function chatErrorMessage(error: unknown) {
-  if (error instanceof Error) {
-    if (
-      error.message === 'E2EE is not ready for this conversation' ||
-      error.message === 'Recipient E2EE is not enabled'
-    ) {
-      return 'Не удалось отправить сообщение.';
-    }
-    if (error.message.includes('too large for safe on-device processing')) {
-      return 'Вложение слишком большое для безопасной E2EE-обработки на устройстве. Выберите файл меньшего размера.';
-    }
-  }
-
-  return getApiErrorMessage(error);
-}
 
 export default function ChatScreen({ route, navigation }: Props) {
   const { user } = useAuth();
@@ -3358,39 +3218,18 @@ export default function ChatScreen({ route, navigation }: Props) {
       <SuccessBanner message={copyNotice} />
 
       <ChatDoodleBackground theme={themeColors}>
-        {pinnedMessage?.message ? (
-          <Pressable
-            accessibilityRole="button"
-            style={[styles.pinnedBar, themed.card]}
-            onPress={() => {
-              const targetId = pinnedMessage.message_id;
-              const index = messages.findIndex(
-                message => message.id === targetId,
-              );
-              if (index >= 0) {
-                void listRef.current?.scrollToIndex({ index, animated: true });
-              }
-            }}
-            onLongPress={unpinCurrentMessage}
-          >
-            <View style={[styles.pinnedStripe, themed.accentBg]} />
-            <View style={styles.pinnedInfo}>
-              <Text style={[styles.pinnedTitle, themed.accentText]}>
-                Закрепленное сообщение
-              </Text>
-              <Text style={[styles.pinnedText, themed.text]} numberOfLines={1}>
-                {messagePreviewText(pinnedMessage.message)}
-              </Text>
-            </View>
-            <Text style={[styles.pinnedHint, themed.softText]}>удерж. снять</Text>
-          </Pressable>
-        ) : null}
+        <ChatPinnedMessageBar
+          pinnedMessage={pinnedMessage}
+          messages={messages}
+          listRef={listRef}
+          themed={themed}
+          onUnpin={unpinCurrentMessage}
+        />
 
-        {/* eslint-disable-next-line react-native/no-inline-styles */}
         <KeyboardGestureArea
           interpolator="ios"
           offset={COMPOSER_INPUT_MIN_HEIGHT}
-          style={{ flex: 1 }}
+          style={styles.keyboardGestureArea}
           textInputNativeID={CHAT_INPUT_NATIVE_ID}
         >
           {loading && !hasLoaded ? (
@@ -3932,59 +3771,12 @@ export default function ChatScreen({ route, navigation }: Props) {
           </KeyboardStickyView>
         </KeyboardGestureArea>
       </ChatDoodleBackground>
-      <Modal
-        visible={Boolean(selectedImageUrl)}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setSelectedImageUrl(null)}
-      >
-        <Pressable
-          style={styles.lightbox}
-          onPress={() => setSelectedImageUrl(null)}
-        >
-          {selectedImageUrl ? (
-            <Image
-              source={{ uri: selectedImageUrl }}
-              style={styles.lightboxImage}
-              resizeMode="contain"
-            />
-          ) : null}
-          <Pressable
-            accessibilityRole="button"
-            style={styles.lightboxClose}
-            onPress={() => setSelectedImageUrl(null)}
-          >
-            <Text style={styles.lightboxCloseText}>×</Text>
-          </Pressable>
-        </Pressable>
-      </Modal>
-      <Modal
-        visible={Boolean(selectedVideoUrl)}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setSelectedVideoUrl(null)}
-      >
-        <View style={styles.lightbox}>
-          <Pressable
-            style={styles.lightboxBackdrop}
-            onPress={() => setSelectedVideoUrl(null)}
-          />
-          {selectedVideoUrl ? (
-            <Video
-              source={{ uri: selectedVideoUrl }}
-              style={styles.lightboxVideo}
-              controls
-              resizeMode="contain"
-            />
-          ) : null}
-          <Pressable
-            style={styles.lightboxClose}
-            onPress={() => setSelectedVideoUrl(null)}
-          >
-            <Text style={styles.lightboxCloseText}>×</Text>
-          </Pressable>
-        </View>
-      </Modal>
+      <ChatLightboxes
+        imageUrl={selectedImageUrl}
+        videoUrl={selectedVideoUrl}
+        onCloseImage={() => setSelectedImageUrl(null)}
+        onCloseVideo={() => setSelectedVideoUrl(null)}
+      />
 
       <MessageActionSheet
         message={selectedMessage}
@@ -4041,226 +3833,4 @@ export default function ChatScreen({ route, navigation }: Props) {
       />
     </Screen>
   );
-}
-
-function assetToPendingAttachment(asset: Asset): PendingChatAttachment | null {
-  if (!asset.uri) {
-    return null;
-  }
-
-  const fileName =
-    asset.fileName || defaultAttachmentFileName(asset.type, Date.now());
-  const type = normalizeAttachmentMimeType(asset.type, fileName);
-  if (!type) {
-    return null;
-  }
-
-  const fileType = attachmentFileTypeFromMime(type);
-  if (fileType !== 'image' && fileType !== 'video') {
-    return null;
-  }
-
-  return {
-    id: localAttachmentId(asset.uri, asset.fileSize),
-    uri: asset.uri,
-    type,
-    fileName,
-    fileSize: asset.fileSize,
-    width: asset.width,
-    height: asset.height,
-    durationSeconds:
-      fileType === 'video' && asset.duration
-        ? Math.max(1, Math.round(asset.duration))
-        : undefined,
-    fileType,
-  };
-}
-
-function documentToPendingAttachment(
-  document: DocumentPickerResponse,
-): PendingChatAttachment | null {
-  if (!document.uri) {
-    return null;
-  }
-
-  const fileName = document.name?.trim() || `attachment-${Date.now()}`;
-  const type = normalizeAttachmentMimeType(document.type, fileName);
-  if (!type) {
-    return null;
-  }
-
-  return {
-    id: localAttachmentId(document.uri, document.size ?? undefined),
-    uri: document.uri,
-    type,
-    fileName,
-    fileSize: document.size ?? undefined,
-    fileType: attachmentFileTypeFromMime(type),
-  };
-}
-
-function assetToLocalVideoNote(asset?: Asset): LocalVideoNoteMessage | null {
-  if (!asset?.uri) {
-    return null;
-  }
-
-  const durationSeconds = Math.max(
-    1,
-    Math.round(asset.duration ?? CHAT_VIDEO_NOTE_MAX_DURATION_SECONDS),
-  );
-
-  return {
-    uri: asset.uri,
-    type: asset.type || 'video/mp4',
-    fileName: asset.fileName || `video-note-${Date.now()}.mp4`,
-    durationSeconds,
-    fileSize: asset.fileSize,
-  };
-}
-
-function pendingAttachmentSubtitle(attachment: PendingChatAttachment) {
-  const parts = [pendingAttachmentTypeLabel(attachment.fileType)];
-  if (attachment.durationSeconds) {
-    parts.push(formatDuration(attachment.durationSeconds));
-  }
-  if (attachment.fileSize) {
-    parts.push(formatFileSize(attachment.fileSize));
-  }
-  return parts.join(' · ');
-}
-
-function pendingAttachmentTypeLabel(fileType: ChatUploadAttachmentType) {
-  switch (fileType) {
-    case 'image':
-      return 'Изображение';
-    case 'video':
-      return 'Видео';
-    case 'audio':
-      return 'Аудио';
-    default:
-      return 'Файл';
-  }
-}
-
-function localAttachmentId(uri: string, fileSize?: number | null) {
-  return `${uri}-${fileSize ?? Date.now()}`;
-}
-
-function extensionFromFileName(fileName: string) {
-  const match = /\.([a-z0-9]{1,12})$/i.exec(fileName.trim());
-  return match?.[1]?.toLowerCase() || '';
-}
-
-function normalizeAttachmentMimeType(
-  mimeType?: string | null,
-  fileName?: string,
-) {
-  const raw = mimeType?.split(';')[0]?.trim().toLowerCase() || '';
-  const inferred = inferMimeTypeFromFileName(fileName);
-
-  if (!raw || raw === 'application/octet-stream' || !raw.includes('/')) {
-    return inferred || raw || '';
-  }
-
-  switch (raw) {
-    case 'image/jpg':
-      return 'image/jpeg';
-    case 'audio/m4a':
-      return 'audio/mp4';
-    case 'text/comma-separated-values':
-      return 'text/csv';
-    default:
-      return raw;
-  }
-}
-
-function inferMimeTypeFromFileName(fileName?: string) {
-  switch (extensionFromFileName(fileName || '')) {
-    case 'jpg':
-    case 'jpeg':
-      return 'image/jpeg';
-    case 'png':
-      return 'image/png';
-    case 'webp':
-      return 'image/webp';
-    case 'gif':
-      return 'image/gif';
-    case 'mp4':
-      return 'video/mp4';
-    case 'mov':
-      return 'video/quicktime';
-    case 'webm':
-      return 'video/webm';
-    case 'mp3':
-      return 'audio/mpeg';
-    case 'm4a':
-      return 'audio/mp4';
-    case 'wav':
-      return 'audio/wav';
-    case 'ogg':
-      return 'audio/ogg';
-    case 'pdf':
-      return 'application/pdf';
-    case 'txt':
-      return 'text/plain';
-    case 'doc':
-      return 'application/msword';
-    case 'docx':
-      return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-    case 'xls':
-      return 'application/vnd.ms-excel';
-    case 'xlsx':
-      return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-    case 'zip':
-      return 'application/zip';
-    case 'json':
-      return 'application/json';
-    case 'csv':
-      return 'text/csv';
-    default:
-      return '';
-  }
-}
-
-function attachmentFileTypeFromMime(type: string): ChatUploadAttachmentType {
-  if (
-    type.startsWith('image/') ||
-    (CHAT_IMAGE_MIME_TYPES as readonly string[]).includes(type)
-  ) {
-    return 'image';
-  }
-  if (
-    type.startsWith('video/') ||
-    (CHAT_VIDEO_MIME_TYPES as readonly string[]).includes(type)
-  ) {
-    return 'video';
-  }
-  if (
-    type.startsWith('audio/') ||
-    (CHAT_AUDIO_MIME_TYPES as readonly string[]).includes(type)
-  ) {
-    return 'audio';
-  }
-  if ((CHAT_FILE_MIME_TYPES as readonly string[]).includes(type)) {
-    return 'file';
-  }
-  return 'file';
-}
-
-function defaultAttachmentFileName(type: string | undefined, timestamp: number) {
-  const normalizedType = normalizeAttachmentMimeType(type);
-  const fileType = normalizedType
-    ? attachmentFileTypeFromMime(normalizedType)
-    : 'file';
-
-  switch (fileType) {
-    case 'image':
-      return `chat-image-${timestamp}.jpg`;
-    case 'video':
-      return `chat-video-${timestamp}.mp4`;
-    case 'audio':
-      return `chat-audio-${timestamp}.mp3`;
-    default:
-      return `attachment-${timestamp}`;
-  }
 }

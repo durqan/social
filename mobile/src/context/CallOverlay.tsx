@@ -40,7 +40,7 @@ type CallStatus =
     | 'ended'
     | 'error';
 
-export type CallOverlayProps = {
+type CallOverlayProps = {
     status: CallStatus;
     callType: CallType;
     peerName: string;

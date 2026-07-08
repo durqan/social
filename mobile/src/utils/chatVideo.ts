@@ -2,7 +2,7 @@ import { Video } from 'react-native-compressor';
 import { CHAT_VIDEO_MAX_BYTES } from '../config/env';
 import type { LocalChatVideo } from '../api/messages';
 
-export const CHAT_VIDEO_SOURCE_MAX_BYTES = 500 * 1024 * 1024;
+const CHAT_VIDEO_SOURCE_MAX_BYTES = 500 * 1024 * 1024;
 
 export async function compressLocalChatVideo(
   video: LocalChatVideo,

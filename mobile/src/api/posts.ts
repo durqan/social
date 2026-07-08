@@ -6,7 +6,7 @@ type LikeResponse = {
   likes_count: number;
 };
 
-export type PaginatedPosts = {
+type PaginatedPosts = {
   posts: Post[];
   has_more: boolean;
   next_offset?: number;

@@ -12,9 +12,7 @@ import {
 } from './types';
 import {
   displayForegroundNotification,
-  MOBILE_NOTIFICATION_CHANNELS,
   cancelIncomingCallNotification,
-  openLocalNotificationSettings,
   registerLocalNotificationBackgroundHandler,
   registerLocalNotificationOpenHandlers,
 } from './localNotifications';
@@ -28,15 +26,11 @@ import {
 } from './tokenRegistration';
 import { rememberTerminalIncomingCall } from './pendingIncomingCall';
 
-export { MOBILE_NOTIFICATION_CHANNELS };
-
-export type PushNotificationHandlers = {
+type PushNotificationHandlers = {
   userId: number;
   onNotification?: (notification: MobileNotificationData) => void;
   onNotificationOpen?: (notification: MobileNotificationData) => void;
 };
-
-export type { MobilePushTokenPayload } from './tokenRegistration';
 
 let activeRegisteredPayload: MobilePushTokenPayload | null = null;
 let activePushUserId: number | null = null;
@@ -50,14 +44,7 @@ let activeNotificationListenersCleanup: (() => void) | null = null;
 
 const androidPermissionRetryCooldownMs = 60_000;
 
-export type MobilePushPermissionStatus =
-  | 'granted'
-  | 'prompt_available'
-  | 'denied'
-  | 'settings_required'
-  | 'unsupported';
-
-export type MobilePushSession = {
+type MobilePushSession = {
   key: string;
   userId: number;
   isCurrent: () => boolean;
@@ -98,30 +85,6 @@ async function checkAndroidNotificationPermission() {
   );
 }
 
-export async function getMobilePushPermissionStatus(): Promise<MobilePushPermissionStatus> {
-  if (Platform.OS !== 'android') {
-    return 'unsupported';
-  }
-  if (Platform.Version < 33) {
-    return 'granted';
-  }
-
-  if (await checkAndroidNotificationPermission()) {
-    androidPermissionSettingsRequired = false;
-    return 'granted';
-  }
-
-  if (androidPermissionSettingsRequired) {
-    return 'settings_required';
-  }
-
-  return androidPermissionRequestAttempted ? 'denied' : 'prompt_available';
-}
-
-export function openMobilePushNotificationSettings() {
-  return openLocalNotificationSettings();
-}
-
 async function requestAndroidNotificationPermission(forcePrompt = false) {
   if (Platform.OS !== 'android' || Platform.Version < 33) {
     return true;
@@ -152,10 +115,6 @@ async function requestAndroidNotificationPermission(forcePrompt = false) {
   androidPermissionSettingsRequired =
     result === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN;
   return result === PermissionsAndroid.RESULTS.GRANTED;
-}
-
-export function requestMobilePushPermissionPrompt() {
-  return requestAndroidNotificationPermission(true);
 }
 
 function notificationFromRemoteMessage(

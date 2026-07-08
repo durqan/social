@@ -41,7 +41,7 @@ export function isAttachmentDownloadable(attachment: MessageAttachment) {
   return Boolean(attachment.decrypted_file_url || attachment.file_url);
 }
 
-export function attachmentDownloadUrl(attachment: MessageAttachment) {
+function attachmentDownloadUrl(attachment: MessageAttachment) {
   return attachment.decrypted_file_url || assetURL(attachment.file_url);
 }
 

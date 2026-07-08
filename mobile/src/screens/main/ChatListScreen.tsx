@@ -737,35 +737,37 @@ function ConversationAvatar({
     const gapSize = size + 3;
     return (
       <View style={{ width: ringSize, height: ringSize }}>
-        <LinearGradient
-          colors={colors.gradient}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={{
-            width: ringSize,
-            height: ringSize,
-            borderRadius: ringSize / 2,
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <View
-            style={{
-              width: gapSize,
-              height: gapSize,
-              borderRadius: gapSize / 2,
-              backgroundColor: colors.background,
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
+          <LinearGradient
+            colors={colors.gradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={[
+              styles.storyRing,
+              {
+                width: ringSize,
+                height: ringSize,
+                borderRadius: ringSize / 2,
+              },
+            ]}
           >
             <View
               style={[
-                styles.avatar,
-                avatarSizeStyle,
-                { borderWidth: 0 },
-                isUnread && styles.avatarUnread,
+                styles.storyGap,
+                {
+                  width: gapSize,
+                  height: gapSize,
+                  borderRadius: gapSize / 2,
+                  backgroundColor: colors.background,
+                },
               ]}
+            >
+              <View
+                style={[
+                  styles.avatar,
+                  avatarSizeStyle,
+                  styles.avatarNoBorder,
+                  isUnread && styles.avatarUnread,
+                ]}
             >
               {avatarContent}
             </View>
@@ -1092,6 +1094,17 @@ const createStyles = (colors: ThemeColors) =>
       shadowRadius: 10,
       shadowOffset: { width: 0, height: 5 },
       elevation: colors.isDark ? 0 : 2,
+    },
+    avatarNoBorder: {
+      borderWidth: 0,
+    },
+    storyRing: {
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    storyGap: {
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     avatarUnread: {
       backgroundColor: colors.accent,

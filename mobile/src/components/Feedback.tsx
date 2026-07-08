@@ -37,18 +37,6 @@ export function SuccessBanner({ message }: { message?: string | null }) {
   );
 }
 
-export function Notice({ title, text }: { title: string; text?: string }) {
-  const colors = useThemeColors();
-  const styles = createStyles(colors);
-
-  return (
-    <View style={styles.noticeBox}>
-      <Text style={styles.noticeTitle}>{title}</Text>
-      {text ? <Text style={styles.noticeText}>{text}</Text> : null}
-    </View>
-  );
-}
-
 type EmptyStateIcon = React.ComponentType<{
   color?: string;
   size?: number;
@@ -136,23 +124,6 @@ const createStyles = (colors: ThemeColors) =>
     },
     successMarker: {
       backgroundColor: colors.success,
-    },
-    noticeBox: {
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: radius.xl,
-      backgroundColor: colors.card,
-      padding: spacing.md,
-      gap: spacing.xs,
-    },
-    noticeTitle: {
-      color: colors.text,
-      ...typography.body,
-      fontWeight: '800',
-    },
-    noticeText: {
-      color: colors.muted,
-      ...typography.caption,
     },
     emptyBox: {
       alignItems: 'center',

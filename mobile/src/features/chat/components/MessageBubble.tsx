@@ -15,7 +15,7 @@ import { assetURL } from '../../../config/env';
 import type { Message, MessageAttachment } from '@social/shared';
 import type { ThemeColors } from '../../../theme/themes';
 import { formatDuration, formatMessageTime } from '../../../utils/format';
-import { createChatThemeStyles, styles } from './chatStyles';
+import { createChatThemeStyles, styles } from '../lib/chatStyles';
 import {
   formatBytes,
   linkParts,
@@ -23,7 +23,7 @@ import {
   linkPreviewProviderLabel,
   messageAuthorName,
   messagePreviewText,
-} from './chatUtils';
+} from '../lib/chatUtils';
 
 function LinkPreviewCard({
                            message,
@@ -255,7 +255,7 @@ function MessageFooterView({
   );
 }
 
-export const MessageBubble = React.memo(function MessageBubble({
+export const MessageBubble = React.memo(function MessageBubbleComponent({
   message,
   outgoing,
   onImagePress,

@@ -36,7 +36,7 @@ type EncryptedAttachmentMetadataEnvelope = {
   data: string;
 };
 
-export type AttachmentPlainMetadata = {
+type AttachmentPlainMetadata = {
   filename: string;
   mimeType: string;
   size: number;
@@ -56,7 +56,7 @@ export type LocalAttachmentSource = {
   durationSeconds?: number;
 };
 
-export type EncryptedAttachmentUpload = {
+type EncryptedAttachmentUpload = {
   encryptedUri: string;
   encryptedFileName: string;
   encryptedSize: number;

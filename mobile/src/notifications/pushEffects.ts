@@ -9,7 +9,7 @@ import {
 const pendingPushEventsKey = '@social/pending-push-events:v1';
 const maxPendingPushEvents = 25;
 
-export type PushNotificationEffect =
+type PushNotificationEffect =
   | {
       type: 'message_read';
       conversationId?: number;
@@ -31,14 +31,14 @@ export type PushNotificationEffect =
       type: 'call_terminal';
     };
 
-export type PendingPushEvent = {
+type PendingPushEvent = {
   id: string;
   notification: MobileNotificationData;
   effects: PushNotificationEffect[];
   createdAt: number;
 };
 
-export type PushNotificationEffectHandlers = {
+type PushNotificationEffectHandlers = {
   markConversationRead?: (conversationId?: number) => void;
   signalChatDataChanged?: () => void;
   refreshUnreadCount?: () => Promise<void> | void;
@@ -53,7 +53,7 @@ function isMessageReadSync(notification: MobileNotificationData) {
   );
 }
 
-export function effectsForPushNotification(
+function effectsForPushNotification(
   notification: MobileNotificationData,
 ): PushNotificationEffect[] {
   if (isMessageReadSync(notification)) {

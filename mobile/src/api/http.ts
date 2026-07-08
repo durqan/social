@@ -6,7 +6,7 @@ import { API_BASE_URL, apiURL } from '../config/env';
 import { logDev } from '../utils/logger';
 
 type HTTPMethod = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
-export type ApiErrorKind =
+type ApiErrorKind =
   | 'timeout'
   | 'offline'
   | 'aborted'
@@ -55,7 +55,7 @@ export class ApiError extends Error {
   }
 }
 
-export type ApiResponseMeta<T> = {
+type ApiResponseMeta<T> = {
   data: T;
   fromCache: boolean;
   stale: boolean;
@@ -316,7 +316,7 @@ function notifyAuthInvalid(error: unknown) {
   });
 }
 
-export async function ensureCSRFToken() {
+async function ensureCSRFToken() {
   const existingToken = await readCookie('csrf_token');
   if (existingToken) {
     return existingToken;

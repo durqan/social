@@ -183,7 +183,7 @@ function appendAttachmentEncryption(
   }
 }
 
-export function attachmentForApi(
+function attachmentForApi(
   attachment: MessageAttachment,
 ): MessageAttachment {
   return {

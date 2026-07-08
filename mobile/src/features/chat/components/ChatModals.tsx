@@ -14,9 +14,9 @@ import {
 import type { Message, User } from '../../../api/types';
 import type { MessageDeleteMode } from '../../../api/messages';
 import type { ThemeColors } from '../../../theme/themes';
-import { isAttachmentDownloadable } from '../../../features/chat/lib/attachmentDownload';
-import { createChatThemeStyles, styles } from './chatStyles';
-import { firstUrl, isPersistedMessage, messagePreviewText } from './chatUtils';
+import { isAttachmentDownloadable } from '../lib/attachmentDownload';
+import { createChatThemeStyles, styles } from '../lib/chatStyles';
+import { firstUrl, isPersistedMessage, messagePreviewText } from '../lib/chatUtils';
 
 export function MessageActionSheet({
   message,

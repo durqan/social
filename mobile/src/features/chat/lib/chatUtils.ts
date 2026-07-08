@@ -3,11 +3,11 @@ import type { Message } from '../../../api/types';
 const TEMP_MESSAGE_ID_THRESHOLD = 10000000;
 const urlPattern = /(https?:\/\/[^\s<]+|www\.[^\s<]+)/gi;
 
-export function cleanUrl(value: string) {
+function cleanUrl(value: string) {
   return value.replace(/[),.!?;:]+$/, '');
 }
 
-export function normalizeUrl(value: string) {
+function normalizeUrl(value: string) {
   return value.startsWith('www.') ? `https://${value}` : value;
 }
 

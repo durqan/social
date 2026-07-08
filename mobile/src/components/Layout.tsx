@@ -89,45 +89,6 @@ export function HeroCard({
   );
 }
 
-export function ActionTile({
-  title,
-  text,
-  emoji,
-  icon: Icon,
-  onPress,
-}: {
-  title: string;
-  text?: string;
-  emoji?: string;
-  icon?: IconComponent;
-  onPress: () => void;
-}) {
-  const colors = useThemeColors();
-  const styles = createStyles(colors);
-  return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={() => {
-        lightHaptic();
-        onPress();
-      }}
-      style={({ pressed }) => [styles.tile, pressed && styles.pressed]}
-    >
-      <View style={styles.tileIcon}>
-        {Icon ? (
-          <Icon color={colors.accentStrong} size={18} strokeWidth={2.2} />
-        ) : (
-          <Text style={styles.tileEmoji}>{emoji || '•'}</Text>
-        )}
-      </View>
-      <View style={styles.tileTextBox}>
-        <Text style={styles.tileTitle}>{title}</Text>
-        {text ? <Text style={styles.tileText}>{text}</Text> : null}
-      </View>
-    </Pressable>
-  );
-}
-
 export function ListRow({
   icon: Icon,
   title,
@@ -280,35 +241,7 @@ const createStyles = (colors: ThemeColors) =>
     },
     heroTitle: { ...typography.headline, color: colors.textPrimary },
     heroSubtitle: { ...typography.body, color: colors.muted, maxWidth: '92%' },
-    tile: {
-      flexBasis: '47%',
-      flexGrow: 1,
-      minHeight: 96,
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: radius.xl,
-      backgroundColor: colors.surfaceElevated,
-      padding: spacing.md,
-      gap: spacing.sm,
-      shadowColor: colors.shadow,
-      shadowOpacity: colors.isDark ? 0.2 : 0.06,
-      shadowRadius: 14,
-      shadowOffset: { width: 0, height: 8 },
-      elevation: colors.isDark ? 0 : 1,
-    },
     pressed: { opacity: 0.82, transform: [{ scale: 0.99 }] },
-    tileIcon: {
-      width: 32,
-      height: 32,
-      borderRadius: radius.pill,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: colors.accentSoft,
-    },
-    tileEmoji: { fontSize: 17, lineHeight: 20 },
-    tileTextBox: { gap: 2 },
-    tileTitle: { ...typography.body, color: colors.textPrimary, fontWeight: '800' },
-    tileText: { ...typography.caption, color: colors.muted },
     listRow: {
       minHeight: touchTarget.lg,
       flexDirection: 'row',

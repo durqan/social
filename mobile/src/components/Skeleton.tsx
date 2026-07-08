@@ -19,7 +19,7 @@ type SkeletonBlockProps = {
   style?: ViewStyle;
 };
 
-export function SkeletonBlock({
+function SkeletonBlock({
   width = '100%',
   height = 14,
   radius: blockRadius = radius.md,

@@ -69,7 +69,7 @@ function routeFromURL(url?: string): NotificationRoute | null {
   return null;
 }
 
-export type NotificationRoute =
+type NotificationRoute =
   | {
       kind: 'chat';
       userId: number;
@@ -138,7 +138,7 @@ export function notificationRouteFromPayload(
   }
 }
 
-export function navigateRootNotificationRoute(route: NotificationRoute) {
+function navigateRootNotificationRoute(route: NotificationRoute) {
   switch (route.kind) {
     case 'chat':
       navigationRef.navigate('MainTabs', {
@@ -170,39 +170,6 @@ export function navigateRootNotificationRoute(route: NotificationRoute) {
       return;
     case 'userProfile':
       navigationRef.navigate('UserProfile', {
-        userId: route.userId,
-        name: route.name,
-      });
-  }
-}
-
-export function navigateTabNotificationRoute(
-  navigation: { navigate: (name: string, params?: unknown) => void },
-  route: NotificationRoute,
-) {
-  switch (route.kind) {
-    case 'chat':
-      navigation.navigate('Chats', {
-        initial: false,
-        screen: 'Chat',
-        params: {
-          userId: route.userId,
-          name: route.name,
-          incomingCall: route.incomingCall,
-          callId: route.callId,
-        },
-      });
-      return;
-    case 'chatList':
-      navigation.navigate('Chats', {
-        screen: 'ChatList',
-      });
-      return;
-    case 'tab':
-      navigation.navigate(route.tab);
-      return;
-    case 'userProfile':
-      navigation.navigate('UserProfile', {
         userId: route.userId,
         name: route.name,
       });

@@ -7,11 +7,3 @@ export function lightHaptic() {
 
   Vibration.vibrate(8);
 }
-
-export function successHaptic() {
-  if ((Platform.OS as string) === 'web') {
-    return;
-  }
-
-  Vibration.vibrate(14);
-}

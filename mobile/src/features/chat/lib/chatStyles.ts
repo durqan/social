@@ -318,6 +318,8 @@ export const createChatThemeStyles = (theme: ThemeColors = colors) => {
   });
 };
 
+export type ChatThemeStyles = ReturnType<typeof createChatThemeStyles>;
+
 export const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -354,6 +356,9 @@ export const styles = StyleSheet.create({
   },
   transparentBackground: {
     backgroundColor: 'transparent',
+  },
+  keyboardGestureArea: {
+    flex: 1,
   },
   callActions: {
     display: 'none',

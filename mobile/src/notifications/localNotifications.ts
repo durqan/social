@@ -46,7 +46,7 @@ function notificationConversationId(notification: MobileNotificationData) {
   );
 }
 
-export function shouldDisplayForegroundNotification(
+function shouldDisplayForegroundNotification(
   notification: MobileNotificationData,
   activeConversationId = getActivePushConversation(),
 ) {
@@ -305,7 +305,7 @@ async function enqueuePendingOpenedLocalNotification(
   );
 }
 
-export async function drainPendingOpenedLocalNotifications() {
+async function drainPendingOpenedLocalNotifications() {
   const raw = await AsyncStorage.getItem(pendingOpenedLocalNotificationKey);
   if (!raw) {
     return [];
@@ -488,8 +488,4 @@ export function registerLocalNotificationBackgroundHandler() {
     await enqueuePendingPushEvent(notification);
     await enqueuePendingOpenedLocalNotification(notification);
   });
-}
-
-export function openLocalNotificationSettings() {
-  return notifee.openNotificationSettings();
 }

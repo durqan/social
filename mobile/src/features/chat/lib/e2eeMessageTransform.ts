@@ -3,8 +3,7 @@ import { decryptAttachmentForDisplay, isEncryptedAttachment } from '../../../cry
 import { decryptMessage, isEncryptedMessage } from '../../../crypto/decryptMessage';
 import type { LocalE2EEKeyBundle } from '../../../crypto/masterKey';
 
-export const decryptFailureText = 'Не удалось расшифровать сообщение';
-export const decryptAttachmentFailureText = 'Не удалось расшифровать вложение';
+const decryptFailureText = 'Не удалось расшифровать сообщение';
 
 export async function decryptMessagesForDisplay(
   messages: Message[],

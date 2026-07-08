@@ -5,7 +5,7 @@ import {
 } from '../notifications/pushNotifications';
 import { warnDev } from '../utils/logger';
 
-export type E2EEBootstrapStatus = 'idle' | 'ready' | 'needs-secret' | 'error';
+type E2EEBootstrapStatus = 'idle' | 'ready' | 'needs-secret' | 'error';
 
 const bootstrapInFlight = new Map<number, Promise<void>>();
 let activeUserId: number | null = null;

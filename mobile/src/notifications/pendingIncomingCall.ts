@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { MobileNotificationData } from './types';
 
 export const INCOMING_CALL_PUSH_TTL_MS = 60_000;
-export const TERMINAL_CALL_TTL_MS = 5 * 60_000;
+const TERMINAL_CALL_TTL_MS = 5 * 60_000;
 
 const pendingIncomingCallKey = '@social/pending-incoming-call-push:v1';
 const terminalIncomingCallsKey = '@social/terminal-incoming-calls:v1';
@@ -111,7 +111,7 @@ async function writeTerminalIncomingCalls(
   );
 }
 
-export async function isTerminalIncomingCall(
+async function isTerminalIncomingCall(
   callId?: string | null,
   now = Date.now(),
 ) {

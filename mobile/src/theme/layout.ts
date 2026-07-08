@@ -26,14 +26,7 @@ export const touchTarget = {
   lg: 56,
 } as const;
 
-export const motion = {
-  fast: 160,
-  standard: 220,
-  slow: 280,
-  easeOut: 'ease-out',
-} as const;
-
-export const fontWeights = {
+const fontWeights = {
   regular: '400' as const,
   medium: '500' as const,
   semibold: '600' as const,
@@ -91,7 +84,7 @@ function scaleText<T extends { fontSize: number; lineHeight: number }>(
   };
 }
 
-export function createTypography(scale = 1) {
+function createTypography(scale = 1) {
   const caption = scaleText(baseTypography.caption, scale);
   const body = scaleText(baseTypography.body, scale);
   const subtitle = scaleText(baseTypography.subtitle, scale);
@@ -112,8 +105,6 @@ export function createTypography(scale = 1) {
     h3: subtitle,
   };
 }
-
-export type AppTypography = ReturnType<typeof createTypography>;
 
 export const typography = createTypography();
 

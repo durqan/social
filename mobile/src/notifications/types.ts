@@ -1,10 +1,7 @@
 import {
   normalizeNotificationData as normalizeSharedNotificationData,
   type MobileNotificationData as SharedMobileNotificationData,
-  type MobileNotificationType,
 } from '@social/shared';
-
-export type { MobileNotificationType };
 
 export type MobileNotificationData = SharedMobileNotificationData & {
   title?: string;

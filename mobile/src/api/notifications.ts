@@ -10,7 +10,7 @@ import {
 } from './http';
 import type { SocialNotification } from './types';
 
-export type MobilePushTokenPayload = {
+type MobilePushTokenPayload = {
   provider: 'fcm';
   platform: 'android';
   token: string;

@@ -83,7 +83,7 @@ export function bytesToUtf8(value: ByteSource): string {
   return chunks.join('');
 }
 
-export function bytesFromSource(value: ByteSource): Uint8Array {
+function bytesFromSource(value: ByteSource): Uint8Array {
   if (value instanceof ArrayBuffer) {
     return new Uint8Array(value);
   }
