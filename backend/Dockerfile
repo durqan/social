@@ -19,7 +19,9 @@ RUN apk add --no-cache \
   py3-pip \
   ffmpeg \
   nodejs \
-  && pip3 install --no-cache-dir --break-system-packages yt-dlp
+  && python3 -m pip install --no-cache-dir --break-system-packages -U \
+    "yt-dlp[default,curl-cffi]==2026.7.4" \
+    "curl_cffi>=0.11"
 
 RUN addgroup -S -g 1000 app && adduser -S -u 1000 -G app app
 

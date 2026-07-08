@@ -154,6 +154,9 @@ services:
       S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
       VIDEO_IMPORT_WORKER_CONCURRENCY: ${VIDEO_IMPORT_WORKER_CONCURRENCY:-1}
       VIDEO_IMPORT_TEMP_ROOT: ${VIDEO_IMPORT_TEMP_ROOT:-/tmp/video-imports}
+      YTDLP_PROXY: ${YTDLP_PROXY:-}
+      YTDLP_IMPERSONATE: ${YTDLP_IMPERSONATE:-chrome}
+      YTDLP_COOKIES_FILE: ${YTDLP_COOKIES_FILE:-}
     depends_on:
       postgres:
         condition: service_healthy

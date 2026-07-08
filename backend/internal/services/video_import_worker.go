@@ -133,6 +133,61 @@ func handleVideoImportDelivery(ctx context.Context, db *gorm.DB, cfg VideoImport
 	return delivery.Ack(false)
 }
 
+func buildYTDLPDownloadArgs(sourceTemplate string, originalURL string) []string {
+	args := []string{
+		"-f", "bv*[ext=mp4][vcodec^=avc1][height<=1280]+ba[ext=m4a][acodec^=mp4a]/b[ext=mp4][vcodec^=avc1][height<=1280]/bv*[vcodec^=avc1][height<=1280]+ba/b[height<=1280]/best[height<=1280]/best",
+		"--merge-output-format", "mp4",
+		"--no-playlist",
+		"--socket-timeout", "60",
+		"--retries", "2",
+		"--fragment-retries", "2",
+	}
+
+	if proxy := strings.TrimSpace(os.Getenv("YTDLP_PROXY")); proxy != "" {
+		args = append(args, "--proxy", proxy)
+	}
+
+	impersonate := strings.TrimSpace(os.Getenv("YTDLP_IMPERSONATE"))
+	if impersonate == "" {
+		impersonate = "chrome"
+	}
+	if impersonate != "-" && impersonate != "off" && impersonate != "false" {
+		args = append(args, "--impersonate", impersonate)
+	}
+
+	if cookiesFile := strings.TrimSpace(os.Getenv("YTDLP_COOKIES_FILE")); cookiesFile != "" {
+		args = append(args, "--cookies", cookiesFile)
+	}
+
+	args = append(args, "-o", sourceTemplate, originalURL)
+
+	return args
+}
+
+func classifyVideoDownloadError(err error) string {
+	if err == nil {
+		return "Не удалось скачать видео"
+	}
+
+	text := strings.ToLower(err.Error())
+
+	switch {
+	case strings.Contains(text, "this content isn't available to everyone"),
+		strings.Contains(text, "content isn't available"),
+		strings.Contains(text, "not available"),
+		strings.Contains(text, "login required"),
+		strings.Contains(text, "private"):
+		return "Видео недоступно публично или ограничено настройками Instagram"
+	case strings.Contains(text, "timed out"),
+		strings.Contains(text, "network unreachable"),
+		strings.Contains(text, "connection refused"),
+		strings.Contains(text, "handshake operation timed out"):
+		return "Не удалось подключиться к источнику видео"
+	default:
+		return "Не удалось скачать видео"
+	}
+}
+
 func ProcessVideoImportJob(ctx context.Context, db *gorm.DB, cfg VideoImportWorkerConfig, job VideoImportJob) error {
 	tempDir := filepath.Join(defaultString(cfg.TempRoot, defaultVideoImportTempRoot), job.JobID)
 	if err := os.MkdirAll(tempDir, 0o700); err != nil {
@@ -149,17 +204,16 @@ func ProcessVideoImportJob(ctx context.Context, db *gorm.DB, cfg VideoImportWork
 	sourceTemplate := filepath.Join(tempDir, "source.%(ext)s")
 
 	log.Printf("video import %s: downloading source", job.JobID)
+
+	ytDLPArgs := buildYTDLPDownloadArgs(sourceTemplate, job.OriginalURL)
+
 	if err := runCommand(
 		ctx,
 		cfg.DownloadLimit,
 		"yt-dlp",
-		"-f", "bv*[ext=mp4][vcodec^=avc1][height<=1280]+ba[ext=m4a][acodec^=mp4a]/b[ext=mp4][vcodec^=avc1][height<=1280]/bv*[vcodec^=avc1][height<=1280]+ba/b[height<=1280]/best[height<=1280]/best",
-		"--merge-output-format", "mp4",
-		"--no-playlist",
-		"-o", sourceTemplate,
-		job.OriginalURL,
+		ytDLPArgs...,
 	); err != nil {
-		return failVideoImport(ctx, db, job, "Не удалось скачать видео", err)
+		return failVideoImport(ctx, db, job, classifyVideoDownloadError(err), err)
 	}
 
 	sourcePath, err := findDownloadedSource(tempDir)
@@ -472,12 +526,11 @@ func probeVideoMetadata(ctx context.Context, path string) (videoMetadata, error)
 	}
 	cmdCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,duration", "-of", "json", path)
+	cmd := exec.CommandContext(cmdCtx, "ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,duration", "-of", "json", path)
 	output, err := cmd.Output()
 	if err != nil {
 		return videoMetadata{}, err
 	}
-	_ = cmdCtx
 
 	var parsed struct {
 		Streams []struct {
