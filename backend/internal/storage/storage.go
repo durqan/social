@@ -300,7 +300,7 @@ func keyFromPathLike(value string) (string, bool) {
 }
 
 func looksLikeObjectKey(key string) bool {
-	for _, prefix := range []string{"avatars/", "messages/", "voice/", "video-notes/", "posts/", "chat/", "encrypted/", "chat-videos/", "chat-video-thumbnails/"} {
+	for _, prefix := range []string{"avatars/", "messages/", "voice/", "video-notes/", "posts/", "chat/", "encrypted/", "chat-videos/", "chat-video-thumbnails/", "link-preview-thumbnails/"} {
 		if strings.HasPrefix(key, prefix) {
 			return true
 		}

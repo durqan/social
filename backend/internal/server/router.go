@@ -178,6 +178,7 @@ func registerMessageRoutes(router *gin.Engine, database *gorm.DB) {
 	messages.GET("/with/:userId", middleware.CacheMiddleware(30*time.Second), handlers.GetMessagesWith(database))
 	messages.GET("/unread/count", middleware.CacheMiddleware(10*time.Second), handlers.GetUnreadCount(database))
 	messages.GET("/uploads/:filename", handlers.GetUploadedMessageImage())
+	messages.GET("/link-previews/:id/thumbnail", handlers.GetMessageLinkPreviewThumbnail(database))
 	messages.GET("/attachments/:id/thumbnail", handlers.GetMessageAttachmentThumbnail(database))
 	messages.GET("/attachments/:id/download", handlers.DownloadMessageAttachment(database))
 	messages.HEAD("/attachments/:id/download", handlers.DownloadMessageAttachment(database))

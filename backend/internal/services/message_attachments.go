@@ -51,6 +51,7 @@ const (
 	chatVideoNoteMaxCount        = 1
 	chatUploadURLPrefix          = "/api/messages/uploads/"
 	chatAttachmentURLPrefix      = "/api/messages/attachments/"
+	linkPreviewThumbnailPrefix   = "/api/messages/link-previews/"
 	legacyChatUploadPrefix       = "/uploads/chat/"
 	chatUploadOwnerTTL           = 24 * time.Hour
 )
@@ -509,6 +510,10 @@ func PrivateAttachmentThumbnailURL(attachmentID uint) string {
 	return fmt.Sprintf("%s%d/thumbnail", chatAttachmentURLPrefix, attachmentID)
 }
 
+func PrivateLinkPreviewThumbnailURL(previewID uint) string {
+	return fmt.Sprintf("%s%d/thumbnail", linkPreviewThumbnailPrefix, previewID)
+}
+
 func PrivateUploadURL(filename string) string {
 	return chatUploadURLPrefix + filename
 }
@@ -578,7 +583,16 @@ func withPrivateAttachmentURLs(attachment models.MessageAttachment) models.Messa
 }
 
 func withPrivateLinkPreviewAttachmentURLs(preview *models.MessageLinkPreview, attachments []models.MessageAttachment) {
-	if preview == nil || preview.VideoAttachmentID == nil {
+	if preview == nil {
+		return
+	}
+	if preview.ThumbnailURL != nil {
+		if _, ok := LinkPreviewThumbnailObjectKey(*preview.ThumbnailURL); ok {
+			url := PrivateLinkPreviewThumbnailURL(preview.ID)
+			preview.ThumbnailURL = &url
+		}
+	}
+	if preview.VideoAttachmentID == nil {
 		return
 	}
 
@@ -651,6 +665,14 @@ func ChatUploadKeyFromFilename(filename string, userID uint) (string, bool) {
 
 func AttachmentObjectKey(storedValue string) (string, bool) {
 	return storage.KeyFromStoredValue(storedValue)
+}
+
+func LinkPreviewThumbnailObjectKey(storedValue string) (string, bool) {
+	key, ok := storage.KeyFromStoredValue(storedValue)
+	if !ok || !strings.HasPrefix(key, "link-preview-thumbnails/") {
+		return "", false
+	}
+	return key, true
 }
 
 func (item MessageAttachmentInput) encryptionEnabled() bool {

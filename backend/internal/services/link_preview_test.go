@@ -3,7 +3,11 @@ package services
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
+
+	"tester/internal/storage"
 )
 
 func TestParseSupportedVideoURLProviders(t *testing.T) {
@@ -91,5 +95,44 @@ func TestResolveVideoLinkPreviewMetadataFailureReturnsError(t *testing.T) {
 	_, err := ResolveVideoLinkPreviewMetadata(context.Background(), "https://youtu.be/abc", "youtube")
 	if err == nil {
 		t.Fatal("expected resolver error")
+	}
+}
+
+func TestCacheLinkPreviewImageStoresPrivateObject(t *testing.T) {
+	previousFetcher := linkPreviewImageFetcher
+	linkPreviewImageFetcher = func(context.Context, string) ([]byte, string, string, error) {
+		return []byte("jpeg-data"), "image/jpeg", ".jpg", nil
+	}
+	defer func() {
+		linkPreviewImageFetcher = previousFetcher
+	}()
+
+	root := t.TempDir()
+	key, err := cacheLinkPreviewImage(
+		context.Background(),
+		storage.NewLocalStorage(root, ""),
+		10,
+		20,
+		"https://cdn.example.com/thumb.jpg",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if key != "link-preview-thumbnails/10/20.jpg" {
+		t.Fatalf("key = %q", key)
+	}
+	body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(key)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "jpeg-data" {
+		t.Fatalf("stored body = %q", body)
+	}
+}
+
+func TestFetchLinkPreviewImageRejectsPrivateHost(t *testing.T) {
+	_, _, _, err := fetchLinkPreviewImage(context.Background(), "http://127.0.0.1/thumb.jpg")
+	if !errors.Is(err, ErrUnsafeVideoLink) {
+		t.Fatalf("err = %v, want ErrUnsafeVideoLink", err)
 	}
 }

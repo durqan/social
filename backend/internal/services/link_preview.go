@@ -5,7 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"log"
 	"net"
+	"net/http"
 	"net/url"
 	"os/exec"
 	"regexp"
@@ -14,6 +18,7 @@ import (
 	"time"
 
 	"tester/internal/models"
+	"tester/internal/storage"
 
 	"gorm.io/gorm"
 )
@@ -22,9 +27,12 @@ var (
 	ErrUnsupportedVideoLink = errors.New("unsupported video link")
 	ErrUnsafeVideoLink      = errors.New("unsafe video link")
 	firstURLPattern         = regexp.MustCompile(`https?://[^\s<>"']+`)
-	linkPreviewMetadataTTL  = 5 * time.Second
+	linkPreviewMetadataTTL  = 15 * time.Second
 	ytDLPMetadataRunner     = runYTDLPMetadata
+	linkPreviewImageFetcher = fetchLinkPreviewImage
 )
+
+const linkPreviewImageMaxSize = 5 << 20
 
 type LinkPreviewMetadata struct {
 	Title           *string
@@ -91,7 +99,28 @@ func EnrichMessageLinkPreviewAsync(db *gorm.DB, messageID uint, previewID uint) 
 			updates["description"] = metadata.Description
 		}
 		if metadata.ThumbnailURL != nil {
-			updates["thumbnail_url"] = metadata.ThumbnailURL
+			thumbnailURL := metadata.ThumbnailURL
+			if store, storageErr := storage.Default(); storageErr == nil {
+				imageCtx, imageCancel := context.WithTimeout(context.Background(), 8*time.Second)
+				if key, cacheErr := cacheLinkPreviewImage(
+					imageCtx,
+					store,
+					messageID,
+					previewID,
+					*metadata.ThumbnailURL,
+				); cacheErr == nil {
+					thumbnailURL = &key
+				} else {
+					log.Printf(
+						"link preview thumbnail cache failed: message_id=%d preview_id=%d error=%v",
+						messageID,
+						previewID,
+						cacheErr,
+					)
+				}
+				imageCancel()
+			}
+			updates["thumbnail_url"] = thumbnailURL
 		}
 		if metadata.DurationSeconds != nil {
 			updates["duration_seconds"] = metadata.DurationSeconds
@@ -110,6 +139,115 @@ func EnrichMessageLinkPreviewAsync(db *gorm.DB, messageID uint, previewID uint) 
 		}
 		PublishMessageUpdate(context.Background(), messageID)
 	}()
+}
+
+func cacheLinkPreviewImage(
+	ctx context.Context,
+	store storage.Storage,
+	messageID uint,
+	previewID uint,
+	rawURL string,
+) (string, error) {
+	body, contentType, extension, err := linkPreviewImageFetcher(ctx, rawURL)
+	if err != nil {
+		return "", err
+	}
+	key := fmt.Sprintf("link-preview-thumbnails/%d/%d%s", messageID, previewID, extension)
+	if err := store.Upload(ctx, key, bytes.NewReader(body), contentType); err != nil {
+		return "", err
+	}
+	return key, nil
+}
+
+func fetchLinkPreviewImage(ctx context.Context, rawURL string) ([]byte, string, string, error) {
+	if sanitizePreviewThumbnailURL(rawURL) == nil {
+		return nil, "", "", ErrUnsafeVideoLink
+	}
+
+	client := &http.Client{
+		Timeout: 8 * time.Second,
+		Transport: &http.Transport{
+			DisableKeepAlives: true,
+			DialContext: func(ctx context.Context, network string, address string) (net.Conn, error) {
+				host, port, err := net.SplitHostPort(address)
+				if err != nil {
+					return nil, err
+				}
+				addresses, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+				if err != nil {
+					return nil, err
+				}
+				if len(addresses) == 0 {
+					return nil, errors.New("thumbnail host did not resolve")
+				}
+				for _, address := range addresses {
+					if isUnsafeIP(address.IP) {
+						return nil, ErrUnsafeVideoLink
+					}
+				}
+				var dialErr error
+				dialer := &net.Dialer{}
+				for _, resolved := range addresses {
+					conn, err := dialer.DialContext(
+						ctx,
+						network,
+						net.JoinHostPort(resolved.IP.String(), port),
+					)
+					if err == nil {
+						return conn, nil
+					}
+					dialErr = err
+				}
+				return nil, dialErr
+			},
+		},
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 5 || sanitizePreviewThumbnailURL(req.URL.String()) == nil {
+				return ErrUnsafeVideoLink
+			}
+			return nil
+		},
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, "", "", err
+	}
+	req.Header.Set("Accept", "image/avif,image/webp,image/png,image/jpeg,image/gif")
+	req.Header.Set("User-Agent", "Mozilla/5.0")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, "", "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, "", "", fmt.Errorf("thumbnail download failed with status %d", resp.StatusCode)
+	}
+	if resp.ContentLength > linkPreviewImageMaxSize {
+		return nil, "", "", errors.New("thumbnail is too large")
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, linkPreviewImageMaxSize+1))
+	if err != nil {
+		return nil, "", "", err
+	}
+	if len(body) == 0 || len(body) > linkPreviewImageMaxSize {
+		return nil, "", "", errors.New("thumbnail is empty or too large")
+	}
+
+	contentType := http.DetectContentType(body)
+	extensions := map[string]string{
+		"image/jpeg": ".jpg",
+		"image/png":  ".png",
+		"image/webp": ".webp",
+		"image/gif":  ".gif",
+	}
+	extension, ok := extensions[contentType]
+	if !ok {
+		return nil, "", "", errors.New("unsupported thumbnail content type")
+	}
+	return body, contentType, extension, nil
 }
 
 func ResolveVideoLinkPreviewMetadata(ctx context.Context, raw string, provider string) (LinkPreviewMetadata, error) {
@@ -234,6 +372,9 @@ func sanitizePreviewThumbnailURL(raw string) *string {
 		return nil
 	}
 	if parsed.Scheme != "https" && parsed.Scheme != "http" {
+		return nil
+	}
+	if parsed.User != nil {
 		return nil
 	}
 	host := strings.ToLower(strings.TrimSuffix(parsed.Hostname(), "."))

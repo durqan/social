@@ -732,6 +732,47 @@ func GetMessageAttachmentThumbnail(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
+func GetMessageLinkPreviewThumbnail(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, ok := authenticatedUserID(c)
+		if !ok {
+			return
+		}
+
+		previewID, ok := uintParam(c, "id", "invalid link preview id")
+		if !ok {
+			return
+		}
+
+		preview, err := repository.GetMessageLinkPreviewForUser(db, previewID, userID)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				c.JSON(404, gin.H{"error": "link preview not found"})
+				return
+			}
+			c.JSON(500, gin.H{"error": "failed to load link preview"})
+			return
+		}
+		if preview.ThumbnailURL == nil {
+			c.JSON(404, gin.H{"error": "link preview thumbnail not found"})
+			return
+		}
+
+		key, ok := services.LinkPreviewThumbnailObjectKey(*preview.ThumbnailURL)
+		if !ok {
+			c.JSON(404, gin.H{"error": "link preview thumbnail not found"})
+			return
+		}
+		store, err := storage.Default()
+		if err != nil {
+			c.JSON(500, gin.H{"error": "failed to load storage"})
+			return
+		}
+
+		serveStoredObjectWithHeaders(c, store, key, services.ContentTypeForKey(key), "inline")
+	}
+}
+
 func serveStoredObject(c *gin.Context, store storage.Storage, key string) {
 	contentType := services.ContentTypeForKey(key)
 	serveStoredObjectWithHeaders(c, store, key, contentType, "inline")

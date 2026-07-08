@@ -90,6 +90,15 @@ func GetMessageAttachmentForUser(db *gorm.DB, attachmentID, userID uint) (*model
 	return &attachment, err
 }
 
+func GetMessageLinkPreviewForUser(db *gorm.DB, previewID, userID uint) (*models.MessageLinkPreview, error) {
+	var preview models.MessageLinkPreview
+	err := db.
+		Joins("JOIN messages ON messages.id = message_link_previews.message_id").
+		Where("message_link_previews.id = ? AND (messages.from_id = ? OR messages.to_id = ?)", previewID, userID, userID).
+		First(&preview).Error
+	return &preview, err
+}
+
 func GetConversations(db *gorm.DB, userID uint) ([]map[string]interface{}, error) {
 	return GetConversationsPage(db, userID, 0, 0)
 }

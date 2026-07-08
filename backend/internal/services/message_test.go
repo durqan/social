@@ -273,6 +273,25 @@ func TestLinkPreviewVideoAttachmentFallbackUsesPrivateThumbnailURL(t *testing.T)
 	}
 }
 
+func TestStoredLinkPreviewThumbnailUsesPrivateURL(t *testing.T) {
+	storedThumbnail := "link-preview-thumbnails/10/20.jpg"
+	message := models.Message{
+		LinkPreview: &models.MessageLinkPreview{
+			ID:           20,
+			ThumbnailURL: &storedThumbnail,
+		},
+	}
+
+	response := WithPrivateAttachmentURLs(message)
+	if response.LinkPreview == nil || response.LinkPreview.ThumbnailURL == nil {
+		t.Fatal("response link preview has no thumbnail")
+	}
+	want := PrivateLinkPreviewThumbnailURL(20)
+	if *response.LinkPreview.ThumbnailURL != want {
+		t.Fatalf("thumbnail = %q, want %q", *response.LinkPreview.ThumbnailURL, want)
+	}
+}
+
 func TestSendMessageUpdatesSenderLastSeen(t *testing.T) {
 	db := newMessageServiceTestDB(t)
 	seedAcceptedFriendship(t, db, 1, 2)
