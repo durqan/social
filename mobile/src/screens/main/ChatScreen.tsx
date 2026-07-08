@@ -3120,6 +3120,9 @@ export default function ChatScreen({ route, navigation }: Props) {
     (item: Message) => String(item.id),
     [],
   );
+  const refreshMessages = useCallback(() => {
+    loadMessages('refresh').catch(() => undefined);
+  }, [loadMessages]);
   const renderMessageItem = useCallback(
     ({ item, index }: { item: Message; index: number }) => {
       const nextMessage = messages[index + 1];
@@ -3141,7 +3144,7 @@ export default function ChatScreen({ route, navigation }: Props) {
           onDownloadAttachment={handleDownloadAttachment}
           playingVoiceUrl={playingVoiceUrl}
           onTouchStart={markMessageTouchStart}
-          onLongPress={() => openMessageActions(item)}
+          onLongPressMessage={openMessageActions}
           themeColors={themeColors}
           groupedWithNext={groupedWithNext}
         />
@@ -3203,7 +3206,7 @@ export default function ChatScreen({ route, navigation }: Props) {
             renderScrollComponent={renderScrollComponent}
             renderMessageItem={renderMessageItem}
             keyExtractor={messageKeyExtractor}
-            onRefresh={() => loadMessages('refresh')}
+            onRefresh={refreshMessages}
             onTouchStart={handleMessageListTouchStart}
             onTouchMove={handleMessageListTouchMove}
             onTouchEnd={handleMessageListTouchEnd}

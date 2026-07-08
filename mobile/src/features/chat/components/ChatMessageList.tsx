@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -55,7 +55,7 @@ type ChatMessageListProps = {
   onScrollToLatest: () => void;
 };
 
-export function ChatMessageList({
+export const ChatMessageList = React.memo(function ChatMessageListComponent({
   listRef,
   messages,
   loading,
@@ -82,6 +82,15 @@ export function ChatMessageList({
   onContentSizeChange,
   onScrollToLatest,
 }: ChatMessageListProps) {
+  const listExtraData = useMemo(
+    () => ({
+      playingVoiceUrl,
+      themeColors,
+      userId: currentUserId,
+    }),
+    [currentUserId, playingVoiceUrl, themeColors],
+  );
+
   if (loading && !hasLoaded) {
     return <ChatMessagesSkeleton />;
   }
@@ -109,11 +118,7 @@ export function ChatMessageList({
         onScroll={onScroll}
         scrollEventThrottle={SCROLL_EVENT_THROTTLE_MS}
         renderItem={renderMessageItem}
-        extraData={{
-          playingVoiceUrl,
-          themeColors,
-          userId: currentUserId,
-        }}
+        extraData={listExtraData}
         onLayout={onLayout}
         contentContainerStyle={[
           styles.messageList,
@@ -165,4 +170,4 @@ export function ChatMessageList({
       ) : null}
     </View>
   );
-}
+});

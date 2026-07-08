@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   Image,
   Linking,
@@ -265,7 +265,7 @@ export const MessageBubble = React.memo(function MessageBubbleComponent({
   onDownloadAttachment,
   playingVoiceUrl,
   onTouchStart,
-  onLongPress,
+  onLongPressMessage,
   themeColors,
   groupedWithNext = false,
 }: {
@@ -281,7 +281,7 @@ export const MessageBubble = React.memo(function MessageBubbleComponent({
   ) => void;
   playingVoiceUrl: string | null;
   onTouchStart?: (event: GestureResponderEvent) => void;
-  onLongPress: () => void;
+  onLongPressMessage: (message: Message) => void;
   themeColors: ThemeColors;
   groupedWithNext?: boolean;
 }) {
@@ -305,6 +305,10 @@ export const MessageBubble = React.memo(function MessageBubbleComponent({
   );
   const textOnlyMessage = Boolean(displayContent) && !hasBlockContent;
   const textHasHardBreak = displayContent.includes('\n');
+  const displayParts = useMemo(
+    () => linkParts(displayContent),
+    [displayContent],
+  );
   const shortInlineFooter =
     textOnlyMessage && !textHasHardBreak && displayContent.trim().length <= 14;
   const showFloatingFooter = !shortInlineFooter;
@@ -325,6 +329,9 @@ export const MessageBubble = React.memo(function MessageBubbleComponent({
       Math.abs(current - nextWidth) > 0.5 ? nextWidth : current,
     );
   };
+  const handleLongPress = useCallback(() => {
+    onLongPressMessage(message);
+  }, [message, onLongPressMessage]);
 
   const renderDownloadButton = (
     attachment: MessageAttachment,
@@ -362,7 +369,7 @@ export const MessageBubble = React.memo(function MessageBubbleComponent({
       ]}
       delayLongPress={280}
       onTouchStart={onTouchStart}
-      onLongPress={onLongPress}
+      onLongPress={handleLongPress}
     >
       <View
         style={[
@@ -433,7 +440,7 @@ export const MessageBubble = React.memo(function MessageBubbleComponent({
               outgoing ? themed.outgoingMessageText : themed.messageText,
             ]}
           >
-            {linkParts(displayContent).map((part, index) => {
+            {displayParts.map((part, index) => {
               if (part.type === 'link' && part.href) {
                 return (
                   <Text
@@ -526,7 +533,7 @@ export const MessageBubble = React.memo(function MessageBubbleComponent({
                   outgoing && styles.voiceAttachmentOutgoing,
                 ]}
                 onPress={() => onVoicePress(attachmentUrl)}
-                onLongPress={onLongPress}
+                onLongPress={handleLongPress}
               >
                 <View
                   style={[
@@ -571,7 +578,7 @@ export const MessageBubble = React.memo(function MessageBubbleComponent({
                 url={attachmentUrl}
                 duration={attachment.duration_seconds ?? attachment.duration}
                 outgoing={outgoing}
-                onLongPress={onLongPress}
+                onLongPress={handleLongPress}
                 themeColors={themeColors}
               />
             );
@@ -583,7 +590,7 @@ export const MessageBubble = React.memo(function MessageBubbleComponent({
                 key={attachment.id ?? attachment.file_url}
                 style={styles.genericVideoAttachment}
                 onPress={() => onVideoPress(attachmentUrl)}
-                onLongPress={onLongPress}
+                onLongPress={handleLongPress}
               >
                 {attachment.thumbnail_url ? (
                   <Image
@@ -629,7 +636,7 @@ export const MessageBubble = React.memo(function MessageBubbleComponent({
                   outgoing && styles.voiceAttachmentOutgoing,
                 ]}
                 onPress={() => onVoicePress(attachmentUrl)}
-                onLongPress={onLongPress}
+                onLongPress={handleLongPress}
               >
                 <View
                   style={[
@@ -677,7 +684,7 @@ export const MessageBubble = React.memo(function MessageBubbleComponent({
                   outgoing && styles.voiceAttachmentOutgoing,
                 ]}
                 onPress={() => onDownloadAttachment(attachment, attachmentUrl)}
-                onLongPress={onLongPress}
+                onLongPress={handleLongPress}
               >
                 <View style={[styles.genericFileIcon, themed.accentBg]}>
                   <Download
@@ -718,7 +725,7 @@ export const MessageBubble = React.memo(function MessageBubbleComponent({
               <Pressable
                 accessibilityRole="imagebutton"
                 onPress={() => onImagePress(attachmentUrl)}
-                onLongPress={onLongPress}
+                onLongPress={handleLongPress}
               >
                 <Image
                   source={{ uri: attachmentUrl }}
