@@ -102,6 +102,7 @@ import {
   type LocalE2EEKeyBundle,
 } from '../../crypto/masterKey';
 import {
+  clearE2EEMessageDisplayCache,
   decryptMessageForDisplay,
   decryptMessagesForDisplay,
 } from '../../features/chat/lib/e2eeMessageTransform';
@@ -806,6 +807,7 @@ export default function ChatScreen({ route, navigation }: Props) {
 
   useEffect(() => {
     const unsubscribe = addLocalE2EEKeyChangeListener(() => {
+      clearE2EEMessageDisplayCache();
       if (!user?.id) {
         return;
       }

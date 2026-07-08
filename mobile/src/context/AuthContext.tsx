@@ -31,6 +31,7 @@ import { clearPendingIncomingCall } from '../notifications/pendingIncomingCall';
 import { clearPendingOpenedLocalNotifications } from '../notifications/localNotifications';
 import { clearPendingNotificationNavigation } from '../notifications/navigation';
 import { clearPendingPushEvents } from '../notifications/pushEffects';
+import { clearE2EEMessageDisplayCache } from '../features/chat/lib/e2eeMessageTransform';
 import { logDev, warnDev } from '../utils/logger';
 
 type AuthContextValue = {
@@ -71,6 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       await shutdownCurrentCallForLogout().catch(() => undefined);
       chatSocket.disconnect();
+      clearE2EEMessageDisplayCache();
       clearActivePushConversation();
       clearPendingNotificationNavigation();
 
@@ -161,6 +163,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (payload: LoginPayload) => {
       sessionVersionRef.current += 1;
       const version = sessionVersionRef.current;
+      clearE2EEMessageDisplayCache();
       setAuthError(null);
       try {
         const response = await authApi.login(payload);
@@ -185,6 +188,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (payload: RegisterPayload) => {
       sessionVersionRef.current += 1;
       const version = sessionVersionRef.current;
+      clearE2EEMessageDisplayCache();
       setAuthError(null);
       try {
         const response = await authApi.register(payload);
