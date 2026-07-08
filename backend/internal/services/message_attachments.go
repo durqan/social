@@ -551,11 +551,9 @@ func WithPrivateAttachmentURLs(message models.Message) models.Message {
 		message.ForwardedFromUser = &user
 	}
 	for i := range message.Attachments {
-		message.Attachments[i].FileURL = PrivateAttachmentURL(message.Attachments[i].ID)
-		if message.Attachments[i].ThumbnailURL != "" {
-			message.Attachments[i].ThumbnailURL = PrivateAttachmentThumbnailURL(message.Attachments[i].ID)
-		}
+		message.Attachments[i] = withPrivateAttachmentURLs(message.Attachments[i])
 	}
+	withPrivateLinkPreviewAttachmentURLs(message.LinkPreview, message.Attachments)
 	if message.ReplyToMessage != nil {
 		reply := WithPrivateAttachmentURLs(*message.ReplyToMessage)
 		reply.ReplyToMessage = nil
@@ -569,6 +567,40 @@ func WithPrivateAttachmentURLs(message models.Message) models.Message {
 		message.ForwardedFromMessage = &forwarded
 	}
 	return message
+}
+
+func withPrivateAttachmentURLs(attachment models.MessageAttachment) models.MessageAttachment {
+	attachment.FileURL = PrivateAttachmentURL(attachment.ID)
+	if attachment.ThumbnailURL != "" {
+		attachment.ThumbnailURL = PrivateAttachmentThumbnailURL(attachment.ID)
+	}
+	return attachment
+}
+
+func withPrivateLinkPreviewAttachmentURLs(preview *models.MessageLinkPreview, attachments []models.MessageAttachment) {
+	if preview == nil || preview.VideoAttachmentID == nil {
+		return
+	}
+
+	if preview.VideoAttachment != nil {
+		attachment := withPrivateAttachmentURLs(*preview.VideoAttachment)
+		preview.VideoAttachment = &attachment
+		if attachment.ThumbnailURL != "" {
+			preview.ThumbnailURL = &attachment.ThumbnailURL
+		}
+		return
+	}
+
+	for _, attachment := range attachments {
+		if attachment.ID != *preview.VideoAttachmentID {
+			continue
+		}
+		preview.VideoAttachment = &attachment
+		if attachment.ThumbnailURL != "" {
+			preview.ThumbnailURL = &attachment.ThumbnailURL
+		}
+		return
+	}
 }
 
 func WithPrivateAttachmentURLsForMessages(messages []models.Message) []models.Message {

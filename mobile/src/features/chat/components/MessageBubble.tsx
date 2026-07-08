@@ -12,7 +12,7 @@ import Video from 'react-native-video';
 import { Download, Video as VideoIcon } from 'lucide-react-native';
 
 import { assetURL } from '../../../config/env';
-import type { Message, MessageAttachment } from '@social/shared';
+import type { Message, MessageAttachment, MessageLinkPreview } from '@social/shared';
 import type { ThemeColors } from '../../../theme/themes';
 import { formatDuration, formatMessageTime } from '../../../utils/format';
 import { createChatThemeStyles, styles } from '../lib/chatStyles';
@@ -25,16 +25,32 @@ import {
   messagePreviewText,
 } from '../lib/chatUtils';
 
+function linkPreviewImageURL(preview: MessageLinkPreview) {
+  const url =
+    preview.image_url ||
+    preview.thumbnail_url ||
+    preview.video_attachment?.thumbnail_url ||
+    null;
+
+  if (!url) {
+    return null;
+  }
+
+  if (/^(https?:|data:|blob:)/i.test(url)) {
+    return url;
+  }
+
+  return assetURL(url);
+}
+
 function LinkPreviewCard({
                            message,
                            outgoing,
-                           hasVideo,
                            onImport,
                            themeColors,
                          }: {
   message: Message;
   outgoing: boolean;
-  hasVideo: boolean;
   onImport: () => void;
   themeColors: ThemeColors;
 }) {
@@ -49,27 +65,15 @@ function LinkPreviewCard({
     return null;
   }
 
-  if (preview.status === 'ready' && hasVideo) {
-    return (
-        <Text
-            style={[
-              styles.linkPreviewSource,
-              outgoing ? themed.outgoingSoftText : themed.mutedText,
-            ]}
-        >
-          Источник: {linkPreviewProviderLabel(preview.provider)}
-        </Text>
-    );
-  }
-
   const importing = preview.status === 'importing';
   const failed = preview.status === 'failed';
+  const previewImageURL = linkPreviewImageURL(preview);
 
   return (
       <View style={[styles.linkPreviewCard, themed.linkPreviewCard]}>
-        {preview.thumbnail_url ? (
+        {previewImageURL ? (
             <Image
-                source={{ uri: preview.thumbnail_url }}
+                source={{ uri: previewImageURL }}
                 style={styles.linkPreviewThumb}
             />
         ) : (
@@ -479,13 +483,6 @@ export const MessageBubble = React.memo(function MessageBubbleComponent({
             message={message}
             outgoing={outgoing}
             themeColors={themeColors}
-            hasVideo={Boolean(
-              message.attachments?.some(
-                attachment =>
-                  attachment.file_type === 'video' &&
-                  !attachment.decryption_error,
-              ),
-            )}
             onImport={() => onImportLinkPreviewVideo(message)}
           />
         ) : null}

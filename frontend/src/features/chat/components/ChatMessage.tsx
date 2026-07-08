@@ -98,6 +98,10 @@ function previewDomain(raw: string) {
     }
 }
 
+function linkPreviewImageURL(preview: MessageLinkPreview) {
+    return preview.image_url || preview.thumbnail_url || preview.video_attachment?.thumbnail_url || null;
+}
+
 type MessageStatusKind = 'sent' | 'read';
 
 function messageStatus(message: Message, isOwn: boolean): MessageStatusKind | undefined {
@@ -139,27 +143,18 @@ function MessageMeta({
 
 export function LinkPreviewCard({
     preview,
-    hasVideo,
     onImport,
 }: {
     preview: MessageLinkPreview;
-    hasVideo: boolean;
     onImport?: () => void;
 }) {
-    if (preview.status === 'ready' && hasVideo) {
-        return (
-            <div className="mt-2 text-xs text-[var(--app-text-secondary)]">
-                Источник: {providerLabel(preview.provider)}
-            </div>
-        );
-    }
-
     const importing = preview.status === 'importing';
     const failed = preview.status === 'failed';
+    const previewImageURL = linkPreviewImageURL(preview);
     return (
         <div className="mt-2 overflow-hidden rounded-xl border border-[var(--app-border)] bg-[var(--app-card-muted)]">
-            {preview.thumbnail_url ? (
-                <img src={preview.thumbnail_url} alt="" className="max-h-40 w-full object-cover" loading="lazy" />
+            {previewImageURL ? (
+                <img src={previewImageURL} alt="" className="max-h-40 w-full object-cover" loading="lazy" />
             ) : (
                 <div className="flex h-28 w-full items-center justify-center bg-black/10 text-[var(--app-text-secondary)]">
                     <Icon name="video" className="h-8 w-8" />
@@ -680,7 +675,6 @@ const ChatMessageComponent = ({
                             {message.link_preview ? (
                                 <LinkPreviewCard
                                     preview={message.link_preview}
-                                    hasVideo={videoAttachments.length > 0}
                                     onImport={() => onImportLinkPreviewVideo?.(message)}
                                 />
                             ) : null}

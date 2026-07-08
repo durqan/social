@@ -172,11 +172,13 @@ export interface MessageLinkPreview {
   provider: "youtube" | "rutube" | "instagram" | "generic";
   title?: string | null;
   description?: string | null;
+  image_url?: string | null;
   thumbnail_url?: string | null;
   duration_seconds?: number | null;
   status: "preview" | "importing" | "ready" | "failed";
   import_error?: string | null;
   video_attachment_id?: number | null;
+  video_attachment?: MessageAttachment | null;
   created_at: string;
   updated_at?: string;
 }

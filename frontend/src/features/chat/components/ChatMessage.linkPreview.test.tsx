@@ -17,7 +17,6 @@ describe('LinkPreviewCard', () => {
                     status: 'preview',
                     created_at: new Date().toISOString(),
                 }}
-                hasVideo={false}
                 onImport={() => undefined}
             />,
         );
@@ -26,5 +25,35 @@ describe('LinkPreviewCard', () => {
         expect(html).toContain('https://i.ytimg.com/vi/abc/hqdefault.jpg');
         expect(html).toContain('youtube.com');
         expect(html).toContain('Сохранить видео в чат');
+    });
+
+    it('renders imported video attachment thumbnail when preview thumbnail is missing', () => {
+        const html = renderToStaticMarkup(
+            <LinkPreviewCard
+                preview={{
+                    id: 2,
+                    message_id: 11,
+                    original_url: 'https://www.instagram.com/reel/abc/',
+                    provider: 'instagram',
+                    title: 'Instagram reel',
+                    thumbnail_url: null,
+                    status: 'ready',
+                    video_attachment_id: 44,
+                    video_attachment: {
+                        id: 44,
+                        message_id: 11,
+                        file_url: '/api/messages/attachments/44',
+                        file_type: 'video',
+                        thumbnail_url: '/api/messages/attachments/44/thumbnail',
+                        size: 123,
+                    },
+                    created_at: new Date().toISOString(),
+                }}
+                onImport={() => undefined}
+            />,
+        );
+
+        expect(html).toContain('Instagram reel');
+        expect(html).toContain('/api/messages/attachments/44/thumbnail');
     });
 });

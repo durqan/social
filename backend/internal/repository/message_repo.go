@@ -38,8 +38,11 @@ func preloadMessageRelations(db *gorm.DB) *gorm.DB {
 	if messageLinkPreviewTableExists(db) {
 		query = query.
 			Preload("LinkPreview").
+			Preload("LinkPreview.VideoAttachment").
 			Preload("ReplyToMessage.LinkPreview").
-			Preload("ForwardedFromMessage.LinkPreview")
+			Preload("ReplyToMessage.LinkPreview.VideoAttachment").
+			Preload("ForwardedFromMessage.LinkPreview").
+			Preload("ForwardedFromMessage.LinkPreview.VideoAttachment")
 	}
 	return query
 }
@@ -58,8 +61,11 @@ func preloadPinnedMessageRelations(db *gorm.DB) *gorm.DB {
 	if messageLinkPreviewTableExists(db) {
 		query = query.
 			Preload("Message.LinkPreview").
+			Preload("Message.LinkPreview.VideoAttachment").
 			Preload("Message.ReplyToMessage.LinkPreview").
-			Preload("Message.ForwardedFromMessage.LinkPreview")
+			Preload("Message.ReplyToMessage.LinkPreview.VideoAttachment").
+			Preload("Message.ForwardedFromMessage.LinkPreview").
+			Preload("Message.ForwardedFromMessage.LinkPreview.VideoAttachment")
 	}
 	return query
 }

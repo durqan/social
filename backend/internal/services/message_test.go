@@ -187,6 +187,64 @@ func TestGetMessagesWithReturnsLinkPreviewMetadata(t *testing.T) {
 	}
 }
 
+func TestLinkPreviewVideoAttachmentUsesPrivateThumbnailURL(t *testing.T) {
+	db := newMessageServiceTestDB(t)
+	seedAcceptedFriendship(t, db, 1, 2)
+
+	message := models.Message{
+		FromID:  1,
+		ToID:    2,
+		Content: "https://www.instagram.com/reel/abc/",
+	}
+	if err := db.Create(&message).Error; err != nil {
+		t.Fatal(err)
+	}
+	attachment := models.MessageAttachment{
+		MessageID:    message.ID,
+		FileURL:      "chat-videos/1/video.mp4",
+		ThumbnailURL: "chat-video-thumbnails/1/thumb.jpg",
+		FileType:     "video",
+		ContentType:  "video/mp4",
+		Size:         123,
+	}
+	if err := db.Create(&attachment).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.MessageLinkPreview{
+		MessageID:         message.ID,
+		OriginalURL:       "https://www.instagram.com/reel/abc/",
+		Provider:          "instagram",
+		Status:            models.LinkPreviewStatusReady,
+		VideoAttachmentID: &attachment.ID,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	messages, err := repository.GetMessagesBetweenPaginated(db, 1, 2, 20, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("messages len = %d, want 1", len(messages))
+	}
+	if messages[0].LinkPreview == nil || messages[0].LinkPreview.VideoAttachment == nil {
+		t.Fatal("message link preview did not preload video attachment")
+	}
+
+	response := WithPrivateAttachmentURLs(messages[0])
+	preview := response.LinkPreview
+	if preview == nil || preview.VideoAttachment == nil {
+		t.Fatal("response link preview has no video attachment")
+	}
+	wantThumb := PrivateAttachmentThumbnailURL(attachment.ID)
+	if preview.VideoAttachment.ThumbnailURL != wantThumb {
+		t.Fatalf("video attachment thumbnail = %q, want %q", preview.VideoAttachment.ThumbnailURL, wantThumb)
+	}
+	if preview.ThumbnailURL == nil || *preview.ThumbnailURL != wantThumb {
+		t.Fatalf("preview thumbnail = %v, want %q", preview.ThumbnailURL, wantThumb)
+	}
+}
+
 func TestSendMessageUpdatesSenderLastSeen(t *testing.T) {
 	db := newMessageServiceTestDB(t)
 	seedAcceptedFriendship(t, db, 1, 2)

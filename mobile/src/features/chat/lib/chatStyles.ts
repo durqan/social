@@ -688,10 +688,6 @@ export const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.text,
   },
-  linkPreviewSource: {
-    marginTop: spacing.xs,
-    fontSize: 12,
-  },
   genericFileAttachment: {
     minWidth: 220,
     flexDirection: 'row',
