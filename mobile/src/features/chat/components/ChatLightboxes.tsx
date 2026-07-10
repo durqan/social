@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Image, Modal, Pressable, Text, View } from 'react-native';
-import Video from 'react-native-video';
 
+import { DiagnosticVideo } from '../../../components/DiagnosticVideo';
 import { styles } from '../lib/chatStyles';
 
 type ChatLightboxesProps = {
@@ -17,6 +17,16 @@ export function ChatLightboxes({
   onCloseImage,
   onCloseVideo,
 }: ChatLightboxesProps) {
+  const [videoPlaybackError, setVideoPlaybackError] = useState(false);
+  const videoSource = useMemo(
+    () => (videoUrl ? { uri: videoUrl } : null),
+    [videoUrl],
+  );
+
+  useEffect(() => {
+    setVideoPlaybackError(false);
+  }, [videoUrl]);
+
   return (
     <>
       <Modal
@@ -51,13 +61,22 @@ export function ChatLightboxes({
       >
         <View style={styles.lightbox}>
           <Pressable style={styles.lightboxBackdrop} onPress={onCloseVideo} />
-          {videoUrl ? (
-            <Video
-              source={{ uri: videoUrl }}
+          {videoSource ? (
+            <DiagnosticVideo
+              source={videoSource}
               style={styles.lightboxVideo}
               controls
               resizeMode="contain"
+              diagnosticLabel="chat-video-lightbox"
+              onError={() => setVideoPlaybackError(true)}
             />
+          ) : null}
+          {videoPlaybackError ? (
+            <View pointerEvents="none" style={styles.lightboxVideoError}>
+              <Text style={styles.lightboxVideoErrorText}>
+                Не удалось воспроизвести видео. Подробности записаны в лог приложения.
+              </Text>
+            </View>
           ) : null}
           <Pressable style={styles.lightboxClose} onPress={onCloseVideo}>
             <Text style={styles.lightboxCloseText}>×</Text>

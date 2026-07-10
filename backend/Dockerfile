@@ -9,6 +9,7 @@ COPY . .
 
 RUN CGO_ENABLED=0 GOOS=linux go build -o main ./cmd/api
 RUN CGO_ENABLED=0 GOOS=linux go build -o video-import-worker ./cmd/video-import-worker
+RUN CGO_ENABLED=0 GOOS=linux go build -o video-normalize-existing ./cmd/video-normalize-existing
 
 FROM alpine:3.20
 
@@ -29,6 +30,7 @@ WORKDIR /app
 
 COPY --from=builder /app/main .
 COPY --from=builder /app/video-import-worker .
+COPY --from=builder /app/video-normalize-existing .
 
 RUN mkdir -p /app/uploads/avatars /app/uploads/chat /tmp/video-imports \
   && chown -R app:app /app/uploads /tmp/video-imports

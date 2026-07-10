@@ -27,6 +27,7 @@ declare const process:
         SOCIAL_TURN_URLS?: string;
         SOCIAL_TURN_USERNAME?: string;
         SOCIAL_TURN_CREDENTIAL?: string;
+        SOCIAL_WEBRTC_FORCE_RELAY?: string;
       };
     }
   | undefined;
@@ -96,6 +97,11 @@ export const TURN_CREDENTIAL =
   typeof process !== 'undefined'
     ? envValue(process.env.SOCIAL_TURN_CREDENTIAL)
     : undefined;
+
+export const WEBRTC_FORCE_RELAY =
+  __DEV__ &&
+  typeof process !== 'undefined' &&
+  envValue(process.env.SOCIAL_WEBRTC_FORCE_RELAY)?.toLowerCase() === 'true';
 
 export function apiURL(path: string) {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;

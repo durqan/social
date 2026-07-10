@@ -48,11 +48,15 @@ type videoMetadata struct {
 }
 
 type sourceVideoInfo struct {
-	VideoCodec string
-	AudioCodec string
-	Width      int
-	Height     int
-	SizeBytes  int64
+	VideoCodec      string
+	AudioCodec      string
+	PixelFormat     string
+	Profile         string
+	Level           int
+	FramesPerSecond float64
+	Width           int
+	Height          int
+	SizeBytes       int64
 }
 
 func RunVideoImportWorker(ctx context.Context, db *gorm.DB, cfg VideoImportWorkerConfig) error {
@@ -211,10 +215,14 @@ func ProcessVideoImportJob(ctx context.Context, db *gorm.DB, cfg VideoImportWork
 		log.Printf("video import %s: could not probe source, will transcode: %v", job.JobID, err)
 	} else {
 		log.Printf(
-			"video import %s: source info video=%s audio=%s size=%d width=%d height=%d",
+			"video import %s: source info video=%s audio=%s pix_fmt=%s profile=%s level=%d fps=%.2f size=%d width=%d height=%d",
 			job.JobID,
 			sourceInfo.VideoCodec,
 			sourceInfo.AudioCodec,
+			sourceInfo.PixelFormat,
+			sourceInfo.Profile,
+			sourceInfo.Level,
+			sourceInfo.FramesPerSecond,
 			sourceInfo.SizeBytes,
 			sourceInfo.Width,
 			sourceInfo.Height,
@@ -230,16 +238,32 @@ func ProcessVideoImportJob(ctx context.Context, db *gorm.DB, cfg VideoImportWork
 			ctx,
 			cfg.FFmpegLimit,
 			"ffmpeg",
+			"-nostdin",
+			"-hide_banner",
+			"-loglevel", "error",
 			"-y",
 			"-i", sourcePath,
-			"-vf", "scale=1280:720:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,fps='min(30,source_fps)'",
+			"-map", "0:v:0",
+			"-map", "0:a:0?",
+			"-map_metadata", "-1",
+			"-sn",
+			"-dn",
+			"-vf", compatibleVideoFilter(1280, 720),
 			"-c:v", "libx264",
-			"-preset", "superfast",
-			"-crf", "30",
+			"-preset", "veryfast",
+			"-crf", "23",
 			"-pix_fmt", "yuv420p",
+			"-profile:v", "main",
+			"-level:v", "4.0",
+			"-tag:v", "avc1",
+			"-g", "60",
 			"-c:a", "aac",
 			"-b:a", "128k",
+			"-ac", "2",
+			"-ar", "48000",
+			"-max_muxing_queue_size", "1024",
 			"-movflags", "+faststart",
+			"-f", "mp4",
 			processedPath,
 		); err != nil {
 			return err
@@ -254,12 +278,19 @@ func ProcessVideoImportJob(ctx context.Context, db *gorm.DB, cfg VideoImportWork
 			ctx,
 			5*time.Minute,
 			"ffmpeg",
+			"-nostdin",
+			"-hide_banner",
+			"-loglevel", "error",
 			"-y",
 			"-i", sourcePath,
 			"-map", "0:v:0",
-			"-map", "0:a?",
+			"-map", "0:a:0?",
+			"-map_metadata", "-1",
+			"-sn",
+			"-dn",
 			"-c", "copy",
 			"-movflags", "+faststart",
+			"-f", "mp4",
 			processedPath,
 		); err != nil {
 			log.Printf("video import %s: remux failed, falling back to transcode: %v", job.JobID, err)
@@ -435,7 +466,7 @@ func probeSourceVideoInfo(ctx context.Context, path string) (sourceVideoInfo, er
 		cmdCtx,
 		"ffprobe",
 		"-v", "error",
-		"-show_entries", "stream=index,codec_type,codec_name,width,height",
+		"-show_entries", "stream=index,codec_type,codec_name,profile,pix_fmt,level,width,height,avg_frame_rate,r_frame_rate",
 		"-of", "json",
 		path,
 	)
@@ -447,10 +478,15 @@ func probeSourceVideoInfo(ctx context.Context, path string) (sourceVideoInfo, er
 
 	var parsed struct {
 		Streams []struct {
-			CodecType string `json:"codec_type"`
-			CodecName string `json:"codec_name"`
-			Width     int    `json:"width"`
-			Height    int    `json:"height"`
+			CodecType   string `json:"codec_type"`
+			CodecName   string `json:"codec_name"`
+			Profile     string `json:"profile"`
+			PixelFormat string `json:"pix_fmt"`
+			Level       int    `json:"level"`
+			Width       int    `json:"width"`
+			Height      int    `json:"height"`
+			AverageRate string `json:"avg_frame_rate"`
+			RealRate    string `json:"r_frame_rate"`
 		} `json:"streams"`
 	}
 
@@ -466,6 +502,13 @@ func probeSourceVideoInfo(ctx context.Context, path string) (sourceVideoInfo, er
 		case "video":
 			if result.VideoCodec == "" {
 				result.VideoCodec = strings.ToLower(stream.CodecName)
+				result.PixelFormat = strings.ToLower(stream.PixelFormat)
+				result.Profile = strings.ToLower(strings.TrimSpace(stream.Profile))
+				result.Level = stream.Level
+				result.FramesPerSecond = parseFrameRate(stream.AverageRate)
+				if result.FramesPerSecond <= 0 {
+					result.FramesPerSecond = parseFrameRate(stream.RealRate)
+				}
 				result.Width = stream.Width
 				result.Height = stream.Height
 			}
@@ -488,6 +531,14 @@ func (info sourceVideoInfo) canFastCopy() bool {
 		return false
 	}
 	if info.AudioCodec != "" && info.AudioCodec != "aac" {
+		return false
+	}
+	if info.PixelFormat != "yuv420p" || info.Level <= 0 || info.Level > 40 || info.FramesPerSecond <= 0 || info.FramesPerSecond > 30.5 {
+		return false
+	}
+	switch info.Profile {
+	case "baseline", "constrained baseline", "main":
+	default:
 		return false
 	}
 	if info.SizeBytes <= 0 || info.SizeBytes > maxFastCopySourceSizeBytes {

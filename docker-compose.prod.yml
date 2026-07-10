@@ -95,6 +95,9 @@ services:
       STORAGE_DRIVER: ${STORAGE_DRIVER:-s3}
       STORAGE_LOCAL_ROOT: ${STORAGE_LOCAL_ROOT:-uploads}
       STORAGE_PUBLIC_BASE_URL: ${STORAGE_PUBLIC_BASE_URL:-}
+      CHAT_VIDEO_TEMP_ROOT: ${CHAT_VIDEO_TEMP_ROOT:-/tmp/chat-video-normalization}
+      CHAT_VIDEO_NORMALIZATION_CONCURRENCY: ${CHAT_VIDEO_NORMALIZATION_CONCURRENCY:-1}
+      CHAT_VIDEO_NORMALIZATION_TIMEOUT: ${CHAT_VIDEO_NORMALIZATION_TIMEOUT:-20m}
       S3_ENDPOINT: ${S3_ENDPOINT:-}
       S3_REGION: ${S3_REGION:-auto}
       S3_BUCKET: ${S3_BUCKET:-}
@@ -310,7 +313,7 @@ services:
       TURN_REALM: ${TURN_REALM:-turn.durqan.ru}
       TURN_USERNAME: ${TURN_USERNAME:-social_turn}
       TURN_PASSWORD: ${TURN_PASSWORD:?TURN_PASSWORD is required}
-      TURN_EXTERNAL_IP: ${TURN_EXTERNAL_IP:-}
+      TURN_EXTERNAL_IP: ${TURN_EXTERNAL_IP:?TURN_EXTERNAL_IP is required for Docker TURN relay candidates}
       TURN_TLS_LISTENING_PORT: ${TURN_TLS_LISTENING_PORT:-5349}
       TURN_TLS_CERT: ${TURN_TLS_CERT:-/etc/letsencrypt/live/turn.durqan.ru/fullchain.pem}
       TURN_TLS_PKEY: ${TURN_TLS_PKEY:-/etc/letsencrypt/live/turn.durqan.ru/privkey.pem}
@@ -335,7 +338,6 @@ services:
         --fingerprint \
         --no-multicast-peers \
         --no-cli \
-        --relay-ip=0.0.0.0 \
         --external-ip=$$TURN_EXTERNAL_IP
     networks:
       - social_network

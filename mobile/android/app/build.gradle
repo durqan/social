@@ -133,10 +133,11 @@ def validateTurnConfig = {
         .findAll { !it.isBlank() }
         .collect { parseTurnUrl(it) }
     def hasUdp = parsedUrls.any { it.scheme == "turn" && it.transport == "udp" }
+    def hasPlainTcp = parsedUrls.any { it.scheme == "turn" && it.transport == "tcp" }
     def hasTcp443 = parsedUrls.any { it.transport == "tcp" && it.port == 443 }
-    if (!hasUdp || !hasTcp443) {
+    if (!hasUdp || !hasPlainTcp || !hasTcp443) {
         throw new GradleException(
-            "SOCIAL_TURN_URLS must include UDP TURN and TCP/TLS TURN on port 443 fallback."
+            "SOCIAL_TURN_URLS must include UDP TURN, plain TCP TURN, and TCP/TLS TURN on port 443 fallback."
         )
     }
 }

@@ -8,9 +8,9 @@ import {
   type LayoutChangeEvent,
   type GestureResponderEvent,
 } from 'react-native';
-import Video from 'react-native-video';
 import { Download, Video as VideoIcon } from 'lucide-react-native';
 
+import { DiagnosticVideo } from '../../../components/DiagnosticVideo';
 import { assetURL } from '../../../config/env';
 import type { Message, MessageAttachment, MessageLinkPreview } from '@social/shared';
 import type { ThemeColors } from '../../../theme/themes';
@@ -782,6 +782,7 @@ export function VideoNoteAttachment({
   const [playing, setPlaying] = useState(false);
   const [position, setPosition] = useState(0);
   const [loadedDuration, setLoadedDuration] = useState(duration ?? 0);
+  const videoSource = useMemo(() => ({ uri: url }), [url]);
   const effectiveDuration = loadedDuration || duration || 0;
   const progress =
     effectiveDuration > 0
@@ -807,13 +808,14 @@ export function VideoNoteAttachment({
         ]}
       >
         {playing ? (
-          <Video
-            source={{ uri: url }}
+          <DiagnosticVideo
+            source={videoSource}
             style={[styles.videoNoteVideo, themed.surfaceMuted]}
             paused={false}
             repeat={false}
             resizeMode="cover"
             muted={false}
+            diagnosticLabel="chat-video-note"
             onLoad={data => {
               setLoadedDuration(data.duration || duration || 0);
             }}

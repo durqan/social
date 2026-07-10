@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"image"
 	"io"
+	"log"
 	"mime"
 	"mime/multipart"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -109,6 +111,8 @@ func UploadMessageImage(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		var width, height, durationSeconds int
+		var uploadSource io.ReadSeeker = src
+		uploadSize := file.Size
 
 		if info.FileType == "image" {
 			if _, err := src.Seek(0, 0); err != nil {
@@ -123,16 +127,50 @@ func UploadMessageImage(db *gorm.DB) gin.HandlerFunc {
 			width = cfg.Width
 			height = cfg.Height
 		} else if info.FileType == "video" {
-			width, height, _ = dimensionsFromForm(c)
-			durationSeconds, _ = mediaDurationSecondsFromForm(c)
+			normalized, err := services.NormalizeUploadedVideo(
+				c.Request.Context(),
+				src,
+				services.ChatVideoMaxSize,
+			)
+			if err != nil {
+				writeVideoNormalizationError(c, err)
+				return
+			}
+			defer normalized.Close()
+
+			uploadSource = normalized.File
+			uploadSize = normalized.Size
+			width = normalized.Width
+			height = normalized.Height
+			durationSeconds = normalized.DurationSeconds
+			info.Extension = ".mp4"
+			info.ContentType = services.NormalizedVideoContentType
+			info.OriginalFilename = services.NormalizedVideoFilename(info.OriginalFilename)
+			log.Printf(
+				"chat video normalized user_id=%d mode=%s source_video=%s source_audio=%s source_pix_fmt=%s output_size=%d width=%d height=%d duration=%d",
+				userID,
+				normalized.Mode,
+				normalized.SourceVideoCodec,
+				normalized.SourceAudioCodec,
+				normalized.SourcePixelFormat,
+				normalized.Size,
+				normalized.Width,
+				normalized.Height,
+				normalized.DurationSeconds,
+			)
 		}
 
-		if _, err := src.Seek(0, 0); err != nil {
+		if _, err := uploadSource.Seek(0, 0); err != nil {
 			c.JSON(400, gin.H{"error": "failed to read file"})
 			return
 		}
 
-		key, err := storage.NewObjectKey(fmt.Sprintf("messages/user_%d", userID), info.Extension)
+		var key string
+		if info.FileType == "video" {
+			key, err = newNormalizedVideoObjectKey(fmt.Sprintf("messages/user_%d", userID))
+		} else {
+			key, err = storage.NewObjectKey(fmt.Sprintf("messages/user_%d", userID), info.Extension)
+		}
 		if err != nil {
 			c.JSON(500, gin.H{"error": "failed to create file filename"})
 			return
@@ -145,7 +183,7 @@ func UploadMessageImage(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		if err := store.Upload(c.Request.Context(), key, src, info.ContentType); err != nil {
+		if err := store.Upload(c.Request.Context(), key, uploadSource, info.ContentType); err != nil {
 			c.JSON(500, gin.H{"error": "failed to save file"})
 			return
 		}
@@ -158,7 +196,7 @@ func UploadMessageImage(db *gorm.DB) gin.HandlerFunc {
 			Height:           height,
 			Duration:         durationSeconds,
 			DurationSeconds:  durationSeconds,
-			Size:             file.Size,
+			Size:             uploadSize,
 			OriginalFilename: info.OriginalFilename,
 			ContentType:      info.ContentType,
 		})
@@ -382,7 +420,7 @@ func UploadMessageVideoNote(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		contentType, ext, err := services.ValidateChatVideoNoteUploadMagic(header, file.Header.Get("Content-Type"))
+		contentType, _, err := services.ValidateChatVideoNoteUploadMagic(header, file.Header.Get("Content-Type"))
 		if err != nil {
 			c.JSON(415, gin.H{"error": err.Error()})
 			return
@@ -399,7 +437,34 @@ func UploadMessageVideoNote(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		key, err := storage.NewObjectKey(fmt.Sprintf("video-notes/user_%d", userID), ext)
+		normalized, err := services.NormalizeUploadedVideo(
+			c.Request.Context(),
+			src,
+			services.ChatVideoNoteMaxSize,
+		)
+		if err != nil {
+			writeVideoNormalizationError(c, err)
+			return
+		}
+		defer normalized.Close()
+		contentType = services.NormalizedVideoContentType
+		durationSeconds, err = services.ValidateChatVideoNoteDurationSeconds(normalized.DurationSeconds)
+		if err != nil {
+			c.JSON(400, gin.H{"error": err.Error()})
+			return
+		}
+		log.Printf(
+			"chat video note normalized user_id=%d mode=%s source_video=%s source_audio=%s source_pix_fmt=%s output_size=%d duration=%d",
+			userID,
+			normalized.Mode,
+			normalized.SourceVideoCodec,
+			normalized.SourceAudioCodec,
+			normalized.SourcePixelFormat,
+			normalized.Size,
+			normalized.DurationSeconds,
+		)
+
+		key, err := newNormalizedVideoObjectKey(fmt.Sprintf("video-notes/user_%d", userID))
 		if err != nil {
 			c.JSON(500, gin.H{"error": "failed to create video note filename"})
 			return
@@ -412,7 +477,12 @@ func UploadMessageVideoNote(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		if err := store.Upload(c.Request.Context(), key, src, contentType); err != nil {
+		if _, err := normalized.File.Seek(0, io.SeekStart); err != nil {
+			c.JSON(400, gin.H{"error": "failed to read video note"})
+			return
+		}
+
+		if err := store.Upload(c.Request.Context(), key, normalized.File, contentType); err != nil {
 			c.JSON(500, gin.H{"error": "failed to save video note"})
 			return
 		}
@@ -424,7 +494,7 @@ func UploadMessageVideoNote(db *gorm.DB) gin.HandlerFunc {
 			FileType:        "video_note",
 			Duration:        durationSeconds,
 			DurationSeconds: durationSeconds,
-			Size:            file.Size,
+			Size:            normalized.Size,
 		})
 	}
 }
@@ -464,6 +534,28 @@ func messageUploadValidationStatus(err error) int {
 		return http.StatusBadRequest
 	}
 	return http.StatusUnsupportedMediaType
+}
+
+func writeVideoNormalizationError(c *gin.Context, err error) {
+	log.Printf("video upload normalization failed: %v", err)
+	if services.IsVideoNormalizationInputError(err) {
+		c.JSON(http.StatusUnsupportedMediaType, gin.H{
+			"error": "video cannot be converted to compatible MP4/H.264",
+		})
+		return
+	}
+
+	c.JSON(http.StatusInternalServerError, gin.H{
+		"error": "failed to normalize video",
+	})
+}
+
+func newNormalizedVideoObjectKey(prefix string) (string, error) {
+	id, err := storage.NewUUID()
+	if err != nil {
+		return "", err
+	}
+	return filepath.ToSlash(filepath.Join(prefix, "normalized_"+id+".mp4")), nil
 }
 
 func voiceDurationSecondsFromForm(c *gin.Context) (int, bool) {
@@ -887,8 +979,20 @@ func messageAttachmentDownloadExtension(attachment *models.MessageAttachment, ke
 
 func serveStoredObjectWithHeaders(c *gin.Context, store storage.Storage, key string, contentType string, disposition string) {
 	if filePath, ok := storage.LocalPath(store, key); ok {
+		file, err := os.Open(filePath)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "attachment file not found"})
+			return
+		}
+		defer file.Close()
+		info, err := file.Stat()
+		if err != nil || !info.Mode().IsRegular() {
+			c.JSON(http.StatusNotFound, gin.H{"error": "attachment file not found"})
+			return
+		}
+
 		setStoredObjectHeaders(c, contentType, disposition)
-		c.File(filePath)
+		http.ServeContent(c.Writer, c.Request, filepath.Base(key), info.ModTime(), file)
 		return
 	}
 
@@ -910,6 +1014,7 @@ func setStoredObjectHeaders(c *gin.Context, contentType string, disposition stri
 	}
 	c.Header("Content-Disposition", disposition)
 	c.Header("Accept-Ranges", "bytes")
+	c.Header("X-Content-Type-Options", "nosniff")
 }
 
 func proxyStoredObject(c *gin.Context, signedURL string) {
@@ -918,7 +1023,10 @@ func proxyStoredObject(c *gin.Context, signedURL string) {
 		return
 	}
 
-	req, err := http.NewRequestWithContext(c.Request.Context(), c.Request.Method, signedURL, nil)
+	// S3 presigned URLs are signed for GET. Use GET upstream for a client HEAD
+	// request as well, then close the body without copying it. Sending HEAD to a
+	// GET-signed URL fails signature verification on AWS-compatible storage.
+	req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodGet, signedURL, nil)
 	if err != nil {
 		c.JSON(404, gin.H{"error": "attachment file not found"})
 		return

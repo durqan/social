@@ -2,6 +2,7 @@ import {
   API_BASE_URL,
   NOTIFICATIONS_BASE_URL,
   TURN_URLS,
+  WEBRTC_FORCE_RELAY,
   WS_URL,
 } from '../config/env';
 
@@ -114,6 +115,7 @@ export function logCallEnvOnce(source = 'app_start') {
     notificationsBaseURL,
     wsURL,
     turnConfigured: TURN_URLS.length > 0,
+    forceRelay: WEBRTC_FORCE_RELAY,
   });
 
   if (releaseMode && API_BASE_URL.startsWith('http://')) {

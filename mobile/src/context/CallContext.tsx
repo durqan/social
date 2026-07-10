@@ -19,6 +19,7 @@ import {
     mediaDevices,
     RTCIceCandidate,
     RTCPeerConnection,
+    RTCRtpSender,
     RTCSessionDescription,
     type MediaStream,
     type MediaStreamTrack,
@@ -39,7 +40,12 @@ import {
     type CallType,
     type WsEvent,
 } from '../api/ws';
-import { TURN_CREDENTIAL, TURN_URLS, TURN_USERNAME } from '../config/env';
+import {
+    TURN_CREDENTIAL,
+    TURN_URLS,
+    TURN_USERNAME,
+    WEBRTC_FORCE_RELAY,
+} from '../config/env';
 import {
     callError as logCallError,
     callLog,
@@ -58,6 +64,11 @@ import {
 } from '../notifications/pendingIncomingCall';
 import { cancelIncomingCallNotification } from '../notifications/localNotifications';
 import { logDev, warnDev } from '../utils/logger';
+import {
+    collectWebRTCDiagnostics,
+    createCallStatsAccumulator,
+    type WebRTCDiagnosticsSnapshot,
+} from '../utils/webrtcStats';
 import { registerCallShutdownHandler } from './callLifecycle';
 import {
     isLiveServerCall,
@@ -114,6 +125,8 @@ type SdpSummary = {
     video: SdpMediaSummary;
     audioCodecs: string[];
     preferredAudioCodec: string | null;
+    videoCodecs: string[];
+    preferredVideoCodec: string | null;
     hasOpus: boolean;
     hasSendrecv: boolean;
 };
@@ -156,47 +169,11 @@ type ConstraintCapableTrack = MediaStreamTrack & {
     ) => Promise<void>;
 };
 type CallMediaConstraints = Parameters<typeof mediaDevices.getUserMedia>[0];
-type RtcStatsValue = {
-    id?: string;
-    type?: string;
-    timestamp?: number;
-    kind?: string;
-    mediaType?: string;
-    packetsLost?: number;
-    packetsReceived?: number;
-    packetsSent?: number;
-    jitter?: number;
-    roundTripTime?: number;
-    currentRoundTripTime?: number;
-    bytesSent?: number;
-    bytesReceived?: number;
-    availableOutgoingBitrate?: number;
-    availableIncomingBitrate?: number;
-    selectedCandidatePairId?: string;
-    localCandidateId?: string;
-    remoteCandidateId?: string;
-    state?: string;
-    nominated?: boolean;
-    candidateType?: string;
-    protocol?: string;
-    relayProtocol?: string;
-    url?: string;
-    networkType?: string;
-};
-type CallStatsAccumulator = {
-    byteSamples: Map<
-        string,
-        {
-            bytes: number;
-            timestamp: number;
-        }
-    >;
-};
 
 const CallContext = createContext<CallContextValue | undefined>(undefined);
 const disconnectedCleanupDelayMs = 10000;
 const callHeartbeatIntervalMs = 15000;
-const callStatsIntervalMs = 15000;
+const callStatsIntervalMs = 4000;
 const maxIceRecoveryAttempts = 2;
 const callAudioConstraints = {
     echoCancellation: true,
@@ -224,32 +201,32 @@ const audioQualityProfiles = {
 const videoQualityProfiles = {
     low: {
         name: 'low',
-        width: 426,
-        height: 240,
-        frameRate: 15,
-        sender: { maxBitrate: 300000, maxFramerate: 15 },
+        width: 640,
+        height: 360,
+        frameRate: 20,
+        sender: { maxBitrate: 650000, maxFramerate: 20 },
     },
     medium: {
         name: 'medium',
-        width: 854,
-        height: 480,
+        width: 960,
+        height: 540,
         frameRate: 24,
-        sender: { maxBitrate: 900000, maxFramerate: 24 },
+        sender: { maxBitrate: 1400000, maxFramerate: 24 },
     },
     high: {
         name: 'high',
         width: 1280,
         height: 720,
         frameRate: 30,
-        sender: { maxBitrate: 1800000, maxFramerate: 30 },
+        sender: { maxBitrate: 2200000, maxFramerate: 30 },
     },
 } satisfies Record<VideoQualityProfileName, VideoQualityProfile>;
 const highFallbackProfile: VideoQualityProfile = {
     name: 'high',
     width: 960,
     height: 540,
-    frameRate: 30,
-    sender: { maxBitrate: 1200000, maxFramerate: 30 },
+    frameRate: 24,
+    sender: { maxBitrate: 1400000, maxFramerate: 24 },
 };
 const nativeCallAudioSession = (
     NativeModules as { CallAudioSession?: NativeCallAudioSession }
@@ -376,6 +353,9 @@ function turnConfigSummary(urls: string[]) {
             url => url.scheme === 'turn' && url.transport === 'udp',
         ),
         hasTurnTcp: turnUrls.some(url => url.transport === 'tcp'),
+        hasPlainTurnTcp: turnUrls.some(
+            url => url.scheme === 'turn' && url.transport === 'tcp',
+        ),
         hasTurnTcp443: turnUrls.some(
             url => url.transport === 'tcp' && url.port === 443,
         ),
@@ -427,7 +407,11 @@ function auditTurnConfiguration() {
         });
     }
 
-    if (!summary.hasTurnUdp || !summary.hasTurnTcp443) {
+    if (
+        !summary.hasTurnUdp ||
+        !summary.hasPlainTurnTcp ||
+        !summary.hasTurnTcp443
+    ) {
         callWarn('CALL_ENV', 'TURN transport fallback is incomplete', {
             ...summary,
             recommendation:
@@ -443,7 +427,7 @@ function auditTurnConfiguration() {
         });
     }
 
-    callWarn('CALL_ENV', 'TODO verify TURN server geography', {
+    callWarn('CALL_ENV', 'TURN server geography should be verified', {
         recommendation:
             'Place TURN close to the primary mobile audience or use a managed provider with regional POPs.',
     });
@@ -473,30 +457,8 @@ async function initialVideoQualityProfile(networkConnected: boolean) {
         return videoQualityProfiles.low;
     }
 
-    try {
-        const state = await NetInfo.fetch();
-        if (state.type === 'cellular') {
-            const generation = state.details?.cellularGeneration;
-            if (generation === '2g' || generation === '3g') {
-                return videoQualityProfiles.low;
-            }
-            if (generation === '5g') {
-                return Platform.OS === 'android' &&
-                    Number(Platform.Version) < 26
-                    ? highFallbackProfile
-                    : videoQualityProfiles.high;
-            }
-            if (generation === '4g') {
-                return highFallbackProfile;
-            }
-            return videoQualityProfiles.medium;
-        }
-    } catch {
-        return videoQualityProfiles.medium;
-    }
-
     return Platform.OS === 'android' && Number(Platform.Version) < 26
-        ? videoQualityProfiles.medium
+        ? highFallbackProfile
         : videoQualityProfiles.high;
 }
 
@@ -561,12 +523,15 @@ function videoProfileFallbackChain(profile: VideoQualityProfile) {
     return [videoQualityProfiles.low];
 }
 
-function videoConstraints(profile: VideoQualityProfile) {
+function videoConstraints(
+    profile: VideoQualityProfile,
+    facingMode: 'user' | 'environment' = 'user',
+) {
     return {
-        facingMode: 'user',
-        width: profile.width,
-        height: profile.height,
-        frameRate: profile.frameRate,
+        facingMode: { ideal: facingMode },
+        width: { ideal: profile.width },
+        height: { ideal: profile.height },
+        frameRate: { ideal: profile.frameRate, max: 30 },
     };
 }
 
@@ -653,11 +618,17 @@ function iceCandidateType(candidate: CallIceCandidate) {
 }
 
 function summarizeTrack(track: MediaStreamTrack) {
+    const diagnosticTrack = track as MediaStreamTrack & {
+        getSettings?: () => Record<string, unknown>;
+        getConstraints?: () => Record<string, unknown>;
+    };
     return {
         id: track.id,
         kind: track.kind,
         enabled: track.enabled,
         readyState: track.readyState,
+        settings: diagnosticTrack.getSettings?.() ?? null,
+        constraints: diagnosticTrack.getConstraints?.() ?? null,
     };
 }
 
@@ -672,7 +643,7 @@ function sectionDirection(section: string, fallback = 'sendrecv') {
     );
 }
 
-function audioCodecNames(section: string | undefined) {
+function codecNames(section: string | undefined) {
     if (!section) {
         return [];
     }
@@ -805,7 +776,10 @@ function summarizeSdp(sdp?: string | null): SdpSummary {
     const videoDirection = videoSection
         ? sectionDirection(videoSection, sessionDirection)
         : 'missing';
-    const codecs = audioCodecNames(audioSection);
+    const audioCodecs = codecNames(audioSection);
+    const videoCodecs = codecNames(videoSection).filter(
+        codec => !['rtx', 'red', 'ulpfec', 'flexfec-03'].includes(codec),
+    );
 
     return {
         hasAudio: Boolean(audioSection),
@@ -818,9 +792,11 @@ function summarizeSdp(sdp?: string | null): SdpSummary {
             present: Boolean(videoSection),
             direction: videoDirection as SdpMediaSummary['direction'],
         },
-        audioCodecs: codecs,
-        preferredAudioCodec: codecs[0] ?? null,
-        hasOpus: codecs.includes('opus'),
+        audioCodecs,
+        preferredAudioCodec: audioCodecs[0] ?? null,
+        videoCodecs,
+        preferredVideoCodec: videoCodecs[0] ?? null,
+        hasOpus: audioCodecs.includes('opus'),
         hasSendrecv:
             audioDirection === 'sendrecv' || videoDirection === 'sendrecv',
     };
@@ -1048,9 +1024,61 @@ function logIceServers(
     });
 }
 
+async function videoSenderQualityForNetwork(
+    networkConnected: boolean,
+    captureProfile: VideoQualityProfile | null | undefined,
+) {
+    let networkProfile: VideoQualityProfile = videoQualityProfiles.medium;
+    let networkClass = 'medium';
+
+    if (!networkConnected) {
+        networkProfile = videoQualityProfiles.low;
+        networkClass = 'offline';
+    } else {
+        try {
+            const state = await NetInfo.fetch();
+            if (state.type === 'wifi' || state.type === 'ethernet') {
+                networkProfile = videoQualityProfiles.high;
+                networkClass = state.type;
+            } else if (state.type === 'cellular') {
+                const generation = state.details?.cellularGeneration;
+                if (generation === '2g' || generation === '3g') {
+                    networkProfile = videoQualityProfiles.low;
+                    networkClass = generation;
+                } else if (generation === '5g') {
+                    networkProfile = videoQualityProfiles.high;
+                    networkClass = '5g';
+                } else {
+                    networkProfile = videoQualityProfiles.medium;
+                    networkClass = generation ?? 'cellular-unknown';
+                }
+            } else if (state.type === 'none' || state.type === 'unknown') {
+                networkProfile = videoQualityProfiles.low;
+                networkClass = state.type;
+            }
+        } catch {
+            networkProfile = videoQualityProfiles.medium;
+            networkClass = 'netinfo-unavailable';
+        }
+    }
+
+    const capture = captureProfile ?? highFallbackProfile;
+    const maxFramerate = Math.min(
+        capture.frameRate,
+        networkProfile.sender.maxFramerate,
+    );
+    return {
+        networkClass,
+        maxBitrate: networkProfile.sender.maxBitrate,
+        maxFramerate,
+        scaleResolutionDownBy: 1,
+    };
+}
+
 async function applyVideoSenderQuality(
     pc: PeerConnection | null,
     profile: VideoQualityProfile | null | undefined,
+    networkConnected: boolean,
     callId?: string | null,
     pcId?: number | null,
 ) {
@@ -1064,33 +1092,64 @@ async function applyVideoSenderQuality(
     }
 
     try {
-        const senderQuality = profile?.sender ?? highFallbackProfile.sender;
+        const senderQuality = await videoSenderQualityForNetwork(
+            networkConnected,
+            profile,
+        );
         const parameters = sender.getParameters();
-        parameters.degradationPreference = 'maintain-resolution';
+        const before = {
+            degradationPreference: parameters.degradationPreference,
+            encodings: parameters.encodings.map(encoding => ({
+                active: encoding.active,
+                maxBitrate: encoding.maxBitrate,
+                maxFramerate: encoding.maxFramerate,
+                scaleResolutionDownBy: encoding.scaleResolutionDownBy,
+            })),
+        };
+        parameters.degradationPreference = 'balanced';
         if (parameters.encodings.length === 0) {
             parameters.encodings = [
                 {
                     active: true,
-                    ...senderQuality,
+                    maxBitrate: senderQuality.maxBitrate,
+                    maxFramerate: senderQuality.maxFramerate,
+                    scaleResolutionDownBy: senderQuality.scaleResolutionDownBy,
                 },
             ];
         } else {
             parameters.encodings.forEach(encoding => {
+                encoding.active = true;
                 encoding.maxBitrate = senderQuality.maxBitrate;
                 encoding.maxFramerate = senderQuality.maxFramerate;
+                encoding.scaleResolutionDownBy =
+                    senderQuality.scaleResolutionDownBy;
             });
         }
         await sender.setParameters(parameters);
+        const applied = sender.getParameters();
+        const appliedParameters = {
+            degradationPreference: applied.degradationPreference,
+            encodings: applied.encodings.map(encoding => ({
+                active: encoding.active,
+                maxBitrate: encoding.maxBitrate,
+                maxFramerate: encoding.maxFramerate,
+                scaleResolutionDownBy: encoding.scaleResolutionDownBy,
+            })),
+        };
         callLog('CALL_WEBRTC', 'video sender quality applied', {
             callId,
             pcId,
-            profile,
+            captureProfile: profile?.name ?? null,
+            before,
+            appliedParameters,
             ...senderQuality,
         });
         logDev('[SocialMobile] Video sender quality applied', {
             callId,
             pcId,
-            profile,
+            captureProfile: profile?.name ?? null,
+            before,
+            appliedParameters,
             ...senderQuality,
         });
     } catch (qualityError) {
@@ -1103,6 +1162,98 @@ async function applyVideoSenderQuality(
             callId,
             pcId,
             error: qualityError,
+        });
+    }
+}
+
+type VideoCodecCapability = {
+    mimeType?: string;
+    sdpFmtpLine?: string;
+    payloadType?: number;
+    [key: string]: unknown;
+};
+
+function videoCodecPriority(codec: VideoCodecCapability) {
+    switch ((codec.mimeType ?? '').toLowerCase()) {
+        case 'video/h264':
+            return 0;
+        case 'video/vp8':
+            return 1;
+        case 'video/vp9':
+            return 2;
+        case 'video/av1':
+        case 'video/av1x':
+            return 3;
+        case 'video/rtx':
+        case 'video/red':
+        case 'video/ulpfec':
+        case 'video/flexfec-03':
+            return 10;
+        default:
+            return 5;
+    }
+}
+
+function applyVideoCodecPreferences(
+    pc: PeerConnection,
+    callId: string,
+    pcId: number | null,
+) {
+    try {
+        const transceiver = pc
+            .getTransceivers()
+            .find(item => item.sender.track?.kind === 'video');
+        if (!transceiver?.setCodecPreferences) {
+            callWarn('CALL_WEBRTC', 'video codec preferences unavailable', {
+                callId,
+                pcId,
+                hasVideoTransceiver: Boolean(transceiver),
+            });
+            return;
+        }
+
+        const capabilities = RTCRtpSender.getCapabilities('video') as unknown as {
+            codecs?: VideoCodecCapability[];
+        };
+        const codecs = [...(capabilities?.codecs ?? [])];
+        if (codecs.length === 0) {
+            callWarn('CALL_WEBRTC', 'video codec capabilities are empty', {
+                callId,
+                pcId,
+            });
+            return;
+        }
+
+        const ordered = codecs
+            .map((codec, index) => ({ codec, index }))
+            .sort(
+                (left, right) =>
+                    videoCodecPriority(left.codec) -
+                        videoCodecPriority(right.codec) ||
+                    left.index - right.index,
+            )
+            .map(item => item.codec);
+
+        transceiver.setCodecPreferences(ordered as never[]);
+        callLog('CALL_WEBRTC', 'video codec preferences applied', {
+            callId,
+            pcId,
+            codecs: ordered.map(codec => ({
+                mimeType: codec.mimeType ?? null,
+                payloadType: codec.payloadType ?? null,
+                sdpFmtpLine: codec.sdpFmtpLine ?? null,
+            })),
+        });
+        logDev('[SocialMobile] Video codec preferences applied', {
+            callId,
+            pcId,
+            order: ordered.map(codec => codec.mimeType ?? 'unknown'),
+        });
+    } catch (codecError) {
+        logCallError('CALL_ERROR', 'failed to apply video codec preferences', {
+            callId,
+            pcId,
+            error: describeCallError(codecError),
         });
     }
 }
@@ -1162,204 +1313,6 @@ async function applyAudioSenderQuality(
             error: qualityError,
         });
     }
-}
-
-function createCallStatsAccumulator(): CallStatsAccumulator {
-    return {
-        byteSamples: new Map(),
-    };
-}
-
-function statsReportValues(report: unknown) {
-    const values: RtcStatsValue[] = [];
-    const mapLike = report as {
-        forEach?: (callback: (value: unknown) => void) => void;
-    };
-
-    if (typeof mapLike?.forEach === 'function') {
-        mapLike.forEach(value => {
-            if (value && typeof value === 'object') {
-                values.push(value as RtcStatsValue);
-            }
-        });
-        return values;
-    }
-
-    if (report && typeof report === 'object') {
-        Object.values(report as Record<string, unknown>).forEach(value => {
-            if (value && typeof value === 'object') {
-                values.push(value as RtcStatsValue);
-            }
-        });
-    }
-
-    return values;
-}
-
-function statsMediaKind(stat: RtcStatsValue) {
-    return stat.kind ?? stat.mediaType ?? 'unknown';
-}
-
-function metricMs(value: number | undefined) {
-    return typeof value === 'number' ? Math.round(value * 1000) : null;
-}
-
-function packetLossPercent(stat: RtcStatsValue) {
-    if (
-        typeof stat.packetsLost !== 'number' ||
-        typeof stat.packetsReceived !== 'number'
-    ) {
-        return null;
-    }
-
-    const total = stat.packetsLost + stat.packetsReceived;
-    if (total <= 0) {
-        return null;
-    }
-
-    return Math.round((stat.packetsLost / total) * 1000) / 10;
-}
-
-function bitrateFromBytes(
-    stat: RtcStatsValue,
-    field: 'bytesSent' | 'bytesReceived',
-    accumulator: CallStatsAccumulator,
-) {
-    const bytes = stat[field];
-    if (typeof bytes !== 'number') {
-        return null;
-    }
-
-    const timestamp =
-        typeof stat.timestamp === 'number' ? stat.timestamp : Date.now();
-    const key = `${stat.id ?? stat.type}:${field}`;
-    const previous = accumulator.byteSamples.get(key);
-    accumulator.byteSamples.set(key, { bytes, timestamp });
-
-    if (!previous || timestamp <= previous.timestamp || bytes < previous.bytes) {
-        return null;
-    }
-
-    return Math.round(((bytes - previous.bytes) * 8 * 1000) / (timestamp - previous.timestamp));
-}
-
-function summarizeMediaStats(
-    stats: RtcStatsValue[],
-    kind: 'audio' | 'video',
-    accumulator: CallStatsAccumulator,
-) {
-    const inbound = stats.find(
-        stat => stat.type === 'inbound-rtp' && statsMediaKind(stat) === kind,
-    );
-    const outbound = stats.find(
-        stat => stat.type === 'outbound-rtp' && statsMediaKind(stat) === kind,
-    );
-    const remoteInbound = stats.find(
-        stat =>
-            stat.type === 'remote-inbound-rtp' && statsMediaKind(stat) === kind,
-    );
-
-    return {
-        inbound: inbound
-            ? {
-                  packetsLost: inbound.packetsLost ?? null,
-                  packetsReceived: inbound.packetsReceived ?? null,
-                  packetLossPercent: packetLossPercent(inbound),
-                  jitterMs: metricMs(inbound.jitter),
-                  bitrateBps: bitrateFromBytes(
-                      inbound,
-                      'bytesReceived',
-                      accumulator,
-                  ),
-              }
-            : null,
-        outbound: outbound
-            ? {
-                  packetsSent: outbound.packetsSent ?? null,
-                  bitrateBps: bitrateFromBytes(
-                      outbound,
-                      'bytesSent',
-                      accumulator,
-                  ),
-              }
-            : null,
-        remoteInbound: remoteInbound
-            ? {
-                  packetsLost: remoteInbound.packetsLost ?? null,
-                  packetLossPercent: packetLossPercent(remoteInbound),
-                  jitterMs: metricMs(remoteInbound.jitter),
-                  roundTripTimeMs: metricMs(remoteInbound.roundTripTime),
-              }
-            : null,
-    };
-}
-
-function summarizeCandidatePair(stats: RtcStatsValue[]) {
-    const statsById = new Map(
-        stats
-            .filter(stat => stat.id)
-            .map(stat => [stat.id as string, stat] as const),
-    );
-    const selectedPairId = stats.find(
-        stat =>
-            stat.type === 'transport' &&
-            typeof stat.selectedCandidatePairId === 'string',
-    )?.selectedCandidatePairId;
-    const selectedPair =
-        (selectedPairId ? statsById.get(selectedPairId) : undefined) ??
-        stats.find(
-            stat =>
-                stat.type === 'candidate-pair' &&
-                (stat.state === 'succeeded' || stat.nominated === true),
-        );
-
-    if (!selectedPair) {
-        return null;
-    }
-
-    const localCandidate = selectedPair.localCandidateId
-        ? statsById.get(selectedPair.localCandidateId)
-        : undefined;
-    const remoteCandidate = selectedPair.remoteCandidateId
-        ? statsById.get(selectedPair.remoteCandidateId)
-        : undefined;
-
-    return {
-        currentRoundTripTimeMs: metricMs(selectedPair.currentRoundTripTime),
-        availableOutgoingBitrate: selectedPair.availableOutgoingBitrate ?? null,
-        availableIncomingBitrate: selectedPair.availableIncomingBitrate ?? null,
-        localCandidateType: localCandidate?.candidateType ?? null,
-        remoteCandidateType: remoteCandidate?.candidateType ?? null,
-        localProtocol: localCandidate?.protocol ?? null,
-        remoteProtocol: remoteCandidate?.protocol ?? null,
-        relayProtocol:
-            localCandidate?.relayProtocol ?? remoteCandidate?.relayProtocol ?? null,
-        networkType: localCandidate?.networkType ?? null,
-        turnUrl: localCandidate?.url ?? remoteCandidate?.url ?? null,
-        selectedUsesTurn:
-            localCandidate?.candidateType === 'relay' ||
-            remoteCandidate?.candidateType === 'relay',
-    };
-}
-
-async function collectCallQualityStats(
-    pc: PeerConnection,
-    accumulator: CallStatsAccumulator,
-) {
-    const getStats = (pc as PeerConnection & {
-        getStats?: () => Promise<unknown>;
-    }).getStats;
-    if (!getStats) {
-        return null;
-    }
-
-    const stats = statsReportValues(await getStats.call(pc));
-
-    return {
-        audio: summarizeMediaStats(stats, 'audio', accumulator),
-        video: summarizeMediaStats(stats, 'video', accumulator),
-        candidatePair: summarizeCandidatePair(stats),
-    };
 }
 
 const allowedCallTransitions: Record<CallStatus, ReadonlySet<CallStatus>> = {
@@ -1448,6 +1401,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
     const [speakerphoneOn, setSpeakerphoneOn] = useState(false);
     const [frontCamera, setFrontCamera] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [diagnostics, setDiagnostics] =
+        useState<WebRTCDiagnosticsSnapshot | null>(null);
 
     const statusRef = useRef(status);
     const peerUserIdRef = useRef(peerUserId);
@@ -1630,7 +1585,43 @@ export function CallProvider({ children }: { children: ReactNode }) {
             callId,
             getPeerConnectionId(pc),
         ).catch(() => undefined);
+        if (callTypeRef.current === 'video') {
+            applyVideoSenderQuality(
+                pc,
+                localVideoProfileRef.current,
+                networkConnected,
+                callId,
+                getPeerConnectionId(pc),
+            ).catch(() => undefined);
+        }
     }, [getPeerConnectionId, networkConnected]);
+
+    useEffect(() => {
+        return NetInfo.addEventListener(state => {
+            const pc = pcRef.current;
+            const callId = callIdRef.current;
+            if (!pc || !callId) {
+                return;
+            }
+
+            const connected = state.isConnected !== false;
+            applyAudioSenderQuality(
+                pc,
+                connected,
+                callId,
+                getPeerConnectionId(pc),
+            ).catch(() => undefined);
+            if (callTypeRef.current === 'video') {
+                applyVideoSenderQuality(
+                    pc,
+                    localVideoProfileRef.current,
+                    connected,
+                    callId,
+                    getPeerConnectionId(pc),
+                ).catch(() => undefined);
+            }
+        });
+    }, [getPeerConnectionId]);
 
     const stopCallStatsPolling = useCallback(() => {
         if (callStatsTimerRef.current) {
@@ -1638,6 +1629,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
             callStatsTimerRef.current = null;
         }
         callStatsAccumulatorRef.current = createCallStatsAccumulator();
+        setDiagnostics(null);
     }, []);
 
     const sampleCallQualityStats = useCallback(
@@ -1648,9 +1640,22 @@ export function CallProvider({ children }: { children: ReactNode }) {
             reason: string,
         ) => {
             try {
-                const stats = await collectCallQualityStats(
-                    pc,
+                const videoTrack = localStreamRef.current?.getVideoTracks()[0] as
+                    | (MediaStreamTrack & {
+                          getSettings?: () => {
+                              width?: number;
+                              height?: number;
+                              frameRate?: number;
+                              facingMode?: string;
+                          };
+                      })
+                    | undefined;
+                const stats = await collectWebRTCDiagnostics(
+                    pc as PeerConnection & {
+                        getStats?: () => Promise<unknown>;
+                    },
                     callStatsAccumulatorRef.current,
+                    videoTrack?.getSettings?.() ?? null,
                 );
                 if (!stats) {
                     callWarn('CALL_WEBRTC', 'getStats is unavailable', {
@@ -1660,6 +1665,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     });
                     return;
                 }
+
+                setDiagnostics(stats);
 
                 callLog('CALL_WEBRTC', 'call quality stats', {
                     callId,
@@ -1674,6 +1681,32 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     pcId,
                     reason,
                     stats,
+                });
+                logDev('[WebRTC][Outbound video]', {
+                    callId,
+                    pcId,
+                    ...stats.outboundVideo,
+                    roundTripTimeMs:
+                        stats.outboundVideo?.roundTripTimeMs ??
+                        stats.candidatePair?.currentRoundTripTimeMs ??
+                        null,
+                    selectedCandidatePair: stats.candidatePair?.id ?? null,
+                    localCandidateType:
+                        stats.candidatePair?.localCandidateType ?? null,
+                    remoteCandidateType:
+                        stats.candidatePair?.remoteCandidateType ?? null,
+                    availableOutgoingBitrate:
+                        stats.candidatePair?.availableOutgoingBitrate ?? null,
+                });
+                logDev('[WebRTC][Inbound video]', {
+                    callId,
+                    pcId,
+                    ...stats.inboundVideo,
+                    selectedCandidatePair: stats.candidatePair?.id ?? null,
+                    localCandidateType:
+                        stats.candidatePair?.localCandidateType ?? null,
+                    remoteCandidateType:
+                        stats.candidatePair?.remoteCandidateType ?? null,
                 });
             } catch (statsError) {
                 logCallError('CALL_ERROR', 'failed to collect call stats', {
@@ -1690,6 +1723,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
     const startCallStatsPolling = useCallback(
         (pc: PeerConnection, callId: string, pcId: number | null) => {
             stopCallStatsPolling();
+            if (!__DEV__) {
+                return;
+            }
             callStatsAccumulatorRef.current = createCallStatsAccumulator();
 
             const sample = (reason = 'interval') => {
@@ -2941,6 +2977,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 await applyVideoSenderQuality(
                     pcRef.current,
                     profile,
+                    networkConnectedRef.current,
                     callIdRef.current,
                     getPeerConnectionId(pcRef.current),
                 );
@@ -3125,6 +3162,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
             callLog('CALL_WEBRTC', 'creating peer connection', {
                 callId,
                 toId,
+                iceTransportPolicy: WEBRTC_FORCE_RELAY ? 'relay' : 'all',
                 iceServers: servers.map(server => ({
                     urls: server.urls,
                     hasUsername: Boolean(server.username),
@@ -3135,6 +3173,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
             });
             const pc = new RTCPeerConnection({
                 iceServers: servers,
+                iceTransportPolicy: WEBRTC_FORCE_RELAY ? 'relay' : 'all',
             });
             const pcId = pcSequenceRef.current + 1;
             pcSequenceRef.current = pcId;
@@ -3781,9 +3820,13 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     });
                     pc.addTrack(track, stream);
                 });
+                if (effectiveCallType === 'video') {
+                    applyVideoCodecPreferences(pc, callId, pcId);
+                }
                 await applyVideoSenderQuality(
                     pc,
                     localVideoProfileRef.current,
+                    networkConnectedRef.current,
                     callId,
                     pcId,
                 );
@@ -4159,9 +4202,17 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 });
                 activePc.addTrack(track, activeStream);
             });
+            if (opened.callType === 'video') {
+                applyVideoCodecPreferences(
+                    activePc,
+                    pendingOffer.callId,
+                    pcId,
+                );
+            }
             await applyVideoSenderQuality(
                 activePc,
                 localVideoProfileRef.current,
+                networkConnectedRef.current,
                 pendingOffer.callId,
                 pcId,
             );
@@ -4541,21 +4592,50 @@ export function CallProvider({ children }: { children: ReactNode }) {
         });
     }, []);
 
-    const switchCamera = useCallback(() => {
+    const switchCamera = useCallback(async () => {
         const videoTrack = localStreamRef.current?.getVideoTracks()[0];
         if (!videoTrack) {
             return;
         }
 
-        videoTrack._switchCamera();
-        applyVideoSenderQuality(
+        const targetFacingMode = frontCamera ? 'environment' : 'user';
+        const profile = localVideoProfileRef.current ?? videoQualityProfiles.high;
+        try {
+            await videoTrack.applyConstraints(
+                videoConstraints(profile, targetFacingMode),
+            );
+            setFrontCamera(targetFacingMode === 'user');
+            callLog('CALL_WEBRTC', 'camera switched with constraints', {
+                callId: callIdRef.current,
+                targetFacingMode,
+                track: summarizeTrack(videoTrack),
+            });
+        } catch (switchError) {
+            logCallError('CALL_ERROR', 'camera constraints switch failed', {
+                callId: callIdRef.current,
+                targetFacingMode,
+                error: describeCallError(switchError),
+            });
+            try {
+                videoTrack._switchCamera();
+                setFrontCamera(current => !current);
+            } catch (fallbackError) {
+                logCallError('CALL_ERROR', 'camera fallback switch failed', {
+                    callId: callIdRef.current,
+                    error: describeCallError(fallbackError),
+                });
+                return;
+            }
+        }
+
+        await applyVideoSenderQuality(
             pcRef.current,
             localVideoProfileRef.current,
+            networkConnectedRef.current,
             callIdRef.current,
             getPeerConnectionId(pcRef.current),
-        ).catch(() => undefined);
-        setFrontCamera(current => !current);
-    }, [getPeerConnectionId]);
+        );
+    }, [frontCamera, getPeerConnectionId]);
 
     const handleRenegotiationOffer = useCallback(
         (
@@ -5521,6 +5601,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 speakerphoneOn={speakerphoneOn}
                 frontCamera={frontCamera}
                 error={error}
+                diagnostics={__DEV__ ? diagnostics : null}
                 onAccept={acceptCall}
                 onReject={rejectCall}
                 onEnd={endCall}

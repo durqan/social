@@ -29,6 +29,7 @@ import {
 import { RTCView, type MediaStream } from 'react-native-webrtc';
 
 import type { CallType } from '../api/ws';
+import type { WebRTCDiagnosticsSnapshot } from '../utils/webrtcStats';
 
 type CallStatus =
     | 'idle'
@@ -51,6 +52,7 @@ type CallOverlayProps = {
     speakerphoneOn: boolean;
     frontCamera: boolean;
     error: string | null;
+    diagnostics: WebRTCDiagnosticsSnapshot | null;
     onAccept: () => void;
     onReject: () => void;
     onEnd: () => void;
@@ -98,6 +100,7 @@ export function CallOverlay({
     speakerphoneOn,
     frontCamera,
     error,
+    diagnostics,
     onAccept,
     onReject,
     onEnd,
@@ -216,7 +219,8 @@ export function CallOverlay({
                             key={remoteStreamUrl}
                             streamURL={remoteStreamUrl}
                             style={styles.remoteVideo}
-                            objectFit="cover"
+                            mirror={false}
+                            objectFit="contain"
                             zOrder={0}
                         />
                     ) : null}
@@ -251,6 +255,13 @@ export function CallOverlay({
                         </View>
                     ) : null}
                 </Pressable>
+
+                {__DEV__ && isVideoCall && diagnostics ? (
+                    <CallDiagnosticsPanel
+                        diagnostics={diagnostics}
+                        top={Math.max(insets.top, 12) + 72}
+                    />
+                ) : null}
 
                 {chromeVisible ? (
                     <View
@@ -377,6 +388,74 @@ export function CallOverlay({
                 ) : null}
             </View>
         </Modal>
+    );
+}
+
+function formatBitrate(value: number | null | undefined) {
+    if (typeof value !== 'number') {
+        return '—';
+    }
+    if (value >= 1_000_000) {
+        return `${(value / 1_000_000).toFixed(2)} Mbps`;
+    }
+    return `${Math.round(value / 1000)} kbps`;
+}
+
+function formatResolution(
+    width: number | null | undefined,
+    height: number | null | undefined,
+) {
+    return width && height ? `${width}×${height}` : '—';
+}
+
+function formatPercent(value: number | null | undefined) {
+    return typeof value === 'number' ? `${value.toFixed(1)}%` : '—';
+}
+
+function CallDiagnosticsPanel({
+    diagnostics,
+    top,
+}: {
+    diagnostics: WebRTCDiagnosticsSnapshot;
+    top: number;
+}) {
+    const outbound = diagnostics.outboundVideo;
+    const inbound = diagnostics.inboundVideo;
+    const pair = diagnostics.candidatePair;
+    const outboundRTT =
+        outbound?.roundTripTimeMs ?? pair?.currentRoundTripTimeMs ?? null;
+
+    return (
+        <View pointerEvents="none" style={[styles.diagnosticsPanel, { top }]}>
+            <Text style={styles.diagnosticsTitle}>WebRTC DEV</Text>
+            <Text style={styles.diagnosticsText}>
+                CAM {formatResolution(diagnostics.capture?.width, diagnostics.capture?.height)} ·{' '}
+                {diagnostics.capture?.frameRate ?? '—'} fps
+            </Text>
+            <Text style={styles.diagnosticsText}>
+                TX {formatResolution(outbound?.frameWidth, outbound?.frameHeight)} ·{' '}
+                {outbound?.framesPerSecond ?? '—'} fps · {formatBitrate(outbound?.bitrateBps)}
+            </Text>
+            <Text style={styles.diagnosticsText}>
+                RX {formatResolution(inbound?.frameWidth, inbound?.frameHeight)} ·{' '}
+                {inbound?.framesPerSecond ?? '—'} fps · {formatBitrate(inbound?.bitrateBps)}
+            </Text>
+            <Text style={styles.diagnosticsText}>
+                CODEC {outbound?.codec ?? '—'} / {inbound?.codec ?? '—'}
+            </Text>
+            <Text style={styles.diagnosticsText}>
+                LOSS ↑{formatPercent(outbound?.packetLossPercent)} ↓
+                {formatPercent(inbound?.packetLossPercent)} · RTT {outboundRTT ?? '—'} ms
+            </Text>
+            <Text style={styles.diagnosticsText}>
+                ICE {pair?.localCandidateType ?? '—'}→{pair?.remoteCandidateType ?? '—'} ·{' '}
+                {pair?.relayProtocol ?? pair?.localProtocol ?? '—'}
+            </Text>
+            <Text style={styles.diagnosticsText}>
+                LIMIT {outbound?.qualityLimitationReason ?? '—'} · avail{' '}
+                {formatBitrate(pair?.availableOutgoingBitrate)}
+            </Text>
+        </View>
     );
 }
 
@@ -539,6 +618,32 @@ const styles = StyleSheet.create({
         textShadowColor: 'rgba(0,0,0,0.45)',
         textShadowOffset: { width: 0, height: 1 },
         textShadowRadius: 6,
+    },
+    diagnosticsPanel: {
+        position: 'absolute',
+        left: 12,
+        zIndex: 40,
+        elevation: 40,
+        maxWidth: 330,
+        paddingHorizontal: 10,
+        paddingVertical: 8,
+        borderRadius: 10,
+        backgroundColor: 'rgba(0,0,0,0.72)',
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: 'rgba(255,255,255,0.3)',
+    },
+    diagnosticsTitle: {
+        color: '#a7f3d0',
+        fontSize: 10,
+        lineHeight: 13,
+        fontWeight: '900',
+    },
+    diagnosticsText: {
+        color: '#ffffff',
+        fontSize: 10,
+        lineHeight: 14,
+        fontWeight: '600',
+        fontVariant: ['tabular-nums'],
     },
     callHint: {
         marginTop: 2,

@@ -2231,13 +2231,22 @@ export default function ChatScreen({ route, navigation }: Props) {
       if (e2eeState.loading || (e2eeState.selfEnabled && !e2eeReady)) {
         throw new Error('E2EE is not ready for this conversation');
       }
+      const compatibleVideoNote = e2eeReady
+        ? await compressLocalChatVideo(videoNoteToSend, undefined, true)
+        : videoNoteToSend;
+      const compatibleVideoNoteError = validateLocalVideoNoteMessage(
+        compatibleVideoNote,
+      );
+      if (compatibleVideoNoteError) {
+        throw new Error(compatibleVideoNoteError);
+      }
       const attachment = e2eeReady
         ? await encryptAndUploadAttachment(
-            videoNoteToSend,
+            compatibleVideoNote,
             'video_note',
             otherUserId,
           )
-        : await messageApi.uploadVideoNote(videoNoteToSend);
+        : await messageApi.uploadVideoNote(compatibleVideoNote);
       const attachments = [attachment];
 
       setSending('sending');
@@ -2471,9 +2480,10 @@ export default function ChatScreen({ route, navigation }: Props) {
                 setSending(
                   stage === 'compressing'
                     ? 'compressingVideo'
-                    : 'preparingVideo',
+                  : 'preparingVideo',
                 );
               },
+              e2eeReady,
             );
             setSending('uploadingVideo');
             attachments.push(
