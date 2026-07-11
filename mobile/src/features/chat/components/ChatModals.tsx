@@ -1,22 +1,52 @@
 import React, { useMemo } from 'react';
-import { ActivityIndicator, Modal, Pressable, Text, View } from 'react-native';
 import {
+  ActivityIndicator,
+  Modal,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+  useWindowDimensions,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  Check,
   Copy,
   Download,
   Forward,
   Link,
   Pencil,
   Pin,
+  Plus,
   Reply,
   Trash2,
 } from 'lucide-react-native';
 
 import type { Message, User } from '../../../api/types';
 import type { MessageDeleteMode } from '../../../api/messages';
+import { spacing } from '../../../theme/layout';
 import type { ThemeColors } from '../../../theme/themes';
 import { isAttachmentDownloadable } from '../lib/attachmentDownload';
 import { createChatThemeStyles, styles } from '../lib/chatStyles';
 import { firstUrl, isPersistedMessage, messagePreviewText } from '../lib/chatUtils';
+
+function useChatSheetLayout() {
+  const insets = useSafeAreaInsets();
+  const { height } = useWindowDimensions();
+  const maxHeight = Math.max(
+    0,
+    height - Math.max(insets.top, spacing.md) - spacing.md,
+  );
+
+  return {
+    bottomPadding: Math.max(insets.bottom + spacing.sm, spacing.xl),
+    forwardListMaxHeight: Math.max(
+      112,
+      Math.min(320, Math.round(height * 0.38)),
+    ),
+    maxHeight,
+  };
+}
 
 export function MessageActionSheet({
   message,
@@ -51,6 +81,7 @@ export function MessageActionSheet({
     () => createChatThemeStyles(themeColors),
     [themeColors],
   );
+  const { bottomPadding, maxHeight } = useChatSheetLayout();
   const trimmedText = message?.content.trim() ?? '';
   const messageUrl = message ? firstUrl(message.content) : '';
   const messageIsReal = Boolean(
@@ -65,6 +96,8 @@ export function MessageActionSheet({
       visible={Boolean(message)}
       transparent
       animationType="fade"
+      statusBarTranslucent
+      navigationBarTranslucent
       onRequestClose={onClose}
     >
       <Pressable
@@ -72,12 +105,28 @@ export function MessageActionSheet({
         onPress={onClose}
       >
         <Pressable
-          style={[styles.sheet, themed.sheet]}
+          accessibilityViewIsModal
+          style={[
+            styles.sheet,
+            themed.sheet,
+            styles.sheetScrollable,
+            { maxHeight },
+          ]}
           onPress={event => event.stopPropagation()}
         >
           <View style={[styles.sheetHandle, themed.sheetHandle]} />
           <Text style={[styles.sheetTitle, themed.mutedText]}>Сообщение</Text>
 
+          <ScrollView
+            style={styles.sheetScroll}
+            contentContainerStyle={[
+              styles.sheetActionList,
+              { paddingBottom: bottomPadding },
+            ]}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            nestedScrollEnabled
+          >
           {message ? (
             <Pressable
               accessibilityRole="button"
@@ -272,6 +321,7 @@ export function MessageActionSheet({
               </Text>
             </Pressable>
           ) : null}
+          </ScrollView>
         </Pressable>
       </Pressable>
     </Modal>
@@ -303,11 +353,17 @@ export function ForwardMessageModal({
     () => createChatThemeStyles(themeColors),
     [themeColors],
   );
+  const { bottomPadding, forwardListMaxHeight, maxHeight } =
+    useChatSheetLayout();
+  const submitDisabled = loading || selectedIds.size === 0;
+
   return (
     <Modal
       visible={Boolean(message)}
       transparent
       animationType="fade"
+      statusBarTranslucent
+      navigationBarTranslucent
       onRequestClose={onClose}
     >
       <Pressable
@@ -315,7 +371,12 @@ export function ForwardMessageModal({
         onPress={onClose}
       >
         <Pressable
-          style={[styles.sheet, themed.sheet]}
+          accessibilityViewIsModal
+          style={[
+            styles.sheet,
+            themed.sheet,
+            { maxHeight, paddingBottom: bottomPadding },
+          ]}
           onPress={event => event.stopPropagation()}
         >
           <View style={[styles.sheetHandle, themed.sheetHandle]} />
@@ -350,7 +411,16 @@ export function ForwardMessageModal({
               Нет друзей для пересылки
             </Text>
           ) : (
-            <View style={styles.forwardList}>
+            <ScrollView
+              style={[
+                styles.forwardList,
+                { maxHeight: forwardListMaxHeight },
+              ]}
+              contentContainerStyle={styles.forwardListContent}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              nestedScrollEnabled
+            >
               {friends.map(friend => {
                 const friendId = friend.id;
                 if (!friendId) {
@@ -376,7 +446,7 @@ export function ForwardMessageModal({
                     >
                       {friend.name || 'Пользователь'}
                     </Text>
-                    <Text
+                    <View
                       style={[
                         styles.forwardCheck,
                         themed.forwardCheck,
@@ -384,21 +454,35 @@ export function ForwardMessageModal({
                         selected && themed.forwardCheckSelected,
                       ]}
                     >
-                      {selected ? '✓' : '+'}
-                    </Text>
+                      {selected ? (
+                        <Check
+                          color={themeColors.white}
+                          size={16}
+                          strokeWidth={3}
+                        />
+                      ) : (
+                        <Plus
+                          color={themeColors.muted}
+                          size={16}
+                          strokeWidth={2.5}
+                        />
+                      )}
+                    </View>
                   </Pressable>
                 );
               })}
-            </View>
+            </ScrollView>
           )}
 
           <View style={styles.forwardActions}>
             <Pressable
               accessibilityRole="button"
+              accessibilityState={{ disabled: loading }}
               style={[
                 styles.forwardButton,
                 styles.forwardCancelButton,
                 themed.surfaceMuted,
+                loading && styles.forwardButtonDisabled,
               ]}
               onPress={onClose}
               disabled={loading}
@@ -409,13 +493,15 @@ export function ForwardMessageModal({
             </Pressable>
             <Pressable
               accessibilityRole="button"
+              accessibilityState={{ disabled: submitDisabled }}
               style={[
                 styles.forwardButton,
                 styles.forwardSubmitButton,
                 themed.accentBg,
+                submitDisabled && styles.forwardButtonDisabled,
               ]}
               onPress={onSubmit}
-              disabled={loading || selectedIds.size === 0}
+              disabled={submitDisabled}
             >
               <Text style={styles.forwardSubmitText}>
                 {loading ? 'Отправляем…' : 'Переслать'}

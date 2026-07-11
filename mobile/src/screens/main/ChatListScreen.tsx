@@ -1,15 +1,19 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Image,
   Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { CommonActions, useFocusEffect, useIsFocused } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import {
@@ -18,6 +22,7 @@ import {
   Pin,
   PinOff,
   Trash2,
+  UserPlus,
 } from 'lucide-react-native';
 
 import { getApiErrorMessage } from '../../api/http';
@@ -378,14 +383,36 @@ export default function ChatListScreen({ navigation }: Props) {
     }
   }
 
+  function confirmDeleteConversation(conversation: Conversation) {
+    setSelectedConversation(null);
+    Alert.alert(
+      'Удалить переписку?',
+      `Диалог с ${conversation.name} будет удалён. Это действие нельзя отменить.`,
+      [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Удалить',
+          style: 'destructive',
+          onPress: () => {
+            deleteConversation(conversation).catch(() => undefined);
+          },
+        },
+      ],
+    );
+  }
+
   return (
     <Screen
       scroll={false}
       padded={false}
       contentContainerStyle={styles.container}
     >
-      <ErrorBanner message={error} />
-      <SuccessBanner message={success} />
+      {error || success ? (
+        <View style={styles.feedback}>
+          <ErrorBanner message={error} />
+          <SuccessBanner message={success} />
+        </View>
+      ) : null}
 
       <FlatList
         data={filteredConversations}
@@ -468,9 +495,7 @@ export default function ChatListScreen({ navigation }: Props) {
         onTogglePin={conversation => {
           togglePinConversation(conversation).catch(() => undefined);
         }}
-        onDelete={conversation => {
-          deleteConversation(conversation).catch(() => undefined);
-        }}
+        onDelete={confirmDeleteConversation}
         colors={colors}
       />
       <MiniProfileSheet
@@ -513,8 +538,11 @@ function ChatListHeader({
   totalCount,
   unreadCount,
   pinnedCount,
+  searchQuery,
   activeFilter,
+  onSearchChange,
   onFilterChange,
+  onCreatePress,
   colors,
 }: {
   conversations: Conversation[];
@@ -534,7 +562,41 @@ function ChatListHeader({
 
   return (
     <View style={styles.headerBlock}>
-      <View style={styles.filterRow}>
+      <View style={styles.searchRow}>
+        <View style={styles.searchBox}>
+          <Search color={colors.muted} size={19} strokeWidth={2.3} />
+          <TextInput
+            accessibilityLabel="Поиск по диалогам"
+            value={searchQuery}
+            onChangeText={onSearchChange}
+            placeholder="Поиск диалогов"
+            placeholderTextColor={colors.soft}
+            selectionColor={colors.accent}
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="search"
+            style={styles.searchInput}
+          />
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Начать новый диалог"
+          style={({ pressed }) => [
+            styles.createButton,
+            pressed && styles.rowPressed,
+          ]}
+          onPress={onCreatePress}
+        >
+          <UserPlus color={colors.white} size={21} strokeWidth={2.4} />
+        </Pressable>
+      </View>
+
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={styles.filterRow}
+      >
         <FilterChip
           label="Все"
           count={totalCount}
@@ -556,7 +618,7 @@ function ChatListHeader({
           onPress={() => onFilterChange('pinned')}
           colors={colors}
         />
-      </View>
+      </ScrollView>
     </View>
   );
 }
@@ -578,6 +640,7 @@ function FilterChip({
 
   return (
     <Pressable
+      accessibilityLabel={`${label}: ${count}`}
       accessibilityRole="button"
       accessibilityState={{ selected }}
       style={({ pressed }) => [
@@ -628,6 +691,8 @@ function ChatListItem({
 
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityHint="Открывает диалог. Удерживайте, чтобы открыть меню действий."
       style={({ pressed }) => [
         styles.row,
         isUnread && styles.rowUnread,
@@ -804,28 +869,43 @@ function ConversationActionSheet({
   colors: ThemeColors;
 }) {
   const styles = createStyles(colors);
+  const insets = useSafeAreaInsets();
 
   return (
     <Modal
       visible={Boolean(conversation)}
       transparent
       animationType="fade"
+      navigationBarTranslucent
       onRequestClose={onClose}
     >
       <Pressable style={styles.sheetBackdrop} onPress={onClose}>
         <Pressable
-          style={styles.sheet}
+          accessibilityViewIsModal
+          style={[
+            styles.sheet,
+            {
+              paddingBottom: Math.max(
+                insets.bottom + spacing.sm,
+                spacing.xl,
+              ),
+            },
+          ]}
           onPress={event => event.stopPropagation()}
         >
           <View style={styles.sheetHandle} />
-          <Text style={styles.sheetTitle}>
+          <Text style={styles.sheetTitle} numberOfLines={1}>
             {conversation?.name || 'Диалог'}
           </Text>
 
           {conversation ? (
             <Pressable
               accessibilityRole="button"
-              style={styles.sheetAction}
+              style={({ pressed }) => [
+                styles.sheetAction,
+                busy && styles.sheetActionDisabled,
+                pressed && !busy && styles.sheetActionPressed,
+              ]}
               disabled={busy}
               onPress={() => onOpen(conversation)}
             >
@@ -836,7 +916,11 @@ function ConversationActionSheet({
           {conversation ? (
             <Pressable
               accessibilityRole="button"
-              style={styles.sheetAction}
+              style={({ pressed }) => [
+                styles.sheetAction,
+                busy && styles.sheetActionDisabled,
+                pressed && !busy && styles.sheetActionPressed,
+              ]}
               disabled={busy}
               onPress={() => onTogglePin(conversation)}
             >
@@ -853,7 +937,12 @@ function ConversationActionSheet({
           {conversation ? (
             <Pressable
               accessibilityRole="button"
-              style={[styles.sheetAction, styles.sheetDangerAction]}
+              style={({ pressed }) => [
+                styles.sheetAction,
+                styles.sheetDangerAction,
+                busy && styles.sheetActionDisabled,
+                pressed && !busy && styles.sheetActionPressed,
+              ]}
               disabled={busy}
               onPress={() => onDelete(conversation)}
             >
@@ -873,6 +962,11 @@ const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     container: {
       padding: 0,
+    },
+    feedback: {
+      gap: spacing.sm,
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.sm,
     },
     listContent: {
       paddingHorizontal: spacing.lg,
@@ -913,12 +1007,13 @@ const createStyles = (colors: ThemeColors) =>
       alignItems: 'center',
       justifyContent: 'center',
       borderWidth: 1,
-      borderColor: colors.accentBorder,
+      borderColor: colors.accent,
+      backgroundColor: colors.accent,
       shadowColor: colors.accent,
-      shadowOpacity: 0.44,
-      shadowRadius: 18,
-      shadowOffset: { width: 0, height: 8 },
-      elevation: 5,
+      shadowOpacity: colors.isDark ? 0.14 : 0.1,
+      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 3 },
+      elevation: 1,
     },
     searchRow: {
       flexDirection: 'row',
@@ -1003,9 +1098,10 @@ const createStyles = (colors: ThemeColors) =>
     filterRow: {
       flexDirection: 'row',
       gap: spacing.sm,
+      paddingRight: spacing.sm,
     },
     filterChip: {
-      minHeight: 38,
+      minHeight: 44,
       flexDirection: 'row',
       alignItems: 'center',
       gap: 7,
@@ -1064,10 +1160,10 @@ const createStyles = (colors: ThemeColors) =>
       paddingVertical: spacing.md,
       gap: spacing.md,
       shadowColor: colors.shadow,
-      shadowOpacity: 0.22,
-      shadowRadius: 14,
-      shadowOffset: { width: 0, height: 8 },
-      elevation: 2,
+      shadowOpacity: colors.isDark ? 0.16 : 0.06,
+      shadowRadius: 10,
+      shadowOffset: { width: 0, height: 4 },
+      elevation: colors.isDark ? 1 : 0,
     },
     rowUnread: {
       borderColor: colors.accentBorder,
@@ -1241,6 +1337,12 @@ const createStyles = (colors: ThemeColors) =>
       color: colors.text,
       ...typography.body,
       fontWeight: '700',
+    },
+    sheetActionPressed: {
+      opacity: 0.78,
+    },
+    sheetActionDisabled: {
+      opacity: 0.48,
     },
     sheetDangerAction: {
       marginTop: 2,

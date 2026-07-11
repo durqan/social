@@ -1,11 +1,13 @@
 import React, { useCallback, useRef, useState } from 'react';
 import {
+  Alert,
   FlatList,
   Image,
   Pressable,
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import {
   useFocusEffect,
@@ -52,6 +54,8 @@ export default function FriendsScreen() {
   const { markMatchingAsRead } = useNotifications();
   const colors = useThemeColors();
   const styles = createStyles(colors);
+  const { width, fontScale } = useWindowDimensions();
+  const stackRequestActions = width < 360 || fontScale > 1.25;
   const [friends, setFriends] = useState<User[]>([]);
   const [requests, setRequests] = useState<Friendship[]>([]);
   const [loading, setLoading] = useState(false);
@@ -140,6 +144,27 @@ export default function FriendsScreen() {
     }
   }
 
+  function confirmRemoveFriend(friend: User) {
+    if (!friend.id) {
+      return;
+    }
+
+    Alert.alert(
+      'Удалить из друзей?',
+      `${friend.name || 'Пользователь'} будет удалён(а) из списка друзей.`,
+      [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Удалить',
+          style: 'destructive',
+          onPress: () => {
+            removeFriend(friend.id as number).catch(() => undefined);
+          },
+        },
+      ],
+    );
+  }
+
   async function rejectRequest(request: Friendship) {
     setBusyId(request.id);
     setError(null);
@@ -188,7 +213,7 @@ export default function FriendsScreen() {
 
       <View style={styles.topActions}>
         <AppButton
-          title="Найти"
+          title="Найти людей"
           variant="secondary"
           icon={Search}
           style={styles.searchButton}
@@ -207,6 +232,8 @@ export default function FriendsScreen() {
                 {requests.map(request => (
                   <View key={request.id} style={styles.requestRow}>
                     <Pressable
+                      accessibilityRole="button"
+                      accessibilityHint="Открывает профиль пользователя"
                       style={styles.requestUser}
                       onPress={() => request.user && openProfile(request.user)}
                     >
@@ -223,30 +250,42 @@ export default function FriendsScreen() {
                         <UserAvatar user={request.user} colors={colors} />
                       </Pressable>
                       <View style={styles.userMeta}>
-                        <Text style={styles.userName}>
+                        <Text style={styles.userName} numberOfLines={1}>
                           {request.user?.name || 'Пользователь'}
                         </Text>
                         {request.user?.email ? (
-                          <Text style={styles.userEmail}>
+                          <Text style={styles.userEmail} numberOfLines={1}>
                             {request.user.email}
                           </Text>
                         ) : null}
                       </View>
+                      {request.user ? (
+                        <IconButton
+                          label="Открыть профиль"
+                          variant="ghost"
+                          icon={UserRound}
+                          size="sm"
+                          style={styles.requestProfileButton}
+                          onPress={event => {
+                            event.stopPropagation();
+                            openProfile(request.user as User);
+                          }}
+                        />
+                      ) : null}
                     </Pressable>
-                    <View style={styles.requestActions}>
-                      <AppButton
-                        title="Профиль"
-                        variant="secondary"
-                        icon={UserRound}
-                        style={styles.actionButton}
-                        onPress={() =>
-                          request.user && openProfile(request.user)
-                        }
-                      />
+                    <View
+                      style={[
+                        styles.requestActions,
+                        stackRequestActions && styles.requestActionsStacked,
+                      ]}
+                    >
                       <AppButton
                         title="Принять"
                         icon={Check}
-                        style={styles.actionButton}
+                        style={[
+                          styles.actionButton,
+                          stackRequestActions && styles.actionButtonStacked,
+                        ]}
                         loading={busyId === request.id}
                         onPress={() => acceptRequest(request)}
                       />
@@ -254,7 +293,10 @@ export default function FriendsScreen() {
                         title="Отклонить"
                         variant="ghost"
                         icon={X}
-                        style={styles.actionButton}
+                        style={[
+                          styles.actionButton,
+                          stackRequestActions && styles.actionButtonStacked,
+                        ]}
                         loading={busyId === request.id}
                         onPress={() => rejectRequest(request)}
                       />
@@ -280,6 +322,8 @@ export default function FriendsScreen() {
               }
               renderItem={({ item }) => (
                 <Pressable
+                  accessibilityRole="button"
+                  accessibilityHint="Открывает диалог с пользователем"
                   style={styles.friendRow}
                   onPress={() => openChat(item)}
                 >
@@ -294,11 +338,13 @@ export default function FriendsScreen() {
                     <UserAvatar user={item} colors={colors} />
                   </Pressable>
                   <View style={styles.userMeta}>
-                    <Text style={styles.userName}>
+                    <Text style={styles.userName} numberOfLines={1}>
                       {item.name || 'Пользователь'}
                     </Text>
                     {item.email ? (
-                      <Text style={styles.userEmail}>{item.email}</Text>
+                      <Text style={styles.userEmail} numberOfLines={1}>
+                        {item.email}
+                      </Text>
                     ) : null}
                   </View>
                   {item.id ? (
@@ -319,7 +365,7 @@ export default function FriendsScreen() {
                       size="sm"
                       style={styles.friendAction}
                       loading={busyId === item.id}
-                      onPress={() => removeFriend(item.id as number)}
+                      onPress={() => confirmRemoveFriend(item)}
                     />
                   ) : null}
                 </Pressable>
@@ -380,11 +426,11 @@ const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     topActions: {
       flexDirection: 'row',
-      justifyContent: 'flex-end',
-      marginBottom: spacing.md,
+      width: '100%',
     },
     searchButton: {
-      alignSelf: 'flex-end',
+      flex: 1,
+      borderRadius: 18,
     },
     sectionHeader: {
       flexDirection: 'row',
@@ -440,13 +486,25 @@ const createStyles = (colors: ThemeColors) =>
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing.md,
+      minWidth: 0,
     },
     requestActions: {
       flexDirection: 'row',
       gap: spacing.sm,
     },
+    requestActionsStacked: {
+      flexDirection: 'column',
+    },
     actionButton: {
       flex: 1,
+      paddingHorizontal: spacing.sm,
+    },
+    actionButtonStacked: {
+      flex: 0,
+      width: '100%',
+    },
+    requestProfileButton: {
+      flexShrink: 0,
     },
     friendRow: {
       flexDirection: 'row',
@@ -459,10 +517,10 @@ const createStyles = (colors: ThemeColors) =>
       gap: spacing.md,
       marginBottom: spacing.sm,
       shadowColor: colors.shadow,
-      shadowOpacity: colors.isDark ? 0.2 : 0,
-      shadowRadius: 16,
-      shadowOffset: { width: 0, height: 9 },
-      elevation: colors.isDark ? 2 : 0,
+      shadowOpacity: colors.isDark ? 0.12 : 0,
+      shadowRadius: 10,
+      shadowOffset: { width: 0, height: 4 },
+      elevation: colors.isDark ? 1 : 0,
     },
     avatar: {
       width: 44,
@@ -492,6 +550,7 @@ const createStyles = (colors: ThemeColors) =>
     },
     userMeta: {
       flex: 1,
+      minWidth: 0,
       gap: 3,
     },
     userName: {

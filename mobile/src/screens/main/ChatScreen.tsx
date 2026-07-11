@@ -193,6 +193,11 @@ type PendingLatestScroll = {
   animated: boolean;
 };
 
+const initialComposerDockHeight = Math.max(
+  COMPOSER_ESTIMATED_DOCK_HEIGHT,
+  COMPOSER_INPUT_MIN_HEIGHT + 10,
+);
+
 export default function ChatScreen({ route, navigation }: Props) {
   const { user } = useAuth();
   const themeColors = useThemeColors();
@@ -209,7 +214,7 @@ export default function ChatScreen({ route, navigation }: Props) {
   const chatScrollViewRef = useRef<ChatScrollViewRef | null>(null);
   const composerInputRef = useRef<TextInput>(null);
   const composerRef = useRef<View>(null);
-  const composerBaseHeightRef = useRef(COMPOSER_ESTIMATED_DOCK_HEIGHT);
+  const composerBaseHeightRef = useRef(initialComposerDockHeight);
   const hasLoadedRef = useRef(false);
   const isLoadingOlderRef = useRef(false);
   const pendingLatestScrollRef = useRef<PendingLatestScroll | null>(null);
@@ -254,6 +259,12 @@ export default function ChatScreen({ route, navigation }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [inputHeight, setInputHeight] = useState(COMPOSER_INPUT_MIN_HEIGHT);
+  const [composerBaseHeight, setComposerBaseHeight] = useState(
+    initialComposerDockHeight,
+  );
+  const [composerDockHeight, setComposerDockHeight] = useState(
+    initialComposerDockHeight,
+  );
   const [pendingAttachments, setPendingAttachments] = useState<
     PendingChatAttachment[]
   >([]);
@@ -305,9 +316,9 @@ export default function ChatScreen({ route, navigation }: Props) {
   const [copyNotice, setCopyNotice] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
   const messageListBottomPadding =
-    COMPOSER_ESTIMATED_DOCK_HEIGHT + insets.bottom + MESSAGE_LIST_BOTTOM_GAP;
+    composerBaseHeight + insets.bottom + MESSAGE_LIST_BOTTOM_GAP;
   const scrollToLatestBottomOffset =
-    COMPOSER_ESTIMATED_DOCK_HEIGHT + insets.bottom + SCROLL_TO_LATEST_BUTTON_GAP;
+    composerDockHeight + insets.bottom + SCROLL_TO_LATEST_BUTTON_GAP;
   const [e2eeState, setE2eeState] = useState<ChatE2EEState>({
     loading: true,
     selfEnabled: false,
@@ -358,12 +369,16 @@ export default function ChatScreen({ route, navigation }: Props) {
   const handleComposerDockLayout = useCallback(
     (event: LayoutChangeEvent) => {
       const height = Math.ceil(event.nativeEvent.layout.height);
+      setComposerDockHeight(current => (current === height ? current : height));
 
       if (
         !composerHasExtraContent &&
         inputHeight === COMPOSER_INPUT_MIN_HEIGHT
       ) {
         composerBaseHeightRef.current = height;
+        setComposerBaseHeight(current =>
+          current === height ? current : height,
+        );
       }
 
       extraContentPadding.value = withTiming(

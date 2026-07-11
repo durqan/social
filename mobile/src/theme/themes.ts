@@ -66,9 +66,9 @@ export const themeOrder: ThemeId[] = [
 export const themes: Record<ThemeId, ThemeColors> = {
   "aurora-bubble": {
     id: "aurora-bubble",
-    name: "Clean Glass",
+    name: "Светлая",
     description:
-      "Светлая нейтральная glass-тема: белый, молочный blue-gray, мягкий контраст",
+      "Холодная светлая палитра с мягкими серо-голубыми акцентами",
     isDark: false,
     statusBarStyle: "dark-content",
 
@@ -84,19 +84,19 @@ export const themes: Record<ThemeId, ThemeColors> = {
 
     text: "#172033",
     textPrimary: "#0F172A",
-    textMuted: "#64748B",
-    textSoft: "#94A3B8",
-    muted: "#64748B",
-    soft: "#94A3B8",
+    textMuted: "#536377",
+    textSoft: "#5F6F82",
+    muted: "#536377",
+    soft: "#5F6F82",
     white: "#FFFFFF",
 
     input: "#FFFFFF",
     inputFocus: "#FFFFFF",
 
-    accent: "#547E94",
+    accent: "#4F788E",
     accentStrong: "#315F77",
-    accentSoft: "rgba(84, 126, 148, 0.12)",
-    accentBorder: "rgba(84, 126, 148, 0.28)",
+    accentSoft: "rgba(79, 120, 142, 0.12)",
+    accentBorder: "rgba(79, 120, 142, 0.30)",
 
     success: "#12B76A",
     successSoft: "rgba(18, 183, 106, 0.10)",
@@ -108,7 +108,7 @@ export const themes: Record<ThemeId, ThemeColors> = {
     overlay: "rgba(15, 23, 42, 0.38)",
     overlaySoft: "rgba(15, 23, 42, 0.18)",
     pressed: "rgba(15, 23, 42, 0.04)",
-    selected: "rgba(111, 152, 173, 0.09)",
+    selected: "rgba(79, 120, 142, 0.10)",
 
     messageOwnBg: "#EAF2F6",
     messageOwnBorder: "rgba(111, 152, 173, 0.22)",
@@ -125,9 +125,9 @@ export const themes: Record<ThemeId, ThemeColors> = {
 
   "cosmic-indigo": {
     id: "cosmic-indigo",
-    name: "Cosmic Indigo",
+    name: "Индиго",
     description:
-      "Тёмная космическая тема: глубокий индиго, кристалл, холодный неон",
+      "Глубокая тёмная палитра с холодным индиго-акцентом",
     isDark: true,
     statusBarStyle: "light-content",
 
@@ -152,10 +152,10 @@ export const themes: Record<ThemeId, ThemeColors> = {
     input: "#0A0D1E",
     inputFocus: "#141936",
 
-    accent: "#6D7CFF",
+    accent: "#5968DD",
     accentStrong: "#A78BFA",
-    accentSoft: "rgba(109, 124, 255, 0.17)",
-    accentBorder: "rgba(109, 124, 255, 0.42)",
+    accentSoft: "rgba(89, 104, 221, 0.18)",
+    accentBorder: "rgba(89, 104, 221, 0.46)",
 
     success: "#34D399",
     successSoft: "rgba(52, 211, 153, 0.14)",
@@ -166,8 +166,8 @@ export const themes: Record<ThemeId, ThemeColors> = {
 
     overlay: "rgba(2, 4, 14, 0.84)",
     overlaySoft: "rgba(2, 4, 14, 0.62)",
-    pressed: "rgba(109, 124, 255, 0.11)",
-    selected: "rgba(109, 124, 255, 0.18)",
+    pressed: "rgba(89, 104, 221, 0.11)",
+    selected: "rgba(89, 104, 221, 0.19)",
 
     messageOwnBg: "#3F3ACB",
     messageOwnBorder: "rgba(140, 150, 255, 0.34)",
@@ -184,8 +184,8 @@ export const themes: Record<ThemeId, ThemeColors> = {
 
   "warm-linen": {
     id: "warm-linen",
-    name: "Warm Linen",
-    description: "Тёплая premium-тема: кремовый лён, терракота, мягкий свет",
+    name: "Тёплая",
+    description: "Кремовая палитра с глубоким терракотовым акцентом",
     isDark: false,
     statusBarStyle: "dark-content",
 
@@ -201,19 +201,19 @@ export const themes: Record<ThemeId, ThemeColors> = {
 
     text: "#3A2B22",
     textPrimary: "#2C211B",
-    textMuted: "#8B7461",
-    textSoft: "#B9A590",
-    muted: "#8B7461",
-    soft: "#B9A590",
+    textMuted: "#745D4A",
+    textSoft: "#806A57",
+    muted: "#745D4A",
+    soft: "#806A57",
     white: "#FFFFFF",
 
     input: "#FFF7EE",
     inputFocus: "#FFFFFF",
 
-    accent: "#CF7A45",
-    accentStrong: "#DF8758",
-    accentSoft: "rgba(207, 122, 69, 0.13)",
-    accentBorder: "rgba(207, 122, 69, 0.30)",
+    accent: "#AD5D31",
+    accentStrong: "#93451F",
+    accentSoft: "rgba(173, 93, 49, 0.13)",
+    accentBorder: "rgba(173, 93, 49, 0.34)",
 
     success: "#4D7C0F",
     successSoft: "rgba(77, 124, 15, 0.12)",
@@ -224,8 +224,8 @@ export const themes: Record<ThemeId, ThemeColors> = {
 
     overlay: "rgba(58, 44, 34, 0.50)",
     overlaySoft: "rgba(58, 44, 34, 0.31)",
-    pressed: "rgba(207, 122, 69, 0.08)",
-    selected: "rgba(207, 122, 69, 0.13)",
+    pressed: "rgba(173, 93, 49, 0.08)",
+    selected: "rgba(173, 93, 49, 0.13)",
 
     messageOwnBg: "#F3D6BA",
     messageOwnBorder: "rgba(207, 122, 69, 0.27)",
@@ -242,8 +242,8 @@ export const themes: Record<ThemeId, ThemeColors> = {
 
   "neon-social": {
     id: "neon-social",
-    name: "Neon Social",
-    description: "Яркая social-тема: тёмный космос, фиолетовый, розовый, синий",
+    name: "Неоновая",
+    description: "Контрастная тёмная палитра с фиолетовым и розовым",
     isDark: true,
     statusBarStyle: "light-content",
 
@@ -268,10 +268,10 @@ export const themes: Record<ThemeId, ThemeColors> = {
     input: "#101326",
     inputFocus: "#1A1D38",
 
-    accent: "#8B5CF6",
+    accent: "#8153E2",
     accentStrong: "#EC4899",
-    accentSoft: "rgba(139, 92, 246, 0.18)",
-    accentBorder: "rgba(139, 92, 246, 0.42)",
+    accentSoft: "rgba(129, 83, 226, 0.19)",
+    accentBorder: "rgba(129, 83, 226, 0.46)",
 
     success: "#27D58A",
     successSoft: "rgba(39, 213, 138, 0.14)",
@@ -282,8 +282,8 @@ export const themes: Record<ThemeId, ThemeColors> = {
 
     overlay: "rgba(5, 3, 15, 0.86)",
     overlaySoft: "rgba(5, 3, 15, 0.62)",
-    pressed: "rgba(139, 92, 246, 0.12)",
-    selected: "rgba(139, 92, 246, 0.19)",
+    pressed: "rgba(129, 83, 226, 0.12)",
+    selected: "rgba(129, 83, 226, 0.19)",
 
     messageOwnBg: "#6D35E8",
     messageOwnBorder: "rgba(236, 72, 153, 0.34)",
@@ -300,9 +300,9 @@ export const themes: Record<ThemeId, ThemeColors> = {
 
   "mono-premium": {
     id: "mono-premium",
-    name: "Mono Premium",
+    name: "Графит",
     description:
-      "Премиальная монохромная тема: чёрный, графит, серебро, металл",
+      "Монохромная тёмная палитра с графитовыми акцентами",
     isDark: true,
     statusBarStyle: "light-content",
 
@@ -319,15 +319,15 @@ export const themes: Record<ThemeId, ThemeColors> = {
     text: "#F4F4F5",
     textPrimary: "#FFFFFF",
     textMuted: "#A8ADB5",
-    textSoft: "#707781",
+    textSoft: "#767D87",
     muted: "#A8ADB5",
-    soft: "#707781",
+    soft: "#767D87",
     white: "#FFFFFF",
 
     input: "#0F1114",
     inputFocus: "#181B20",
 
-    accent: "#D9DDE3",
+    accent: "#59616C",
     accentStrong: "#FFFFFF",
     accentSoft: "rgba(255, 255, 255, 0.10)",
     accentBorder: "rgba(255, 255, 255, 0.25)",

@@ -5,6 +5,7 @@ import {
   Pressable,
   Text,
   View,
+  useWindowDimensions,
   type LayoutChangeEvent,
   type GestureResponderEvent,
 } from 'react-native';
@@ -25,6 +26,28 @@ import {
   messagePreviewText,
 } from '../lib/chatUtils';
 
+const messageListHorizontalPadding = 28;
+const bubbleHorizontalPadding = 28;
+const bubbleMaxWidthRatio = 0.82;
+const maxAttachmentWidth = 236;
+const minAttachmentWidth = 176;
+const imageAspectRatio = 224 / 158;
+const videoAspectRatio = 236 / 156;
+const linkPreviewAspectRatio = 220 / 112;
+
+function responsiveAttachmentWidth(windowWidth: number) {
+  const bubbleContentWidth =
+    (windowWidth - messageListHorizontalPadding) * bubbleMaxWidthRatio -
+    bubbleHorizontalPadding;
+
+  return Math.floor(
+    Math.min(
+      maxAttachmentWidth,
+      Math.max(minAttachmentWidth, bubbleContentWidth),
+    ),
+  );
+}
+
 function linkPreviewImageURLs(preview: MessageLinkPreview) {
   const importedThumbnail = preview.video_attachment?.thumbnail_url;
   const candidates =
@@ -44,10 +67,12 @@ function LinkPreviewCard({
                            message,
                            onImport,
                            themeColors,
+                           width,
                          }: {
   message: Message;
   onImport: () => void;
   themeColors: ThemeColors;
+  width: number;
 }) {
   const themed = useMemo(
       () => createChatThemeStyles(themeColors),
@@ -79,11 +104,20 @@ function LinkPreviewCard({
   const failed = preview.status === 'failed';
 
   return (
-      <View style={[styles.linkPreviewCard, themed.linkPreviewCard]}>
+      <View
+        style={[
+          styles.linkPreviewCard,
+          themed.linkPreviewCard,
+          { width },
+        ]}
+      >
         {previewImageURL ? (
             <Image
                 source={{ uri: previewImageURL }}
-                style={styles.linkPreviewThumb}
+                style={[
+                  styles.linkPreviewThumb,
+                  { aspectRatio: linkPreviewAspectRatio },
+                ]}
                 onError={() =>
                   setFailedImageURLs(current =>
                     current.includes(previewImageURL)
@@ -98,6 +132,7 @@ function LinkPreviewCard({
                   styles.linkPreviewThumb,
                   styles.linkPreviewThumbPlaceholder,
                   themed.linkPreviewThumb,
+                  { aspectRatio: linkPreviewAspectRatio },
                 ]}
             >
               <VideoIcon size={30} color={themeColors.muted} />
@@ -309,6 +344,10 @@ export const MessageBubble = React.memo(function MessageBubbleComponent({
     () => createChatThemeStyles(themeColors),
     [themeColors],
   );
+  const { width: windowWidth } = useWindowDimensions();
+  const attachmentWidth = responsiveAttachmentWidth(windowWidth);
+  const imageWidth = Math.min(224, attachmentWidth);
+  const videoHeight = attachmentWidth / videoAspectRatio;
   const displayContent =
     message.content ||
     (message.encryption_version && message.encryption_version > 0
@@ -498,6 +537,7 @@ export const MessageBubble = React.memo(function MessageBubbleComponent({
           <LinkPreviewCard
             message={message}
             themeColors={themeColors}
+            width={attachmentWidth}
             onImport={() => onImportLinkPreviewVideo(message)}
           />
         ) : null}
@@ -539,8 +579,13 @@ export const MessageBubble = React.memo(function MessageBubbleComponent({
               <Pressable
                 key={attachment.id ?? attachment.file_url}
                 accessibilityRole="button"
+                accessibilityLabel={`${isPlaying ? 'Остановить' : 'Воспроизвести'} голосовое сообщение, ${formatDuration(
+                  attachment.duration_seconds ?? attachment.duration,
+                )}`}
+                accessibilityState={{ selected: isPlaying }}
                 style={[
                   styles.voiceAttachment,
+                  { width: attachmentWidth },
                   themed.voiceAttachment,
                   outgoing && styles.voiceAttachmentOutgoing,
                 ]}
@@ -600,26 +645,46 @@ export const MessageBubble = React.memo(function MessageBubbleComponent({
             return (
               <Pressable
                 key={attachment.id ?? attachment.file_url}
-                style={styles.genericVideoAttachment}
+                accessibilityRole="button"
+                accessibilityLabel={`Воспроизвести видео: ${
+                  attachment.original_filename || 'Видео'
+                }`}
+                style={[
+                  styles.genericVideoAttachment,
+                  { width: attachmentWidth },
+                ]}
                 onPress={() => onVideoPress(attachmentUrl)}
                 onLongPress={handleLongPress}
               >
                 {attachment.thumbnail_url ? (
                   <Image
                     source={{ uri: assetURL(attachment.thumbnail_url) }}
-                    style={styles.genericVideo}
+                    style={[
+                      styles.genericVideo,
+                      { width: attachmentWidth },
+                    ]}
                   />
                 ) : (
                   <View
                     style={[
                       styles.genericVideo,
                       styles.genericVideoPlaceholder,
+                      { width: attachmentWidth },
                     ]}
                   >
                     <VideoIcon size={34} color="#fff" />
                   </View>
                 )}
-                <View style={styles.genericVideoPlay}>
+                <View
+                  pointerEvents="none"
+                  style={[
+                    styles.genericVideoPlay,
+                    {
+                      left: (attachmentWidth - 44) / 2,
+                      top: (videoHeight - 44) / 2,
+                    },
+                  ]}
+                >
                   <Text style={styles.genericVideoPlayText}>▶</Text>
                 </View>
                 {renderDownloadButton(attachment, attachmentUrl, true)}
@@ -642,8 +707,13 @@ export const MessageBubble = React.memo(function MessageBubbleComponent({
               <Pressable
                 key={attachment.id ?? attachment.file_url}
                 accessibilityRole="button"
+                accessibilityLabel={`${isPlaying ? 'Остановить' : 'Воспроизвести'} аудиофайл: ${
+                  attachment.original_filename || 'Аудио'
+                }`}
+                accessibilityState={{ selected: isPlaying }}
                 style={[
                   styles.genericFileAttachment,
+                  { width: attachmentWidth },
                   themed.voiceAttachment,
                   outgoing && styles.voiceAttachmentOutgoing,
                 ]}
@@ -690,8 +760,12 @@ export const MessageBubble = React.memo(function MessageBubbleComponent({
               <Pressable
                 key={attachment.id ?? attachment.file_url}
                 accessibilityRole="button"
+                accessibilityLabel={`Скачать файл: ${
+                  attachment.original_filename || 'Файл'
+                }`}
                 style={[
                   styles.genericFileAttachment,
+                  { width: attachmentWidth },
                   themed.voiceAttachment,
                   outgoing && styles.voiceAttachmentOutgoing,
                 ]}
@@ -732,16 +806,23 @@ export const MessageBubble = React.memo(function MessageBubbleComponent({
           return (
             <View
               key={attachment.id ?? attachment.file_url}
-              style={styles.messageImageFrame}
+              style={[
+                styles.messageImageFrame,
+                { width: imageWidth, aspectRatio: imageAspectRatio },
+              ]}
             >
               <Pressable
                 accessibilityRole="imagebutton"
+                accessibilityLabel="Открыть изображение"
                 onPress={() => onImagePress(attachmentUrl)}
                 onLongPress={handleLongPress}
               >
                 <Image
                   source={{ uri: attachmentUrl }}
-                  style={styles.messageImage}
+                  style={[
+                    styles.messageImage,
+                    { width: imageWidth, aspectRatio: imageAspectRatio },
+                  ]}
                   resizeMode="cover"
                 />
               </Pressable>
@@ -779,6 +860,15 @@ export function VideoNoteAttachment({
     () => createChatThemeStyles(themeColors),
     [themeColors],
   );
+  const { width: windowWidth } = useWindowDimensions();
+  const orbitSize = Math.min(
+    104,
+    Math.max(
+      88,
+      Math.round(responsiveAttachmentWidth(windowWidth) * 0.49),
+    ),
+  );
+  const videoSize = orbitSize - 4;
   const [playing, setPlaying] = useState(false);
   const [position, setPosition] = useState(0);
   const [loadedDuration, setLoadedDuration] = useState(duration ?? 0);
@@ -792,8 +882,13 @@ export function VideoNoteAttachment({
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityLabel={`${playing ? 'Остановить' : 'Воспроизвести'} видеосообщение, ${formatDuration(
+        effectiveDuration,
+      )}`}
+      accessibilityState={{ selected: playing }}
       style={[
         styles.videoNoteAttachment,
+        { width: orbitSize + 12 },
         outgoing && styles.videoNoteAttachmentOutgoing,
       ]}
       onPress={() => setPlaying(value => !value)}
@@ -805,12 +900,25 @@ export function VideoNoteAttachment({
           themed.videoNoteOrbit,
           playing && styles.videoNoteOrbitActive,
           playing && themed.videoNoteOrbitActive,
+          {
+            width: orbitSize,
+            height: orbitSize,
+            borderRadius: orbitSize / 2,
+          },
         ]}
       >
         {playing ? (
           <DiagnosticVideo
             source={videoSource}
-            style={[styles.videoNoteVideo, themed.surfaceMuted]}
+            style={[
+              styles.videoNoteVideo,
+              themed.surfaceMuted,
+              {
+                width: videoSize,
+                height: videoSize,
+                borderRadius: videoSize / 2,
+              },
+            ]}
             paused={false}
             repeat={false}
             resizeMode="cover"
@@ -831,7 +939,17 @@ export function VideoNoteAttachment({
             }}
           />
         ) : (
-          <View style={[styles.videoNoteVideo, styles.videoNotePlaceholder]}>
+          <View
+            style={[
+              styles.videoNoteVideo,
+              styles.videoNotePlaceholder,
+              {
+                width: videoSize,
+                height: videoSize,
+                borderRadius: videoSize / 2,
+              },
+            ]}
+          >
             <VideoIcon size={28} color={themeColors.white} />
           </View>
         )}

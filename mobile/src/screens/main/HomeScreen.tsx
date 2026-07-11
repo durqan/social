@@ -1,22 +1,17 @@
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
 import {
   useNavigation,
   type CompositeNavigationProp,
 } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { MailCheck, MailWarning } from 'lucide-react-native';
 
 import { isEmailVerified } from '../../api/auth';
 import type { PostUser } from '@social/shared';
-import { HeroCard, ListRow, Section } from '../../components/Layout';
+import { HeroCard } from '../../components/Layout';
 import { EmailVerificationNotice } from '../../components/EmailVerificationNotice';
 import { Screen } from '../../components/Screen';
 import { useAuth } from '../../context/AuthContext';
-import { useThemeColors } from '../../theme/ThemeContext';
-import type { ThemeColors } from '../../theme/themes';
-import { radius, spacing, typography } from '../../theme/layout';
 import type {
   MainStackParamList,
   MainTabParamList,
@@ -31,8 +26,6 @@ type HomeNavigation = CompositeNavigationProp<
 export default function HomeScreen() {
   const navigation = useNavigation<HomeNavigation>();
   const { user } = useAuth();
-  const colors = useThemeColors();
-  const styles = createStyles(colors);
   const emailVerified = isEmailVerified(user);
 
   function openWallUser(target: PostUser) {
@@ -48,7 +41,7 @@ export default function HomeScreen() {
   }
 
   return (
-    <Screen padded={false} scroll={false} style={styles.screen}>
+    <Screen padded={false} scroll={false}>
       <WallFeed
         currentUser={user}
         userId={user?.id}
@@ -58,71 +51,15 @@ export default function HomeScreen() {
         ListHeaderComponent={
           <>
             <HeroCard
-              title={`Привет, ${user?.name || user?.email || 'друг'}`}
+              kicker="Ваша лента"
+              title={`Что нового, ${user?.name || user?.email || 'друг'}?`}
+              subtitle="Поделитесь обновлением или посмотрите последние публикации."
             />
 
             {!emailVerified ? <EmailVerificationNotice /> : null}
-
-            <Section title="Активность" subtitle="То, ради чего пользователь открывает главную">
-              <View style={styles.activityCard}>
-                <ListRow
-                  icon={emailVerified ? MailCheck : MailWarning}
-                  title={emailVerified ? 'Аккаунт готов' : 'Подтвердите email'}
-                  subtitle={
-                    emailVerified
-                      ? 'Публикация и общение доступны.'
-                      : 'После подтверждения письмо можно будет использовать без ограничений.'
-                  }
-                  selected={!emailVerified}
-                />
-              </View>
-            </Section>
           </>
         }
       />
     </Screen>
   );
 }
-
-const createStyles = (colors: ThemeColors) =>
-  StyleSheet.create({
-    screen: {
-      backgroundColor: colors.background,
-    },
-    summaryGrid: {
-      flexDirection: 'row',
-      gap: spacing.md,
-    },
-    statCard: {
-      flex: 1,
-      minHeight: 104,
-      justifyContent: 'space-between',
-      gap: spacing.sm,
-      borderRadius: radius.xl,
-    },
-    statTopRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      gap: spacing.sm,
-    },
-    statIcon: {
-      width: 36,
-      height: 36,
-      borderRadius: radius.pill,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: colors.accentSoft,
-    },
-    statValue: {
-      ...typography.title,
-      color: colors.textPrimary,
-    },
-    statLabel: {
-      ...typography.caption,
-      color: colors.muted,
-    },
-    activityCard: {
-      gap: spacing.sm,
-    },
-  });

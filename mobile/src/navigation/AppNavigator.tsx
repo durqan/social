@@ -1,5 +1,11 @@
 import React from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   getFocusedRouteNameFromRoute,
@@ -14,9 +20,9 @@ import { enableScreens } from 'react-native-screens';
 import {
   ChevronLeft,
   Home,
-  Menu,
   MessageCircle,
   Phone,
+  Settings,
   UserRound,
   UsersRound,
   Video,
@@ -207,10 +213,7 @@ function ChatNavigator() {
       <ChatStack.Screen
         name="ChatList"
         component={ChatListScreen}
-        options={{
-          title: '',
-          headerTitle: () => null,
-        }}
+        options={{ title: 'Чаты' }}
       />
       <ChatStack.Screen
         name="Chat"
@@ -332,20 +335,24 @@ function SettingsTabIcon({
   color: string;
   focused: boolean;
 }) {
-  return <TabIcon color={color} focused={focused} Icon={Menu} />;
+  return <TabIcon color={color} focused={focused} Icon={Settings} />;
 }
 
 function MainTabsNavigator() {
   const { unreadCount } = useUnread();
   const colors = useThemeColors();
   const insets = useSafeAreaInsets();
+  const { fontScale } = useWindowDimensions();
   const styles = createStyles(colors);
+  const boundedFontScale = Math.min(Math.max(fontScale, 1), 2);
+  const tabBarBaseHeight = 72 + Math.round((boundedFontScale - 1) * 14);
+  const useCompactTabLabels = fontScale > 1.05;
 
   const tabBarStyle = [
     styles.tabBar,
     {
-      height: 72 + insets.bottom,
-      paddingBottom: Math.max(insets.bottom, 10),
+      height: tabBarBaseHeight + insets.bottom,
+      paddingBottom: Math.max(insets.bottom, spacing.sm),
     },
   ];
   const hiddenTabBarStyle = { display: 'none' as const };
@@ -357,7 +364,7 @@ function MainTabsNavigator() {
         headerStyle: styles.header,
         headerTintColor: colors.text,
         headerTitleStyle: styles.headerTitle,
-        tabBarActiveTintColor: colors.accent,
+        tabBarActiveTintColor: colors.accentStrong,
         tabBarInactiveTintColor: colors.muted,
         tabBarStyle,
         tabBarHideOnKeyboard: true,
@@ -365,15 +372,16 @@ function MainTabsNavigator() {
         tabBarIconStyle: styles.tabBarIcon,
         tabBarLabelStyle: styles.tabBarLabel,
         tabBarBadgeStyle: styles.tabBarBadge,
+        tabBarAllowFontScaling: true,
       }}
     >
       <MainTabs.Screen
         name="Home"
         component={HomeScreen}
         options={{
-          title: '',
-          headerTitle: () => null,
-          tabBarLabel: 'Главная',
+          title: 'Главная',
+          tabBarLabel: useCompactTabLabels ? 'Домой' : 'Главная',
+          tabBarAccessibilityLabel: 'Главная',
           tabBarIcon: HomeTabIcon,
         }}
       />
@@ -381,9 +389,9 @@ function MainTabsNavigator() {
         name="Profile"
         component={ProfileScreen}
         options={{
-          title: '',
-          headerTitle: () => null,
-          tabBarLabel: 'Профиль',
+          title: 'Профиль',
+          tabBarLabel: useCompactTabLabels ? 'Я' : 'Профиль',
+          tabBarAccessibilityLabel: 'Профиль',
           tabBarIcon: ProfileTabIcon,
         }}
       />
@@ -391,9 +399,9 @@ function MainTabsNavigator() {
         name="Friends"
         component={FriendsScreen}
         options={{
-          title: '',
-          headerTitle: () => null,
-          tabBarLabel: 'Друзья',
+          title: 'Друзья',
+          tabBarLabel: useCompactTabLabels ? 'Люди' : 'Друзья',
+          tabBarAccessibilityLabel: 'Друзья',
           tabBarIcon: FriendsTabIcon,
         }}
       />
@@ -406,6 +414,7 @@ function MainTabsNavigator() {
           return {
             headerShown: false,
             tabBarLabel: 'Чаты',
+            tabBarAccessibilityLabel: 'Чаты',
             tabBarIcon: ChatsTabIcon,
             tabBarBadge: unreadCount > 0 ? unreadCount : undefined,
             tabBarStyle: routeName === 'Chat' ? hiddenTabBarStyle : tabBarStyle,
@@ -416,9 +425,9 @@ function MainTabsNavigator() {
         name="Settings"
         component={SettingsScreen}
         options={{
-          title: '',
-          headerTitle: () => null,
-          tabBarLabel: 'Настройки',
+          title: 'Настройки',
+          tabBarLabel: useCompactTabLabels ? 'Ещё' : 'Настройки',
+          tabBarAccessibilityLabel: 'Настройки',
           tabBarIcon: SettingsTabIcon,
         }}
       />
@@ -508,33 +517,34 @@ const createStyles = (colors: ThemeColors) =>
     },
     tabBar: {
       position: 'absolute',
-      left: 16,
-      right: 16,
-      bottom: 10,
+      left: 12,
+      right: 12,
+      bottom: 8,
       borderTopWidth: 0,
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: 34,
+      borderRadius: 28,
       backgroundColor: colors.surface,
-      paddingTop: 9,
+      paddingTop: 6,
       shadowColor: colors.shadow,
-      shadowOpacity: colors.isDark ? 0.42 : 0.18,
-      shadowRadius: 28,
-      shadowOffset: { width: 0, height: -10 },
-      elevation: 10,
+      shadowOpacity: colors.isDark ? 0.24 : 0.12,
+      shadowRadius: 20,
+      shadowOffset: { width: 0, height: -6 },
+      elevation: 6,
     },
     tabBarItem: {
       minWidth: 0,
+      minHeight: 52,
       paddingHorizontal: 0,
     },
     tabBarIcon: {
       marginTop: 0,
     },
     tabBarLabel: {
-      fontSize: 10,
-      lineHeight: 12,
-      fontWeight: '900',
-      marginTop: 4,
+      fontSize: 11,
+      lineHeight: 14,
+      fontWeight: '700',
+      marginTop: 2,
     },
     tabBarBadge: {
       minWidth: 18,
@@ -549,10 +559,10 @@ const createStyles = (colors: ThemeColors) =>
       backgroundColor: colors.accent,
       borderColor: colors.accent,
       shadowColor: colors.accent,
-      shadowOpacity: 0.42,
-      shadowRadius: 18,
-      shadowOffset: { width: 0, height: 8 },
-      elevation: 5,
+      shadowOpacity: 0.18,
+      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 3 },
+      elevation: 2,
     },
     loading: {
       flex: 1,
@@ -574,21 +584,21 @@ const stylesStatic = StyleSheet.create({
     gap: 6,
   },
   chatHeaderBackButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     borderWidth: 0,
     marginLeft: -8,
   },
   chatHeaderButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
   },
   tabIconShell: {
-    width: 38,
-    height: 32,
-    borderRadius: 18,
+    width: 36,
+    height: 30,
+    borderRadius: 15,
     borderWidth: 1,
     borderColor: 'transparent',
     alignItems: 'center',

@@ -380,9 +380,9 @@ export const styles = StyleSheet.create({
     position: 'absolute',
     right: 14,
     bottom: 14,
-    minWidth: 42,
-    height: 42,
-    borderRadius: 21,
+    minWidth: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
@@ -548,14 +548,12 @@ export const styles = StyleSheet.create({
     alignSelf: 'flex-end',
   },
   messageImage: {
-    width: 224,
-    height: 158,
+    maxWidth: '100%',
     borderRadius: 18,
     backgroundColor: colors.surfaceMuted,
   },
   messageImageFrame: {
-    width: 224,
-    height: 158,
+    maxWidth: '100%',
     borderRadius: 18,
     overflow: 'hidden',
     backgroundColor: colors.surfaceMuted,
@@ -576,14 +574,14 @@ export const styles = StyleSheet.create({
     top: 6,
   },
   genericVideoAttachment: {
-    width: 236,
+    maxWidth: '100%',
     borderRadius: 18,
     overflow: 'hidden',
     backgroundColor: colors.surfaceMuted,
   },
   genericVideo: {
-    width: 236,
-    height: 156,
+    width: '100%',
+    aspectRatio: 236 / 156,
     backgroundColor: '#000',
   },
   genericVideoPlaceholder: {
@@ -592,11 +590,9 @@ export const styles = StyleSheet.create({
   },
   genericVideoPlay: {
     position: 'absolute',
-    left: 95,
-    top: 55,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(0, 0, 0, 0.58)',
@@ -613,7 +609,7 @@ export const styles = StyleSheet.create({
   },
   linkPreviewCard: {
     marginTop: spacing.sm,
-    width: 236,
+    maxWidth: '100%',
     borderRadius: 18,
     overflow: 'hidden',
     padding: spacing.sm,
@@ -624,7 +620,7 @@ export const styles = StyleSheet.create({
   },
   linkPreviewThumb: {
     width: '100%',
-    height: 112,
+    aspectRatio: 220 / 112,
     borderRadius: radius.sm,
     backgroundColor: colors.surfaceMuted,
   },
@@ -662,6 +658,8 @@ export const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   linkPreviewButton: {
+    minHeight: 44,
+    justifyContent: 'center',
     borderRadius: radius.sm,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
@@ -676,6 +674,8 @@ export const styles = StyleSheet.create({
     fontWeight: '700',
   },
   linkPreviewSecondaryButton: {
+    minHeight: 44,
+    justifyContent: 'center',
     borderRadius: radius.sm,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
@@ -689,7 +689,8 @@ export const styles = StyleSheet.create({
     color: colors.text,
   },
   genericFileAttachment: {
-    minWidth: 220,
+    maxWidth: '100%',
+    minHeight: 52,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
@@ -729,7 +730,8 @@ export const styles = StyleSheet.create({
     color: colors.white,
   },
   voiceAttachment: {
-    minWidth: 220,
+    maxWidth: '100%',
+    minHeight: 52,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
@@ -742,9 +744,9 @@ export const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.18)',
   },
   voicePlayButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.accent,
@@ -780,7 +782,7 @@ export const styles = StyleSheet.create({
     color: 'rgba(248, 250, 252, 0.78)',
   },
   videoNoteAttachment: {
-    width: 116,
+    maxWidth: '100%',
     alignItems: 'center',
     gap: 4,
     alignSelf: 'flex-start',
@@ -823,9 +825,9 @@ export const styles = StyleSheet.create({
   },
   videoNoteGlassButton: {
     position: 'absolute',
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(255, 255, 255, 0.32)',
@@ -993,20 +995,25 @@ export const styles = StyleSheet.create({
   },
   previewRemove: {
     position: 'absolute',
-    right: 4,
-    top: 4,
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    right: -4,
+    top: -4,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.danger,
+    backgroundColor: 'transparent',
   },
   previewRemoveText: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.danger,
     color: colors.white,
     fontSize: 18,
-    lineHeight: 20,
+    lineHeight: 28,
     fontWeight: '800',
+    textAlign: 'center',
   },
   pinnedBar: {
     flexDirection: 'row',
@@ -1062,6 +1069,8 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   sendStatusText: {
+    flex: 1,
+    minWidth: 0,
     color: colors.muted,
     fontSize: 13,
     lineHeight: 18,
@@ -1086,6 +1095,7 @@ export const styles = StyleSheet.create({
   },
   replyInfo: {
     flex: 1,
+    minWidth: 0,
     borderLeftWidth: 3,
     borderLeftColor: colors.accent,
     paddingLeft: 10,
@@ -1121,6 +1131,7 @@ export const styles = StyleSheet.create({
   },
   editingInfo: {
     flex: 1,
+    minWidth: 0,
     borderLeftWidth: 3,
     borderLeftColor: colors.accent,
     paddingLeft: 10,
@@ -1137,8 +1148,8 @@ export const styles = StyleSheet.create({
     lineHeight: 18,
   },
   editingCancel: {
-    width: 34,
-    height: 34,
+    width: 44,
+    height: 44,
     borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1152,6 +1163,7 @@ export const styles = StyleSheet.create({
   },
   recordingBar: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     gap: spacing.sm,
     marginHorizontal: 2,
@@ -1183,6 +1195,9 @@ export const styles = StyleSheet.create({
     lineHeight: 18,
   },
   recordingCancel: {
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderRadius: radius.md,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.sm,
@@ -1194,6 +1209,9 @@ export const styles = StyleSheet.create({
     fontWeight: '700',
   },
   recordingSend: {
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderRadius: radius.md,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.sm,
@@ -1250,9 +1268,9 @@ export const styles = StyleSheet.create({
     gap: 10,
   },
   previewPlayButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1279,7 +1297,7 @@ export const styles = StyleSheet.create({
     color: colors.muted,
   },
   previewMeta: {
-    paddingLeft: 42,
+    paddingLeft: 54,
   },
   previewMetaText: {
     fontSize: 10,
@@ -1290,7 +1308,7 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-end',
     gap: spacing.sm,
-    paddingLeft: 42,
+    paddingLeft: 54,
     paddingTop: 4,
   },
   typingBar: {
@@ -1324,16 +1342,16 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: 6,
-    minHeight: 42,
+    minHeight: 44,
     paddingHorizontal: 0,
     paddingVertical: 0,
     backgroundColor: 'transparent',
     elevation: 0,
   },
   composerSideButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     borderWidth: 0,
     borderColor: 'transparent',
     marginBottom: 0,
@@ -1342,12 +1360,12 @@ export const styles = StyleSheet.create({
   composerInputContainer: {
     flex: 1,
     minWidth: 0,
-    minHeight: 40,
+    minHeight: 44,
     flexDirection: 'row',
     alignItems: 'flex-end',
     borderWidth: 0,
     borderColor: 'transparent',
-    borderRadius: 20,
+    borderRadius: 22,
     paddingLeft: 12,
     paddingRight: 2,
     backgroundColor: 'transparent',
@@ -1359,7 +1377,7 @@ export const styles = StyleSheet.create({
     right: 0,
     top: 0,
     bottom: 0,
-    borderRadius: 20,
+    borderRadius: 22,
   },
 
   composerGlassTint: {
@@ -1368,7 +1386,7 @@ export const styles = StyleSheet.create({
     right: 0,
     top: 0,
     bottom: 0,
-    borderRadius: 20,
+    borderRadius: 22,
     backgroundColor: 'rgba(255,255,255,0.58)',
   },
 
@@ -1384,12 +1402,12 @@ export const styles = StyleSheet.create({
   },
 
   composerEmojiButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 2,
+    marginBottom: 0,
     zIndex: 2,
   },
   composerButtonPressed: {
@@ -1399,9 +1417,9 @@ export const styles = StyleSheet.create({
     opacity: 0.42,
   },
   composerActionButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     marginBottom: 0,
   },
   composerActionRecording: {
@@ -1414,7 +1432,7 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(0, 0, 0, 0.9)',
-    padding: 14,
+    padding: 0,
   },
   lightboxBackdrop: {
     position: 'absolute',
@@ -1424,12 +1442,12 @@ export const styles = StyleSheet.create({
     bottom: 0,
   },
   lightboxImage: {
+    flex: 1,
     width: '100%',
-    height: '86%',
   },
   lightboxVideo: {
+    flex: 1,
     width: '100%',
-    height: '86%',
   },
   lightboxVideoError: {
     position: 'absolute',
@@ -1451,11 +1469,11 @@ export const styles = StyleSheet.create({
   },
   lightboxClose: {
     position: 'absolute',
-    right: 18,
-    top: 18,
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    right: 12,
+    top: 12,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(255, 255, 255, 0.16)',
@@ -1484,6 +1502,18 @@ export const styles = StyleSheet.create({
     shadowRadius: 28,
     shadowOffset: { width: 0, height: -12 },
     elevation: colors.isDark ? 0 : 8,
+    overflow: 'hidden',
+  },
+  sheetScrollable: {
+    overflow: 'hidden',
+    paddingBottom: 0,
+  },
+  sheetScroll: {
+    flexShrink: 1,
+    minHeight: 0,
+  },
+  sheetActionList: {
+    gap: 6,
   },
   sheetHandle: {
     alignSelf: 'center',
@@ -1508,6 +1538,7 @@ export const styles = StyleSheet.create({
     gap: spacing.md,
     borderRadius: radius.lg,
     paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     backgroundColor: colors.cardMuted,
   },
   sheetActionIcon: {
@@ -1518,8 +1549,11 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.surfaceMuted,
+    flexShrink: 0,
   },
   sheetActionText: {
+    flex: 1,
+    minWidth: 0,
     color: colors.text,
     ...typography.body,
     fontWeight: '600',
@@ -1554,7 +1588,9 @@ export const styles = StyleSheet.create({
     padding: 12,
   },
   forwardList: {
-    maxHeight: 320,
+    flexShrink: 1,
+  },
+  forwardListContent: {
     gap: 6,
   },
   forwardRecipient: {
@@ -1567,6 +1603,7 @@ export const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     paddingHorizontal: 12,
+    paddingVertical: spacing.sm,
     backgroundColor: colors.surfaceMuted,
   },
   forwardRecipientSelected: {
@@ -1574,6 +1611,7 @@ export const styles = StyleSheet.create({
   },
   forwardRecipientName: {
     flex: 1,
+    minWidth: 0,
     color: colors.text,
     fontSize: 15,
     lineHeight: 20,
@@ -1584,15 +1622,11 @@ export const styles = StyleSheet.create({
     height: 28,
     borderRadius: 14,
     overflow: 'hidden',
-    color: colors.muted,
     backgroundColor: colors.surface,
-    fontSize: 17,
-    lineHeight: 28,
-    textAlign: 'center',
-    fontWeight: '900',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   forwardCheckSelected: {
-    color: colors.white,
     backgroundColor: colors.accent,
   },
   forwardActions: {
@@ -1602,10 +1636,15 @@ export const styles = StyleSheet.create({
   },
   forwardButton: {
     flex: 1,
-    minHeight: 46,
+    minHeight: 48,
     borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+  },
+  forwardButtonDisabled: {
+    opacity: 0.46,
   },
   forwardCancelButton: {
     backgroundColor: colors.surfaceMuted,
