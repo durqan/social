@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"time"
 
 	"tester/internal/handlers"
@@ -10,7 +11,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func NewRouter(database *gorm.DB) *gin.Engine {
+func NewRouter(ctx context.Context, database *gorm.DB) *gin.Engine {
 	router := gin.Default()
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
@@ -25,7 +26,7 @@ func NewRouter(database *gorm.DB) *gin.Engine {
 	registerConversationRoutes(router, database)
 	registerCallRoutes(router, database)
 	registerE2EERoutes(router, database)
-	registerWebSocketRoutes(router, database)
+	registerWebSocketRoutes(ctx, router, database)
 
 	return router
 }
@@ -181,7 +182,7 @@ func registerConversationRoutes(router *gin.Engine, database *gorm.DB) {
 	conversations.DELETE("/:conversationId/pinned-message", handlers.UnpinMessage(database))
 }
 
-func registerWebSocketRoutes(router *gin.Engine, database *gorm.DB) {
-	handlers.InitWebSocket(database)
+func registerWebSocketRoutes(ctx context.Context, router *gin.Engine, database *gorm.DB) {
+	handlers.InitWebSocket(ctx, database)
 	router.GET("/ws", middleware.RateLimitMiddleware(60, time.Minute), handlers.WebSocketHandler)
 }

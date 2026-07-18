@@ -38,12 +38,18 @@ func main() {
 			concurrency = parsed
 		}
 	}
+	queueSize := 8
+	if raw := os.Getenv("VIDEO_IMPORT_QUEUE_SIZE"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			queueSize = parsed
+		}
+	}
 	tempRoot := os.Getenv("VIDEO_IMPORT_TEMP_ROOT")
 
-	log.Printf("video import worker starting with concurrency=%d", concurrency)
+	log.Printf("video import worker starting with concurrency=%d queue_size=%d", concurrency, queueSize)
 	if err := services.RunVideoImportWorker(ctx, database, services.VideoImportWorkerConfig{
-		RabbitURL:   cfg.RabbitURL,
 		Concurrency: concurrency,
+		QueueSize:   queueSize,
 		TempRoot:    tempRoot,
 	}); err != nil && err != context.Canceled {
 		log.Fatal(err)

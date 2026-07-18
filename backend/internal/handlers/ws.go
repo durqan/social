@@ -26,24 +26,34 @@ var onlineUsers = struct {
 }
 
 var dbInstance *gorm.DB
-var callTimeoutSweeperOnce sync.Once
+var websocketContext = context.Background()
 
-const websocketPingInterval = 30 * time.Second
-const callTimeoutSweepInterval = 5 * time.Second
+const (
+	websocketPingInterval    = 30 * time.Second
+	websocketMaxMessageSize  = 1024 * 1024
+	callTimeoutSweepInterval = 5 * time.Second
+)
 
-func InitWebSocket(db *gorm.DB) {
+func InitWebSocket(ctx context.Context, db *gorm.DB) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	websocketContext = ctx
 	dbInstance = db
-	callTimeoutSweeperOnce.Do(func() {
-		go startCallTimeoutSweeper(db)
-	})
+	go startCallTimeoutSweeper(ctx, db)
 }
 
-func startCallTimeoutSweeper(db *gorm.DB) {
+func startCallTimeoutSweeper(ctx context.Context, db *gorm.DB) {
 	ticker := time.NewTicker(callTimeoutSweepInterval)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		emitExpiredCallTimeouts(context.Background(), db)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			emitExpiredCallTimeouts(ctx, db)
+		}
 	}
 }
 
@@ -66,6 +76,7 @@ func WebSocketHandler(c *gin.Context) {
 		return
 	}
 	defer conn.Close(websocket.StatusNormalClosure, "")
+	conn.SetReadLimit(websocketMaxMessageSize)
 
 	client := clients.set(userID, conn)
 	if _, err := services.MarkUserActivity(dbInstance, userID); err != nil {
@@ -81,7 +92,7 @@ func WebSocketHandler(c *gin.Context) {
 		broadcastPresence(userID, true, nil)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(websocketContext)
 	defer cancel()
 	defer removeWebSocketClient(userID, client, "read loop exit")
 	go keepWebSocketAlive(ctx, client)
@@ -103,6 +114,13 @@ func WebSocketHandler(c *gin.Context) {
 
 		handleWebSocketMessage(ctx, userID, client, wsMsg)
 	}
+}
+
+func ShutdownWebSockets() {
+	clients.closeAll(websocket.StatusGoingAway, "server shutdown")
+	onlineUsers.mu.Lock()
+	onlineUsers.users = make(map[uint]bool)
+	onlineUsers.mu.Unlock()
 }
 
 func keepWebSocketAlive(ctx context.Context, client *websocketClient) {

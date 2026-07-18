@@ -475,6 +475,12 @@ export async function refreshSession() {
         status: error instanceof ApiError ? error.status : undefined,
         message: error instanceof Error ? error.message : String(error),
       });
+      if (
+        error instanceof ApiError &&
+        (error.status === 401 || error.status === 403)
+      ) {
+        notifyAuthInvalid(error);
+      }
       throw error;
     })
     .finally(() => {
@@ -565,12 +571,6 @@ export async function apiRequestMeta<T>(
         retry: true,
       });
     } catch (refreshError) {
-      if (
-        refreshError instanceof ApiError &&
-        (refreshError.status === 401 || refreshError.status === 403)
-      ) {
-        notifyAuthInvalid(refreshError);
-      }
       throw refreshError;
     }
   }

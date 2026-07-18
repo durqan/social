@@ -2,7 +2,10 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -13,16 +16,45 @@ import (
 	"gorm.io/gorm"
 )
 
-type fakeNotificationPublisher struct {
-	err       error
-	published []dto.CreateNotificationReq
+func TestNotificationClientDeliversInternalRequest(t *testing.T) {
+	var received dto.CreateNotificationReq
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/notifications" {
+			t.Fatalf("request = %s %s, want POST /notifications", r.Method, r.URL.Path)
+		}
+		if token := r.Header.Get("X-Internal-Token"); token != "test-token" {
+			t.Fatalf("internal token = %q, want test-token", token)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
+			t.Fatal(err)
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer server.Close()
+
+	client, err := newNotificationClient(server.URL, "test-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := dto.CreateNotificationReq{RecipientID: 10, ActorID: 20, Type: dto.NotificationTypeMessage, EntityID: 30}
+	if err := client.deliver(context.Background(), want); err != nil {
+		t.Fatal(err)
+	}
+	if received != want {
+		t.Fatalf("received = %+v, want %+v", received, want)
+	}
 }
 
-func (p *fakeNotificationPublisher) PublishNotification(_ context.Context, req dto.CreateNotificationReq) error {
-	if p.err != nil {
-		return p.err
+type fakeNotificationDelivery struct {
+	err       error
+	delivered []dto.CreateNotificationReq
+}
+
+func (d *fakeNotificationDelivery) deliver(_ context.Context, req dto.CreateNotificationReq) error {
+	if d.err != nil {
+		return d.err
 	}
-	p.published = append(p.published, req)
+	d.delivered = append(d.delivered, req)
 	return nil
 }
 
@@ -81,7 +113,7 @@ func TestClaimNotificationOutboxBatchReclaimsExpiredLease(t *testing.T) {
 	}
 }
 
-func TestPublishNotificationOutboxBatchMarksSent(t *testing.T) {
+func TestDeliverNotificationOutboxBatchMarksSent(t *testing.T) {
 	db := newNotificationOutboxTestDB(t)
 	if err := EnqueueNotificationOutbox(db, dto.CreateNotificationReq{
 		RecipientID: 10,
@@ -92,16 +124,16 @@ func TestPublishNotificationOutboxBatchMarksSent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	publisher := &fakeNotificationPublisher{}
-	processed, err := PublishNotificationOutboxBatch(context.Background(), db, publisher, 10)
+	delivery := &fakeNotificationDelivery{}
+	processed, err := deliverNotificationOutboxBatch(context.Background(), db, delivery.deliver, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if processed != 1 {
 		t.Fatalf("processed = %d, want 1", processed)
 	}
-	if len(publisher.published) != 1 {
-		t.Fatalf("published = %d, want 1", len(publisher.published))
+	if len(delivery.delivered) != 1 {
+		t.Fatalf("delivered = %d, want 1", len(delivery.delivered))
 	}
 
 	var item models.NotificationOutbox
@@ -113,7 +145,7 @@ func TestPublishNotificationOutboxBatchMarksSent(t *testing.T) {
 	}
 }
 
-func TestPublishNotificationOutboxBatchRetriesTemporaryFailure(t *testing.T) {
+func TestDeliverNotificationOutboxBatchRetriesTemporaryFailure(t *testing.T) {
 	db := newNotificationOutboxTestDB(t)
 	if err := EnqueueNotificationOutbox(db, dto.CreateNotificationReq{
 		RecipientID: 10,
@@ -124,8 +156,8 @@ func TestPublishNotificationOutboxBatchRetriesTemporaryFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	publisher := &fakeNotificationPublisher{err: errors.New("rabbit down")}
-	processed, err := PublishNotificationOutboxBatch(context.Background(), db, publisher, 10)
+	delivery := &fakeNotificationDelivery{err: errors.New("notifications service unavailable")}
+	processed, err := deliverNotificationOutboxBatch(context.Background(), db, delivery.deliver, 10)
 	if err != nil {
 		t.Fatal(err)
 	}

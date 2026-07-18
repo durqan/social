@@ -139,6 +139,22 @@ func (r *websocketRegistry) remove(userID uint, client *websocketClient) (bool, 
 	return false, false
 }
 
+func (r *websocketRegistry) closeAll(status websocket.StatusCode, reason string) {
+	r.mu.Lock()
+	all := make([]*websocketClient, 0)
+	for _, userClients := range r.clients {
+		for client := range userClients {
+			all = append(all, client)
+		}
+	}
+	r.clients = make(map[uint]map[*websocketClient]struct{})
+	r.mu.Unlock()
+
+	for _, client := range all {
+		_ = client.conn.Close(status, reason)
+	}
+}
+
 func (r *websocketRegistry) setActiveConversation(userID uint, client *websocketClient, conversationID uint) bool {
 	r.mu.RLock()
 	_, ok := r.clients[userID][client]
@@ -154,7 +170,9 @@ func (r *websocketRegistry) setActiveConversation(userID uint, client *websocket
 }
 
 func isClosedWebSocketError(err error) bool {
-	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+	return errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded) ||
+		websocket.CloseStatus(err) != -1
 }
 
 var clients = newWebsocketRegistry()

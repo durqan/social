@@ -12,10 +12,10 @@ import (
 )
 
 const (
-	defaultPort      = "8080"
-	defaultJWTSecret = "your-secret-key-change-in-production"
-	defaultDatabase  = "postgres://social:social@localhost:5433/social?sslmode=disable"
-	defaultRabbitURL = "amqp://guest:guest@localhost:5672/"
+	defaultPort             = "8080"
+	defaultJWTSecret        = "your-secret-key-change-in-production"
+	defaultDatabase         = "postgres://social:social@localhost:5433/social?sslmode=disable"
+	defaultNotificationsURL = "http://localhost:8085"
 
 	defaultRedisHost     = "localhost"
 	defaultRedisPort     = "6379"
@@ -29,11 +29,12 @@ const (
 )
 
 type Config struct {
-	DatabaseURL  string
-	Port         string
-	JWTSecret    string
-	CookieSecure bool
-	RabbitURL    string
+	DatabaseURL                string
+	Port                       string
+	JWTSecret                  string
+	CookieSecure               bool
+	NotificationsURL           string
+	NotificationsInternalToken string
 
 	RedisHost     string
 	RedisPort     string
@@ -57,11 +58,12 @@ func Load() Config {
 		loadDotEnv(".env", lockedEnv)
 
 		cached = Config{
-			DatabaseURL:  getEnv("DATABASE_URL", defaultDatabase),
-			Port:         getEnv("PORT", defaultPort),
-			JWTSecret:    getEnv("JWT_SECRET", defaultJWTSecret),
-			CookieSecure: os.Getenv("COOKIE_SECURE") == "true",
-			RabbitURL:    getEnv("RABBIT_URL", defaultRabbitURL),
+			DatabaseURL:                getEnv("DATABASE_URL", defaultDatabase),
+			Port:                       getEnv("PORT", defaultPort),
+			JWTSecret:                  getEnv("JWT_SECRET", defaultJWTSecret),
+			CookieSecure:               os.Getenv("COOKIE_SECURE") == "true",
+			NotificationsURL:           getEnv("NOTIFICATIONS_INTERNAL_URL", defaultNotificationsURL),
+			NotificationsInternalToken: os.Getenv("NOTIFICATIONS_INTERNAL_TOKEN"),
 
 			RedisHost:     getEnv("REDIS_HOST", defaultRedisHost),
 			RedisPort:     getEnv("REDIS_PORT", defaultRedisPort),
@@ -151,6 +153,9 @@ func validateSecurity(cfg Config) {
 
 	if len(cfg.JWTSecret) < 32 || strings.Contains(cfg.JWTSecret, "your-secret-key") {
 		log.Fatal("JWT_SECRET must be changed and contain at least 32 characters in release mode")
+	}
+	if strings.TrimSpace(cfg.NotificationsInternalToken) == "" {
+		log.Fatal("NOTIFICATIONS_INTERNAL_TOKEN must be configured in release mode")
 	}
 	if err := messagecrypto.ValidateProductionKey(); err != nil {
 		log.Fatal(err)

@@ -20,7 +20,7 @@ func ImportMessageLinkPreviewVideo(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		message, err := services.RequestVideoImport(c.Request.Context(), db, userID, messageID)
+		message, err := services.RequestVideoImport(db, userID, messageID)
 		if errors.Is(err, services.ErrVideoImportForbidden) {
 			c.JSON(403, gin.H{"error": "you do not have access to this message"})
 			return

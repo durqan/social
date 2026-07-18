@@ -12,7 +12,6 @@ import (
 
 	"tester/internal/dto"
 	"tester/internal/models"
-	"tester/internal/rabbit"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -32,15 +31,7 @@ const (
 	notificationOutboxLease       = 30 * time.Second
 )
 
-type NotificationPublisher interface {
-	PublishNotification(ctx context.Context, req dto.CreateNotificationReq) error
-}
-
-type rabbitNotificationPublisher struct{}
-
-func (rabbitNotificationPublisher) PublishNotification(ctx context.Context, req dto.CreateNotificationReq) error {
-	return rabbit.PublishNotificationContext(ctx, req)
-}
+type notificationDeliveryFunc func(context.Context, dto.CreateNotificationReq) error
 
 func EnqueueNotificationOutbox(tx *gorm.DB, req dto.CreateNotificationReq) error {
 	req.Action = notificationOutboxAction(req.Action)
@@ -93,21 +84,33 @@ func notificationOutboxDedupeKeyWithSuffix(req dto.CreateNotificationReq, suffix
 	return hex.EncodeToString(sum[:])
 }
 
-func StartNotificationOutboxPublisher(db *gorm.DB) {
-	go runNotificationOutboxPublisher(context.Background(), db, rabbitNotificationPublisher{})
+func StartNotificationOutboxWorker(ctx context.Context, db *gorm.DB, notificationsURL, internalToken string) <-chan struct{} {
+	done := make(chan struct{})
+	client, err := newNotificationClient(notificationsURL, internalToken)
+	if err != nil {
+		log.Printf("notification outbox worker disabled: %v", err)
+		close(done)
+		return done
+	}
+
+	go func() {
+		defer close(done)
+		runNotificationOutboxWorker(ctx, db, client.deliver)
+	}()
+	return done
 }
 
-func runNotificationOutboxPublisher(ctx context.Context, db *gorm.DB, publisher NotificationPublisher) {
+func runNotificationOutboxWorker(ctx context.Context, db *gorm.DB, deliver notificationDeliveryFunc) {
 	ticker := time.NewTicker(notificationOutboxPollEvery)
 	defer ticker.Stop()
 
 	for {
-		published, err := PublishNotificationOutboxBatch(ctx, db, publisher, notificationOutboxBatchSize)
+		delivered, err := deliverNotificationOutboxBatch(ctx, db, deliver, notificationOutboxBatchSize)
 		if err != nil {
 			log.Printf("notification outbox batch failed: error=%v", err)
 		}
-		if published > 0 {
-			log.Printf("notification outbox batch processed: count=%d", published)
+		if delivered > 0 {
+			log.Printf("notification outbox batch processed: count=%d", delivered)
 		}
 
 		select {
@@ -118,7 +121,7 @@ func runNotificationOutboxPublisher(ctx context.Context, db *gorm.DB, publisher 
 	}
 }
 
-func PublishNotificationOutboxBatch(ctx context.Context, db *gorm.DB, publisher NotificationPublisher, limit int) (int, error) {
+func deliverNotificationOutboxBatch(ctx context.Context, db *gorm.DB, deliver notificationDeliveryFunc, limit int) (int, error) {
 	if limit <= 0 {
 		limit = notificationOutboxBatchSize
 	}
@@ -130,8 +133,8 @@ func PublishNotificationOutboxBatch(ctx context.Context, db *gorm.DB, publisher 
 
 	var firstFinalizeError error
 	for _, item := range items {
-		publishErr := publisher.PublishNotification(ctx, notificationOutboxRequest(item))
-		if err := finalizeNotificationOutboxPublish(ctx, db, item, publishErr); err != nil && firstFinalizeError == nil {
+		deliveryErr := deliver(ctx, notificationOutboxRequest(item))
+		if err := finalizeNotificationOutboxDelivery(ctx, db, item, deliveryErr); err != nil && firstFinalizeError == nil {
 			firstFinalizeError = err
 		}
 	}
@@ -188,7 +191,7 @@ func claimNotificationOutboxBatch(ctx context.Context, db *gorm.DB, limit int, n
 	return claimed, err
 }
 
-func finalizeNotificationOutboxPublish(ctx context.Context, db *gorm.DB, item models.NotificationOutbox, cause error) error {
+func finalizeNotificationOutboxDelivery(ctx context.Context, db *gorm.DB, item models.NotificationOutbox, cause error) error {
 	now := time.Now()
 	updates := map[string]interface{}{
 		"lease_token": "",

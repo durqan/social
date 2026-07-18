@@ -13,6 +13,7 @@ import { AuthProvider, useAuth } from '../context/AuthContext';
 import { CallProvider } from '../context/CallContext';
 import { NotificationsProvider } from '../context/NotificationsContext';
 import { UnreadProvider } from '../context/UnreadContext';
+import { chatSocket } from '../api/ws';
 import { runPostAuthBootstrap } from '../bootstrap/postAuthBootstrap';
 import { AppNavigator } from '../navigation/AppNavigator';
 import {
@@ -46,6 +47,33 @@ function PostAuthBootstrap() {
   return null;
 }
 
+function RealtimeConnection() {
+  const { user } = useAuth();
+  const { appState, networkConnected, networkReady } = useAppLifecycle();
+
+  useEffect(() => {
+    chatSocket.setAppState(appState);
+  }, [appState]);
+
+  useEffect(() => {
+    if (networkReady) {
+      chatSocket.setNetworkOnline(networkConnected);
+    }
+  }, [networkConnected, networkReady]);
+
+  useEffect(() => {
+    if (user?.id) {
+      chatSocket.connect();
+    } else {
+      chatSocket.disconnect();
+    }
+
+    return () => chatSocket.disconnect();
+  }, [user?.id]);
+
+  return null;
+}
+
 function AppContent() {
   const colors = useThemeColors();
 
@@ -63,6 +91,7 @@ function AppContent() {
 
       <AuthProvider>
         <AppLifecycleProvider>
+          <RealtimeConnection />
           <PostAuthBootstrap />
           <UnreadProvider>
             <NotificationsProvider>

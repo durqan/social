@@ -122,7 +122,6 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    chatSocket.recover();
     refreshUnreadCount().catch(() => undefined);
   }, [refreshUnreadCount, userId]);
 
@@ -131,7 +130,6 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    chatSocket.recover();
     signalChatDataChanged();
   });
 
@@ -143,7 +141,6 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    chatSocket.recover();
     signalChatDataChanged();
   }, [networkConnected, signalChatDataChanged, userId]);
 
@@ -165,7 +162,6 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
     };
 
     const unsubscribe = chatSocket.onMessage(handleSocketEvent);
-    chatSocket.connect();
 
     return () => {
       unsubscribe();

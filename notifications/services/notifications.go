@@ -36,6 +36,12 @@ type pushJob struct {
 }
 
 var ErrInvalidNotificationCursor = errors.New("invalid notification cursor")
+var ErrInvalidNotificationRequest = errors.New("invalid notification request")
+
+const (
+	notificationActionCreate               = "create"
+	notificationActionMarkConversationRead = "mark_conversation_read"
+)
 
 type NotificationPage struct {
 	Notifications []models.Notification
@@ -61,6 +67,59 @@ func NewService(repo *repository.Repository, push *pushsvc.Service) *Service {
 		}
 	}
 	return service
+}
+
+func (s *Service) ProcessNotification(req *dto.CreateNotificationReq) error {
+	if err := validateNotificationRequest(req); err != nil {
+		return err
+	}
+	if notificationAction(req.Action) == notificationActionMarkConversationRead {
+		return s.MarkMessageConversationRead(req.RecipientID, req.ConversationID)
+	}
+	return s.CreateNotification(req)
+}
+
+func validateNotificationRequest(req *dto.CreateNotificationReq) error {
+	if req == nil {
+		return fmt.Errorf("%w: payload is required", ErrInvalidNotificationRequest)
+	}
+
+	switch notificationAction(req.Action) {
+	case notificationActionMarkConversationRead:
+		if req.RecipientID == 0 || req.ConversationID == 0 {
+			return fmt.Errorf("%w: recipient_id and conversation_id are required", ErrInvalidNotificationRequest)
+		}
+		return nil
+	case notificationActionCreate:
+	default:
+		return fmt.Errorf("%w: unsupported action %q", ErrInvalidNotificationRequest, req.Action)
+	}
+
+	if req.RecipientID == 0 || req.ActorID == 0 {
+		return fmt.Errorf("%w: recipient_id and actor_id are required", ErrInvalidNotificationRequest)
+	}
+	switch strings.TrimSpace(req.Type) {
+	case dto.NotificationTypePostLiked,
+		dto.NotificationTypeCommentCreated,
+		dto.NotificationTypeFriendRequest,
+		dto.NotificationTypeFriendAccepted,
+		dto.NotificationTypeMessage,
+		dto.NotificationTypeIncomingCall,
+		dto.NotificationTypeCallEnded,
+		dto.NotificationTypeCallRejected,
+		dto.NotificationTypeCallMissed:
+		return nil
+	default:
+		return fmt.Errorf("%w: unsupported type %q", ErrInvalidNotificationRequest, req.Type)
+	}
+}
+
+func notificationAction(action string) string {
+	action = strings.TrimSpace(action)
+	if action == "" {
+		return notificationActionCreate
+	}
+	return action
 }
 
 func (s *Service) CreateNotification(req *dto.CreateNotificationReq) error {
@@ -210,7 +269,7 @@ func (s *Service) enqueuePush(job pushJob) {
 	if s.pushJobs == nil {
 		return
 	}
-	// A bounded channel intentionally applies backpressure to Rabbit workers.
+	// The bounded channel applies backpressure to the internal HTTP request.
 	s.pushJobs <- job
 }
 

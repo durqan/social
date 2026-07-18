@@ -31,27 +31,43 @@ func PublishMessageUpdate(ctx context.Context, messageID uint) {
 	}
 }
 
-func StartMessageUpdateListener(db *gorm.DB, broadcast func(context.Context, models.Message)) {
+func StartMessageUpdateListener(ctx context.Context, db *gorm.DB, broadcast func(context.Context, models.Message)) <-chan struct{} {
+	done := make(chan struct{})
 	if cache.Redis == nil || db == nil || broadcast == nil {
-		return
+		close(done)
+		return done
 	}
 
 	go func() {
+		defer close(done)
 		for {
-			if err := runMessageUpdateListener(db, broadcast); err != nil {
+			if err := runMessageUpdateListener(ctx, db, broadcast); err != nil && ctx.Err() == nil {
 				log.Printf("message update listener stopped: %v", err)
-				time.Sleep(2 * time.Second)
+				timer := time.NewTimer(2 * time.Second)
+				select {
+				case <-ctx.Done():
+					timer.Stop()
+					return
+				case <-timer.C:
+				}
+			}
+			if ctx.Err() != nil {
+				return
 			}
 		}
 	}()
+	return done
 }
 
-func runMessageUpdateListener(db *gorm.DB, broadcast func(context.Context, models.Message)) error {
-	pubsub := cache.Redis.Client.Subscribe(cache.Redis.Ctx, messageUpdateChannel)
+func runMessageUpdateListener(ctx context.Context, db *gorm.DB, broadcast func(context.Context, models.Message)) error {
+	pubsub := cache.Redis.Client.Subscribe(ctx, messageUpdateChannel)
 	defer pubsub.Close()
 
-	ch := pubsub.Channel()
-	for msg := range ch {
+	for {
+		msg, err := pubsub.ReceiveMessage(ctx)
+		if err != nil {
+			return err
+		}
 		var payload MessageUpdatePayload
 		if err := json.Unmarshal([]byte(msg.Payload), &payload); err != nil {
 			continue
@@ -60,7 +76,6 @@ func runMessageUpdateListener(db *gorm.DB, broadcast func(context.Context, model
 		if err != nil {
 			continue
 		}
-		broadcast(context.Background(), message)
+		broadcast(ctx, message)
 	}
-	return nil
 }

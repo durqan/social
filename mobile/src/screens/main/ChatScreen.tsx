@@ -1573,7 +1573,6 @@ export default function ChatScreen({ route, navigation }: Props) {
 
   useEffect(() => {
     const unsubscribeMessages = chatSocket.onMessage(handleSocketEvent);
-    chatSocket.connect();
 
     return () => {
       unsubscribeMessages();

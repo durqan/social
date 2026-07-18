@@ -5,6 +5,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"notifications/auth"
@@ -14,7 +16,6 @@ import (
 	"notifications/messagecrypto"
 	"notifications/middleware"
 	pushsvc "notifications/push"
-	"notifications/rabbit"
 	"notifications/repository"
 	"notifications/services"
 
@@ -51,27 +52,12 @@ func main() {
 	}
 	log.Println("Redis connected successfully")
 
-	consumer := rabbit.NewConsumer(svc)
-	consumerCtx, stopConsumer := context.WithCancel(context.Background())
-	defer stopConsumer()
-	go consumer.Start(consumerCtx)
-
 	r := gin.Default()
 	r.GET("/health", func(c *gin.Context) {
-		rabbitStatus := consumer.Status()
-		statusCode := http.StatusOK
-		status := "ok"
-		if !rabbitStatus.Healthy {
-			statusCode = http.StatusServiceUnavailable
-			status = "degraded"
-		}
-		c.JSON(statusCode, gin.H{
-			"status":          status,
-			"rabbit_consumer": rabbitStatus,
-		})
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
-	r.POST("/notifications", middleware.RateLimit(30, time.Minute), auth.InternalMiddleware(), h.CreateNotification)
+	r.POST("/notifications", auth.InternalMiddleware(), h.CreateNotification)
 
 	protected := r.Group("/", auth.Middleware())
 	protected.GET("/notifications", h.GetUserNotifications)
@@ -81,7 +67,26 @@ func main() {
 	protected.POST("/push/mobile-token", middleware.RateLimit(20, time.Hour), h.RegisterMobilePushToken)
 	protected.DELETE("/push/mobile-token", middleware.RateLimit(20, time.Hour), h.RevokeMobilePushToken)
 
-	if err = r.Run(":8085"); err != nil {
-		log.Fatal(err)
+	server := &http.Server{Addr: ":8085", Handler: r}
+	serverErrors := make(chan error, 1)
+	go func() {
+		serverErrors <- server.ListenAndServe()
+	}()
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	select {
+	case err = <-serverErrors:
+		if err != nil && err != http.ErrServerClosed {
+			log.Printf("notifications server stopped: %v", err)
+		}
+		return
+	case <-ctx.Done():
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Printf("notifications server shutdown failed: %v", err)
 	}
 }

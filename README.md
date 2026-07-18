@@ -17,7 +17,7 @@ docker-compose.prod.yml
 .env.local.example
 ```
 
-Основные зависимости backend: PostgreSQL, Redis, RabbitMQ и local/S3-compatible storage. Локальный S3 предоставляется MinIO. Coturn нужен для WebRTC-звонков вне простой локальной сети.
+Основные зависимости backend: PostgreSQL, Redis и local/S3-compatible storage. Локальный S3 предоставляется MinIO. Coturn нужен для WebRTC-звонков вне простой локальной сети. Уведомления сохраняются в DB outbox и доставляются сервису FCM через защищённый внутренний HTTP endpoint; video-import worker подхватывает сохранённые задания из PostgreSQL ограниченным пулом workers.
 
 ## Возможности
 
@@ -74,7 +74,7 @@ docker compose --env-file .env.local -f docker-compose.local.yml down
 ```bash
 cp .env.local.example .env.local
 docker compose --env-file .env.local -f docker-compose.local.yml \
-  up -d postgres redis rabbitmq minio minio-create-bucket
+  up -d postgres redis minio minio-create-bucket
 ```
 
 Заполните `.env.example`, затем запустите API из отдельного терминала:
@@ -105,7 +105,7 @@ set +a
 go run ./cmd/video-import-worker
 ```
 
-`DATABASE_URL`, `REDIS_*` и `RABBIT_URL` в `.env.example` уже ориентированы на опубликованные local Compose-порты. Перед запуском задайте непустой `MESSAGE_ENCRYPTION_KEY` (`openssl rand -base64 32`).
+`DATABASE_URL`, `REDIS_*` и `NOTIFICATIONS_INTERNAL_URL` в `.env.example` уже ориентированы на опубликованные local Compose-порты. Перед запуском задайте непустые `MESSAGE_ENCRYPTION_KEY` (`openssl rand -base64 32`) и одинаковый `NOTIFICATIONS_INTERNAL_TOKEN` для backend и notifications.
 
 ## Запуск React Native Android
 
@@ -130,7 +130,7 @@ npm run android
 
 ## Production
 
-Создайте `.env` на основе `.env.example`, задайте production secrets, container-адрес PostgreSQL/Redis/RabbitMQ, S3 и Firebase credentials. Затем запустите стек:
+Создайте `.env` на основе `.env.example`, задайте production secrets, container-адрес PostgreSQL/Redis, S3 и Firebase credentials. Затем запустите стек:
 
 ```bash
 docker compose --env-file .env -f docker-compose.prod.yml up -d

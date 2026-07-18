@@ -1,13 +1,9 @@
 package services
 
 import (
-	"context"
 	"errors"
-	"fmt"
 
 	"tester/internal/models"
-	"tester/internal/rabbit"
-	"tester/internal/storage"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -20,16 +16,14 @@ var (
 )
 
 type VideoImportJob struct {
-	JobID             string `json:"job_id"`
-	MessageID         uint   `json:"message_id"`
-	LinkPreviewID     uint   `json:"link_preview_id"`
-	OriginalURL       string `json:"original_url"`
-	Provider          string `json:"provider"`
-	RequestedByUserID uint   `json:"requested_by_user_id"`
+	JobID         string
+	MessageID     uint
+	LinkPreviewID uint
+	OriginalURL   string
+	Provider      string
 }
 
-func RequestVideoImport(ctx context.Context, db *gorm.DB, userID uint, messageID uint) (models.Message, error) {
-	var job *VideoImportJob
+func RequestVideoImport(db *gorm.DB, userID uint, messageID uint) (models.Message, error) {
 	var message models.Message
 
 	err := db.Transaction(func(tx *gorm.DB) error {
@@ -54,10 +48,6 @@ func RequestVideoImport(ctx context.Context, db *gorm.DB, userID uint, messageID
 			return nil
 		}
 
-		jobID, err := storage.NewUUID()
-		if err != nil {
-			return err
-		}
 		if err := tx.Model(&models.MessageLinkPreview{}).
 			Where("id = ?", message.LinkPreview.ID).
 			Updates(map[string]any{
@@ -67,31 +57,10 @@ func RequestVideoImport(ctx context.Context, db *gorm.DB, userID uint, messageID
 			return err
 		}
 
-		job = &VideoImportJob{
-			JobID:             jobID,
-			MessageID:         message.ID,
-			LinkPreviewID:     message.LinkPreview.ID,
-			OriginalURL:       message.LinkPreview.OriginalURL,
-			Provider:          message.LinkPreview.Provider,
-			RequestedByUserID: userID,
-		}
 		return nil
 	})
 	if err != nil {
 		return models.Message{}, err
-	}
-
-	if job != nil {
-		if err := rabbit.PublishVideoImport(job); err != nil {
-			_ = db.Model(&models.MessageLinkPreview{}).
-				Where("id = ?", job.LinkPreviewID).
-				Updates(map[string]any{
-					"status":       models.LinkPreviewStatusFailed,
-					"import_error": "Не удалось поставить задачу в очередь",
-				}).Error
-			return models.Message{}, fmt.Errorf("publish video import: %w", err)
-		}
-		PublishMessageUpdate(ctx, messageID)
 	}
 
 	updated, err := LoadMessage(db, messageID)

@@ -118,7 +118,11 @@ func (h *Handler) CreateNotification(c *gin.Context) {
 		return
 	}
 
-	err := h.service.CreateNotification(&req)
+	err := h.service.ProcessNotification(&req)
+	if errors.Is(err, services.ErrInvalidNotificationRequest) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

@@ -1,4 +1,4 @@
-import NetInfo from '@react-native-community/netinfo';
+import type { AppStateStatus } from 'react-native';
 import {
   WS_EVENTS,
   type CallIceCandidate,
@@ -9,7 +9,7 @@ import {
 
 import { WS_URL } from '../config/env';
 import type { EncryptedMessagePayload } from '../crypto/encryptMessage';
-import { getCookieHeader, refreshSession } from './http';
+import { ApiError, getCookieHeader, refreshSession } from './http';
 import type { MessageAttachment } from './types';
 import { logDev, warnDev } from '../utils/logger';
 import {
@@ -25,6 +25,12 @@ export type { CallIceCandidate, CallSessionDescription, CallType, WsEvent };
 
 type WsHandler = (event: WsEvent) => void;
 type StatusHandler = (connected: boolean) => void;
+export type WsConnectionStatus =
+  | 'disconnected'
+  | 'connecting'
+  | 'connected'
+  | 'reconnecting'
+  | 'auth_error';
 type OutgoingEvent = { type: string; payload: unknown };
 type QueuedEvent = OutgoingEvent & { queuedAt: number };
 type RNWebSocketConstructor = new (
@@ -66,7 +72,6 @@ function attachmentForTransport(
 }
 
 class ChatSocket {
-  private readonly maxReconnectAttempts = 8;
   private readonly minReconnectDelay = 1000;
   private readonly maxReconnectDelay = 30000;
   private readonly maxPendingNonCallEvents = 50;
@@ -81,9 +86,9 @@ class ChatSocket {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempts = 0;
   private shouldReconnect = false;
-  private opening = false;
-  private connected = false;
+  private connectionStatus: WsConnectionStatus = 'disconnected';
   private networkOnline = true;
+  private appState: AppStateStatus = 'unknown';
   private pendingEvents: QueuedEvent[] = [];
   private activeConversationId: number | null = null;
   private callEventSeq = new Map<string, number>();
@@ -97,26 +102,51 @@ class ChatSocket {
     WS_EVENTS.CALL_HEARTBEAT,
   ]);
 
-  constructor() {
-    NetInfo.addEventListener(state => {
-      const online =
-        state.isConnected !== false && state.isInternetReachable !== false;
+  setNetworkOnline(online: boolean) {
+    if (this.networkOnline === online) {
+      return;
+    }
 
-      if (this.networkOnline === online) {
-        return;
-      }
+    this.networkOnline = online;
+    if (!online) {
+      this.clearReconnectTimer();
+      this.closeCurrentSocket();
+      this.setConnectionStatus('disconnected');
+      return;
+    }
 
-      this.networkOnline = online;
-      if (!online) {
-        this.clearReconnectTimer();
-        this.setConnected(false);
-        return;
-      }
+    if (this.shouldReconnect) {
+      this.recover();
+    }
+  }
 
-      if (this.shouldReconnect) {
+  setAppState(nextState: AppStateStatus) {
+    const previousState = this.appState;
+    if (previousState === nextState) {
+      return;
+    }
+    this.appState = nextState;
+
+    if (nextState === 'active' && previousState !== 'active') {
+      if (this.isConnected()) {
+        this.syncActiveConversation();
+      } else if (this.shouldReconnect) {
         this.recover();
       }
-    });
+      return;
+    }
+
+    if (
+      previousState === 'active' &&
+      nextState !== 'active' &&
+      this.activeConversationId !== null &&
+      this.isConnected()
+    ) {
+      this.sendEvent(
+        { type: WS_EVENTS.CONVERSATION_INACTIVE, payload: {} },
+        false,
+      );
+    }
   }
 
   onMessage(handler: WsHandler) {
@@ -128,14 +158,17 @@ class ChatSocket {
 
   onStatus(handler: StatusHandler) {
     this.statusHandlers.add(handler);
-    handler(this.connected);
+    handler(this.isConnected());
     return () => {
       this.statusHandlers.delete(handler);
     };
   }
 
   isConnected() {
-    return this.connected && this.ws?.readyState === WebSocket.OPEN;
+    return (
+      this.connectionStatus === 'connected' &&
+      this.ws?.readyState === WebSocket.OPEN
+    );
   }
 
   connect() {
@@ -146,14 +179,14 @@ class ChatSocket {
       return;
     }
     if (
-      this.opening ||
+      this.connectionStatus === 'connecting' ||
       this.ws?.readyState === WebSocket.OPEN ||
       this.ws?.readyState === WebSocket.CONNECTING
     ) {
       callLog('CALL_WS', 'connect skipped while socket is already active', {
-        opening: this.opening,
+        status: this.connectionStatus,
         readyState: this.ws?.readyState,
-        connected: this.connected,
+        connected: this.isConnected(),
       });
       return;
     }
@@ -168,7 +201,7 @@ class ChatSocket {
   recover() {
     logDev('[SocialMobile] WebSocket reconnect requested', {
       pendingEvents: this.pendingEvents.length,
-      connected: this.connected,
+      connected: this.isConnected(),
     });
     this.reconnectAttempts = 0;
     this.clearReconnectTimer();
@@ -180,6 +213,7 @@ class ChatSocket {
       return Promise.resolve(true);
     }
 
+    this.connect();
     return new Promise(resolve => {
       let settled = false;
       let unsubscribe: (() => void) | undefined;
@@ -208,19 +242,16 @@ class ChatSocket {
   }
 
   disconnect() {
-    this.socketGeneration += 1;
     if (this.activeConversationId !== null) {
       this.clearActiveConversation();
     }
     this.shouldReconnect = false;
-    this.opening = false;
     this.clearReconnectTimer();
     this.reconnectAttempts = 0;
     this.pendingEvents = [];
-    this.setConnected(false);
-    const socket = this.ws;
-    this.ws = null;
-    socket?.close();
+    this.callEventSeq.clear();
+    this.closeCurrentSocket();
+    this.setConnectionStatus('disconnected');
   }
 
   sendMessage(
@@ -382,9 +413,11 @@ class ChatSocket {
   }
 
   private async open() {
-    this.opening = true;
     const generation = this.socketGeneration + 1;
     this.socketGeneration = generation;
+    this.setConnectionStatus(
+      this.reconnectAttempts > 0 ? 'reconnecting' : 'connecting',
+    );
     callLog('CALL_WS', 'opening websocket', {
       generation,
       url: sanitizeEndpoint(WS_URL),
@@ -393,7 +426,6 @@ class ChatSocket {
     try {
       await refreshSession();
       if (!this.shouldReconnect || generation !== this.socketGeneration) {
-        this.opening = false;
         callWarn('CALL_WS', 'open aborted after auth refresh', {
           generation,
           shouldReconnect: this.shouldReconnect,
@@ -402,7 +434,6 @@ class ChatSocket {
       }
       const cookieHeader = await getCookieHeader();
       if (!this.shouldReconnect || generation !== this.socketGeneration) {
-        this.opening = false;
         callWarn('CALL_WS', 'open aborted after cookie read', {
           generation,
           shouldReconnect: this.shouldReconnect,
@@ -419,7 +450,6 @@ class ChatSocket {
           : undefined,
       });
       if (!this.shouldReconnect || generation !== this.socketGeneration) {
-        this.opening = false;
         socket.close();
         callWarn('CALL_WS', 'open aborted after socket creation', {
           generation,
@@ -436,9 +466,8 @@ class ChatSocket {
           return;
         }
         const reconnectAttempt = this.reconnectAttempts;
-        this.opening = false;
         this.reconnectAttempts = 0;
-        this.setConnected(true);
+        this.setConnectionStatus('connected');
         callLog('CALL_WS', 'websocket connected', {
           generation,
           pendingEvents: this.pendingEvents.length,
@@ -468,8 +497,8 @@ class ChatSocket {
         }
         callError('CALL_ERROR', 'websocket error', { generation });
         warnDev('[SocialMobile] WebSocket error', { generation });
-        this.opening = false;
-        this.setConnected(false);
+        this.setConnectionStatus('disconnected');
+        socket.close();
       };
       socket.onclose = () => {
         if (!this.isCurrentSocket(socket, generation)) {
@@ -485,9 +514,8 @@ class ChatSocket {
           shouldReconnect: this.shouldReconnect,
           pendingEvents: this.pendingEvents.length,
         });
-        this.opening = false;
         this.ws = null;
-        this.setConnected(false);
+        this.setConnectionStatus('disconnected');
         this.scheduleReconnect();
       };
     } catch (error) {
@@ -498,8 +526,16 @@ class ChatSocket {
         generation,
         error: describeCallError(error),
       });
-      this.opening = false;
-      this.setConnected(false);
+      if (
+        error instanceof ApiError &&
+        (error.status === 401 || error.status === 403)
+      ) {
+        this.shouldReconnect = false;
+        this.clearReconnectTimer();
+        this.setConnectionStatus('auth_error');
+        return;
+      }
+      this.setConnectionStatus('disconnected');
       this.scheduleReconnect();
     }
   }
@@ -649,19 +685,17 @@ class ChatSocket {
       return;
     }
 
-    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      callWarn('CALL_WS', 'websocket reconnect paused after max attempts', {
-        pendingEvents: this.pendingEvents.length,
-      });
-      logDev('[SocialMobile] WebSocket reconnect paused after max attempts');
-      return;
-    }
-
     this.reconnectAttempts += 1;
-    const delay = Math.min(
+    const baseDelay = Math.min(
       this.maxReconnectDelay,
       this.minReconnectDelay * 2 ** (this.reconnectAttempts - 1),
     );
+    const jitter = baseDelay * 0.2;
+    const delay = Math.min(
+      this.maxReconnectDelay,
+      Math.round(baseDelay - jitter + Math.random() * jitter * 2),
+    );
+    this.setConnectionStatus('reconnecting');
 
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
@@ -697,13 +731,24 @@ class ChatSocket {
     }
   }
 
-  private setConnected(nextConnected: boolean) {
-    if (this.connected === nextConnected) {
+  private setConnectionStatus(nextStatus: WsConnectionStatus) {
+    if (this.connectionStatus === nextStatus) {
       return;
     }
 
-    this.connected = nextConnected;
-    this.statusHandlers.forEach(handler => handler(nextConnected));
+    const wasConnected = this.connectionStatus === 'connected';
+    this.connectionStatus = nextStatus;
+    const connected = nextStatus === 'connected';
+    if (wasConnected !== connected) {
+      this.statusHandlers.forEach(handler => handler(connected));
+    }
+  }
+
+  private closeCurrentSocket() {
+    this.socketGeneration += 1;
+    const socket = this.ws;
+    this.ws = null;
+    socket?.close();
   }
 
   private isCallEvent(event: OutgoingEvent) {

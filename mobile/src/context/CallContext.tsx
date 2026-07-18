@@ -2729,7 +2729,6 @@ export function CallProvider({ children }: { children: ReactNode }) {
             }
 
             pendingIncomingCallPushRef.current = call;
-            chatSocket.connect();
             hydrateIncomingCall(call.callId, call.callerName).catch(
                 hydrateError => {
                     logCallError(
@@ -3104,7 +3103,6 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     callId,
                     pcId: pcId ?? -1,
                 };
-                chatSocket.connect();
                 const localOffer = sessionDescriptionForSignal(
                     pc.localDescription,
                     restartOffer,
@@ -3759,7 +3757,6 @@ export function CallProvider({ children }: { children: ReactNode }) {
                         toId: targetId,
                     },
                 );
-                chatSocket.connect();
                 const { stream, callType: effectiveCallType } =
                     await openLocalStreamWithFallback(nextCallType);
                 if (!isCurrentStart()) {
@@ -4072,7 +4069,6 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     },
                 );
                 setError('Восстанавливаем соединение звонка...');
-                chatSocket.connect();
                 hydrateIncomingCall(callId).catch(hydrateError => {
                     logCallError('CALL_ERROR', 'hydrate after accept failed', {
                         callId,
@@ -4527,7 +4523,6 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     },
                 );
                 try {
-                    chatSocket.connect();
                     await chatSocket.waitUntilConnected(1200);
                     if (currentStatus === 'incoming') {
                         chatSocket.sendCallReject(targetId, callId);
@@ -5356,7 +5351,6 @@ export function CallProvider({ children }: { children: ReactNode }) {
         }
 
         const unsubscribe = chatSocket.onMessage(handleSocketEvent);
-        chatSocket.connect();
         return () => {
             unsubscribe();
         };

@@ -12,13 +12,12 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"tester/internal/models"
-	"tester/internal/rabbit"
 	"tester/internal/storage"
 
-	amqp "github.com/rabbitmq/amqp091-go"
 	"gorm.io/gorm"
 )
 
@@ -26,6 +25,8 @@ const (
 	defaultVideoImportTempRoot       = "/tmp/video-imports"
 	defaultVideoImportDownloadTimout = 20 * time.Minute
 	defaultVideoImportFFmpegTimeout  = 30 * time.Minute
+	defaultVideoImportQueueSize      = 8
+	defaultVideoImportPollEvery      = 2 * time.Second
 
 	maxFastCopySourceSizeBytes = 150 * 1024 * 1024
 	maxFastCopyLongSide        = 1280
@@ -33,8 +34,9 @@ const (
 )
 
 type VideoImportWorkerConfig struct {
-	RabbitURL     string
 	Concurrency   int
+	QueueSize     int
+	PollEvery     time.Duration
 	TempRoot      string
 	DownloadLimit time.Duration
 	FFmpegLimit   time.Duration
@@ -60,11 +62,17 @@ type sourceVideoInfo struct {
 }
 
 func RunVideoImportWorker(ctx context.Context, db *gorm.DB, cfg VideoImportWorkerConfig) error {
-	if cfg.RabbitURL == "" {
-		return rabbit.ErrNotConfigured
+	if db == nil {
+		return errors.New("video import database is not configured")
 	}
 	if cfg.Concurrency <= 0 {
 		cfg.Concurrency = 1
+	}
+	if cfg.QueueSize <= 0 {
+		cfg.QueueSize = defaultVideoImportQueueSize
+	}
+	if cfg.PollEvery <= 0 {
+		cfg.PollEvery = defaultVideoImportPollEvery
 	}
 	if cfg.TempRoot == "" {
 		cfg.TempRoot = defaultVideoImportTempRoot
@@ -79,62 +87,105 @@ func RunVideoImportWorker(ctx context.Context, db *gorm.DB, cfg VideoImportWorke
 		log.Printf("failed to cleanup old video import temp files: %v", err)
 	}
 
-	conn, err := amqp.Dial(cfg.RabbitURL)
-	if err != nil {
-		return err
+	jobs := make(chan VideoImportJob, cfg.QueueSize)
+	completed := make(chan uint, cfg.Concurrency)
+	workersDone := make(chan struct{})
+	var workers sync.WaitGroup
+	for i := 0; i < cfg.Concurrency; i++ {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for job := range jobs {
+				if ctx.Err() == nil {
+					if err := ProcessVideoImportJob(ctx, db, cfg, job); err != nil && ctx.Err() == nil {
+						log.Printf("video import job failed: %v", err)
+					}
+				}
+				select {
+				case completed <- job.LinkPreviewID:
+				case <-ctx.Done():
+				}
+			}
+		}()
 	}
-	defer conn.Close()
+	go func() {
+		workers.Wait()
+		close(workersDone)
+	}()
 
-	ch, err := conn.Channel()
-	if err != nil {
-		return err
+	pending := make(map[uint]struct{}, cfg.QueueSize+cfg.Concurrency)
+	schedule := func() {
+		capacity := cfg.QueueSize + cfg.Concurrency - len(pending)
+		if capacity <= 0 {
+			return
+		}
+		candidates, err := loadPendingVideoImportJobs(ctx, db, capacity+len(pending))
+		if err != nil {
+			if ctx.Err() == nil {
+				log.Printf("failed to poll video import jobs: %v", err)
+			}
+			return
+		}
+		for _, job := range candidates {
+			if _, exists := pending[job.LinkPreviewID]; exists {
+				continue
+			}
+			pending[job.LinkPreviewID] = struct{}{}
+			jobs <- job
+			capacity--
+			if capacity == 0 {
+				return
+			}
+		}
 	}
-	defer ch.Close()
 
-	if _, err := ch.QueueDeclare(rabbit.VideoImportsQueue, true, false, false, false, nil); err != nil {
-		return err
-	}
-	if err := ch.Qos(cfg.Concurrency, 0, false); err != nil {
-		return err
-	}
-
-	deliveries, err := ch.Consume(rabbit.VideoImportsQueue, "", false, false, false, false, nil)
-	if err != nil {
-		return err
-	}
-
-	sem := make(chan struct{}, cfg.Concurrency)
+	schedule()
+	ticker := time.NewTicker(cfg.PollEvery)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
-		case delivery, ok := <-deliveries:
-			if !ok {
-				return errors.New("video import queue closed")
-			}
-			sem <- struct{}{}
-			go func(d amqp.Delivery) {
-				defer func() { <-sem }()
-				if err := handleVideoImportDelivery(ctx, db, cfg, d); err != nil {
-					log.Printf("video import job failed: %v", err)
-				}
-			}(delivery)
+			close(jobs)
+			<-workersDone
+			return nil
+		case previewID := <-completed:
+			delete(pending, previewID)
+			schedule()
+		case <-ticker.C:
+			schedule()
 		}
 	}
 }
 
-func handleVideoImportDelivery(ctx context.Context, db *gorm.DB, cfg VideoImportWorkerConfig, delivery amqp.Delivery) error {
-	var job VideoImportJob
-	if err := json.Unmarshal(delivery.Body, &job); err != nil {
-		_ = delivery.Ack(false)
-		return err
+func loadPendingVideoImportJobs(ctx context.Context, db *gorm.DB, limit int) ([]VideoImportJob, error) {
+	if limit <= 0 {
+		return nil, nil
 	}
 
-	if err := ProcessVideoImportJob(ctx, db, cfg, job); err != nil {
-		_ = delivery.Ack(false)
-		return err
+	var previews []models.MessageLinkPreview
+	if err := db.WithContext(ctx).
+		Where("status = ?", models.LinkPreviewStatusImporting).
+		Order("updated_at ASC, id ASC").
+		Limit(limit).
+		Find(&previews).Error; err != nil {
+		return nil, err
 	}
-	return delivery.Ack(false)
+
+	jobs := make([]VideoImportJob, 0, len(previews))
+	for _, preview := range previews {
+		jobID, err := storage.NewUUID()
+		if err != nil {
+			return nil, err
+		}
+		jobs = append(jobs, VideoImportJob{
+			JobID:         jobID,
+			MessageID:     preview.MessageID,
+			LinkPreviewID: preview.ID,
+			OriginalURL:   preview.OriginalURL,
+			Provider:      preview.Provider,
+		})
+	}
+	return jobs, nil
 }
 
 func buildYTDLPDownloadArgs(sourceTemplate string, originalURL string) []string {
@@ -407,6 +458,9 @@ func ProcessVideoImportJob(ctx context.Context, db *gorm.DB, cfg VideoImportWork
 }
 
 func failVideoImport(ctx context.Context, db *gorm.DB, job VideoImportJob, message string, cause error) error {
+	if ctx.Err() != nil {
+		return cause
+	}
 	short := message
 	if cause != nil {
 		log.Printf("video import %s failed: %v", job.JobID, cause)

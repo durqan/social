@@ -1,13 +1,19 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"tester/internal/cache"
 	"tester/internal/config"
 	"tester/internal/db"
 	"tester/internal/handlers"
-	"tester/internal/rabbit"
 	"tester/internal/server"
 	"tester/internal/services"
 	"tester/internal/storage"
@@ -15,6 +21,10 @@ import (
 
 func main() {
 	cfg := config.Load()
+	signalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	runtimeCtx, cancelRuntime := context.WithCancel(context.Background())
+	defer cancelRuntime()
 
 	if _, err := storage.Default(); err != nil {
 		log.Fatal("failed to configure storage:", err)
@@ -31,27 +41,53 @@ func main() {
 
 	log.Println("Redis connected successfully")
 
-	if err := rabbit.Init(cfg.RabbitURL); err != nil {
-		log.Printf("failed to connect rabbitmq: %v", err)
-	} else {
-		log.Println("RabbitMQ connected successfully")
-	}
-	defer rabbit.Close()
-
 	if err := db.Migrate(database); err != nil {
 		log.Fatal("failed to migrate database:", err)
 	}
 
-	services.StartNotificationOutboxPublisher(database)
+	outboxDone := services.StartNotificationOutboxWorker(
+		runtimeCtx,
+		database,
+		cfg.NotificationsURL,
+		cfg.NotificationsInternalToken,
+	)
 	services.StartUnverifiedUserCleanup(database)
 	services.StartAbandonedUploadCleanup(database)
 
-	router := server.NewRouter(database)
-	handlers.StartMessageUpdateSubscriber(database)
+	router := server.NewRouter(runtimeCtx, database)
+	messageUpdatesDone := handlers.StartMessageUpdateSubscriber(runtimeCtx, database)
+	httpServer := &http.Server{Addr: ":" + cfg.Port, Handler: router}
+	serverErrors := make(chan error, 1)
 
 	log.Printf("Server starting on port %s", cfg.Port)
+	go func() {
+		serverErrors <- httpServer.ListenAndServe()
+	}()
 
-	if err := router.Run(":" + cfg.Port); err != nil {
-		log.Fatal("failed to start server:", err)
+	select {
+	case err := <-serverErrors:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("server stopped: %v", err)
+		}
+		stop()
+	case <-signalCtx.Done():
+	}
+
+	handlers.ShutdownWebSockets()
+	cancelRuntime()
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := httpServer.Shutdown(shutdownCtx); err != nil {
+		log.Printf("server shutdown failed: %v", err)
+	}
+	waitForWorker("notification outbox", outboxDone)
+	waitForWorker("message update subscriber", messageUpdatesDone)
+}
+
+func waitForWorker(name string, done <-chan struct{}) {
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		log.Printf("timed out waiting for %s shutdown", name)
 	}
 }

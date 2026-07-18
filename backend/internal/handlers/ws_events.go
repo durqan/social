@@ -292,8 +292,8 @@ func broadcastConversationDeltasAfterDelete(
 	}
 }
 
-func StartMessageUpdateSubscriber(database *gorm.DB) {
-	services.StartMessageUpdateListener(database, BroadcastMessageUpdate)
+func StartMessageUpdateSubscriber(ctx context.Context, database *gorm.DB) <-chan struct{} {
+	return services.StartMessageUpdateListener(ctx, database, BroadcastMessageUpdate)
 }
 
 func canSendWebSocketMessage(ctx context.Context, userID uint) bool {
@@ -683,13 +683,13 @@ func forwardCallEvent(ctx context.Context, eventType string, fromID uint, payloa
 			"call:offer received, attempting incoming_call push publish: call_id=%s caller_id=%d recipient_id=%d conversation_id=%d",
 			callID, fromID, toID, fromID,
 		)
-		go enqueueIncomingCallNotification(dbInstance, toID, fromID, callID, fromID, notificationCallType)
+		enqueueIncomingCallNotification(dbInstance, toID, fromID, callID, fromID, notificationCallType)
 	}
 	if eventType == "call:end" {
-		go enqueueCallStateNotification(dbInstance, toID, fromID, dto.NotificationTypeCallEnded, callID, fromID, notificationCallType)
+		enqueueCallStateNotification(dbInstance, toID, fromID, dto.NotificationTypeCallEnded, callID, fromID, notificationCallType)
 	}
 	if eventType == "call:reject" {
-		go enqueueCallStateNotification(dbInstance, toID, fromID, dto.NotificationTypeCallRejected, callID, fromID, notificationCallType)
+		enqueueCallStateNotification(dbInstance, toID, fromID, dto.NotificationTypeCallRejected, callID, fromID, notificationCallType)
 	}
 
 	eventPayload := gin.H{

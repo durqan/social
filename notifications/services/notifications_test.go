@@ -4,6 +4,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -41,6 +42,22 @@ func TestCreateNotificationDedupesDuplicateDelivery(t *testing.T) {
 		t.Fatalf("expected 1 notification after duplicate delivery, got %d", count)
 	}
 
+}
+
+func TestProcessNotificationValidatesAndHandlesReadSync(t *testing.T) {
+	db := newNotificationTestDB(t)
+	service := NewService(repository.NewRepository(db), nil)
+
+	if err := service.ProcessNotification(&dto.CreateNotificationReq{Action: "unknown"}); !errors.Is(err, ErrInvalidNotificationRequest) {
+		t.Fatalf("invalid action error = %v, want ErrInvalidNotificationRequest", err)
+	}
+	if err := service.ProcessNotification(&dto.CreateNotificationReq{
+		Action:         notificationActionMarkConversationRead,
+		RecipientID:    10,
+		ConversationID: 20,
+	}); err != nil {
+		t.Fatalf("read sync failed: %v", err)
+	}
 }
 
 func TestCreateMessageNotificationAlreadyReadStaysUnread(t *testing.T) {

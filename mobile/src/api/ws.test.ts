@@ -1,12 +1,3 @@
-const netInfoListeners: Array<(state: unknown) => void> = [];
-
-jest.mock('@react-native-community/netinfo', () => ({
-  addEventListener: jest.fn((listener: (state: unknown) => void) => {
-    netInfoListeners.push(listener);
-    return jest.fn();
-  }),
-}));
-
 jest.mock(
   '@social/shared',
   () => ({
@@ -36,7 +27,6 @@ jest.mock('./http', () => ({
 describe('chat socket listeners', () => {
   beforeEach(() => {
     jest.resetModules();
-    netInfoListeners.splice(0);
   });
 
   it('does not duplicate the same message listener', () => {
@@ -67,6 +57,65 @@ describe('chat socket listeners', () => {
 
     expect(staleHandler).not.toHaveBeenCalled();
     expect(activeHandler).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps one physical socket and one reconnect timer', async () => {
+    class FakeWebSocket {
+      static readonly CONNECTING = 0;
+      static readonly OPEN = 1;
+      static readonly CLOSED = 3;
+      static instances: FakeWebSocket[] = [];
+
+      readyState = FakeWebSocket.CONNECTING;
+      onopen: (() => void) | null = null;
+      onmessage: ((event: { data: string }) => void) | null = null;
+      onerror: (() => void) | null = null;
+      onclose: (() => void) | null = null;
+
+      constructor() {
+        FakeWebSocket.instances.push(this);
+      }
+
+      send() {}
+
+      close() {
+        this.readyState = FakeWebSocket.CLOSED;
+      }
+    }
+
+    const originalWebSocket = globalThis.WebSocket;
+    Object.defineProperty(globalThis, 'WebSocket', {
+      configurable: true,
+      value: FakeWebSocket,
+    });
+
+    try {
+      const { chatSocket } = require('./ws');
+      chatSocket.connect();
+      await new Promise<void>(resolve => setImmediate(() => resolve()));
+
+      chatSocket.connect();
+      expect(FakeWebSocket.instances).toHaveLength(1);
+
+      const socket = FakeWebSocket.instances[0];
+      socket.readyState = FakeWebSocket.OPEN;
+      socket.onopen?.();
+
+      jest.useFakeTimers();
+      socket.readyState = FakeWebSocket.CLOSED;
+      socket.onclose?.();
+      socket.onclose?.();
+      expect(jest.getTimerCount()).toBe(1);
+
+      chatSocket.disconnect();
+      expect(jest.getTimerCount()).toBe(0);
+    } finally {
+      jest.useRealTimers();
+      Object.defineProperty(globalThis, 'WebSocket', {
+        configurable: true,
+        value: originalWebSocket,
+      });
+    }
   });
 });
 

@@ -33,23 +33,6 @@ services:
     networks:
       - social_network
 
-  rabbitmq:
-    image: rabbitmq:3-alpine
-    container_name: social_rabbitmq
-    restart: unless-stopped
-    environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-guest}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-guest}
-    volumes:
-      - rabbit_data:/var/lib/rabbitmq
-    healthcheck:
-      test: [ "CMD", "rabbitmq-diagnostics", "-q", "ping" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - social_network
-
   uploads-permissions:
     image: alpine:3.20
     container_name: social_uploads_permissions
@@ -89,7 +72,8 @@ services:
       REDIS_PORT: ${REDIS_PORT:-6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       REDIS_DB: ${REDIS_DB:-0}
-      RABBIT_URL: ${RABBIT_URL:-amqp://guest:guest@rabbitmq:5672/}
+      NOTIFICATIONS_INTERNAL_URL: http://notifications:8085
+      NOTIFICATIONS_INTERNAL_TOKEN: ${NOTIFICATIONS_INTERNAL_TOKEN:?NOTIFICATIONS_INTERNAL_TOKEN is required}
       STORAGE_DRIVER: ${STORAGE_DRIVER:-s3}
       STORAGE_LOCAL_ROOT: ${STORAGE_LOCAL_ROOT:-uploads}
       STORAGE_PUBLIC_BASE_URL: ${STORAGE_PUBLIC_BASE_URL:-}
@@ -115,8 +99,6 @@ services:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_healthy
-      rabbitmq:
         condition: service_healthy
       uploads-permissions:
         condition: service_completed_successfully
@@ -145,7 +127,6 @@ services:
       REDIS_PORT: ${REDIS_PORT:-6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       REDIS_DB: ${REDIS_DB:-0}
-      RABBIT_URL: ${RABBIT_URL:-amqp://guest:guest@rabbitmq:5672/}
       STORAGE_DRIVER: ${STORAGE_DRIVER:-s3}
       STORAGE_LOCAL_ROOT: ${STORAGE_LOCAL_ROOT:-uploads}
       STORAGE_PUBLIC_BASE_URL: ${STORAGE_PUBLIC_BASE_URL:-}
@@ -157,6 +138,7 @@ services:
       S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-}
       S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
       VIDEO_IMPORT_WORKER_CONCURRENCY: ${VIDEO_IMPORT_WORKER_CONCURRENCY:-1}
+      VIDEO_IMPORT_QUEUE_SIZE: ${VIDEO_IMPORT_QUEUE_SIZE:-8}
       VIDEO_IMPORT_TEMP_ROOT: ${VIDEO_IMPORT_TEMP_ROOT:-/tmp/video-imports}
       YTDLP_PROXY: ${YTDLP_PROXY:-}
       YTDLP_IMPERSONATE: ${YTDLP_IMPERSONATE:-chrome}
@@ -165,10 +147,6 @@ services:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-      backend:
         condition: service_healthy
     networks:
       - social_network
@@ -184,14 +162,13 @@ services:
       DB_MAX_IDLE_CONNS: ${NOTIFICATIONS_DB_MAX_IDLE_CONNS:-15}
       DB_CONN_MAX_LIFETIME_MINUTES: ${DB_CONN_MAX_LIFETIME_MINUTES:-30}
       DB_CONN_MAX_IDLE_TIME_MINUTES: ${DB_CONN_MAX_IDLE_TIME_MINUTES:-5}
-      RABBIT_URL: ${RABBIT_URL:-amqp://guest:guest@rabbitmq:5672/}
       GIN_MODE: ${GIN_MODE:-release}
       MESSAGE_ENCRYPTION_KEY: ${MESSAGE_ENCRYPTION_KEY:?MESSAGE_ENCRYPTION_KEY is required}
       REDIS_HOST: ${REDIS_HOST:-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       REDIS_DB: ${REDIS_DB:-0}
-      NOTIFICATIONS_INTERNAL_TOKEN: ${NOTIFICATIONS_INTERNAL_TOKEN:-}
+      NOTIFICATIONS_INTERNAL_TOKEN: ${NOTIFICATIONS_INTERNAL_TOKEN:?NOTIFICATIONS_INTERNAL_TOKEN is required}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       FCM_PROJECT_ID: ${FCM_PROJECT_ID:-}
       FIREBASE_SERVICE_ACCOUNT_JSON_BASE64: ${FIREBASE_SERVICE_ACCOUNT_JSON_BASE64:-}
@@ -208,8 +185,6 @@ services:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_healthy
-      rabbitmq:
         condition: service_healthy
     networks:
       - social_network
@@ -343,8 +318,6 @@ volumes:
     name: social_postgres_data
   redis_data:
     name: social_redis_data
-  rabbit_data:
-    name: social_rabbit_data
   uploads_data:
     name: social_uploads_data
   video_import_tmp:
