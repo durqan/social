@@ -34,7 +34,6 @@ import { Mic, Video as VideoIcon } from 'lucide-react-native';
 import Sound from 'react-native-nitro-sound';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { CommonActions, useFocusEffect, useIsFocused } from '@react-navigation/native';
-import { WS_EVENTS } from '@social/shared';
 
 import {
   CHAT_ATTACHMENT_MAX_COUNT,
@@ -42,8 +41,7 @@ import {
   CHAT_BLOCKED_ATTACHMENT_EXTENSIONS,
   CHAT_VIDEO_NOTE_MAX_DURATION_SECONDS,
   CHAT_VOICE_MAX_DURATION_SECONDS,
-  formatFileSize,
-} from '@social/shared';
+} from '../../config/media';
 import { e2eeApi } from '../../api/e2ee';
 import { friendsApi } from '../../api/friends';
 import { getApiErrorMessage, getCookieHeader } from '../../api/http';
@@ -68,8 +66,8 @@ import type {
   MessageAttachment,
   PinnedMessage,
   User,
-} from '@social/shared';
-import { chatSocket, type WsEvent } from '../../api/ws';
+} from '../../api/types';
+import { WS_EVENTS, chatSocket, type WsEvent } from '../../api/ws';
 import {
   ErrorBanner,
   SuccessBanner,
@@ -83,6 +81,7 @@ import { useUnread } from '../../context/UnreadContext';
 import { useThemeColors } from '../../theme/ThemeContext';
 import { useAppResumeEffect } from '../../utils/useAppResumeEffect';
 import { useLatest } from '../../utils/useLatest';
+import { formatFileSize } from '../../utils/format';
 import type { ChatStackParamList } from '../../navigation/types';
 import {
   encryptAttachmentForUpload,

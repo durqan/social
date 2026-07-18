@@ -1,5 +1,5 @@
 import { Video, getVideoMetaData } from 'react-native-compressor';
-import { CHAT_VIDEO_MAX_BYTES } from '../config/env';
+import { CHAT_VIDEO_MAX_BYTES } from '../config/media';
 
 const CHAT_VIDEO_SOURCE_MAX_BYTES = 500 * 1024 * 1024;
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"tester/internal/dto"
 	"tester/internal/models"
+	"tester/internal/notifications"
 	"tester/internal/repository"
 	"time"
 
@@ -43,7 +44,7 @@ func SendFriendRequest(db *gorm.DB) gin.HandlerFunc {
 			if err := repository.SendFriendRequest(tx, currentUserID, friendID); err != nil {
 				return err
 			}
-			return enqueueNotification(tx, friendID, currentUserID, dto.NotificationTypeFriendRequest, currentUserID)
+			return enqueueNotification(tx, friendID, currentUserID, notifications.TypeFriendRequest, currentUserID)
 		}); err != nil {
 			c.JSON(500, gin.H{"error": "failed to send friend request"})
 			return
@@ -136,7 +137,7 @@ func AcceptFriendRequest(db *gorm.DB) gin.HandlerFunc {
 			if err := tx.First(&friendship, friendshipID).Error; err != nil {
 				return err
 			}
-			return enqueueNotification(tx, friendship.UserID, currentUserID, dto.NotificationTypeFriendAccepted, friendship.ID)
+			return enqueueNotification(tx, friendship.UserID, currentUserID, notifications.TypeFriendAccepted, friendship.ID)
 		}); err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				c.JSON(404, gin.H{"error": "friend request not found"})

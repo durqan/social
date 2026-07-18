@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"tester/internal/dto"
 	"tester/internal/models"
+	"tester/internal/notifications"
 	"tester/internal/repository"
 
 	"github.com/gin-gonic/gin"
@@ -170,7 +170,7 @@ func EndCall(database *gorm.DB) gin.HandlerFunc {
 		}
 		if shouldForward {
 			sendCallStateEvent(c.Request.Context(), "call:end", userID, transitionCall.CallID, transitionCall.CallerID, transitionCall.CalleeID)
-			enqueueCallStateNotification(database, peerID, userID, dto.NotificationTypeCallEnded, transitionCall.CallID, conversationIDForCall(transitionCall), transitionCall.CallType)
+			enqueueCallStateNotification(database, peerID, userID, notifications.TypeCallEnded, transitionCall.CallID, conversationIDForCall(transitionCall), transitionCall.CallType)
 		}
 
 		c.JSON(http.StatusOK, gin.H{"ok": true})

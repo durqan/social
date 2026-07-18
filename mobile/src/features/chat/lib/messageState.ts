@@ -1,4 +1,4 @@
-import type { Message } from '@social/shared';
+import type { Message } from '../../../api/types';
 
 import { getApiErrorMessage } from '../../../api/http';
 

@@ -91,8 +91,10 @@ services:
       REDIS_PORT: ${COMPOSE_REDIS_PORT:-6379}
       REDIS_PASSWORD: ${COMPOSE_REDIS_PASSWORD:-}
       REDIS_DB: ${COMPOSE_REDIS_DB:-0}
-      NOTIFICATIONS_INTERNAL_URL: http://notifications:8085
-      NOTIFICATIONS_INTERNAL_TOKEN: ${NOTIFICATIONS_INTERNAL_TOKEN:-local_notifications_internal_token}
+      FCM_PROJECT_ID: ${FCM_PROJECT_ID:-}
+      FIREBASE_SERVICE_ACCOUNT_JSON_BASE64: ${FIREBASE_SERVICE_ACCOUNT_JSON_BASE64:-}
+      FIREBASE_SERVICE_ACCOUNT_JSON: ${FIREBASE_SERVICE_ACCOUNT_JSON:-}
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
       STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
       STORAGE_LOCAL_ROOT: ${STORAGE_LOCAL_ROOT:-uploads}
       STORAGE_PUBLIC_BASE_URL: ${STORAGE_PUBLIC_BASE_URL:-}
@@ -160,44 +162,6 @@ services:
     networks:
       - social_local
 
-  notifications:
-    image: golang:1.26-alpine
-    restart: unless-stopped
-    working_dir: /app
-    env_file:
-      - path: .env.local
-        required: false
-    environment:
-      DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgres://social:social@postgres:5432/social?sslmode=disable}
-      GIN_MODE: ${GIN_MODE:-debug}
-      MESSAGE_ENCRYPTION_KEY: ${MESSAGE_ENCRYPTION_KEY:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}
-      REDIS_HOST: ${COMPOSE_REDIS_HOST:-redis}
-      REDIS_PORT: ${COMPOSE_REDIS_PORT:-6379}
-      REDIS_PASSWORD: ${COMPOSE_REDIS_PASSWORD:-}
-      REDIS_DB: ${COMPOSE_REDIS_DB:-0}
-      JWT_SECRET: ${JWT_SECRET:-local-development-secret-change-before-release}
-      NOTIFICATIONS_INTERNAL_TOKEN: ${NOTIFICATIONS_INTERNAL_TOKEN:-local_notifications_internal_token}
-    command: sh -c "go mod download && go run ."
-    ports:
-      - "${NOTIFICATIONS_HOST_PORT:-8085}:8085"
-    volumes:
-      - ./notifications:/app
-      - notifications_go_pkg:/go/pkg/mod
-      - notifications_go_build:/root/.cache/go-build
-    healthcheck:
-      test: [ "CMD-SHELL", "wget -qO- http://127.0.0.1:8085/health >/dev/null || exit 1" ]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - social_local
-
 volumes:
   postgres_data:
     name: social_local_postgres_data
@@ -213,10 +177,6 @@ volumes:
     name: social_local_backend_go_pkg
   backend_go_build:
     name: social_local_backend_go_build
-  notifications_go_pkg:
-    name: social_local_notifications_go_pkg
-  notifications_go_build:
-    name: social_local_notifications_go_build
 networks:
   social_local:
     name: social_local_network

@@ -21,7 +21,7 @@ import { Check, Search, Trash2, UserRound, UsersRound, X } from 'lucide-react-na
 
 import { friendsApi } from '../../api/friends';
 import { getApiErrorMessage } from '../../api/http';
-import type { Friendship, User } from '@social/shared';
+import type { Friendship, User } from '../../api/types';
 import { AppButton } from '../../components/AppButton';
 import { IconButton } from '../../components/IconButton';
 import {

@@ -6,12 +6,17 @@ import (
 
 	"tester/internal/handlers"
 	"tester/internal/middleware"
+	"tester/internal/notifications"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
-func NewRouter(ctx context.Context, database *gorm.DB) *gin.Engine {
+func NewRouter(
+	ctx context.Context,
+	database *gorm.DB,
+	notificationService *notifications.Service,
+) *gin.Engine {
 	router := gin.Default()
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
@@ -26,9 +31,43 @@ func NewRouter(ctx context.Context, database *gorm.DB) *gin.Engine {
 	registerConversationRoutes(router, database)
 	registerCallRoutes(router, database)
 	registerE2EERoutes(router, database)
+	registerNotificationRoutes(router, database, notificationService)
 	registerWebSocketRoutes(ctx, router, database)
 
 	return router
+}
+
+func registerNotificationRoutes(
+	router *gin.Engine,
+	database *gorm.DB,
+	service *notifications.Service,
+) {
+	notificationRoutes := router.Group(
+		"/",
+		middleware.AuthMiddleware(),
+		middleware.UserActivityMiddleware(database),
+		middleware.CSRFMiddleware(),
+	)
+	notificationRoutes.GET("/notifications", handlers.GetNotifications(service))
+	notificationRoutes.PATCH("/notifications/seen", handlers.MarkNotificationsAsSeen(service))
+	notificationRoutes.PATCH(
+		"/notifications/read-matching",
+		handlers.MarkMatchingNotificationsAsRead(service),
+	)
+	notificationRoutes.PATCH(
+		"/notifications/:id/read",
+		handlers.MarkNotificationAsRead(service),
+	)
+	notificationRoutes.POST(
+		"/push/mobile-token",
+		middleware.RateLimitMiddleware(20, time.Hour),
+		handlers.RegisterMobilePushToken(service),
+	)
+	notificationRoutes.DELETE(
+		"/push/mobile-token",
+		middleware.RateLimitMiddleware(20, time.Hour),
+		handlers.RevokeMobilePushToken(service),
+	)
 }
 
 func registerCallRoutes(router *gin.Engine, database *gorm.DB) {

@@ -25,14 +25,12 @@ func SendMessage(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		var req struct {
-			Content                string                            `json:"content"`
-			Attachments            []services.MessageAttachmentInput `json:"attachments"`
-			ReplyToMessageID       *uint                             `json:"replyToMessageId"`
-			ReplyToMessageIDLegacy *uint                             `json:"reply_to_message_id"`
-			EncryptionVersion      int                               `json:"encryption_version"`
-			EncryptionVersionCamel int                               `json:"encryptionVersion"`
-			Ciphertext             string                            `json:"ciphertext"`
-			Nonce                  string                            `json:"nonce"`
+			Content           string                            `json:"content"`
+			Attachments       []services.MessageAttachmentInput `json:"attachments"`
+			ReplyToMessageID  *uint                             `json:"replyToMessageId"`
+			EncryptionVersion int                               `json:"encryption_version"`
+			Ciphertext        string                            `json:"ciphertext"`
+			Nonce             string                            `json:"nonce"`
 		}
 
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -46,12 +44,7 @@ func SendMessage(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		replyToMessageID := req.ReplyToMessageID
-		if replyToMessageID == nil {
-			replyToMessageID = req.ReplyToMessageIDLegacy
-		}
-
-		message, err := services.SendMessage(db, userID, toID, req.Content, attachments, replyToMessageID, requestEncryption(req.EncryptionVersion, req.EncryptionVersionCamel, req.Ciphertext, req.Nonce))
+		message, err := services.SendMessage(db, userID, toID, req.Content, attachments, req.ReplyToMessageID, requestEncryption(req.EncryptionVersion, req.Ciphertext, req.Nonce))
 		if errors.Is(err, services.ErrMessageContentRequired) {
 			c.JSON(400, gin.H{"error": "message content or attachment is required"})
 			return
@@ -99,16 +92,13 @@ func ForwardMessage(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		var req struct {
-			ToUserIDsLegacy   []uint `json:"to_user_ids"`
 			ToUserIDs         []uint `json:"toUserIds"`
 			EncryptedMessages []struct {
-				ToUserID               uint                              `json:"toUserId"`
-				ToUserIDLegacy         uint                              `json:"to_user_id"`
-				EncryptionVersion      int                               `json:"encryption_version"`
-				EncryptionVersionCamel int                               `json:"encryptionVersion"`
-				Ciphertext             string                            `json:"ciphertext"`
-				Nonce                  string                            `json:"nonce"`
-				Attachments            []services.MessageAttachmentInput `json:"attachments"`
+				ToUserID          uint                              `json:"toUserId"`
+				EncryptionVersion int                               `json:"encryption_version"`
+				Ciphertext        string                            `json:"ciphertext"`
+				Nonce             string                            `json:"nonce"`
+				Attachments       []services.MessageAttachmentInput `json:"attachments"`
 			} `json:"encryptedMessages"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -117,16 +107,9 @@ func ForwardMessage(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		toUserIDs := req.ToUserIDs
-		if len(toUserIDs) == 0 {
-			toUserIDs = req.ToUserIDsLegacy
-		}
 		if len(toUserIDs) == 0 && len(req.EncryptedMessages) > 0 {
 			for _, item := range req.EncryptedMessages {
-				toUserID := item.ToUserID
-				if toUserID == 0 {
-					toUserID = item.ToUserIDLegacy
-				}
-				toUserIDs = append(toUserIDs, toUserID)
+				toUserIDs = append(toUserIDs, item.ToUserID)
 			}
 		}
 		if len(toUserIDs) == 0 || len(toUserIDs) > 20 {
@@ -139,18 +122,14 @@ func ForwardMessage(db *gorm.DB) gin.HandlerFunc {
 		if len(req.EncryptedMessages) > 0 {
 			inputs := make([]services.EncryptedForwardInput, 0, len(req.EncryptedMessages))
 			for _, item := range req.EncryptedMessages {
-				toUserID := item.ToUserID
-				if toUserID == 0 {
-					toUserID = item.ToUserIDLegacy
-				}
 				attachments, err := services.NormalizeMessageAttachments(item.Attachments, userID)
 				if err != nil {
 					c.JSON(400, gin.H{"error": err.Error()})
 					return
 				}
 				inputs = append(inputs, services.EncryptedForwardInput{
-					ToUserID:    toUserID,
-					Encryption:  requestEncryption(item.EncryptionVersion, item.EncryptionVersionCamel, item.Ciphertext, item.Nonce),
+					ToUserID:    item.ToUserID,
+					Encryption:  requestEncryption(item.EncryptionVersion, item.Ciphertext, item.Nonce),
 					Attachments: attachments,
 				})
 			}
@@ -444,11 +423,7 @@ func pinnedMessageResponse(pin *models.PinnedMessage) interface{} {
 	}
 }
 
-func requestEncryption(versionSnake, versionCamel int, ciphertext, nonce string) services.MessageEncryptionInput {
-	version := versionSnake
-	if version == 0 {
-		version = versionCamel
-	}
+func requestEncryption(version int, ciphertext, nonce string) services.MessageEncryptionInput {
 	return services.MessageEncryptionInput{
 		Version:    version,
 		Ciphertext: ciphertext,
@@ -513,18 +488,17 @@ func UpdateMessage(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		var req struct {
-			Content                string `json:"content"`
-			EncryptionVersion      int    `json:"encryption_version"`
-			EncryptionVersionCamel int    `json:"encryptionVersion"`
-			Ciphertext             string `json:"ciphertext"`
-			Nonce                  string `json:"nonce"`
+			Content           string `json:"content"`
+			EncryptionVersion int    `json:"encryption_version"`
+			Ciphertext        string `json:"ciphertext"`
+			Nonce             string `json:"nonce"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(400, gin.H{"error": err.Error()})
 			return
 		}
 
-		message, err := services.UpdateMessage(db, userID, messageID, req.Content, requestEncryption(req.EncryptionVersion, req.EncryptionVersionCamel, req.Ciphertext, req.Nonce))
+		message, err := services.UpdateMessage(db, userID, messageID, req.Content, requestEncryption(req.EncryptionVersion, req.Ciphertext, req.Nonce))
 		if errors.Is(err, services.ErrMessageForbidden) {
 			c.JSON(403, gin.H{"error": "can only edit your own messages"})
 			return

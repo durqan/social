@@ -61,28 +61,7 @@ const mockPendingIncomingCall = {
   rememberTerminalIncomingCall: jest.fn(),
 };
 
-function mockNumberFromValue(value: unknown) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
 jest.mock('@react-native-firebase/messaging', () => mockMessaging);
-jest.mock(
-  '@social/shared',
-  () => ({
-    normalizeNotificationData: jest.fn(data => ({
-      type: data?.type ?? 'system',
-      actorId: mockNumberFromValue(data?.actor_id ?? data?.actorId),
-      senderId: mockNumberFromValue(data?.sender_id ?? data?.senderId),
-      conversationId: mockNumberFromValue(
-        data?.conversation_id ?? data?.conversationId,
-      ),
-      callId: data?.call_id ?? data?.callId,
-      syncAction: data?.sync_action ?? data?.syncAction,
-    })),
-  }),
-  { virtual: true },
-);
 jest.mock('react-native', () => ({
   Platform: {
     OS: 'android',

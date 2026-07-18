@@ -2,68 +2,49 @@ package services
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"net/http"
-	"net/http/httptest"
+	"fmt"
 	"testing"
 	"time"
 
-	"tester/internal/dto"
 	"tester/internal/models"
+	"tester/internal/notifications"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
-func TestNotificationClientDeliversInternalRequest(t *testing.T) {
-	var received dto.CreateNotificationReq
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/notifications" {
-			t.Fatalf("request = %s %s, want POST /notifications", r.Method, r.URL.Path)
-		}
-		if token := r.Header.Get("X-Internal-Token"); token != "test-token" {
-			t.Fatalf("internal token = %q, want test-token", token)
-		}
-		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
-			t.Fatal(err)
-		}
-		w.WriteHeader(http.StatusCreated)
-	}))
-	defer server.Close()
-
-	client, err := newNotificationClient(server.URL, "test-token")
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := dto.CreateNotificationReq{RecipientID: 10, ActorID: 20, Type: dto.NotificationTypeMessage, EntityID: 30}
-	if err := client.deliver(context.Background(), want); err != nil {
-		t.Fatal(err)
-	}
-	if received != want {
-		t.Fatalf("received = %+v, want %+v", received, want)
-	}
-}
-
 type fakeNotificationDelivery struct {
 	err       error
-	delivered []dto.CreateNotificationReq
+	delivered []notifications.Job
 }
 
-func (d *fakeNotificationDelivery) deliver(_ context.Context, req dto.CreateNotificationReq) error {
+type retryAfterDeliveryError struct {
+	delay time.Duration
+}
+
+func (e retryAfterDeliveryError) Error() string {
+	return "provider requested retry delay"
+}
+
+func (e retryAfterDeliveryError) RetryAfter() time.Duration {
+	return e.delay
+}
+
+func (d *fakeNotificationDelivery) deliver(_ context.Context, job notifications.Job) error {
 	if d.err != nil {
 		return d.err
 	}
-	d.delivered = append(d.delivered, req)
+	d.delivered = append(d.delivered, job)
 	return nil
 }
 
 func TestClaimNotificationOutboxBatchMarksPublishing(t *testing.T) {
 	db := newNotificationOutboxTestDB(t)
-	if err := EnqueueNotificationOutbox(db, dto.CreateNotificationReq{
+	if err := EnqueueNotificationOutbox(db, notifications.Job{
 		RecipientID: 10,
 		ActorID:     20,
-		Type:        dto.NotificationTypeFriendRequest,
+		Type:        notifications.TypeFriendRequest,
 		EntityID:    20,
 	}); err != nil {
 		t.Fatal(err)
@@ -82,6 +63,19 @@ func TestClaimNotificationOutboxBatchMarksPublishing(t *testing.T) {
 	}
 }
 
+func TestNotificationOutboxWorkerLeaseCoversOneDelivery(t *testing.T) {
+	if notificationOutboxBatchSize != 1 {
+		t.Fatalf("runtime batch size = %d, want one sequential delivery per lease", notificationOutboxBatchSize)
+	}
+	if notificationDeliveryTimeout >= notificationOutboxLease {
+		t.Fatalf(
+			"delivery timeout %s must be shorter than lease %s",
+			notificationDeliveryTimeout,
+			notificationOutboxLease,
+		)
+	}
+}
+
 func TestClaimNotificationOutboxBatchReclaimsExpiredLease(t *testing.T) {
 	db := newNotificationOutboxTestDB(t)
 	now := time.Now()
@@ -89,7 +83,7 @@ func TestClaimNotificationOutboxBatchReclaimsExpiredLease(t *testing.T) {
 	item := models.NotificationOutbox{
 		RecipientID:   10,
 		ActorID:       20,
-		Type:          dto.NotificationTypeFriendRequest,
+		Type:          notifications.TypeFriendRequest,
 		DedupeKey:     "expired-lease",
 		Status:        NotificationOutboxStatusPublishing,
 		Attempts:      1,
@@ -113,12 +107,47 @@ func TestClaimNotificationOutboxBatchReclaimsExpiredLease(t *testing.T) {
 	}
 }
 
+func TestClaimNotificationOutboxBatchExhaustsExpiredFinalLease(t *testing.T) {
+	db := newNotificationOutboxTestDB(t)
+	now := time.Now()
+	expired := now.Add(-time.Second)
+	item := models.NotificationOutbox{
+		RecipientID:   10,
+		ActorID:       20,
+		Type:          notifications.TypeFriendRequest,
+		DedupeKey:     "expired-final-lease",
+		Status:        NotificationOutboxStatusPublishing,
+		Attempts:      notificationOutboxMaxAttempts,
+		NextAttemptAt: now.Add(-time.Minute),
+		LeaseToken:    "dead-worker",
+		LeaseUntil:    &expired,
+	}
+	if err := db.Create(&item).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := claimNotificationOutboxBatch(context.Background(), db, 10, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("claimed items = %+v, want final expired lease exhausted without another delivery", items)
+	}
+	var reloaded models.NotificationOutbox
+	if err := db.First(&reloaded, item.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.Status != NotificationOutboxStatusExhausted || reloaded.LeaseUntil != nil || reloaded.LeaseToken != "" {
+		t.Fatalf("expired final lease = %+v, want exhausted and released", reloaded)
+	}
+}
+
 func TestDeliverNotificationOutboxBatchMarksSent(t *testing.T) {
 	db := newNotificationOutboxTestDB(t)
-	if err := EnqueueNotificationOutbox(db, dto.CreateNotificationReq{
+	if err := EnqueueNotificationOutbox(db, notifications.Job{
 		RecipientID: 10,
 		ActorID:     20,
-		Type:        dto.NotificationTypeFriendRequest,
+		Type:        notifications.TypeFriendRequest,
 		EntityID:    20,
 	}); err != nil {
 		t.Fatal(err)
@@ -147,16 +176,16 @@ func TestDeliverNotificationOutboxBatchMarksSent(t *testing.T) {
 
 func TestDeliverNotificationOutboxBatchRetriesTemporaryFailure(t *testing.T) {
 	db := newNotificationOutboxTestDB(t)
-	if err := EnqueueNotificationOutbox(db, dto.CreateNotificationReq{
+	if err := EnqueueNotificationOutbox(db, notifications.Job{
 		RecipientID: 10,
 		ActorID:     20,
-		Type:        dto.NotificationTypeFriendRequest,
+		Type:        notifications.TypeFriendRequest,
 		EntityID:    20,
 	}); err != nil {
 		t.Fatal(err)
 	}
 
-	delivery := &fakeNotificationDelivery{err: errors.New("notifications service unavailable")}
+	delivery := &fakeNotificationDelivery{err: errors.New("FCM temporarily unavailable")}
 	processed, err := deliverNotificationOutboxBatch(context.Background(), db, delivery.deliver, 10)
 	if err != nil {
 		t.Fatal(err)
@@ -174,6 +203,99 @@ func TestDeliverNotificationOutboxBatchRetriesTemporaryFailure(t *testing.T) {
 	}
 	if !item.NextAttemptAt.After(time.Now()) {
 		t.Fatalf("next_attempt_at = %s, want future retry", item.NextAttemptAt)
+	}
+}
+
+func TestDeliverNotificationOutboxBatchStopsPermanentFailure(t *testing.T) {
+	db := newNotificationOutboxTestDB(t)
+	if err := EnqueueNotificationOutbox(db, notifications.Job{
+		RecipientID: 10,
+		ActorID:     20,
+		Type:        notifications.TypeFriendRequest,
+		EntityID:    20,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	delivery := &fakeNotificationDelivery{err: fmt.Errorf(
+		"%w: invalid FCM request",
+		notifications.ErrPermanentDelivery,
+	)}
+	if _, err := deliverNotificationOutboxBatch(
+		context.Background(),
+		db,
+		delivery.deliver,
+		10,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	var item models.NotificationOutbox
+	if err := db.First(&item).Error; err != nil {
+		t.Fatal(err)
+	}
+	if item.Status != NotificationOutboxStatusPermanentFailed ||
+		item.Attempts != 1 ||
+		item.LastError == "" {
+		t.Fatalf("outbox item after permanent failure = %+v", item)
+	}
+}
+
+func TestDeliverNotificationOutboxBatchHonorsRetryAfter(t *testing.T) {
+	db := newNotificationOutboxTestDB(t)
+	if err := EnqueueNotificationOutbox(db, notifications.Job{
+		RecipientID: 10,
+		ActorID:     20,
+		Type:        notifications.TypeFriendRequest,
+		EntityID:    20,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	started := time.Now()
+	delivery := &fakeNotificationDelivery{err: retryAfterDeliveryError{delay: 2 * time.Minute}}
+	if _, err := deliverNotificationOutboxBatch(context.Background(), db, delivery.deliver, 10); err != nil {
+		t.Fatal(err)
+	}
+
+	var item models.NotificationOutbox
+	if err := db.First(&item).Error; err != nil {
+		t.Fatal(err)
+	}
+	if item.NextAttemptAt.Before(started.Add(2 * time.Minute)) {
+		t.Fatalf("next_attempt_at = %s, want Retry-After minimum", item.NextAttemptAt)
+	}
+}
+
+func TestFinalizeNotificationOutboxExhaustsTransientFailure(t *testing.T) {
+	db := newNotificationOutboxTestDB(t)
+	item := models.NotificationOutbox{
+		RecipientID:   10,
+		ActorID:       20,
+		Type:          notifications.TypeFriendRequest,
+		DedupeKey:     "exhausted-transient",
+		Status:        NotificationOutboxStatusPublishing,
+		Attempts:      notificationOutboxMaxAttempts,
+		NextAttemptAt: time.Now(),
+		LeaseToken:    "worker",
+	}
+	if err := db.Create(&item).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := finalizeNotificationOutboxDelivery(
+		context.Background(),
+		db,
+		item,
+		errors.New("temporary failure"),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&item, item.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if item.Status != NotificationOutboxStatusExhausted {
+		t.Fatalf("status = %q, want %q", item.Status, NotificationOutboxStatusExhausted)
 	}
 }
 

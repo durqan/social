@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"tester/internal/dto"
 	"tester/internal/middleware"
 	"tester/internal/models"
+	"tester/internal/notifications"
 	"tester/internal/repository"
 	"tester/internal/services"
 
@@ -88,15 +88,13 @@ func handleWebSocketSendMessage(ctx context.Context, userID uint, rawPayload jso
 	}
 
 	var payload struct {
-		ToID                   uint                              `json:"to_id"`
-		Content                string                            `json:"content"`
-		Attachments            []services.MessageAttachmentInput `json:"attachments"`
-		ReplyToMessageID       *uint                             `json:"replyToMessageId"`
-		ReplyToMessageIDLegacy *uint                             `json:"reply_to_message_id"`
-		EncryptionVersion      int                               `json:"encryption_version"`
-		EncryptionVersionCamel int                               `json:"encryptionVersion"`
-		Ciphertext             string                            `json:"ciphertext"`
-		Nonce                  string                            `json:"nonce"`
+		ToID              uint                              `json:"to_id"`
+		Content           string                            `json:"content"`
+		Attachments       []services.MessageAttachmentInput `json:"attachments"`
+		ReplyToMessageID  *uint                             `json:"replyToMessageId"`
+		EncryptionVersion int                               `json:"encryption_version"`
+		Ciphertext        string                            `json:"ciphertext"`
+		Nonce             string                            `json:"nonce"`
 	}
 
 	if err := json.Unmarshal(rawPayload, &payload); err != nil {
@@ -115,12 +113,7 @@ func handleWebSocketSendMessage(ctx context.Context, userID uint, rawPayload jso
 		return
 	}
 
-	replyToMessageID := payload.ReplyToMessageID
-	if replyToMessageID == nil {
-		replyToMessageID = payload.ReplyToMessageIDLegacy
-	}
-
-	fullMessage, err := services.SendMessage(dbInstance, userID, payload.ToID, payload.Content, attachments, replyToMessageID, requestEncryption(payload.EncryptionVersion, payload.EncryptionVersionCamel, payload.Ciphertext, payload.Nonce))
+	fullMessage, err := services.SendMessage(dbInstance, userID, payload.ToID, payload.Content, attachments, payload.ReplyToMessageID, requestEncryption(payload.EncryptionVersion, payload.Ciphertext, payload.Nonce))
 	if errors.Is(err, services.ErrMessageContentRequired) {
 		log.Println("Invalid message data")
 		return
@@ -671,7 +664,7 @@ func forwardCallEvent(ctx context.Context, eventType string, fromID uint, payloa
 	}
 	for _, replaced := range transition.Replaced {
 		sendCallStateEvent(ctx, "call:replaced", fromID, replaced.CallID, replaced.CallerID, replaced.CalleeID)
-		enqueueCallStateNotification(dbInstance, replaced.CalleeID, replaced.CallerID, dto.NotificationTypeCallEnded, replaced.CallID, conversationIDForCall(replaced), replaced.CallType)
+		enqueueCallStateNotification(dbInstance, replaced.CalleeID, replaced.CallerID, notifications.TypeCallEnded, replaced.CallID, conversationIDForCall(replaced), replaced.CallType)
 		log.Printf("call state transition: call_id=%s from=ringing to=replaced reason=new_offer caller_id=%d callee_id=%d", replaced.CallID, replaced.CallerID, replaced.CalleeID)
 	}
 	notificationCallType := transition.CallType
@@ -686,10 +679,10 @@ func forwardCallEvent(ctx context.Context, eventType string, fromID uint, payloa
 		enqueueIncomingCallNotification(dbInstance, toID, fromID, callID, fromID, notificationCallType)
 	}
 	if eventType == "call:end" {
-		enqueueCallStateNotification(dbInstance, toID, fromID, dto.NotificationTypeCallEnded, callID, fromID, notificationCallType)
+		enqueueCallStateNotification(dbInstance, toID, fromID, notifications.TypeCallEnded, callID, fromID, notificationCallType)
 	}
 	if eventType == "call:reject" {
-		enqueueCallStateNotification(dbInstance, toID, fromID, dto.NotificationTypeCallRejected, callID, fromID, notificationCallType)
+		enqueueCallStateNotification(dbInstance, toID, fromID, notifications.TypeCallRejected, callID, fromID, notificationCallType)
 	}
 
 	eventPayload := gin.H{
@@ -739,7 +732,7 @@ func emitExpiredCallTimeouts(ctx context.Context, database *gorm.DB) {
 	}
 	for _, call := range expired {
 		sendCallStateEvent(ctx, "call:timeout", call.CallerID, call.CallID, call.CallerID, call.CalleeID)
-		enqueueCallStateNotification(database, call.CalleeID, call.CallerID, dto.NotificationTypeCallMissed, call.CallID, conversationIDForCall(call), call.CallType)
+		enqueueCallStateNotification(database, call.CalleeID, call.CallerID, notifications.TypeCallMissed, call.CallID, conversationIDForCall(call), call.CallType)
 		log.Printf("call state transition: call_id=%s from=ringing to=missed reason=server_timeout caller_id=%d callee_id=%d", call.CallID, call.CallerID, call.CalleeID)
 	}
 
@@ -750,7 +743,7 @@ func emitExpiredCallTimeouts(ctx context.Context, database *gorm.DB) {
 	}
 	for _, call := range staleActive {
 		sendCallStateEvent(ctx, "call:end", call.CallerID, call.CallID, call.CallerID, call.CalleeID)
-		enqueueCallStateNotification(database, call.CalleeID, call.CallerID, dto.NotificationTypeCallEnded, call.CallID, conversationIDForCall(call), call.CallType)
+		enqueueCallStateNotification(database, call.CalleeID, call.CallerID, notifications.TypeCallEnded, call.CallID, conversationIDForCall(call), call.CallType)
 		log.Printf("call state transition: call_id=%s from=answered to=ended reason=heartbeat_timeout caller_id=%d callee_id=%d", call.CallID, call.CallerID, call.CalleeID)
 	}
 }

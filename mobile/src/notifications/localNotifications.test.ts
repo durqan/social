@@ -7,7 +7,6 @@ const mockNotifee = {
   openNotificationSettings: jest.fn(),
 };
 const mockStorage = new Map<string, string>();
-const mockNormalizeNotificationData = jest.fn((data = {}) => data);
 
 jest.mock('@notifee/react-native', () => ({
   __esModule: true,
@@ -37,9 +36,6 @@ jest.mock('@notifee/react-native', () => ({
     PRESS: 1,
   },
 }));
-jest.mock('@social/shared', () => ({
-  normalizeNotificationData: mockNormalizeNotificationData,
-}), { virtual: true });
 jest.mock('@react-native-async-storage/async-storage', () => ({
   getItem: jest.fn((key: string) => Promise.resolve(mockStorage.get(key) ?? null)),
   setItem: jest.fn((key: string, value: string) => {

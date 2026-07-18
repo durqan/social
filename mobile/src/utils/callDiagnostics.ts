@@ -1,6 +1,5 @@
 import {
   API_BASE_URL,
-  NOTIFICATIONS_BASE_URL,
   TURN_URLS,
   WEBRTC_FORCE_RELAY,
   WS_URL,
@@ -104,7 +103,6 @@ export function logCallEnvOnce(source = 'app_start') {
   envLogged = true;
 
   const apiBaseURL = sanitizeEndpoint(API_BASE_URL);
-  const notificationsBaseURL = sanitizeEndpoint(NOTIFICATIONS_BASE_URL);
   const wsURL = sanitizeEndpoint(WS_URL);
   const releaseMode = !__DEV__;
 
@@ -112,7 +110,6 @@ export function logCallEnvOnce(source = 'app_start') {
     source,
     mode: releaseMode ? 'release' : 'debug',
     apiBaseURL,
-    notificationsBaseURL,
     wsURL,
     turnConfigured: TURN_URLS.length > 0,
     forceRelay: WEBRTC_FORCE_RELAY,

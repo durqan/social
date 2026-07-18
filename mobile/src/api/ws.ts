@@ -5,7 +5,7 @@ import {
   type CallSessionDescription,
   type CallType,
   type WsEvent,
-} from '@social/shared';
+} from './wsEvents';
 
 import { WS_URL } from '../config/env';
 import type { EncryptedMessagePayload } from '../crypto/encryptMessage';
@@ -21,6 +21,7 @@ import {
   sanitizeEndpoint,
 } from '../utils/callDiagnostics';
 
+export { WS_EVENTS };
 export type { CallIceCandidate, CallSessionDescription, CallType, WsEvent };
 
 type WsHandler = (event: WsEvent) => void;

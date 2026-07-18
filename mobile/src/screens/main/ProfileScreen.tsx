@@ -16,7 +16,7 @@ import {
 import {
   AVATAR_IMAGE_MAX_BYTES,
   AVATAR_IMAGE_MIME_TYPES,
-} from '@social/shared';
+} from '../../config/media';
 import { getApiErrorMessage } from '../../api/http';
 import { userApi } from '../../api/users';
 import { AppButton } from '../../components/AppButton';

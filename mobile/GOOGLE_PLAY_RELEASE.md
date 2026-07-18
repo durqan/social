@@ -36,7 +36,6 @@ Recommended version and production endpoint inputs:
 export SOCIAL_VERSION_CODE=1
 export SOCIAL_VERSION_NAME=1.0.0
 export SOCIAL_API_BASE_URL=https://example.com/api
-export SOCIAL_NOTIFICATIONS_BASE_URL=https://example.com/notifications-api
 ```
 
 Optional call connectivity inputs:
@@ -69,7 +68,6 @@ Workflow: `.github/workflows/mobile-android-release.yml`
 Repository variables:
 
 - `SOCIAL_API_BASE_URL`, for example `https://example.com/api`
-- `SOCIAL_NOTIFICATIONS_BASE_URL`, if notifications are served from a separate host/path
 - `SOCIAL_VERSION_CODE`, optional; defaults to `github.run_number`
 - `SOCIAL_VERSION_NAME`, optional; defaults to `1.0.0`
 - `SOCIAL_TURN_URLS`, optional; when set, include UDP TURN and TCP/TLS TURN on port 443

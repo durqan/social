@@ -13,7 +13,11 @@ import { Download, Video as VideoIcon } from 'lucide-react-native';
 
 import { DiagnosticVideo } from '../../../components/DiagnosticVideo';
 import { assetURL } from '../../../config/env';
-import type { Message, MessageAttachment, MessageLinkPreview } from '@social/shared';
+import type {
+  Message,
+  MessageAttachment,
+  MessageLinkPreview,
+} from '../../../api/types';
 import type { ThemeColors } from '../../../theme/themes';
 import { formatDuration, formatMessageTime } from '../../../utils/format';
 import { createChatThemeStyles, styles } from '../lib/chatStyles';

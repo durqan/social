@@ -4,12 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"log"
-	"sync"
 	"time"
 
 	"tester/internal/auth"
-	"tester/internal/dto"
 	"tester/internal/middleware"
+	"tester/internal/notifications"
 	"tester/internal/repository"
 	"tester/internal/services"
 
@@ -17,13 +16,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
-
-var onlineUsers = struct {
-	mu    sync.RWMutex
-	users map[uint]bool
-}{
-	users: make(map[uint]bool),
-}
 
 var dbInstance *gorm.DB
 var websocketContext = context.Background()
@@ -78,17 +70,12 @@ func WebSocketHandler(c *gin.Context) {
 	defer conn.Close(websocket.StatusNormalClosure, "")
 	conn.SetReadLimit(websocketMaxMessageSize)
 
-	client := clients.set(userID, conn)
+	client, becameOnline := clients.set(userID, conn)
 	if _, err := services.MarkUserActivity(dbInstance, userID); err != nil {
 		log.Println("failed to update websocket connect activity:", err)
 	}
 
-	onlineUsers.mu.Lock()
-	wasOnline := onlineUsers.users[userID]
-	onlineUsers.users[userID] = true
-	onlineUsers.mu.Unlock()
-
-	if !wasOnline {
+	if becameOnline {
 		broadcastPresence(userID, true, nil)
 	}
 
@@ -118,9 +105,6 @@ func WebSocketHandler(c *gin.Context) {
 
 func ShutdownWebSockets() {
 	clients.closeAll(websocket.StatusGoingAway, "server shutdown")
-	onlineUsers.mu.Lock()
-	onlineUsers.users = make(map[uint]bool)
-	onlineUsers.mu.Unlock()
 }
 
 func keepWebSocketAlive(ctx context.Context, client *websocketClient) {
@@ -152,10 +136,6 @@ func removeWebSocketClient(userID uint, client *websocketClient, reason string) 
 		return
 	}
 
-	onlineUsers.mu.Lock()
-	delete(onlineUsers.users, userID)
-	onlineUsers.mu.Unlock()
-
 	lastSeenAt, err := services.ForceUserActivity(dbInstance, userID)
 	if err != nil {
 		log.Println("failed to update last_seen_at:", err)
@@ -183,7 +163,7 @@ func endActiveCallsForOfflineUser(userID uint) {
 		}
 
 		sendCallStateEvent(context.Background(), "call:end", userID, call.CallID, call.CallerID, call.CalleeID)
-		enqueueCallStateNotification(dbInstance, peerID, userID, dto.NotificationTypeCallEnded, call.CallID, conversationIDForCall(call), call.CallType)
+		enqueueCallStateNotification(dbInstance, peerID, userID, notifications.TypeCallEnded, call.CallID, conversationIDForCall(call), call.CallType)
 		log.Printf("call state transition: call_id=%s from=active to=ended reason=participant_offline user_id=%d caller_id=%d callee_id=%d", call.CallID, userID, call.CallerID, call.CalleeID)
 	}
 }

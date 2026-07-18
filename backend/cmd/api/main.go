@@ -14,6 +14,7 @@ import (
 	"tester/internal/config"
 	"tester/internal/db"
 	"tester/internal/handlers"
+	"tester/internal/notifications"
 	"tester/internal/server"
 	"tester/internal/services"
 	"tester/internal/storage"
@@ -45,18 +46,19 @@ func main() {
 		log.Fatal("failed to migrate database:", err)
 	}
 
-	outboxDone := services.StartNotificationOutboxWorker(
-		runtimeCtx,
-		database,
-		cfg.NotificationsURL,
-		cfg.NotificationsInternalToken,
-	)
+	notificationService := notifications.NewService(database, handlers.IsConversationActive)
+	outboxDone := services.StartNotificationOutboxWorker(runtimeCtx, database, notificationService)
 	services.StartUnverifiedUserCleanup(database)
 	services.StartAbandonedUploadCleanup(database)
 
-	router := server.NewRouter(runtimeCtx, database)
+	router := server.NewRouter(runtimeCtx, database, notificationService)
 	messageUpdatesDone := handlers.StartMessageUpdateSubscriber(runtimeCtx, database)
-	httpServer := &http.Server{Addr: ":" + cfg.Port, Handler: router}
+	httpServer := &http.Server{
+		Addr:              ":" + cfg.Port,
+		Handler:           router,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+	}
 	serverErrors := make(chan error, 1)
 
 	log.Printf("Server starting on port %s", cfg.Port)

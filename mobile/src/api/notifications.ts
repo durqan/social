@@ -1,4 +1,3 @@
-import { notificationsURL } from '../config/env';
 import {
   apiCacheKey,
   apiRequest,
@@ -25,9 +24,7 @@ function notificationRequestOptions(
 ): RequestOptions {
   return {
     ...options,
-    resolveURL: notificationsURL,
     includeCookieHeader: true,
-    csrf: false,
     errorMessage: 'Не удалось обновить настройки уведомлений',
   };
 }

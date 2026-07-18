@@ -293,7 +293,6 @@ gradle.taskGraph.whenReady { taskGraph ->
     }
 
     validatePublicHttpsUrl("SOCIAL_API_BASE_URL", propOrEnv("SOCIAL_API_BASE_URL"), true)
-    validatePublicHttpsUrl("SOCIAL_NOTIFICATIONS_BASE_URL", propOrEnv("SOCIAL_NOTIFICATIONS_BASE_URL"))
     validateTurnConfig()
 }
 

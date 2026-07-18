@@ -8,10 +8,9 @@ import React, {
   useState,
   type ReactNode,
 } from 'react';
-import { WS_EVENTS } from '@social/shared';
 
 import { messageApi } from '../api/messages';
-import { chatSocket, type WsEvent } from '../api/ws';
+import { WS_EVENTS, chatSocket, type WsEvent } from '../api/ws';
 import { useAuth } from './AuthContext';
 import { useAppLifecycle } from './AppLifecycleContext';
 import { useAppResumeEffect } from '../utils/useAppResumeEffect';

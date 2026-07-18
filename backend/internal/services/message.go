@@ -19,6 +19,7 @@ import (
 	"tester/internal/dto"
 	"tester/internal/messagecrypto"
 	"tester/internal/models"
+	"tester/internal/notifications"
 	"tester/internal/repository"
 	"tester/internal/storage"
 
@@ -213,11 +214,11 @@ func SendMessage(db *gorm.DB, fromID, toID uint, content string, attachments []m
 		}
 		message = fullMessage
 
-		if err := EnqueueNotificationOutbox(tx, dto.CreateNotificationReq{
-			Action:         "create",
+		if err := EnqueueNotificationOutbox(tx, notifications.Job{
+			Action:         notifications.ActionCreate,
 			RecipientID:    toID,
 			ActorID:        fromID,
-			Type:           dto.NotificationTypeMessage,
+			Type:           notifications.TypeMessage,
 			EntityID:       message.ID,
 			ConversationID: fromID,
 		}); err != nil {
@@ -328,11 +329,11 @@ func ForwardMessage(db *gorm.DB, userID uint, sourceMessageID uint, toIDs []uint
 			if err != nil {
 				return err
 			}
-			if err := EnqueueNotificationOutbox(tx, dto.CreateNotificationReq{
-				Action:         "create",
+			if err := EnqueueNotificationOutbox(tx, notifications.Job{
+				Action:         notifications.ActionCreate,
 				RecipientID:    toID,
 				ActorID:        userID,
-				Type:           dto.NotificationTypeMessage,
+				Type:           notifications.TypeMessage,
 				EntityID:       fullMessage.ID,
 				ConversationID: userID,
 			}); err != nil {
@@ -464,11 +465,11 @@ func ForwardEncryptedMessage(db *gorm.DB, userID uint, sourceMessageID uint, inp
 			if err != nil {
 				return err
 			}
-			if err := EnqueueNotificationOutbox(tx, dto.CreateNotificationReq{
-				Action:         "create",
+			if err := EnqueueNotificationOutbox(tx, notifications.Job{
+				Action:         notifications.ActionCreate,
 				RecipientID:    toID,
 				ActorID:        userID,
-				Type:           dto.NotificationTypeMessage,
+				Type:           notifications.TypeMessage,
 				EntityID:       fullMessage.ID,
 				ConversationID: userID,
 			}); err != nil {

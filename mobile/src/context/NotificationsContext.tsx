@@ -8,7 +8,6 @@ import React, {
   useState,
   type ReactNode,
 } from 'react';
-import { WS_EVENTS } from '@social/shared';
 
 import { useAppLifecycle } from './AppLifecycleContext';
 import { useAuth } from './AuthContext';
@@ -18,7 +17,7 @@ import {
   type MarkNotificationsReadPayload,
 } from '../api/notifications';
 import { getApiErrorMessage } from '../api/http';
-import { chatSocket, type WsEvent } from '../api/ws';
+import { WS_EVENTS, chatSocket, type WsEvent } from '../api/ws';
 import type { SocialNotification } from '../api/types';
 import { initializePushNotifications } from '../notifications/pushNotifications';
 import type { MobileNotificationData } from '../notifications/types';

@@ -25,7 +25,6 @@ import {
     type MediaStreamTrack,
 } from 'react-native-webrtc';
 import NetInfo from '@react-native-community/netinfo';
-import { WS_EVENTS } from '@social/shared';
 
 import {
     callsApi,
@@ -34,6 +33,7 @@ import {
 } from '../api/calls';
 import { userApi } from '../api/users';
 import {
+    WS_EVENTS,
     chatSocket,
     type CallIceCandidate,
     type CallSessionDescription,

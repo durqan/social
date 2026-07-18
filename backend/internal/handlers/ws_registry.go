@@ -75,7 +75,7 @@ func newWebsocketRegistry() *websocketRegistry {
 	}
 }
 
-func (r *websocketRegistry) set(userID uint, conn *websocket.Conn) *websocketClient {
+func (r *websocketRegistry) set(userID uint, conn *websocket.Conn) (*websocketClient, bool) {
 	client := &websocketClient{
 		userID: userID,
 		conn:   conn,
@@ -84,12 +84,13 @@ func (r *websocketRegistry) set(userID uint, conn *websocket.Conn) *websocketCli
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if r.clients[userID] == nil {
+	becameOnline := len(r.clients[userID]) == 0
+	if becameOnline {
 		r.clients[userID] = make(map[*websocketClient]struct{})
 	}
 	r.clients[userID][client] = struct{}{}
 
-	return client
+	return client, becameOnline
 }
 
 func (r *websocketRegistry) getAll(userID uint) []*websocketClient {
@@ -167,6 +168,28 @@ func (r *websocketRegistry) setActiveConversation(userID uint, client *websocket
 	client.activeConversationID = conversationID
 	client.stateMu.Unlock()
 	return true
+}
+
+func (r *websocketRegistry) hasActiveConversation(userID uint, conversationID uint) bool {
+	if userID == 0 || conversationID == 0 {
+		return false
+	}
+	for _, client := range r.getAll(userID) {
+		client.stateMu.RLock()
+		active := client.activeConversationID == conversationID
+		client.stateMu.RUnlock()
+		if active {
+			return true
+		}
+	}
+	return false
+}
+
+// IsConversationActive reports whether any live connection is currently
+// displaying the conversation. The notification worker uses this existing
+// WebSocket state to suppress redundant message pushes.
+func IsConversationActive(userID uint, conversationID uint) bool {
+	return clients.hasActiveConversation(userID, conversationID)
 }
 
 func isClosedWebSocketError(err error) bool {

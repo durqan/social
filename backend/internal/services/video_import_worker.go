@@ -130,8 +130,10 @@ func RunVideoImportWorker(ctx context.Context, db *gorm.DB, cfg VideoImportWorke
 			if _, exists := pending[job.LinkPreviewID]; exists {
 				continue
 			}
+			if !tryQueueVideoImportJob(ctx, jobs, job) {
+				return
+			}
 			pending[job.LinkPreviewID] = struct{}{}
-			jobs <- job
 			capacity--
 			if capacity == 0 {
 				return
@@ -154,6 +156,20 @@ func RunVideoImportWorker(ctx context.Context, db *gorm.DB, cfg VideoImportWorke
 		case <-ticker.C:
 			schedule()
 		}
+	}
+}
+
+func tryQueueVideoImportJob(ctx context.Context, jobs chan<- VideoImportJob, job VideoImportJob) bool {
+	if ctx.Err() != nil {
+		return false
+	}
+	select {
+	case jobs <- job:
+		return true
+	case <-ctx.Done():
+		return false
+	default:
+		return false
 	}
 }
 
@@ -230,7 +246,7 @@ func classifyVideoDownloadError(err error) string {
 func ProcessVideoImportJob(ctx context.Context, db *gorm.DB, cfg VideoImportWorkerConfig, job VideoImportJob) error {
 	tempDir := filepath.Join(defaultString(cfg.TempRoot, defaultVideoImportTempRoot), job.JobID)
 	if err := os.MkdirAll(tempDir, 0o700); err != nil {
-		return err
+		return failVideoImport(ctx, db, job, "Не удалось подготовить обработку видео", err)
 	}
 	defer os.RemoveAll(tempDir)
 
@@ -387,9 +403,6 @@ func ProcessVideoImportJob(ctx context.Context, db *gorm.DB, cfg VideoImportWork
 	err = db.Transaction(func(tx *gorm.DB) error {
 		var message models.Message
 		if err := tx.Where("id = ?", job.MessageID).First(&message).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil
-			}
 			return err
 		}
 		attachment := models.MessageAttachment{
@@ -414,10 +427,6 @@ func ProcessVideoImportJob(ctx context.Context, db *gorm.DB, cfg VideoImportWork
 	if err != nil {
 		return failVideoImport(ctx, db, job, "Не удалось сохранить видео", err)
 	}
-	if attachmentID == 0 {
-		return nil
-	}
-
 	videoKey := fmt.Sprintf("chat-videos/%d/%d.mp4", job.MessageID, attachmentID)
 	thumbKey := fmt.Sprintf("chat-video-thumbnails/%d/%d.jpg", job.MessageID, attachmentID)
 

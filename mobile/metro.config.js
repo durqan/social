@@ -1,7 +1,4 @@
-const { getDefaultConfig, mergeConfig } = require('@react-native/metro-config');
-const path = require('path');
-
-const sharedRoot = path.resolve(__dirname, '../packages/shared');
+const { getDefaultConfig } = require('@react-native/metro-config');
 
 /**
  * Metro configuration
@@ -9,13 +6,4 @@ const sharedRoot = path.resolve(__dirname, '../packages/shared');
  *
  * @type {import('@react-native/metro-config').MetroConfig}
  */
-const config = {
-  watchFolders: [sharedRoot],
-  resolver: {
-    extraNodeModules: {
-      '@social/shared': sharedRoot,
-    },
-  },
-};
-
-module.exports = mergeConfig(getDefaultConfig(__dirname), config);
+module.exports = getDefaultConfig(__dirname);

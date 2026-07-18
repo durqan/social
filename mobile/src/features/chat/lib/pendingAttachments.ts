@@ -6,8 +6,8 @@ import {
   CHAT_IMAGE_MIME_TYPES,
   CHAT_VIDEO_NOTE_MAX_DURATION_SECONDS,
   CHAT_VIDEO_MIME_TYPES,
-  formatFileSize,
-} from '@social/shared';
+} from '../../../config/media';
+import { formatFileSize } from '../../../utils/format';
 
 import type {
   ChatUploadAttachmentType,

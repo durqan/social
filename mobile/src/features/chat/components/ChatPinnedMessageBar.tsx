@@ -1,7 +1,7 @@
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
 import type { LegendListRef } from '@legendapp/list/react-native';
-import type { Message, PinnedMessage } from '@social/shared';
+import type { Message, PinnedMessage } from '../../../api/types';
 
 import { styles, type ChatThemeStyles } from '../lib/chatStyles';
 import { messagePreviewText } from '../lib/chatUtils';

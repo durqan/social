@@ -5,7 +5,7 @@ import type {
   User,
 } from './types';
 import { normalizeUser } from './types';
-import { AVATAR_IMAGE_MAX_BYTES } from '../config/env';
+import { AVATAR_IMAGE_MAX_BYTES } from '../config/media';
 
 type ApiCallOptions = {
   signal?: AbortSignal;

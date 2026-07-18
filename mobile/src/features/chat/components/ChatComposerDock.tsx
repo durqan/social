@@ -25,7 +25,7 @@ import {
   Video as VideoIcon,
 } from 'lucide-react-native';
 import Video from 'react-native-video';
-import type { Message } from '@social/shared';
+import type { Message } from '../../../api/types';
 
 import type {
   LocalVideoNoteMessage,

@@ -29,6 +29,9 @@ jest.mock('../api/notifications', () => ({
 }));
 jest.mock('../api/ws', () => ({
   chatSocket: mockChatSocket,
+  WS_EVENTS: {
+    CONVERSATION_READ: 'conversation_read',
+  },
 }));
 jest.mock('../notifications/pushNotifications', () => ({
   initializePushNotifications: mockInitializePushNotifications,
@@ -40,16 +43,6 @@ jest.mock('../notifications/pushEffects', () => ({
 jest.mock('../api/http', () => ({
   getApiErrorMessage: jest.fn(() => 'Ошибка'),
 }));
-jest.mock(
-  '@social/shared',
-  () => ({
-    WS_EVENTS: {
-      CONVERSATION_READ: 'conversation_read',
-    },
-  }),
-  { virtual: true },
-);
-
 describe('NotificationsContext', () => {
   beforeEach(() => {
     jest.clearAllMocks();

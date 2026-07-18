@@ -7,7 +7,7 @@ import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { isEmailVerified } from '../../api/auth';
-import type { PostUser } from '@social/shared';
+import type { PostUser } from '../../api/types';
 import { HeroCard } from '../../components/Layout';
 import { EmailVerificationNotice } from '../../components/EmailVerificationNotice';
 import { Screen } from '../../components/Screen';

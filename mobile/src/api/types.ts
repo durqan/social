@@ -1,8 +1,4 @@
-import type { User } from '@social/shared';
-import {
-  normalizeUserAvatarPosition,
-  normalizeUserAvatarScale,
-} from '@social/shared';
+import type { User } from './domain';
 
 export type {
   AuthResponse,
@@ -13,6 +9,7 @@ export type {
   LoginPayload,
   Message,
   MessageAttachment,
+  MessageLinkPreview,
   PaginatedMessages,
   PinnedMessage,
   Post,
@@ -21,7 +18,15 @@ export type {
   SocialNotification,
   UpdateProfilePayload,
   User,
-} from '@social/shared';
+} from './domain';
+
+function normalizeUserAvatarPosition(value: number | null | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 50;
+}
+
+function normalizeUserAvatarScale(value: number | null | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 1;
+}
 
 export function normalizeUser(user: User): User {
   return {

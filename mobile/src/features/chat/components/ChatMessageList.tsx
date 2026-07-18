@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { LegendList, type LegendListRef } from '@legendapp/list/react-native';
 import { ChevronDown, MessageCircle } from 'lucide-react-native';
-import type { Message } from '@social/shared';
+import type { Message } from '../../../api/types';
 
 import { EmptyState } from '../../../components/Feedback';
 import { ChatMessagesSkeleton } from '../../../components/Skeleton';

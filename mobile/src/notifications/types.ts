@@ -1,9 +1,13 @@
-import {
-  normalizeNotificationData as normalizeSharedNotificationData,
-  type MobileNotificationData as SharedMobileNotificationData,
-} from '@social/shared';
-
-export type MobileNotificationData = SharedMobileNotificationData & {
+export type MobileNotificationData = {
+  type: string;
+  actorId?: number;
+  senderId?: number;
+  entityId?: number;
+  messageId?: number;
+  conversationId?: number;
+  callId?: string;
+  callType?: 'audio' | 'video' | string;
+  syncAction?: string;
   title?: string;
   body?: string;
   tag?: string;
@@ -30,15 +34,21 @@ function numberFromValue(value: unknown) {
 export function normalizeNotificationData(
   data?: Record<string, unknown> | null,
 ): MobileNotificationData {
-  const notification = normalizeSharedNotificationData(data);
-
   return {
-    ...notification,
+    type: stringFromValue(data?.type) ?? 'system',
+    actorId: numberFromValue(data?.actor_id),
+    senderId: numberFromValue(data?.sender_id),
+    entityId: numberFromValue(data?.entity_id),
+    messageId: numberFromValue(data?.message_id),
+    conversationId: numberFromValue(data?.conversation_id),
+    callId: stringFromValue(data?.call_id),
+    callType: stringFromValue(data?.call_type),
+    syncAction: stringFromValue(data?.sync_action),
     title: stringFromValue(data?.title),
     body: stringFromValue(data?.body),
     tag: stringFromValue(data?.tag),
-    notificationId: numberFromValue(data?.notification_id ?? data?.notificationId),
-    timestamp: numberFromValue(data?.ts ?? data?.timestamp),
-    callerName: stringFromValue(data?.caller_name ?? data?.callerName),
+    notificationId: numberFromValue(data?.notification_id),
+    timestamp: numberFromValue(data?.ts),
+    callerName: stringFromValue(data?.caller_name),
   };
 }

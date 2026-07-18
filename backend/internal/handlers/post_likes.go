@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"tester/internal/dto"
+	"tester/internal/notifications"
 	"tester/internal/repository"
 
 	"github.com/gin-gonic/gin"
@@ -33,7 +33,7 @@ func TogglePostLike(db *gorm.DB) gin.HandlerFunc {
 				return txErr
 			}
 			if isLiked {
-				return enqueueNotification(tx, post.UserID, userID, dto.NotificationTypePostLiked, postID)
+				return enqueueNotification(tx, post.UserID, userID, notifications.TypePostLiked, postID)
 			}
 			return nil
 		}); err != nil {

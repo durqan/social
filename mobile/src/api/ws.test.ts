@@ -1,24 +1,3 @@
-jest.mock(
-  '@social/shared',
-  () => ({
-    WS_EVENTS: {
-      MESSAGE_SEND: 'message:send',
-      MESSAGE_READ: 'message:read',
-      TYPING_START: 'typing:start',
-      TYPING_STOP: 'typing:stop',
-      CONVERSATION_ACTIVE: 'conversation:active',
-      CONVERSATION_INACTIVE: 'conversation:inactive',
-      CALL_OFFER: 'call:offer',
-      CALL_ANSWER: 'call:answer',
-      CALL_ICE: 'call:ice',
-      CALL_END: 'call:end',
-      CALL_REJECT: 'call:reject',
-      CALL_HEARTBEAT: 'call:heartbeat',
-    },
-  }),
-  { virtual: true },
-);
-
 jest.mock('./http', () => ({
   getCookieHeader: jest.fn(() => Promise.resolve('')),
   refreshSession: jest.fn(() => Promise.resolve()),

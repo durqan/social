@@ -1,8 +1,8 @@
 package handlers
 
 import (
-	"tester/internal/dto"
 	"tester/internal/models"
+	"tester/internal/notifications"
 	"tester/internal/repository"
 
 	"github.com/gin-gonic/gin"
@@ -78,7 +78,7 @@ func CreateComment(db *gorm.DB) gin.HandlerFunc {
 			if err := repository.CreateComment(tx, &comment); err != nil {
 				return err
 			}
-			return enqueueNotification(tx, post.UserID, userID, dto.NotificationTypeCommentCreated, comment.ID)
+			return enqueueNotification(tx, post.UserID, userID, notifications.TypeCommentCreated, comment.ID)
 		}); err != nil {
 			c.JSON(500, gin.H{"error": "failed to create comment"})
 			return

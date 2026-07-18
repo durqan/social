@@ -13,8 +13,8 @@ import {
   CHAT_VIDEO_NOTE_MAX_BYTES,
   CHAT_VIDEO_NOTE_MAX_DURATION_SECONDS,
   CHAT_VIDEO_NOTE_MIME_TYPES,
-} from '../config/env';
-import { formatDuration, formatFileSize } from '@social/shared';
+} from '../config/media';
+import { formatDuration, formatFileSize } from '../utils/format';
 import type { EncryptedAttachmentFields } from '../crypto/attachment';
 import type { EncryptedMessagePayload } from '../crypto/encryptMessage';
 import { apiCacheKey, apiRequest, apiRequestMeta, toQueryString } from './http';
@@ -109,38 +109,6 @@ type EncryptedForwardPayload = Partial<EncryptedMessagePayload> & {
 export type MessageDeleteMode = 'for_me' | 'for_everyone';
 type ApiCallOptions = {
   signal?: AbortSignal;
-};
-type ConversationApiUser = {
-  id?: unknown;
-  name?: unknown;
-  email?: unknown;
-  avatar?: unknown;
-  avatar_position_x?: unknown;
-  avatarPositionX?: unknown;
-  avatar_position_y?: unknown;
-  avatarPositionY?: unknown;
-  avatar_scale?: unknown;
-  avatarScale?: unknown;
-  last_seen_at?: unknown;
-  lastSeenAt?: unknown;
-};
-type ConversationApiShape = Conversation & {
-  user_id?: unknown;
-  userId?: unknown;
-  peer_id?: unknown;
-  peerId?: unknown;
-  recipient_id?: unknown;
-  recipientId?: unknown;
-  other_user_id?: unknown;
-  otherUserId?: unknown;
-  participant_id?: unknown;
-  participantId?: unknown;
-  user?: ConversationApiUser | null;
-  peer?: ConversationApiUser | null;
-  recipient?: ConversationApiUser | null;
-  other_user?: ConversationApiUser | null;
-  otherUser?: ConversationApiUser | null;
-  participant?: ConversationApiUser | null;
 };
 
 function appendUploadFile(
@@ -296,42 +264,6 @@ function extensionFromFileName(fileName: string) {
   return match?.[1]?.toLowerCase() || '';
 }
 
-function finiteNumber(value: unknown) {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value;
-  }
-  if (typeof value === 'string' && value.trim()) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : undefined;
-  }
-  return undefined;
-}
-
-function positiveNumber(value: unknown) {
-  const parsed = finiteNumber(value);
-  return parsed && parsed > 0 ? parsed : undefined;
-}
-
-function stringValue(value: unknown) {
-  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
-}
-
-function firstDefined<T>(...values: Array<T | undefined>) {
-  return values.find(value => value !== undefined);
-}
-
-function conversationPeer(conversation: ConversationApiShape) {
-  return (
-    conversation.user ??
-    conversation.peer ??
-    conversation.recipient ??
-    conversation.other_user ??
-    conversation.otherUser ??
-    conversation.participant ??
-    null
-  );
-}
-
 export function validateLocalVideoNoteMessage(
   videoNote: LocalVideoNoteMessage,
 ) {
@@ -359,54 +291,15 @@ export function validateLocalVideoNoteMessage(
 }
 
 function normalizeConversation(conversation: Conversation): Conversation {
-  const source = conversation as ConversationApiShape;
-  const peer = conversationPeer(source);
-  const peerUserId =
-    positiveNumber(source.user_id) ??
-    positiveNumber(source.userId) ??
-    positiveNumber(source.peer_id) ??
-    positiveNumber(source.peerId) ??
-    positiveNumber(source.recipient_id) ??
-    positiveNumber(source.recipientId) ??
-    positiveNumber(source.other_user_id) ??
-    positiveNumber(source.otherUserId) ??
-    positiveNumber(source.participant_id) ??
-    positiveNumber(source.participantId) ??
-    positiveNumber(peer?.id) ??
-    0;
-
   return {
     ...conversation,
-    user_id: peerUserId,
-    name:
-      stringValue(source.name) ||
-      stringValue(peer?.name) ||
-      stringValue(peer?.email) ||
-      'Пользователь',
-    avatar: stringValue(source.avatar) || stringValue(peer?.avatar) || null,
-    avatar_position_x:
-      firstDefined(
-        finiteNumber(source.avatar_position_x),
-        finiteNumber(peer?.avatar_position_x),
-        finiteNumber(peer?.avatarPositionX),
-      ) ?? 50,
-    avatar_position_y:
-      firstDefined(
-        finiteNumber(source.avatar_position_y),
-        finiteNumber(peer?.avatar_position_y),
-        finiteNumber(peer?.avatarPositionY),
-      ) ?? 50,
-    avatar_scale:
-      firstDefined(
-        finiteNumber(source.avatar_scale),
-        finiteNumber(peer?.avatar_scale),
-        finiteNumber(peer?.avatarScale),
-      ) ?? 1,
-    last_seen_at:
-      stringValue(source.last_seen_at) ||
-      stringValue(peer?.last_seen_at) ||
-      stringValue(peer?.lastSeenAt) ||
-      null,
+    user_id: conversation.user_id,
+    name: conversation.name || 'Пользователь',
+    avatar: conversation.avatar || null,
+    avatar_position_x: conversation.avatar_position_x ?? 50,
+    avatar_position_y: conversation.avatar_position_y ?? 50,
+    avatar_scale: conversation.avatar_scale ?? 1,
+    last_seen_at: conversation.last_seen_at || null,
     last_message: conversation.last_message || '',
     last_message_at: conversation.last_message_at || null,
     last_sender_id: Number(conversation.last_sender_id) || 0,

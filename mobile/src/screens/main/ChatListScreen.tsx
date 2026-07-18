@@ -28,15 +28,14 @@ import {
 import { ApiError, getApiErrorMessage } from '../../api/http';
 import { messageApi } from '../../api/messages';
 import {
-  WS_EVENTS,
   appendConversationPage,
   applyConversationDelta,
   sortConversations,
-  type Conversation,
-  type ConversationDeltaEvent,
   type ConversationVersionMap,
-} from '@social/shared';
-import {chatSocket, type WsEvent} from '../../api/ws';
+} from '../../features/chat/lib/conversationList';
+import {WS_EVENTS, chatSocket, type WsEvent} from '../../api/ws';
+import type { Conversation } from '../../api/types';
+import type { ConversationDeltaEvent } from '../../api/wsEvents';
 import {
   EmptyState,
   ErrorBanner,

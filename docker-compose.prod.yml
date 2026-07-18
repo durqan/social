@@ -72,8 +72,10 @@ services:
       REDIS_PORT: ${REDIS_PORT:-6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       REDIS_DB: ${REDIS_DB:-0}
-      NOTIFICATIONS_INTERNAL_URL: http://notifications:8085
-      NOTIFICATIONS_INTERNAL_TOKEN: ${NOTIFICATIONS_INTERNAL_TOKEN:?NOTIFICATIONS_INTERNAL_TOKEN is required}
+      FCM_PROJECT_ID: ${FCM_PROJECT_ID:-}
+      FIREBASE_SERVICE_ACCOUNT_JSON_BASE64: ${FIREBASE_SERVICE_ACCOUNT_JSON_BASE64:-}
+      FIREBASE_SERVICE_ACCOUNT_JSON: ${FIREBASE_SERVICE_ACCOUNT_JSON:-}
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
       STORAGE_DRIVER: ${STORAGE_DRIVER:-s3}
       STORAGE_LOCAL_ROOT: ${STORAGE_LOCAL_ROOT:-uploads}
       STORAGE_PUBLIC_BASE_URL: ${STORAGE_PUBLIC_BASE_URL:-}
@@ -151,44 +153,6 @@ services:
     networks:
       - social_network
 
-  notifications:
-    image: ${NOTIFICATIONS_IMAGE:-ghcr.io/durqan/social-notifications:latest}
-    container_name: social_notifications
-    restart: unless-stopped
-    pull_policy: always
-    environment:
-      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
-      DB_MAX_OPEN_CONNS: ${NOTIFICATIONS_DB_MAX_OPEN_CONNS:-15}
-      DB_MAX_IDLE_CONNS: ${NOTIFICATIONS_DB_MAX_IDLE_CONNS:-15}
-      DB_CONN_MAX_LIFETIME_MINUTES: ${DB_CONN_MAX_LIFETIME_MINUTES:-30}
-      DB_CONN_MAX_IDLE_TIME_MINUTES: ${DB_CONN_MAX_IDLE_TIME_MINUTES:-5}
-      GIN_MODE: ${GIN_MODE:-release}
-      MESSAGE_ENCRYPTION_KEY: ${MESSAGE_ENCRYPTION_KEY:?MESSAGE_ENCRYPTION_KEY is required}
-      REDIS_HOST: ${REDIS_HOST:-redis}
-      REDIS_PORT: ${REDIS_PORT:-6379}
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-      REDIS_DB: ${REDIS_DB:-0}
-      NOTIFICATIONS_INTERNAL_TOKEN: ${NOTIFICATIONS_INTERNAL_TOKEN:?NOTIFICATIONS_INTERNAL_TOKEN is required}
-      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
-      FCM_PROJECT_ID: ${FCM_PROJECT_ID:-}
-      FIREBASE_SERVICE_ACCOUNT_JSON_BASE64: ${FIREBASE_SERVICE_ACCOUNT_JSON_BASE64:-}
-      FIREBASE_SERVICE_ACCOUNT_JSON: ${FIREBASE_SERVICE_ACCOUNT_JSON:-}
-      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
-      PUSH_WORKERS: ${PUSH_WORKERS:-4}
-      PUSH_QUEUE_SIZE: ${PUSH_QUEUE_SIZE:-256}
-    healthcheck:
-      test: [ "CMD-SHELL", "wget -qO- http://127.0.0.1:8085/health >/dev/null || exit 1" ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - social_network
-
   gateway:
     image: nginx:1.29-alpine
     container_name: social_gateway
@@ -203,8 +167,6 @@ services:
       - ./certbot/conf:/etc/letsencrypt:ro
     depends_on:
       backend:
-        condition: service_healthy
-      notifications:
         condition: service_healthy
     healthcheck:
       test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1/gateway-health" ]
@@ -221,7 +183,6 @@ services:
     volumes:
       - ./certbot/www:/var/www/certbot:rw
       - ./certbot/conf:/etc/letsencrypt:rw
-      - ./ops/certbot/restart-coturn-on-renew.sh:/usr/local/bin/restart-coturn-on-renew.sh:ro
       - coturn_cert_reload:/var/run/certbot-hooks:rw
     entrypoint: /bin/sh
     command:
@@ -229,7 +190,7 @@ services:
       - |
         trap 'exit 0' TERM INT
         while :; do
-          certbot renew --deploy-hook 'sh /usr/local/bin/restart-coturn-on-renew.sh'
+          certbot renew --deploy-hook 'touch /var/run/certbot-hooks/coturn-cert-renewed'
           sleep 12h &
           wait "$!"
         done

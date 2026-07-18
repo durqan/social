@@ -14,6 +14,9 @@ func Migrate(database *gorm.DB) error {
 	if err := cleanupOrphanLinkPreviewVideoAttachments(database); err != nil {
 		return err
 	}
+	if err := prepareNotificationMigrations(database); err != nil {
+		return err
+	}
 
 	if err := database.AutoMigrate(
 		&models.User{},
@@ -34,7 +37,12 @@ func Migrate(database *gorm.DB) error {
 		&models.EmailVerification{},
 		&models.PasswordResetToken{},
 		&models.NotificationOutbox{},
+		&models.Notification{},
+		&models.MobilePushToken{},
 	); err != nil {
+		return err
+	}
+	if err := finishNotificationMigrations(database); err != nil {
 		return err
 	}
 
