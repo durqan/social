@@ -241,7 +241,7 @@ export function ensureMobilePushReady(
 
 async function ensureMobilePushReadyInternal(session: MobilePushSession) {
   if (Platform.OS !== 'android') {
-    // TODO: iOS APNs/FCM registration is intentionally out of scope for now.
+    // This project currently ships only the Android target.
     return false;
   }
 

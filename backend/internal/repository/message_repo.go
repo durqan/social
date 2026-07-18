@@ -14,7 +14,10 @@ import (
 var messageLinkPreviewTableCache sync.Map
 
 func CreateMessage(db *gorm.DB, message *models.Message) error {
-	return db.Create(message).Error
+	if err := db.Create(message).Error; err != nil {
+		return err
+	}
+	return UpsertConversationHeadsForMessage(db, message)
 }
 
 func CreateMessageAttachments(db *gorm.DB, attachments []models.MessageAttachment) error {
@@ -99,142 +102,6 @@ func GetMessageLinkPreviewForUser(db *gorm.DB, previewID, userID uint) (*models.
 	return &preview, err
 }
 
-func GetConversations(db *gorm.DB, userID uint) ([]map[string]interface{}, error) {
-	return GetConversationsPage(db, userID, 0, 0)
-}
-
-func GetConversationsPage(db *gorm.DB, userID uint, limit int, offset int) ([]map[string]interface{}, error) {
-	var conversations []map[string]interface{}
-
-	query := `
-        WITH visible_messages AS (
-            SELECT 
-                m.*,
-                CASE 
-                    WHEN m.from_id = ? THEN m.to_id
-                    ELSE m.from_id
-                END AS peer_user_id
-            FROM messages m
-            WHERE (m.from_id = ? OR m.to_id = ?)
-              AND m.deleted_at IS NULL
-              AND NOT EXISTS (
-                  SELECT 1 FROM message_user_deletions mud
-                  WHERE mud.message_id = m.id AND mud.user_id = ?
-              )
-        ),
-        ranked_messages AS (
-            SELECT 
-                vm.*,
-                ROW_NUMBER() OVER (
-                    PARTITION BY vm.peer_user_id
-                    ORDER BY vm.created_at DESC, vm.id DESC
-                ) AS rn
-            FROM visible_messages vm
-        ),
-        last_messages AS (
-            SELECT * FROM ranked_messages WHERE rn = 1
-        ),
-        attachment_flags AS (
-            SELECT
-                ma.message_id,
-                MAX(CASE WHEN ma.encryption_version > 0 THEN 1 ELSE 0 END) AS has_encrypted_attachment,
-                MAX(CASE WHEN ma.file_type = 'video_note' THEN 1 ELSE 0 END) AS has_video_note,
-                MAX(CASE WHEN ma.file_type = 'voice' THEN 1 ELSE 0 END) AS has_voice,
-                MAX(CASE WHEN ma.file_type = 'video' THEN 1 ELSE 0 END) AS has_video,
-                MAX(CASE WHEN ma.file_type = 'audio' THEN 1 ELSE 0 END) AS has_audio,
-                MAX(CASE WHEN ma.file_type = 'file' THEN 1 ELSE 0 END) AS has_file,
-                MAX(CASE WHEN ma.file_type = 'image' THEN 1 ELSE 0 END) AS has_image
-            FROM message_attachments ma
-            JOIN last_messages lm ON lm.id = ma.message_id
-            GROUP BY ma.message_id
-        ),
-        unread_counts AS (
-            SELECT
-                m.from_id AS peer_user_id,
-                COUNT(*) AS unread_count
-            FROM messages m
-            WHERE m.to_id = ?
-              AND m.is_read = false
-              AND m.deleted_at IS NULL
-              AND NOT EXISTS (
-                  SELECT 1 FROM message_user_deletions mud
-                  WHERE mud.message_id = m.id AND mud.user_id = ?
-              )
-            GROUP BY m.from_id
-        )
-        SELECT 
-                lm.peer_user_id as user_id,
-                u.name,
-                u.avatar,
-                u.avatar_position_x,
-                u.avatar_position_y,
-                u.avatar_scale,
-                u.updated_at,
-                u.updated_at as avatar_updated_at,
-                u.last_seen_at,
-                lm.id as last_message_id,
-                lm.content as last_message_content,
-                lm.encryption_version as last_encryption_version,
-                lm.ciphertext as last_ciphertext,
-                lm.nonce as last_nonce,
-                CASE
-                    WHEN lm.encryption_version > 0 OR COALESCE(af.has_encrypted_attachment, 0) = 1 THEN 'Зашифрованное сообщение'
-                    ELSE COALESCE(
-                        NULLIF(lm.content, ''),
-                        CASE
-                            WHEN COALESCE(af.has_video_note, 0) = 1 THEN 'Видео-сообщение'
-                            WHEN COALESCE(af.has_voice, 0) = 1 THEN 'Голосовое сообщение'
-                            WHEN COALESCE(af.has_video, 0) = 1 THEN 'Видео'
-                            WHEN COALESCE(af.has_audio, 0) = 1 THEN 'Аудио'
-                            WHEN COALESCE(af.has_file, 0) = 1 THEN 'Файл'
-                            WHEN COALESCE(af.has_image, 0) = 1 THEN 'Изображение'
-                            ELSE ''
-                        END
-                    )
-                END as last_message,
-                lm.created_at as last_message_at,
-                lm.from_id as last_sender_id,
-                sender.name as last_sender_name,
-                (lm.from_id = ?) as last_is_mine,
-                lm.is_read as last_read,
-                COALESCE(uc.unread_count, 0) as unread_count,
-                (cp.id IS NOT NULL) as is_pinned
-            FROM last_messages lm
-            JOIN users u ON u.id = lm.peer_user_id
-            JOIN users sender ON sender.id = lm.from_id
-            LEFT JOIN attachment_flags af ON af.message_id = lm.id
-            LEFT JOIN unread_counts uc ON uc.peer_user_id = lm.peer_user_id
-            LEFT JOIN conversation_pins cp
-                ON cp.user_id = ?
-                AND cp.conversation_id = lm.peer_user_id
-        ORDER BY is_pinned DESC, last_message_at DESC
-    `
-	args := []interface{}{userID, userID, userID, userID, userID, userID, userID, userID}
-	if limit > 0 {
-		query += " LIMIT ? OFFSET ?"
-		args = append(args, limit, offset)
-	}
-
-	err := db.Raw(query, args...).Scan(&conversations).Error
-	normalizeScannedMapValues(conversations)
-
-	return conversations, err
-}
-
-func normalizeScannedMapValues(rows []map[string]interface{}) {
-	for _, row := range rows {
-		for key, value := range row {
-			if pointer, ok := value.(*interface{}); ok {
-				if pointer == nil {
-					row[key] = nil
-					continue
-				}
-				row[key] = *pointer
-			}
-		}
-	}
-}
-
 func ConversationExistsForUser(db *gorm.DB, userID, conversationID uint) (bool, error) {
 	if userID == 0 || conversationID == 0 || userID == conversationID {
 		return false, nil
@@ -280,21 +147,30 @@ func CanonicalConversationID(db *gorm.DB, userID, conversationUserID uint) (uint
 }
 
 func PinConversation(db *gorm.DB, userID, conversationID uint) error {
-	pin := models.ConversationPin{
-		UserID:         userID,
-		ConversationID: conversationID,
-	}
-
-	return db.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "user_id"}, {Name: "conversation_id"}},
-		DoNothing: true,
-	}).Create(&pin).Error
+	return db.Transaction(func(tx *gorm.DB) error {
+		pin := models.ConversationPin{
+			UserID:         userID,
+			ConversationID: conversationID,
+		}
+		if err := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "user_id"}, {Name: "conversation_id"}},
+			DoNothing: true,
+		}).Create(&pin).Error; err != nil {
+			return err
+		}
+		return SetConversationHeadPinned(tx, userID, conversationID, true)
+	})
 }
 
 func UnpinConversation(db *gorm.DB, userID, conversationID uint) error {
-	return db.
-		Where("user_id = ? AND conversation_id = ?", userID, conversationID).
-		Delete(&models.ConversationPin{}).Error
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.
+			Where("user_id = ? AND conversation_id = ?", userID, conversationID).
+			Delete(&models.ConversationPin{}).Error; err != nil {
+			return err
+		}
+		return SetConversationHeadPinned(tx, userID, conversationID, false)
+	})
 }
 
 func GetPinnedMessage(db *gorm.DB, conversationID uint) (*models.PinnedMessage, error) {
@@ -370,16 +246,24 @@ func DeletePinnedMessagesByMessageIDs(db *gorm.DB, messageIDs []uint) error {
 }
 
 func MarkMessagesAsRead(db *gorm.DB, fromID, toID uint) (int64, error) {
-	result := db.Model(&models.Message{}).
-		Where(`
-			from_id = ? AND to_id = ? AND is_read = false
-			AND NOT EXISTS (
-				SELECT 1 FROM message_user_deletions mud
-				WHERE mud.message_id = messages.id AND mud.user_id = ?
-			)
-		`, fromID, toID, toID).
-		Update("is_read", true)
-	return result.RowsAffected, result.Error
+	var affected int64
+	err := db.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&models.Message{}).
+			Where(`
+				from_id = ? AND to_id = ? AND is_read = false
+				AND NOT EXISTS (
+					SELECT 1 FROM message_user_deletions mud
+					WHERE mud.message_id = messages.id AND mud.user_id = ?
+				)
+			`, fromID, toID, toID).
+			Update("is_read", true)
+		if result.Error != nil {
+			return result.Error
+		}
+		affected = result.RowsAffected
+		return ResetConversationHeadUnread(tx, toID, fromID)
+	})
+	return affected, err
 }
 
 func GetMessageByID(db *gorm.DB, id uint) (*models.Message, error) {
@@ -461,32 +345,46 @@ func UpdateMessage(db *gorm.DB, message *models.Message) error {
 	return db.Save(message).Error
 }
 
-func DeleteMessage(db *gorm.DB, id uint) error {
-	return db.Delete(&models.Message{}, id).Error
-}
-
 func DeleteMessageForEveryone(db *gorm.DB, id, deletedBy uint) error {
+	var message models.Message
+	if err := db.Unscoped().Select("id", "from_id", "to_id").First(&message, id).Error; err != nil {
+		return err
+	}
+
 	now := time.Now()
-	return db.Model(&models.Message{}).
+	if err := db.Model(&models.Message{}).
 		Where("id = ?", id).
 		Updates(map[string]interface{}{
 			"deleted_at":              now,
 			"deleted_for_everyone_by": deletedBy,
-		}).Error
+		}).Error; err != nil {
+		return err
+	}
+	return RefreshConversationHeadsAfterDeleteForEveryone(db, []models.Message{message})
 }
 
 func DeleteMessagesForEveryone(db *gorm.DB, ids []uint, deletedBy uint) error {
 	if len(ids) == 0 {
 		return nil
 	}
+	var messages []models.Message
+	if err := db.Unscoped().
+		Select("id", "from_id", "to_id").
+		Where("id IN ?", ids).
+		Find(&messages).Error; err != nil {
+		return err
+	}
 
 	now := time.Now()
-	return db.Model(&models.Message{}).
+	if err := db.Model(&models.Message{}).
 		Where("id IN ?", ids).
 		Updates(map[string]interface{}{
 			"deleted_at":              now,
 			"deleted_for_everyone_by": deletedBy,
-		}).Error
+		}).Error; err != nil {
+		return err
+	}
+	return RefreshConversationHeadsAfterDeleteForEveryone(db, messages)
 }
 
 func MarkMessageDeletedForUser(db *gorm.DB, messageID, userID uint) error {
@@ -496,6 +394,13 @@ func MarkMessageDeletedForUser(db *gorm.DB, messageID, userID uint) error {
 func MarkMessagesDeletedForUser(db *gorm.DB, messageIDs []uint, userID uint) error {
 	if len(messageIDs) == 0 {
 		return nil
+	}
+	var messages []models.Message
+	if err := db.
+		Select("id", "from_id", "to_id").
+		Where("id IN ? AND (from_id = ? OR to_id = ?)", messageIDs, userID, userID).
+		Find(&messages).Error; err != nil {
+		return err
 	}
 
 	now := time.Now()
@@ -508,12 +413,15 @@ func MarkMessagesDeletedForUser(db *gorm.DB, messageIDs []uint, userID uint) err
 		})
 	}
 
-	return db.Clauses(clause.OnConflict{
+	if err := db.Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "message_id"}, {Name: "user_id"}},
 		DoUpdates: clause.Assignments(map[string]interface{}{
 			"deleted_at": now,
 		}),
-	}).Create(&deletions).Error
+	}).Create(&deletions).Error; err != nil {
+		return err
+	}
+	return RefreshConversationHeadsAfterDeleteForUser(db, messages, userID)
 }
 
 func GetMessagesBetweenPaginated(db *gorm.DB, userID1, userID2 uint, limit int, beforeID *uint) ([]models.Message, error) {
@@ -745,23 +653,6 @@ func hideDeletedMessageRelationsForUser(db *gorm.DB, userID uint, messages ...*m
 		}
 	}
 	return nil
-}
-
-func DeleteMessagesBatch(db *gorm.DB, ids []uint, userID uint) error {
-	if len(ids) == 0 {
-		return nil
-	}
-
-	var count int64
-	db.Model(&models.Message{}).Where("id IN ? AND (from_id = ? OR to_id = ?)", ids, userID, userID).Count(&count)
-
-	if int(count) != len(ids) {
-		var foundIds []uint
-		db.Model(&models.Message{}).Where("id IN ?", ids).Pluck("id", &foundIds)
-		return errors.New("permission denied")
-	}
-
-	return db.Delete(&models.Message{}, ids).Error
 }
 
 func GetUnreadCount(db *gorm.DB, userID uint) (int64, error) {

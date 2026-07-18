@@ -321,7 +321,7 @@ func TestMarkConversationReadUpdatesReaderLastSeen(t *testing.T) {
 	}
 
 	beforeRead := time.Now().UTC().Add(-time.Second)
-	if err := MarkConversationRead(db, 2, 1); err != nil {
+	if _, err := MarkConversationReadWithResult(db, 2, 1); err != nil {
 		t.Fatal(err)
 	}
 
@@ -621,11 +621,11 @@ func TestConversationListUsesBatchedUnreadAndAttachmentPreview(t *testing.T) {
 	seedAcceptedFriendship(t, db, 1, 2)
 
 	first := models.Message{FromID: 2, ToID: 1, Content: "unread", IsRead: false}
-	if err := db.Create(&first).Error; err != nil {
+	if err := repository.CreateMessage(db, &first); err != nil {
 		t.Fatal(err)
 	}
 	latest := models.Message{FromID: 2, ToID: 1, Content: "", IsRead: false, CreatedAt: time.Now().Add(time.Minute)}
-	if err := db.Create(&latest).Error; err != nil {
+	if err := repository.CreateMessage(db, &latest); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Create(&models.MessageAttachment{
@@ -637,10 +637,11 @@ func TestConversationListUsesBatchedUnreadAndAttachmentPreview(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	conversations, err := repository.GetConversations(db, 1)
+	page, err := GetConversationsHeadPage(db, 1, 100, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	conversations := page.Conversations
 	if len(conversations) != 1 {
 		t.Fatalf("conversations count = %d, want 1", len(conversations))
 	}
@@ -649,6 +650,206 @@ func TestConversationListUsesBatchedUnreadAndAttachmentPreview(t *testing.T) {
 	}
 	if intFromMap(conversations[0], "unread_count") != 2 {
 		t.Fatalf("unread_count = %v, want 2", conversations[0]["unread_count"])
+	}
+}
+
+func TestGetConversationsUsesHeadsAndPreservesResponseShape(t *testing.T) {
+	db := newMessageServiceTestDB(t)
+	seedUser(t, db, 1)
+	seedUser(t, db, 2)
+	seedUser(t, db, 3)
+	base := time.Date(2026, time.July, 15, 13, 0, 0, 0, time.UTC)
+
+	headMessage := models.Message{
+		FromID:    2,
+		ToID:      1,
+		Content:   "head-selected-message",
+		CreatedAt: base,
+		UpdatedAt: base,
+	}
+	if err := repository.CreateMessage(db, &headMessage); err != nil {
+		t.Fatalf("create message with head: %v", err)
+	}
+	legacyNewer := models.Message{
+		FromID:    2,
+		ToID:      1,
+		Content:   "legacy-only-newer-message",
+		CreatedAt: base.Add(time.Minute),
+		UpdatedAt: base.Add(time.Minute),
+	}
+	if err := db.Create(&legacyNewer).Error; err != nil {
+		t.Fatalf("create message bypassing heads: %v", err)
+	}
+	legacyOnlyPeer := models.Message{
+		FromID:    3,
+		ToID:      1,
+		Content:   "legacy-only-peer",
+		CreatedAt: base.Add(2 * time.Minute),
+		UpdatedAt: base.Add(2 * time.Minute),
+	}
+	if err := db.Create(&legacyOnlyPeer).Error; err != nil {
+		t.Fatalf("create peer bypassing heads: %v", err)
+	}
+	if err := db.Model(&models.ConversationHead{}).
+		Where("user_id = ? AND peer_user_id = ?", 1, 2).
+		Updates(map[string]interface{}{"unread_count": 9, "is_pinned": true}).Error; err != nil {
+		t.Fatalf("override head state: %v", err)
+	}
+
+	page, err := GetConversationsHeadPage(db, 1, 100, nil)
+	if err != nil {
+		t.Fatalf("get conversations: %v", err)
+	}
+	conversations := page.Conversations
+	if len(conversations) != 1 {
+		t.Fatalf("heads conversations = %d, want 1", len(conversations))
+	}
+	conversation := conversations[0]
+	if intFromMap(conversation, "user_id") != 2 {
+		t.Fatalf("user_id = %v, want head peer 2", conversation["user_id"])
+	}
+	if conversation["last_message"] != "head-selected-message" {
+		t.Fatalf("last_message = %v, want message referenced by head", conversation["last_message"])
+	}
+	if intFromMap(conversation, "unread_count") != 9 {
+		t.Fatalf("unread_count = %v, want head value 9", conversation["unread_count"])
+	}
+	if pinned, ok := conversation["is_pinned"].(bool); !ok || !pinned {
+		t.Fatalf("is_pinned = %v, want true", conversation["is_pinned"])
+	}
+
+	wantKeys := []string{
+		"user_id", "name", "avatar", "avatar_position_x", "avatar_position_y", "avatar_scale",
+		"updated_at", "avatar_updated_at", "last_seen_at", "last_message", "last_message_at",
+		"last_sender_id", "last_sender_name", "last_is_mine", "last_read", "unread_count", "is_pinned",
+	}
+	for _, key := range wantKeys {
+		if _, exists := conversation[key]; !exists {
+			t.Fatalf("conversation response missing %q: %+v", key, conversation)
+		}
+	}
+	for _, key := range []string{
+		"conversation_id", "last_message_id", "last_message_content", "last_encryption_version", "last_ciphertext", "last_nonce",
+	} {
+		if _, exists := conversation[key]; exists {
+			t.Fatalf("conversation response leaked internal field %q: %+v", key, conversation)
+		}
+	}
+}
+
+func TestConversationDeltasUseAuthoritativeParticipantHeads(t *testing.T) {
+	db := newMessageServiceTestDB(t)
+	seedAcceptedFriendship(t, db, 1, 2)
+
+	message, err := SendMessage(db, 1, 2, "delta message", nil, nil, MessageEncryptionInput{})
+	if err != nil {
+		t.Fatalf("send message: %v", err)
+	}
+	deltas, err := GetConversationDeltasForPair(db, 1, 2)
+	if err != nil {
+		t.Fatalf("get conversation deltas: %v", err)
+	}
+	if len(deltas) != 2 {
+		t.Fatalf("delta count = %d, want 2", len(deltas))
+	}
+
+	byRecipient := make(map[uint]ConversationDelta, len(deltas))
+	for _, delta := range deltas {
+		byRecipient[delta.RecipientUserID] = delta
+		if delta.Operation != "upsert" || delta.EventID == "" || delta.Version == "" {
+			t.Fatalf("invalid delta envelope: %+v", delta)
+		}
+		if intFromMap(delta.Conversation, "last_message_id") != int(message.ID) {
+			t.Fatalf("recipient %d last_message_id = %v, want %d", delta.RecipientUserID, delta.Conversation["last_message_id"], message.ID)
+		}
+	}
+	if got := intFromMap(byRecipient[1].Conversation, "unread_count"); got != 0 {
+		t.Fatalf("sender unread_count = %d, want 0", got)
+	}
+	if got := intFromMap(byRecipient[2].Conversation, "unread_count"); got != 1 {
+		t.Fatalf("recipient unread_count = %d, want 1", got)
+	}
+	if got := intFromMap(byRecipient[1].Conversation, "user_id"); got != 2 {
+		t.Fatalf("sender peer user_id = %d, want 2", got)
+	}
+	if got := intFromMap(byRecipient[2].Conversation, "user_id"); got != 1 {
+		t.Fatalf("recipient peer user_id = %d, want 1", got)
+	}
+}
+
+func TestConversationCursorPageRoundTripHasNoDuplicates(t *testing.T) {
+	db := newMessageServiceTestDB(t)
+	for userID := uint(1); userID <= 4; userID++ {
+		seedUser(t, db, userID)
+	}
+	base := time.Date(2026, time.July, 15, 14, 0, 0, 0, time.UTC)
+	for peerID := uint(2); peerID <= 4; peerID++ {
+		message := models.Message{
+			FromID:    peerID,
+			ToID:      1,
+			Content:   fmt.Sprintf("message from %d", peerID),
+			CreatedAt: base.Add(time.Duration(peerID) * time.Minute),
+			UpdatedAt: base.Add(time.Duration(peerID) * time.Minute),
+		}
+		if err := repository.CreateMessage(db, &message); err != nil {
+			t.Fatalf("create peer %d message: %v", peerID, err)
+		}
+	}
+
+	first, err := GetConversationsHeadPage(db, 1, 2, nil)
+	if err != nil {
+		t.Fatalf("get first cursor page: %v", err)
+	}
+	if len(first.Conversations) != 2 || first.NextCursor == "" {
+		t.Fatalf("first cursor page = rows:%d next:%q, want 2/non-empty", len(first.Conversations), first.NextCursor)
+	}
+	cursor, err := DecodeConversationCursor(first.NextCursor, 1)
+	if err != nil {
+		t.Fatalf("decode server cursor: %v", err)
+	}
+	second, err := GetConversationsHeadPage(db, 1, 2, cursor)
+	if err != nil {
+		t.Fatalf("get second cursor page: %v", err)
+	}
+	if len(second.Conversations) != 1 || second.NextCursor != "" {
+		t.Fatalf("second cursor page = rows:%d next:%q, want 1/empty", len(second.Conversations), second.NextCursor)
+	}
+	seen := make(map[int]bool)
+	for _, conversation := range append(first.Conversations, second.Conversations...) {
+		peerID := intFromMap(conversation, "user_id")
+		if seen[peerID] {
+			t.Fatalf("duplicate peer %d between cursor pages", peerID)
+		}
+		seen[peerID] = true
+	}
+	if len(seen) != 3 {
+		t.Fatalf("cursor pages returned %d peers, want 3", len(seen))
+	}
+	if _, err := DecodeConversationCursor(first.NextCursor, 2); !errors.Is(err, ErrInvalidConversationCursor) {
+		t.Fatalf("cursor accepted for another user: %v", err)
+	}
+	tamperedCursor := first.NextCursor
+	if tamperedCursor[0] == 'A' {
+		tamperedCursor = "B" + tamperedCursor[1:]
+	} else {
+		tamperedCursor = "A" + tamperedCursor[1:]
+	}
+	if _, err := DecodeConversationCursor(tamperedCursor, 1); !errors.Is(err, ErrInvalidConversationCursor) {
+		t.Fatalf("tampered cursor was accepted: %v", err)
+	}
+
+	nullCursor, err := EncodeConversationCursor(1, repository.ConversationHeadCursor{
+		ConversationID: 999,
+	})
+	if err != nil {
+		t.Fatalf("encode NULL-time cursor: %v", err)
+	}
+	decodedNull, err := DecodeConversationCursor(nullCursor, 1)
+	if err != nil {
+		t.Fatalf("decode NULL-time cursor: %v", err)
+	}
+	if decodedNull.LastMessageAt != nil {
+		t.Fatalf("NULL-time cursor decoded as %v", decodedNull.LastMessageAt)
 	}
 }
 
@@ -680,10 +881,11 @@ func TestConversationPreviewDecryptsWithoutPlaintextAtRest(t *testing.T) {
 		t.Fatalf("stored preview source contains plaintext: %q", stored.Content)
 	}
 
-	conversations, err := GetConversations(db, 1)
+	page, err := GetConversationsHeadPage(db, 1, 100, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	conversations := page.Conversations
 	if len(conversations) != 1 {
 		t.Fatalf("conversations count = %d, want 1", len(conversations))
 	}
@@ -703,10 +905,11 @@ func TestConversationsIncludeParticipantLastSeen(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	conversations, err := GetConversations(db, 2)
+	page, err := GetConversationsHeadPage(db, 2, 100, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	conversations := page.Conversations
 	if len(conversations) != 1 {
 		t.Fatalf("conversations count = %d, want 1", len(conversations))
 	}
@@ -1016,18 +1219,20 @@ func TestDeleteForMeIsExcludedFromReadModelsForThatUser(t *testing.T) {
 		t.Fatalf("unread count = %d, want 0", unread)
 	}
 
-	recipientConversations, err := repository.GetConversations(db, 1)
+	recipientPage, err := GetConversationsHeadPage(db, 1, 100, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	recipientConversations := recipientPage.Conversations
 	if len(recipientConversations) != 0 {
 		t.Fatalf("recipient conversations = %d, want 0", len(recipientConversations))
 	}
 
-	senderConversations, err := repository.GetConversations(db, 2)
+	senderPage, err := GetConversationsHeadPage(db, 2, 100, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	senderConversations := senderPage.Conversations
 	if len(senderConversations) != 1 {
 		t.Fatalf("sender conversations = %d, want 1", len(senderConversations))
 	}
@@ -1090,6 +1295,7 @@ func newMessageServiceTestDB(t *testing.T) *gorm.DB {
 		&models.MessageAttachment{},
 		&models.MessageLinkPreview{},
 		&models.ConversationPin{},
+		&models.ConversationHead{},
 		&models.PinnedMessage{},
 		&models.EncryptedKeyBackup{},
 		&models.NotificationOutbox{},

@@ -2,10 +2,8 @@ package cache
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"tester/internal/config"
-	"time"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -36,24 +34,6 @@ func InitRedis(cfg *config.Config) error {
 	}
 
 	return nil
-}
-
-func (r *RedisClient) Set(key string, value interface{}, ttl time.Duration) error {
-	jsonData, err := json.Marshal(value)
-	if err != nil {
-		return err
-	}
-
-	return r.Client.Set(r.Ctx, key, jsonData, ttl).Err()
-}
-
-func (r *RedisClient) Get(key string, dest interface{}) error {
-	val, err := r.Client.Get(r.Ctx, key).Result()
-	if err != nil {
-		return err
-	}
-
-	return json.Unmarshal([]byte(val), dest)
 }
 
 func (r *RedisClient) Delete(key string) error {

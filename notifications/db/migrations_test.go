@@ -21,8 +21,10 @@ func TestMigrateCleanDatabaseIsRepeatable(t *testing.T) {
 		t.Fatalf("second Migrate failed: %v", err)
 	}
 
-	assertUniqueIndex(t, database, &models.PushSubscription{}, "idx_push_subscriptions_endpoint")
 	assertUniqueIndex(t, database, &models.MobilePushToken{}, "idx_mobile_push_tokens_token")
+	if database.Migrator().HasTable("push_subscriptions") {
+		t.Fatal("web push subscriptions table still exists")
+	}
 	assertIndex(t, database, &models.Notification{}, "idx_notifications_recipient_conversation_type")
 	assertIndex(t, database, &models.Notification{}, "idx_notifications_recipient_created_id")
 	assertIndex(t, database, &models.Notification{}, "idx_notifications_recipient_actor_type_unread")
@@ -228,7 +230,7 @@ func (oldNotificationWithNullableSeen) TableName() string {
 	return "notifications"
 }
 
-func TestMigrateRemovesOldPushAndTokenDuplicates(t *testing.T) {
+func TestMigrateDropsWebPushAndRemovesMobileTokenDuplicates(t *testing.T) {
 	database := newMigrationTestDB(t)
 	if err := database.Exec(`
 		CREATE TABLE push_subscriptions (
@@ -283,12 +285,8 @@ func TestMigrateRemovesOldPushAndTokenDuplicates(t *testing.T) {
 		t.Fatalf("repeated Migrate failed: %v", err)
 	}
 
-	var subscriptions []models.PushSubscription
-	if err := database.Find(&subscriptions).Error; err != nil {
-		t.Fatalf("load subscriptions: %v", err)
-	}
-	if len(subscriptions) != 1 || subscriptions[0].UserID != 11 {
-		t.Fatalf("unexpected subscriptions after migration: %+v", subscriptions)
+	if database.Migrator().HasTable("push_subscriptions") {
+		t.Fatal("web push subscriptions table still exists after migration")
 	}
 
 	var tokens []models.MobilePushToken
@@ -299,7 +297,6 @@ func TestMigrateRemovesOldPushAndTokenDuplicates(t *testing.T) {
 		t.Fatalf("unexpected tokens after migration: %+v", tokens)
 	}
 
-	assertUniqueIndex(t, database, &models.PushSubscription{}, "idx_push_subscriptions_endpoint")
 	assertUniqueIndex(t, database, &models.MobilePushToken{}, "idx_mobile_push_tokens_token")
 }
 

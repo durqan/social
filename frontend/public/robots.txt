@@ -1,9 +1,0 @@
-User-agent: *
-Allow: /
-Disallow: /api/
-Disallow: /notifications-api/
-Disallow: /ws
-Disallow: /users/
-Disallow: /verify-email/
-
-Sitemap: https://durqan.ru/sitemap.xml

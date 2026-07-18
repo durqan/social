@@ -1,12 +1,9 @@
 import { notificationsURL } from '../config/env';
 import {
-  ApiError,
   apiCacheKey,
-  fetchWithNetworkPolicy,
-  getCookieHeader,
-  readCachedApiData,
-  refreshSession,
-  writeCachedApiData,
+  apiRequest,
+  apiRequestMeta,
+  type RequestOptions,
 } from './http';
 import type { SocialNotification } from './types';
 
@@ -23,118 +20,27 @@ export type MarkNotificationsReadPayload = {
   conversation_id?: number;
 };
 
-type NotificationRequestOptions = {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
-  body?: unknown;
-  signal?: AbortSignal;
-  cacheKey?: string;
-  allowStaleOnError?: boolean;
-};
-
-function shouldUseStale(error: unknown) {
-  return (
-    error instanceof ApiError &&
-    (error.kind === 'offline' ||
-      error.kind === 'timeout' ||
-      error.kind === 'network' ||
-      error.kind === 'server')
-  );
-}
-
-async function readNotificationResponse(response: Response) {
-  const text = await response.text();
-  if (!text) {
-    return undefined;
-  }
-
-  try {
-    return JSON.parse(text);
-  } catch {
-    return text;
-  }
-}
-
-async function requestNotifications<T>(
-  path: string,
-  options: NotificationRequestOptions = {},
-  retry = true,
-): Promise<T> {
-  const method = options.method ?? 'GET';
-  const cacheKey = method === 'GET' ? options.cacheKey : undefined;
-  const cookieHeader = await getCookieHeader();
-  const headers: Record<string, string> = {
-    Accept: 'application/json',
-    ...(cookieHeader
-      ? {
-          Cookie: cookieHeader,
-        }
-      : {}),
+function notificationRequestOptions(
+  options: RequestOptions = {},
+): RequestOptions {
+  return {
+    ...options,
+    resolveURL: notificationsURL,
+    includeCookieHeader: true,
+    csrf: false,
+    errorMessage: 'Не удалось обновить настройки уведомлений',
   };
-  let body: string | undefined;
+}
 
-  if (options.body !== undefined) {
-    headers['Content-Type'] = 'application/json';
-    body = JSON.stringify(options.body);
-  }
+function requestNotifications<T>(path: string, options: RequestOptions = {}) {
+  return apiRequest<T>(path, notificationRequestOptions(options));
+}
 
-  let response: Response;
-  try {
-    response = await fetchWithNetworkPolicy(
-      notificationsURL(path),
-      {
-        method,
-        credentials: 'include',
-        headers,
-        body,
-      },
-      {
-        method,
-        signal: options.signal,
-      },
-    );
-  } catch (error) {
-    if (
-      cacheKey &&
-      options.allowStaleOnError !== false &&
-      shouldUseStale(error)
-    ) {
-      const cached = await readCachedApiData<T>(cacheKey);
-      if (cached) {
-        return cached.data;
-      }
-    }
-    throw error;
-  }
-
-  if (response.status === 401 && retry) {
-    await refreshSession();
-    return requestNotifications<T>(path, options, false);
-  }
-
-  if (!response.ok) {
-    const payload = await readNotificationResponse(response);
-    const error = new ApiError(
-      response.status,
-      'Не удалось обновить настройки уведомлений',
-      payload,
-      response.status >= 500 ? 'server' : 'client',
-    );
-    if (
-      cacheKey &&
-      options.allowStaleOnError !== false &&
-      shouldUseStale(error)
-    ) {
-      const cached = await readCachedApiData<T>(cacheKey);
-      if (cached) {
-        return cached.data;
-      }
-    }
-    throw error;
-  }
-
-  const payload = (await readNotificationResponse(response)) as T;
-  await writeCachedApiData(cacheKey, payload);
-  return payload ?? (undefined as T);
+function requestNotificationsMeta<T>(
+  path: string,
+  options: RequestOptions = {},
+) {
+  return apiRequestMeta<T>(path, notificationRequestOptions(options));
 }
 
 export const notificationsApi = {
@@ -142,6 +48,30 @@ export const notificationsApi = {
     return requestNotifications<SocialNotification[]>('/notifications', {
       cacheKey: apiCacheKey('notifications', 'list'),
     });
+  },
+
+  async getNotificationsPage(params: { limit?: number; cursor?: string } = {}) {
+    const query = new URLSearchParams();
+    query.set('limit', String(params.limit ?? 30));
+    if (params.cursor) {
+      query.set('cursor', params.cursor);
+    }
+    const response = await requestNotificationsMeta<SocialNotification[]>(
+      `/notifications?${query.toString()}`,
+      {
+        cacheKey: apiCacheKey(
+          'notifications',
+          `page:${params.cursor ?? 'first'}:${params.limit ?? 30}`,
+        ),
+      },
+    );
+    const nextCursor = response.headers['x-next-cursor'] || null;
+    return {
+      notifications: Array.isArray(response.data) ? response.data : [],
+      next_cursor: nextCursor,
+      has_more: nextCursor !== null,
+      unseen_count: Number(response.headers['x-unseen-count']) || 0,
+    };
   },
 
   async markAsRead(notificationId: number) {

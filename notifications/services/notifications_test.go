@@ -6,10 +6,8 @@ import (
 	"encoding/base64"
 	"fmt"
 	"testing"
-	"time"
 
 	"notifications/dto"
-	"notifications/hub"
 	"notifications/models"
 	"notifications/repository"
 
@@ -19,10 +17,7 @@ import (
 
 func TestCreateNotificationDedupesDuplicateDelivery(t *testing.T) {
 	db := newNotificationTestDB(t)
-	notificationHub := hub.NewHub()
-	service := NewService(repository.NewRepository(db), notificationHub, nil)
-	client, cleanup := notificationHub.AddClient(10)
-	defer cleanup()
+	service := NewService(repository.NewRepository(db), nil)
 
 	req := &dto.CreateNotificationReq{
 		RecipientID: 10,
@@ -46,25 +41,11 @@ func TestCreateNotificationDedupesDuplicateDelivery(t *testing.T) {
 		t.Fatalf("expected 1 notification after duplicate delivery, got %d", count)
 	}
 
-	select {
-	case <-client:
-	case <-time.After(time.Second):
-		t.Fatal("expected first notification to be delivered to hub")
-	}
-
-	select {
-	case duplicate := <-client:
-		t.Fatalf("duplicate delivery reached hub: %+v", duplicate)
-	default:
-	}
 }
 
-func TestCreateMessageNotificationAlreadyReadStillDeliversEvent(t *testing.T) {
+func TestCreateMessageNotificationAlreadyReadStaysUnread(t *testing.T) {
 	db := newNotificationTestDB(t)
-	notificationHub := hub.NewHub()
-	service := NewService(repository.NewRepository(db), notificationHub, nil)
-	client, cleanup := notificationHub.AddClient(10)
-	defer cleanup()
+	service := NewService(repository.NewRepository(db), nil)
 
 	if err := db.Create(&models.Message{
 		ID:     30,
@@ -95,11 +76,6 @@ func TestCreateMessageNotificationAlreadyReadStillDeliversEvent(t *testing.T) {
 		t.Fatal("expected message notification to stay unread until read sync")
 	}
 
-	select {
-	case <-client:
-	case <-time.After(time.Second):
-		t.Fatal("expected message notification to be delivered even if message row is already read")
-	}
 }
 
 func TestDedupeKeyIsDeterministic(t *testing.T) {
@@ -129,7 +105,7 @@ func TestDedupeKeyIsDeterministic(t *testing.T) {
 
 func TestMarkMessageConversationReadMarksMatchingNotifications(t *testing.T) {
 	db := newNotificationTestDB(t)
-	service := NewService(repository.NewRepository(db), hub.NewHub(), nil)
+	service := NewService(repository.NewRepository(db), nil)
 
 	unreadMatch := models.Notification{
 		RecipientID:    10,
@@ -184,7 +160,7 @@ func TestMarkMessageConversationReadMarksMatchingNotifications(t *testing.T) {
 
 func TestMarkAsSeenMarksOnlyCurrentUsersNotifications(t *testing.T) {
 	db := newNotificationTestDB(t)
-	service := NewService(repository.NewRepository(db), hub.NewHub(), nil)
+	service := NewService(repository.NewRepository(db), nil)
 	notes := []models.Notification{
 		{
 			RecipientID: 10,
@@ -223,7 +199,7 @@ func TestMarkAsSeenMarksOnlyCurrentUsersNotifications(t *testing.T) {
 
 func TestMarkMatchingAsReadSupportsConversationAndMarksSeen(t *testing.T) {
 	db := newNotificationTestDB(t)
-	service := NewService(repository.NewRepository(db), hub.NewHub(), nil)
+	service := NewService(repository.NewRepository(db), nil)
 	notes := []models.Notification{
 		{
 			RecipientID:    10,
@@ -310,46 +286,6 @@ func TestMessagePreviewFallsBackWhenEncryptedContentCannotBeRead(t *testing.T) {
 	}
 }
 
-func TestSavePushSubscriptionUpsertsByEndpoint(t *testing.T) {
-	db := newNotificationTestDB(t)
-	service := NewService(repository.NewRepository(db), hub.NewHub(), nil)
-
-	first := &dto.PushSubscriptionReq{
-		UserID:   10,
-		Endpoint: "https://push.example/subscription",
-		Keys: dto.PushSubscriptionKeys{
-			P256DH: "first-key",
-			Auth:   "first-auth",
-		},
-	}
-	if err := service.SavePushSubscription(first); err != nil {
-		t.Fatalf("first SavePushSubscription failed: %v", err)
-	}
-
-	second := &dto.PushSubscriptionReq{
-		UserID:   11,
-		Endpoint: first.Endpoint,
-		Keys: dto.PushSubscriptionKeys{
-			P256DH: "updated-key",
-			Auth:   "updated-auth",
-		},
-	}
-	if err := service.SavePushSubscription(second); err != nil {
-		t.Fatalf("second SavePushSubscription failed: %v", err)
-	}
-
-	var subscriptions []models.PushSubscription
-	if err := db.Find(&subscriptions).Error; err != nil {
-		t.Fatalf("load subscriptions: %v", err)
-	}
-	if len(subscriptions) != 1 {
-		t.Fatalf("subscriptions count = %d, want 1", len(subscriptions))
-	}
-	if subscriptions[0].UserID != 11 || subscriptions[0].P256DH != "updated-key" || subscriptions[0].Auth != "updated-auth" {
-		t.Fatalf("subscription was not updated: %+v", subscriptions[0])
-	}
-}
-
 func encryptNotificationTestMessage(t *testing.T, plaintext string) (string, string) {
 	t.Helper()
 
@@ -370,46 +306,9 @@ func encryptNotificationTestMessage(t *testing.T, plaintext string) (string, str
 	return base64.StdEncoding.EncodeToString(ciphertext), base64.StdEncoding.EncodeToString(nonce)
 }
 
-func TestDeletePushSubscriptionOnlyDeletesCurrentUsersEndpoint(t *testing.T) {
-	db := newNotificationTestDB(t)
-	service := NewService(repository.NewRepository(db), hub.NewHub(), nil)
-	req := &dto.PushSubscriptionReq{
-		UserID:   10,
-		Endpoint: "https://push.example/subscription",
-		Keys: dto.PushSubscriptionKeys{
-			P256DH: "key",
-			Auth:   "auth",
-		},
-	}
-	if err := service.SavePushSubscription(req); err != nil {
-		t.Fatalf("SavePushSubscription failed: %v", err)
-	}
-
-	if err := service.DeletePushSubscription(11, req.Endpoint); err != nil {
-		t.Fatalf("foreign DeletePushSubscription failed: %v", err)
-	}
-	var count int64
-	if err := db.Model(&models.PushSubscription{}).Count(&count).Error; err != nil {
-		t.Fatalf("count subscriptions: %v", err)
-	}
-	if count != 1 {
-		t.Fatalf("foreign user deleted subscription, count = %d", count)
-	}
-
-	if err := service.DeletePushSubscription(10, req.Endpoint); err != nil {
-		t.Fatalf("owner DeletePushSubscription failed: %v", err)
-	}
-	if err := db.Model(&models.PushSubscription{}).Count(&count).Error; err != nil {
-		t.Fatalf("count subscriptions after owner delete: %v", err)
-	}
-	if count != 0 {
-		t.Fatalf("owner subscription count = %d, want 0", count)
-	}
-}
-
 func TestSaveMobilePushTokenUpsertsAndReactivatesToken(t *testing.T) {
 	db := newNotificationTestDB(t)
-	service := NewService(repository.NewRepository(db), hub.NewHub(), nil)
+	service := NewService(repository.NewRepository(db), nil)
 
 	first := &dto.MobilePushTokenReq{
 		UserID:   10,
@@ -470,7 +369,6 @@ func newNotificationTestDB(t *testing.T) *gorm.DB {
 		&models.Notification{},
 		&models.Message{},
 		&models.MessageAttachment{},
-		&models.PushSubscription{},
 		&models.MobilePushToken{},
 	); err != nil {
 		t.Fatalf("migrate notification: %v", err)

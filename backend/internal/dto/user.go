@@ -90,13 +90,6 @@ func ToPublicUser(user models.User) models.User {
 	return user
 }
 
-func WithResolvedAvatars(users []models.User) []models.User {
-	for i := range users {
-		users[i] = WithResolvedAvatar(users[i])
-	}
-	return users
-}
-
 func AvatarEndpoint(userID uint, storedAvatar string) string {
 	if userID == 0 || strings.TrimSpace(storedAvatar) == "" {
 		return ""

@@ -3,30 +3,18 @@ package server
 import (
 	"time"
 
-	"tester/internal/config"
 	"tester/internal/handlers"
 	"tester/internal/middleware"
 
-	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
-func NewRouter(database *gorm.DB, cfg config.Config) *gin.Engine {
+func NewRouter(database *gorm.DB) *gin.Engine {
 	router := gin.Default()
-	router.Static("/uploads/avatars", "./uploads/avatars")
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
-
-	router.Use(cors.New(cors.Config{
-		AllowOrigins:     cfg.AllowedOrigins,
-		AllowMethods:     []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-CSRF-Token"},
-		ExposeHeaders:    []string{"Content-Length", "Content-Disposition", "Content-Range", "Accept-Ranges"},
-		AllowCredentials: true,
-		MaxAge:           12 * time.Hour,
-	}))
 
 	router.GET("/avatars/users/:id", handlers.GetUserAvatar(database))
 
@@ -34,25 +22,12 @@ func NewRouter(database *gorm.DB, cfg config.Config) *gin.Engine {
 	registerUserRoutes(router, database)
 	registerPostRoutes(router, database)
 	registerMessageRoutes(router, database)
-	registerAttachmentRoutes(router, database)
 	registerConversationRoutes(router, database)
 	registerCallRoutes(router, database)
 	registerE2EERoutes(router, database)
-	registerWebSocketRoutes(router, database, cfg)
+	registerWebSocketRoutes(router, database)
 
 	return router
-}
-
-func registerAttachmentRoutes(router *gin.Engine, database *gorm.DB) {
-	attachments := router.Group(
-		"/attachments",
-		middleware.AuthMiddleware(),
-		middleware.UserActivityMiddleware(database),
-		middleware.CSRFMiddleware(),
-	)
-
-	attachments.GET("/:id/download", handlers.DownloadMessageAttachment(database))
-	attachments.HEAD("/:id/download", handlers.DownloadMessageAttachment(database))
 }
 
 func registerCallRoutes(router *gin.Engine, database *gorm.DB) {
@@ -67,9 +42,6 @@ func registerCallRoutes(router *gin.Engine, database *gorm.DB) {
 	calls.POST("/:callId/accept", middleware.RateLimitMiddleware(30, time.Minute), handlers.AcceptCallIntent(database))
 	calls.POST("/:callId/reject", middleware.RateLimitMiddleware(30, time.Minute), handlers.RejectCall(database))
 	calls.POST("/:callId/end", middleware.RateLimitMiddleware(30, time.Minute), handlers.EndCall(database))
-	if gin.Mode() != gin.ReleaseMode {
-		calls.GET("/:callId/debug", handlers.DebugCall(database))
-	}
 	calls.GET("/:callId", handlers.GetCall(database))
 }
 
@@ -104,14 +76,12 @@ func registerUserRoutes(router *gin.Engine, database *gorm.DB) {
 		middleware.InvalidateCache("cache:/users*", "cache:/friends*"),
 	)
 
-	users.GET("", middleware.CacheMiddleware(5*time.Minute), handlers.GetUsers(database))
 	users.GET("/profile", middleware.CacheMiddleware(2*time.Minute), handlers.GetProfile(database))
 	users.GET("/batch", middleware.CacheMiddleware(5*time.Minute), handlers.GetUsersBatch(database))
 	users.GET("/search", middleware.CacheMiddleware(3*time.Minute), handlers.SearchUsersByNameOrEmail(database))
 	registerFriendRoutes(users, database)
 
 	users.GET("/:id", middleware.CacheMiddleware(5*time.Minute), handlers.GetUser(database))
-	users.GET("/:id/presence", handlers.GetPresence)
 	users.PATCH("/:id", handlers.PatchUser(database))
 	users.PATCH("/:id/avatar", middleware.RequireVerifiedEmail(database), middleware.RateLimitMiddleware(20, time.Hour), handlers.UploadAvatar(database))
 	users.DELETE("/:id", handlers.DeleteUser(database))
@@ -174,14 +144,11 @@ func registerMessageRoutes(router *gin.Engine, database *gorm.DB) {
 		middleware.InvalidateCache("cache:/messages*"),
 	)
 
-	messages.GET("/conversations", middleware.CacheMiddleware(time.Minute), handlers.GetConversations(database))
 	messages.GET("/with/:userId", middleware.CacheMiddleware(30*time.Second), handlers.GetMessagesWith(database))
 	messages.GET("/unread/count", middleware.CacheMiddleware(10*time.Second), handlers.GetUnreadCount(database))
 	messages.GET("/uploads/:filename", handlers.GetUploadedMessageImage())
 	messages.GET("/link-previews/:id/thumbnail", handlers.GetMessageLinkPreviewThumbnail(database))
 	messages.GET("/attachments/:id/thumbnail", handlers.GetMessageAttachmentThumbnail(database))
-	messages.GET("/attachments/:id/download", handlers.DownloadMessageAttachment(database))
-	messages.HEAD("/attachments/:id/download", handlers.DownloadMessageAttachment(database))
 	messages.GET("/attachments/:id", handlers.GetMessageAttachment(database))
 	messages.HEAD("/attachments/:id", handlers.GetMessageAttachment(database))
 	messages.POST("/upload", middleware.RequireVerifiedEmail(database), middleware.RateLimitMiddleware(60, time.Hour), handlers.UploadMessageImage(database))
@@ -203,7 +170,7 @@ func registerConversationRoutes(router *gin.Engine, database *gorm.DB) {
 		middleware.AuthMiddleware(),
 		middleware.UserActivityMiddleware(database),
 		middleware.CSRFMiddleware(),
-		middleware.InvalidateCache("cache:/conversations*", "cache:/messages/conversations*"),
+		middleware.InvalidateCache("cache:/conversations*"),
 	)
 
 	conversations.GET("", middleware.CacheMiddleware(time.Minute), handlers.GetConversations(database))
@@ -214,7 +181,7 @@ func registerConversationRoutes(router *gin.Engine, database *gorm.DB) {
 	conversations.DELETE("/:conversationId/pinned-message", handlers.UnpinMessage(database))
 }
 
-func registerWebSocketRoutes(router *gin.Engine, database *gorm.DB, cfg config.Config) {
-	handlers.InitWebSocket(database, cfg.AllowedOrigins)
+func registerWebSocketRoutes(router *gin.Engine, database *gorm.DB) {
+	handlers.InitWebSocket(database)
 	router.GET("/ws", middleware.RateLimitMiddleware(60, time.Minute), handlers.WebSocketHandler)
 }

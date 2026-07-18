@@ -1,6 +1,7 @@
 package rabbit
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -45,7 +46,7 @@ func TestConsumeDeliveriesReturnsStoppedWhenChannelCloses(t *testing.T) {
 	deliveries := make(chan amqp.Delivery)
 	close(deliveries)
 
-	err := consumeDeliveries(nil, deliveries, nil, nil)
+	err := consumeDeliveriesWithContext(context.Background(), nil, deliveries, nil, nil, 1, 1)
 	if !errors.Is(err, ErrConsumerStopped) {
 		t.Fatalf("consumeDeliveries() error = %v, want %v", err, ErrConsumerStopped)
 	}

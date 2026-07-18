@@ -2810,7 +2810,7 @@ export default function ChatScreen({ route, navigation }: Props) {
       return;
     }
 
-    // TODO: full hold-to-record video notes need a custom camera/recorder.
+    // Video notes use the supported file-picker flow; there is no in-app camera recorder.
     await recordVideoNote();
   }
 

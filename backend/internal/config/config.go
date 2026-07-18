@@ -29,12 +29,11 @@ const (
 )
 
 type Config struct {
-	DatabaseURL    string
-	Port           string
-	JWTSecret      string
-	CookieSecure   bool
-	AllowedOrigins []string
-	RabbitURL      string
+	DatabaseURL  string
+	Port         string
+	JWTSecret    string
+	CookieSecure bool
+	RabbitURL    string
 
 	RedisHost     string
 	RedisPort     string
@@ -58,12 +57,11 @@ func Load() Config {
 		loadDotEnv(".env", lockedEnv)
 
 		cached = Config{
-			DatabaseURL:    getEnv("DATABASE_URL", defaultDatabase),
-			Port:           getEnv("PORT", defaultPort),
-			JWTSecret:      getEnv("JWT_SECRET", defaultJWTSecret),
-			CookieSecure:   os.Getenv("COOKIE_SECURE") == "true",
-			AllowedOrigins: parseAllowedOrigins(os.Getenv("CORS_ALLOWED_ORIGINS")),
-			RabbitURL:      getEnv("RABBIT_URL", defaultRabbitURL),
+			DatabaseURL:  getEnv("DATABASE_URL", defaultDatabase),
+			Port:         getEnv("PORT", defaultPort),
+			JWTSecret:    getEnv("JWT_SECRET", defaultJWTSecret),
+			CookieSecure: os.Getenv("COOKIE_SECURE") == "true",
+			RabbitURL:    getEnv("RABBIT_URL", defaultRabbitURL),
 
 			RedisHost:     getEnv("REDIS_HOST", defaultRedisHost),
 			RedisPort:     getEnv("REDIS_PORT", defaultRedisPort),
@@ -144,22 +142,6 @@ func getEnvInt(key string, fallback int) int {
 		return fallback
 	}
 	return intValue
-}
-
-func parseAllowedOrigins(value string) []string {
-	if value == "" {
-		return []string{"http://localhost", "http://localhost:5173", "http://localhost:80"}
-	}
-
-	parts := strings.Split(value, ",")
-	origins := make([]string, 0, len(parts))
-	for _, part := range parts {
-		origin := strings.TrimSpace(part)
-		if origin != "" {
-			origins = append(origins, origin)
-		}
-	}
-	return origins
 }
 
 func validateSecurity(cfg Config) {

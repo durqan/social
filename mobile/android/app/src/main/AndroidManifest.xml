@@ -27,8 +27,7 @@
                 tools:replace="android:value" />
         <meta-data
                 android:name="com.google.firebase.messaging.default_notification_icon"
-                android:resource="@drawable/ic_stat_social_notification"
-                tools:replace="android:resource" />
+                android:resource="@drawable/ic_stat_social_notification" />
         <meta-data
                 android:name="com.google.firebase.messaging.default_notification_color"
                 android:resource="@color/notification_color"
@@ -49,6 +48,7 @@
             <category android:name="android.intent.category.DEFAULT" />
             <category android:name="android.intent.category.BROWSABLE" />
             <data android:scheme="social" android:host="verify-email" />
+            <data android:scheme="social" android:host="reset-password" />
         </intent-filter>
       </activity>
     </application>

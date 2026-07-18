@@ -5,12 +5,15 @@ import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { AppLifecycleProvider } from '../context/AppLifecycleContext';
-import { AuthProvider } from '../context/AuthContext';
+import {
+  AppLifecycleProvider,
+  useAppLifecycle,
+} from '../context/AppLifecycleContext';
+import { AuthProvider, useAuth } from '../context/AuthContext';
 import { CallProvider } from '../context/CallContext';
 import { NotificationsProvider } from '../context/NotificationsContext';
 import { UnreadProvider } from '../context/UnreadContext';
-import { PostAuthBootstrapManager } from '../components/PostAuthBootstrapManager';
+import { runPostAuthBootstrap } from '../bootstrap/postAuthBootstrap';
 import { AppNavigator } from '../navigation/AppNavigator';
 import {
   flushPendingNotificationNavigation,
@@ -18,6 +21,30 @@ import {
 } from '../notifications/navigation';
 import { ThemeProvider, useThemeColors } from '../theme/ThemeContext';
 import { logCallEnvOnce } from '../utils/callDiagnostics';
+
+const linking = {
+  prefixes: ['social://'],
+  config: {
+    screens: {
+      VerifyEmail: 'verify-email/:token',
+      ResetPassword: 'reset-password',
+    },
+  },
+};
+
+function PostAuthBootstrap() {
+  const { user } = useAuth();
+  const { networkConnected, resumeCount } = useAppLifecycle();
+
+  useEffect(() => {
+    if (!user?.id || !networkConnected) {
+      return;
+    }
+    runPostAuthBootstrap(user.id).catch(() => undefined);
+  }, [networkConnected, resumeCount, user?.id]);
+
+  return null;
+}
 
 function AppContent() {
   const colors = useThemeColors();
@@ -36,7 +63,7 @@ function AppContent() {
 
       <AuthProvider>
         <AppLifecycleProvider>
-          <PostAuthBootstrapManager />
+          <PostAuthBootstrap />
           <UnreadProvider>
             <NotificationsProvider>
               <CallProvider>
@@ -57,6 +84,7 @@ export default function AppRoot() {
         <KeyboardProvider statusBarTranslucent navigationBarTranslucent>
           <NavigationContainer
             ref={navigationRef}
+            linking={linking}
             onReady={flushPendingNotificationNavigation}
           >
             <ThemeProvider>

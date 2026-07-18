@@ -92,17 +92,6 @@ func (r *websocketRegistry) set(userID uint, conn *websocket.Conn) *websocketCli
 	return client
 }
 
-func (r *websocketRegistry) get(userID uint) (*websocketClient, bool) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	for client := range r.clients[userID] {
-		return client, true
-	}
-
-	return nil, false
-}
-
 func (r *websocketRegistry) getAll(userID uint) []*websocketClient {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -162,23 +151,6 @@ func (r *websocketRegistry) setActiveConversation(userID uint, client *websocket
 	client.activeConversationID = conversationID
 	client.stateMu.Unlock()
 	return true
-}
-
-func (r *websocketRegistry) hasActiveConversation(userID uint, conversationID uint) bool {
-	if conversationID == 0 {
-		return false
-	}
-
-	for _, client := range r.getAll(userID) {
-		client.stateMu.RLock()
-		activeConversationID := client.activeConversationID
-		client.stateMu.RUnlock()
-		if activeConversationID == conversationID {
-			return true
-		}
-	}
-
-	return false
 }
 
 func isClosedWebSocketError(err error) bool {

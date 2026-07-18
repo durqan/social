@@ -50,11 +50,6 @@ func GenerateSession(userID uint) (string, string, error) {
 	return accessToken, refreshToken, nil
 }
 
-func GenerateToken(userID uint) (string, error) {
-	accessToken, _, err := GenerateSession(userID)
-	return accessToken, err
-}
-
 func GenerateAccessToken(userID uint, sessionID string) (string, error) {
 	if userID == 0 || sessionID == "" {
 		return "", errors.New("invalid session")

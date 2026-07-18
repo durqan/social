@@ -6,9 +6,11 @@
 .env.production
 .env.local
 
-frontend/node_modules
-frontend/dist
-frontend/.vite
+mobile/node_modules
+mobile/android/.gradle
+mobile/android/build
+mobile/android/app/build
+packages/shared/dist
 
 backend/uploads
 backend/upload

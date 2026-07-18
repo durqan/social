@@ -24,9 +24,13 @@ var (
 )
 
 type Publisher struct {
-	url  string
-	conn *amqp.Connection
-	mu   sync.Mutex
+	url      string
+	conn     *amqp.Connection
+	channel  *amqp.Channel
+	confirms <-chan amqp.Confirmation
+	declared map[string]struct{}
+	closed   bool
+	mu       sync.Mutex
 }
 
 func Init(url string) error {
@@ -54,7 +58,7 @@ func Close() error {
 	return publisher.Close()
 }
 
-func PublishNotification(req dto.CreateNotificationReq) error {
+func PublishNotificationContext(ctx context.Context, req dto.CreateNotificationReq) error {
 	defaultMu.RLock()
 	publisher := defaultPublisher
 	defaultMu.RUnlock()
@@ -63,7 +67,7 @@ func PublishNotification(req dto.CreateNotificationReq) error {
 		return ErrNotConfigured
 	}
 
-	return publisher.PublishNotification(req)
+	return publisher.PublishNotificationContext(ctx, req)
 }
 
 func PublishVideoImport(payload any) error {
@@ -75,51 +79,54 @@ func PublishVideoImport(payload any) error {
 		return ErrNotConfigured
 	}
 
-	return publisher.PublishJSON(VideoImportsQueue, payload)
+	return publisher.PublishJSONContext(context.Background(), VideoImportsQueue, payload)
 }
 
-func (p *Publisher) PublishNotification(req dto.CreateNotificationReq) error {
-	return p.PublishJSON(notificationsQueue, req)
+func (p *Publisher) PublishNotificationContext(ctx context.Context, req dto.CreateNotificationReq) error {
+	return p.PublishJSONContext(ctx, notificationsQueue, req)
 }
 
-func (p *Publisher) PublishJSON(queue string, payload any) error {
-	ch, err := p.openChannel()
-	if err != nil {
-		return err
-	}
-	defer ch.Close()
-
-	if _, err := ch.QueueDeclare(queue, true, false, false, false, nil); err != nil {
-		return err
-	}
-	if err := ch.Confirm(false); err != nil {
-		return err
-	}
-	confirms := ch.NotifyPublish(make(chan amqp.Confirmation, 1))
-
+func (p *Publisher) PublishJSONContext(ctx context.Context, queue string, payload any) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	if err := ch.PublishWithContext(ctx, "", queue, false, false, amqp.Publishing{
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if err := p.ensureChannelLocked(); err != nil {
+		return err
+	}
+	if err := p.declareQueueLocked(queue); err != nil {
+		p.invalidateLocked()
+		return err
+	}
+	if err := p.channel.PublishWithContext(ctx, "", queue, false, false, amqp.Publishing{
 		ContentType:  "application/json",
 		DeliveryMode: amqp.Persistent,
 		Body:         body,
 	}); err != nil {
+		p.invalidateLocked()
 		return err
 	}
 
 	select {
-	case confirmation := <-confirms:
+	case confirmation, ok := <-p.confirms:
+		if !ok {
+			p.invalidateLocked()
+			return errors.New("rabbitmq confirm channel closed")
+		}
 		if !confirmation.Ack {
 			return errors.New("rabbitmq did not confirm notification publish")
 		}
 		return nil
 	case <-ctx.Done():
+		p.invalidateLocked()
 		return ctx.Err()
 	}
 }
@@ -128,51 +135,92 @@ func (p *Publisher) Close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if p.conn == nil || p.conn.IsClosed() {
-		return nil
+	p.closed = true
+	var firstErr error
+	if p.channel != nil && !p.channel.IsClosed() {
+		firstErr = p.channel.Close()
 	}
-	return p.conn.Close()
+	p.channel = nil
+	p.confirms = nil
+	if p.conn != nil && !p.conn.IsClosed() {
+		if err := p.conn.Close(); firstErr == nil {
+			firstErr = err
+		}
+	}
+	p.conn = nil
+	return firstErr
 }
 
-func (p *Publisher) openChannel() (*amqp.Channel, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
+func (p *Publisher) ensureChannelLocked() error {
 	if p.url == "" {
-		return nil, ErrNotConfigured
+		return ErrNotConfigured
+	}
+	if p.closed {
+		return errors.New("rabbitmq publisher is closed")
 	}
 
 	if p.conn == nil || p.conn.IsClosed() {
 		conn, err := amqp.Dial(p.url)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		p.conn = conn
+	}
+	if p.channel != nil && !p.channel.IsClosed() {
+		return nil
 	}
 
 	ch, err := p.conn.Channel()
 	if err != nil {
-		_ = p.conn.Close()
-		p.conn = nil
-		return nil, err
+		p.invalidateLocked()
+		return err
 	}
-
-	return ch, nil
+	if err := ch.Confirm(false); err != nil {
+		_ = ch.Close()
+		p.invalidateLocked()
+		return err
+	}
+	p.channel = ch
+	p.confirms = ch.NotifyPublish(make(chan amqp.Confirmation, 1))
+	p.declared = make(map[string]struct{})
+	return nil
 }
 
 func (p *Publisher) connect() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-
-	if p.url == "" {
-		return ErrNotConfigured
-	}
-
-	conn, err := amqp.Dial(p.url)
-	if err != nil {
+	if err := p.ensureChannelLocked(); err != nil {
 		return err
 	}
-
-	p.conn = conn
+	for _, queue := range []string{notificationsQueue, VideoImportsQueue} {
+		if err := p.declareQueueLocked(queue); err != nil {
+			p.invalidateLocked()
+			return err
+		}
+	}
 	return nil
+}
+
+func (p *Publisher) declareQueueLocked(queue string) error {
+	if _, ok := p.declared[queue]; ok {
+		return nil
+	}
+	if _, err := p.channel.QueueDeclare(queue, true, false, false, false, nil); err != nil {
+		return err
+	}
+	p.declared[queue] = struct{}{}
+	return nil
+}
+
+func (p *Publisher) invalidateLocked() {
+	if p.channel != nil && !p.channel.IsClosed() {
+		_ = p.channel.Close()
+	}
+	p.channel = nil
+	p.confirms = nil
+	p.declared = nil
+	if p.conn != nil && !p.conn.IsClosed() {
+		_ = p.conn.Close()
+	}
+	p.conn = nil
 }

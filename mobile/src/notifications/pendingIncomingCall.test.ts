@@ -34,7 +34,7 @@ describe('pending incoming call push', () => {
       actorId: 5,
       conversationId: 5,
       title: 'Alice',
-      url: `/users/10/chat/5?incomingCall=1&callId=call-1&ts=${now}`,
+      timestamp: now,
     };
 
     expect(
@@ -65,9 +65,7 @@ describe('pending incoming call push', () => {
           type: 'incoming_call',
           callId: 'old-call',
           actorId: 5,
-          url: `/users/10/chat/5?incomingCall=1&callId=old-call&ts=${
-            now - 120_000
-          }`,
+          timestamp: now - 120_000,
         },
         now,
       ),
@@ -87,7 +85,7 @@ describe('pending incoming call push', () => {
       actorId: 5,
       conversationId: 5,
       title: 'Alice',
-      url: `/users/10/chat/5?incomingCall=1&callId=call-ended&ts=${now}`,
+      timestamp: now,
     };
 
     await rememberTerminalIncomingCall('call-ended', now);
@@ -110,7 +108,7 @@ describe('pending incoming call push', () => {
         type: 'incoming_call',
         callId: 'call-live',
         actorId: 5,
-        url: `/users/10/chat/5?incomingCall=1&callId=call-live&ts=${now}`,
+        timestamp: now,
       },
       now,
     );

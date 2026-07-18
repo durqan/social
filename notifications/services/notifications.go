@@ -2,27 +2,65 @@ package services
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"notifications/dto"
-	"notifications/hub"
 	"notifications/messagecrypto"
 	"notifications/models"
 	pushsvc "notifications/push"
 	"notifications/repository"
+	"os"
+	"strconv"
 	"strings"
+	"sync"
+	"time"
 )
 
 type Service struct {
 	repo *repository.Repository
-	hub  *hub.Hub
 	push *pushsvc.Service
+
+	pushJobs  chan pushJob
+	pushWG    sync.WaitGroup
+	closeOnce sync.Once
 }
 
-func NewService(repo *repository.Repository, hub *hub.Hub, push *pushsvc.Service) *Service {
-	return &Service{repo: repo, hub: hub, push: push}
+type pushJob struct {
+	notification *models.Notification
+	userID       uint
+	payload      *pushsvc.Payload
+}
+
+var ErrInvalidNotificationCursor = errors.New("invalid notification cursor")
+
+type NotificationPage struct {
+	Notifications []models.Notification
+	NextCursor    string
+	UnseenCount   int64
+}
+
+type notificationCursorPayload struct {
+	UserID    uint      `json:"u"`
+	CreatedAt time.Time `json:"t"`
+	ID        uint      `json:"i"`
+}
+
+func NewService(repo *repository.Repository, push *pushsvc.Service) *Service {
+	service := &Service{repo: repo, push: push}
+	if push != nil && push.Enabled() {
+		queueSize := serviceEnvInt("PUSH_QUEUE_SIZE", 256, 1, 10000)
+		workers := serviceEnvInt("PUSH_WORKERS", 4, 1, 64)
+		service.pushJobs = make(chan pushJob, queueSize)
+		for i := 0; i < workers; i++ {
+			service.pushWG.Add(1)
+			go service.runPushWorker()
+		}
+	}
+	return service
 }
 
 func (s *Service) CreateNotification(req *dto.CreateNotificationReq) error {
@@ -48,8 +86,7 @@ func (s *Service) CreateNotification(req *dto.CreateNotificationReq) error {
 		return nil
 	}
 
-	s.hub.SendToUser(note.RecipientID, *note)
-	go s.sendPushNotifications(*note)
+	s.enqueuePush(pushJob{notification: note})
 	return nil
 }
 
@@ -65,32 +102,6 @@ func DedupeKey(req dto.CreateNotificationReq) string {
 	)
 	sum := sha256.Sum256([]byte(raw))
 	return hex.EncodeToString(sum[:])
-}
-
-func (s *Service) SavePushSubscription(req *dto.PushSubscriptionReq) error {
-	req.Endpoint = strings.TrimSpace(req.Endpoint)
-	req.Keys.P256DH = strings.TrimSpace(req.Keys.P256DH)
-	req.Keys.Auth = strings.TrimSpace(req.Keys.Auth)
-	if req.UserID == 0 || req.Endpoint == "" || req.Keys.P256DH == "" || req.Keys.Auth == "" {
-		return errors.New("invalid push subscription")
-	}
-
-	subscription := &models.PushSubscription{
-		UserID:   req.UserID,
-		Endpoint: req.Endpoint,
-		P256DH:   req.Keys.P256DH,
-		Auth:     req.Keys.Auth,
-	}
-
-	return s.repo.UpsertPushSubscription(subscription)
-}
-
-func (s *Service) DeletePushSubscription(userID uint, endpoint string) error {
-	endpoint = strings.TrimSpace(endpoint)
-	if userID == 0 || endpoint == "" {
-		return errors.New("invalid push subscription")
-	}
-	return s.repo.DeletePushSubscriptionForUser(userID, endpoint)
 }
 
 func (s *Service) SaveMobilePushToken(req *dto.MobilePushTokenReq) error {
@@ -118,8 +129,52 @@ func (s *Service) RevokeMobilePushToken(userID uint, req dto.MobilePushTokenReq)
 	return s.repo.RevokeMobilePushToken(userID, provider, strings.TrimSpace(req.Token))
 }
 
-func (s *Service) GetUserNotifications(userID uint) ([]models.Notification, error) {
-	return s.repo.FindByRecipientID(userID)
+func (s *Service) GetUserNotificationsPage(userID uint, limit int, encodedCursor string) (NotificationPage, error) {
+	var cursor *repository.NotificationCursor
+	if encodedCursor != "" {
+		decoded, err := DecodeNotificationCursor(encodedCursor, userID)
+		if err != nil {
+			return NotificationPage{}, err
+		}
+		cursor = decoded
+	}
+	notifications, hasMore, err := s.repo.FindPageByRecipientID(userID, limit, cursor)
+	if err != nil {
+		return NotificationPage{}, err
+	}
+	unseenCount, err := s.repo.CountUnseen(userID)
+	if err != nil {
+		return NotificationPage{}, err
+	}
+	page := NotificationPage{Notifications: notifications, UnseenCount: unseenCount}
+	if hasMore && len(notifications) > 0 {
+		last := notifications[len(notifications)-1]
+		page.NextCursor, err = EncodeNotificationCursor(userID, repository.NotificationCursor{CreatedAt: last.CreatedAt, ID: last.ID})
+	}
+	return page, err
+}
+
+func EncodeNotificationCursor(userID uint, cursor repository.NotificationCursor) (string, error) {
+	if userID == 0 || cursor.ID == 0 || cursor.CreatedAt.IsZero() {
+		return "", ErrInvalidNotificationCursor
+	}
+	payload, err := json.Marshal(notificationCursorPayload{UserID: userID, CreatedAt: cursor.CreatedAt, ID: cursor.ID})
+	if err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(payload), nil
+}
+
+func DecodeNotificationCursor(encoded string, userID uint) (*repository.NotificationCursor, error) {
+	payload, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(encoded))
+	if err != nil {
+		return nil, ErrInvalidNotificationCursor
+	}
+	var decoded notificationCursorPayload
+	if err := json.Unmarshal(payload, &decoded); err != nil || decoded.UserID != userID || decoded.ID == 0 || decoded.CreatedAt.IsZero() {
+		return nil, ErrInvalidNotificationCursor
+	}
+	return &repository.NotificationCursor{CreatedAt: decoded.CreatedAt, ID: decoded.ID}, nil
 }
 
 func (s *Service) MarkAsRead(id uint, userID uint) error {
@@ -138,8 +193,55 @@ func (s *Service) MarkMessageConversationRead(userID uint, conversationID uint) 
 	if err := s.repo.MarkMessageConversationRead(userID, conversationID); err != nil {
 		return err
 	}
-	go s.sendNotificationSync(userID, conversationID)
+	payload := pushsvc.Payload{
+		Title:          "",
+		Body:           "",
+		Tag:            buildMessageTag(conversationID),
+		Type:           "notification_sync",
+		ConversationID: conversationID,
+		SyncAction:     "message_read",
+		Silent:         true,
+	}
+	s.enqueuePush(pushJob{userID: userID, payload: &payload})
 	return nil
+}
+
+func (s *Service) enqueuePush(job pushJob) {
+	if s.pushJobs == nil {
+		return
+	}
+	// A bounded channel intentionally applies backpressure to Rabbit workers.
+	s.pushJobs <- job
+}
+
+func (s *Service) runPushWorker() {
+	defer s.pushWG.Done()
+	for job := range s.pushJobs {
+		if job.notification != nil {
+			s.sendPushNotifications(*job.notification)
+			continue
+		}
+		if job.payload != nil {
+			s.sendPushPayload(job.userID, *job.payload)
+		}
+	}
+}
+
+func (s *Service) Close() {
+	s.closeOnce.Do(func() {
+		if s.pushJobs != nil {
+			close(s.pushJobs)
+			s.pushWG.Wait()
+		}
+	})
+}
+
+func serviceEnvInt(name string, fallback, minimum, maximum int) int {
+	value, err := strconv.Atoi(strings.TrimSpace(os.Getenv(name)))
+	if err != nil || value < minimum || value > maximum {
+		return fallback
+	}
+	return value
 }
 
 func (s *Service) sendPushNotifications(notification models.Notification) {
@@ -155,23 +257,6 @@ func (s *Service) sendPushNotifications(notification models.Notification) {
 	s.sendPushPayload(notification.RecipientID, payload)
 }
 
-func (s *Service) sendNotificationSync(userID uint, conversationID uint) {
-	if s.push == nil || !s.push.Enabled() || userID == 0 || conversationID == 0 {
-		return
-	}
-
-	s.sendPushPayload(userID, pushsvc.Payload{
-		Title:          "",
-		Body:           "",
-		URL:            "",
-		Tag:            buildMessageTag(conversationID),
-		Type:           "notification_sync",
-		ConversationID: conversationID,
-		SyncAction:     "message_read",
-		Silent:         true,
-	})
-}
-
 func (s *Service) shouldSendPush(notification models.Notification) bool {
 	isRead, err := s.repo.IsNotificationRead(notification.ID)
 	if err == nil && isRead {
@@ -182,25 +267,6 @@ func (s *Service) shouldSendPush(notification models.Notification) bool {
 }
 
 func (s *Service) sendPushPayload(userID uint, payload pushsvc.Payload) {
-	if s.push.WebPushEnabled() {
-		subscriptions, err := s.repo.FindPushSubscriptionsByUserID(userID)
-		if err != nil {
-			log.Printf("failed to load push subscriptions: %v", err)
-		} else {
-			for _, subscription := range subscriptions {
-				if err := s.push.Send(subscription, payload); err != nil {
-					log.Printf("failed to send web push notification to subscription %d: %v", subscription.ID, err)
-
-					if errors.Is(err, pushsvc.ErrSubscriptionInvalid) {
-						if deleteErr := s.repo.DeletePushSubscription(subscription.ID); deleteErr != nil {
-							log.Printf("failed to delete invalid push subscription %d: %v", subscription.ID, deleteErr)
-						}
-					}
-				}
-			}
-		}
-	}
-
 	if s.push.FCMEnabled() {
 		tokens, err := s.repo.FindMobilePushTokensByUserID(userID)
 		if err != nil {
@@ -260,7 +326,6 @@ func buildPushPayload(notification models.Notification, dataSource pushPayloadDa
 	payload := pushsvc.Payload{
 		Title:          pushTitle(notification.Type),
 		Body:           pushBody(notification.Type),
-		URL:            pushURL(notification),
 		Tag:            buildTag(notification, 0),
 		NotificationID: notification.ID,
 		Type:           notification.Type,
@@ -500,33 +565,6 @@ func pushBody(notificationType string) string {
 		return "У вас пропущенный звонок"
 	default:
 		return "Откройте приложение, чтобы посмотреть"
-	}
-}
-
-func pushURL(notification models.Notification) string {
-	switch notification.Type {
-	case dto.NotificationTypeMessage:
-		return fmt.Sprintf("/users/%d/chat/%d", notification.RecipientID, notification.ActorID)
-	case dto.NotificationTypeFriendRequest:
-		return fmt.Sprintf("/users/%d/friends", notification.RecipientID)
-	case dto.NotificationTypeFriendAccepted:
-		return fmt.Sprintf("/users/%d", notification.ActorID)
-	case dto.NotificationTypePostLiked, dto.NotificationTypeCommentCreated:
-		return fmt.Sprintf("/users/%d/wall", notification.RecipientID)
-	case dto.NotificationTypeIncomingCall, dto.NotificationTypeCallEnded, dto.NotificationTypeCallRejected, dto.NotificationTypeCallMissed:
-		// Deep link into the chat with the caller. The query params are used by the PWA
-		// to know it arrived from a call push (for stale detection / future auto-accept hints).
-		conv := notification.ConversationID
-		if conv == 0 {
-			conv = notification.ActorID
-		}
-		ts := notification.CreatedAt.UnixMilli()
-		if notification.CallID != "" {
-			return fmt.Sprintf("/users/%d/chat/%d?incomingCall=1&callId=%s&ts=%d", notification.RecipientID, conv, notification.CallID, ts)
-		}
-		return fmt.Sprintf("/users/%d/chat/%d?incomingCall=1&ts=%d", notification.RecipientID, conv, ts)
-	default:
-		return fmt.Sprintf("/users/%d", notification.RecipientID)
 	}
 }
 

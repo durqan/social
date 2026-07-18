@@ -14,7 +14,7 @@ type ApiErrorKind =
   | 'server'
   | 'network';
 
-type RequestOptions = {
+export type RequestOptions = {
   method?: HTTPMethod;
   body?: unknown;
   headers?: Record<string, string>;
@@ -23,6 +23,10 @@ type RequestOptions = {
   timeoutMs?: number;
   cacheKey?: string;
   allowStaleOnError?: boolean;
+  resolveURL?: (path: string) => string;
+  includeCookieHeader?: boolean;
+  csrf?: boolean;
+  errorMessage?: string;
 };
 
 const unsafeMethods = new Set<HTTPMethod>(['POST', 'PATCH', 'PUT', 'DELETE']);
@@ -31,10 +35,19 @@ const defaultRetryCount = 2;
 const retryBaseDelayMs = 450;
 const retryJitterMs = 180;
 const cacheStoragePrefix = '@social/api-cache:v1:';
+const memoryCacheTtlMs = 5 * 60 * 1000;
+const memoryCacheMaxEntries = 100;
 
 let csrfRefresh: Promise<string> | null = null;
 let sessionRefresh: Promise<void> | null = null;
 const authInvalidHandlers = new Set<(error: unknown) => void>();
+const memoryCache = new Map<string, CachedApiResponse<unknown>>();
+let networkOffline = false;
+
+NetInfo.addEventListener(state => {
+  networkOffline =
+    state.isConnected === false || state.isInternetReachable === false;
+});
 
 export class ApiError extends Error {
   status: number;
@@ -55,15 +68,17 @@ export class ApiError extends Error {
   }
 }
 
-type ApiResponseMeta<T> = {
+export type ApiResponseMeta<T> = {
   data: T;
   fromCache: boolean;
   stale: boolean;
+  headers: Record<string, string>;
 };
 
 type CachedApiResponse<T> = {
   data: T;
   cachedAt: number;
+  headers?: Record<string, string>;
 };
 
 type FetchPolicyOptions = {
@@ -86,6 +101,15 @@ export async function readCachedApiData<T>(cacheKey?: string) {
     return null;
   }
 
+  const memoryEntry = memoryCache.get(cacheKey) as
+    | CachedApiResponse<T>
+    | undefined;
+  if (memoryEntry && Date.now() - memoryEntry.cachedAt <= memoryCacheTtlMs) {
+    memoryCache.delete(cacheKey);
+    memoryCache.set(cacheKey, memoryEntry as CachedApiResponse<unknown>);
+    return memoryEntry;
+  }
+
   try {
     const raw = await AsyncStorage.getItem(cacheStorageKey(cacheKey));
     if (!raw) {
@@ -95,6 +119,7 @@ export async function readCachedApiData<T>(cacheKey?: string) {
     if (!parsed || typeof parsed.cachedAt !== 'number') {
       return null;
     }
+    rememberCachedResponse(cacheKey, parsed);
     return parsed;
   } catch {
     return null;
@@ -104,27 +129,42 @@ export async function readCachedApiData<T>(cacheKey?: string) {
 export async function writeCachedApiData<T>(
   cacheKey: string | undefined,
   data: T,
+  headers: Record<string, string> = {},
 ) {
   if (!cacheKey) {
     return;
   }
 
+  const entry: CachedApiResponse<T> = {
+    data,
+    cachedAt: Date.now(),
+    headers,
+  };
+  rememberCachedResponse(cacheKey, entry);
+
   try {
     await AsyncStorage.setItem(
       cacheStorageKey(cacheKey),
-      JSON.stringify({
-        data,
-        cachedAt: Date.now(),
-      } satisfies CachedApiResponse<T>),
+      JSON.stringify(entry),
     );
   } catch {
     // Cache writes are best-effort and must not fail the user action.
   }
 }
 
-async function isNetworkOffline() {
-  const state = await NetInfo.fetch();
-  return state.isConnected === false || state.isInternetReachable === false;
+function rememberCachedResponse<T>(
+  cacheKey: string,
+  entry: CachedApiResponse<T>,
+) {
+  memoryCache.delete(cacheKey);
+  memoryCache.set(cacheKey, entry as CachedApiResponse<unknown>);
+  while (memoryCache.size > memoryCacheMaxEntries) {
+    const oldestKey = memoryCache.keys().next().value as string | undefined;
+    if (!oldestKey) {
+      break;
+    }
+    memoryCache.delete(oldestKey);
+  }
 }
 
 function shouldUseStaleCache(error: unknown) {
@@ -203,7 +243,7 @@ async function fetchOnceWithTimeout(
       signal: controller.signal,
     });
   } catch (error) {
-    const kind = abortErrorKind(signal, timedOut);
+    const kind = networkOffline ? 'offline' : abortErrorKind(signal, timedOut);
     if (controller.signal.aborted || signal?.aborted) {
       throw new ApiError(0, abortErrorMessage(kind), undefined, kind);
     }
@@ -229,16 +269,8 @@ export async function fetchWithNetworkPolicy(
   const retryCount =
     method === 'GET' ? options.retryCount ?? defaultRetryCount : 0;
 
-  if (unsafeMethods.has(method) && (await isNetworkOffline())) {
-    throw new ApiError(0, 'network offline', undefined, 'offline');
-  }
-
   let lastError: unknown = null;
   for (let attempt = 0; attempt <= retryCount; attempt += 1) {
-    if (method === 'GET' && attempt === 0 && (await isNetworkOffline())) {
-      throw new ApiError(0, 'network offline', undefined, 'offline');
-    }
-
     try {
       const response = await fetchOnceWithTimeout(
         url,
@@ -265,6 +297,9 @@ export async function fetchWithNetworkPolicy(
         attempt >= retryCount
       ) {
         throw error;
+      }
+      if (networkOffline) {
+        throw new ApiError(0, 'network offline', error, 'offline');
       }
       await delay(retryDelay(attempt));
     }
@@ -395,11 +430,11 @@ function errorMessageFromPayload(payload: unknown, fallback: string) {
   return fallback;
 }
 
-async function buildApiError(response: Response) {
+async function buildApiError(response: Response, fallback?: string) {
   const payload = await readResponseBody(response);
   return new ApiError(
     response.status,
-    errorMessageFromPayload(payload, `HTTP ${response.status}`),
+    errorMessageFromPayload(payload, fallback ?? `HTTP ${response.status}`),
     payload,
     classifyStatus(response.status),
   );
@@ -466,25 +501,15 @@ export async function apiRequestMeta<T>(
     Accept: 'application/json',
     ...options.headers,
   };
+  if (options.includeCookieHeader) {
+    const cookieHeader = await getCookieHeader();
+    if (cookieHeader) {
+      headers.Cookie = cookieHeader;
+    }
+  }
   let body: string | FormData | undefined;
 
-  if (unsafeMethods.has(method) && (await isNetworkOffline())) {
-    throw new ApiError(0, 'network offline', undefined, 'offline');
-  }
-
-  if (method === 'GET' && cacheKey && (await isNetworkOffline())) {
-    const cached = await readCachedApiData<T>(cacheKey);
-    if (cached) {
-      return {
-        data: cached.data,
-        fromCache: true,
-        stale: true,
-      };
-    }
-    throw new ApiError(0, 'network offline', undefined, 'offline');
-  }
-
-  if (unsafeMethods.has(method)) {
+  if (unsafeMethods.has(method) && options.csrf !== false) {
     headers['X-CSRF-Token'] = await ensureCSRFToken();
   }
 
@@ -498,7 +523,7 @@ export async function apiRequestMeta<T>(
   let response: Response;
   try {
     response = await fetchWithNetworkPolicy(
-      apiURL(path),
+      (options.resolveURL ?? apiURL)(path),
       {
         method,
         headers,
@@ -524,6 +549,7 @@ export async function apiRequestMeta<T>(
           data: cached.data,
           fromCache: true,
           stale: true,
+          headers: cached.headers ?? {},
         };
       }
     }
@@ -550,7 +576,7 @@ export async function apiRequestMeta<T>(
   }
 
   if (!response.ok) {
-    const error = await buildApiError(response);
+    const error = await buildApiError(response, options.errorMessage);
     if (
       method === 'GET' &&
       cacheKey &&
@@ -563,6 +589,7 @@ export async function apiRequestMeta<T>(
           data: cached.data,
           fromCache: true,
           stale: true,
+          headers: cached.headers ?? {},
         };
       }
     }
@@ -574,16 +601,29 @@ export async function apiRequestMeta<T>(
       data: undefined as T,
       fromCache: false,
       stale: false,
+      headers: responseHeaders(response),
     };
   }
 
   const payload = await readResponseBody(response);
-  await writeCachedApiData(cacheKey, payload as T);
+  const responseHeaderValues = responseHeaders(response);
+  writeCachedApiData(cacheKey, payload as T, responseHeaderValues).catch(
+    () => undefined,
+  );
   return {
     data: payload as T,
     fromCache: false,
     stale: false,
+    headers: responseHeaderValues,
   };
+}
+
+function responseHeaders(response: Response) {
+  const values: Record<string, string> = {};
+  response.headers.forEach((value, key) => {
+    values[key.toLowerCase()] = value;
+  });
+  return values;
 }
 
 export function toQueryString(
@@ -758,8 +798,7 @@ export function getApiErrorMessage(error: unknown) {
       'Не удалось сохранить видео-сообщение. Попробуйте позже.',
     'video note duration is required':
       'Не удалось определить длительность видео-сообщения',
-    'video note is too long':
-      'Видео-сообщение должно быть не длиннее 5 минут',
+    'video note is too long': 'Видео-сообщение должно быть не длиннее 5 минут',
     'avatar is too large': 'Аватар должен быть не больше 10 МБ',
     'avatar is required': 'Выберите изображение для аватара',
     'avatar must be jpeg, png or webp':

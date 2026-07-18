@@ -1,4 +1,9 @@
-import type { Message, PinnedMessage, ReactionSummary } from "../types/domain";
+import type {
+  Conversation,
+  Message,
+  PinnedMessage,
+  ReactionSummary,
+} from "../types/domain";
 
 export const WS_EVENTS = {
   MESSAGE_NEW: "message:new",
@@ -15,6 +20,7 @@ export const WS_EVENTS = {
   CONVERSATION_ACTIVE: "conversation:active",
   CONVERSATION_INACTIVE: "conversation:inactive",
   CONVERSATION_READ: "conversation:read",
+  CONVERSATION_DELTA: "conversation:delta",
   FRIEND_REQUEST: "friend:request",
   FRIEND_ACCEPTED: "friend:accepted",
   PRESENCE_UPDATE: "presence:update",
@@ -72,6 +78,18 @@ export type ConversationReadEvent = BaseWsEvent<
   {
     reader_id: number;
     conversation_id: number;
+  }
+>;
+export type ConversationDeltaOperation = "upsert" | "remove";
+export type ConversationDeltaEvent = BaseWsEvent<
+  typeof WS_EVENTS.CONVERSATION_DELTA,
+  {
+    operation: ConversationDeltaOperation;
+    peer_user_id: number;
+    conversation_id: number;
+    version: string;
+    event_id: string;
+    conversation?: Conversation | null;
   }
 >;
 export type MessageDeletedEvent = BaseWsEvent<
@@ -136,6 +154,7 @@ export type NonCallWsEvent =
   | TypingStopEvent
   | ReadReceiptEvent
   | ConversationReadEvent
+  | ConversationDeltaEvent
   | MessageDeletedEvent
   | MessageReactionEvent
   | MessagePinnedEvent

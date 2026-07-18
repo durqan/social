@@ -237,24 +237,35 @@ func GetConversations(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		limit := 0
-		offset := 0
-		if c.Query("limit") != "" || c.Query("offset") != "" {
-			var ok bool
-			limit, ok = intQuery(c, "limit", 50, 1, 100)
-			if !ok {
-				return
-			}
-			offset, ok = intQuery(c, "offset", 0, 0, 1000000)
-			if !ok {
+		limit, ok := intQuery(c, "limit", 50, 1, 100)
+		if !ok {
+			return
+		}
+		_, offsetPresent := c.Request.URL.Query()["offset"]
+		if offsetPresent {
+			c.JSON(400, gin.H{"error": "offset pagination is no longer supported"})
+			return
+		}
+		_, cursorPresent := c.Request.URL.Query()["cursor"]
+
+		var cursor *repository.ConversationHeadCursor
+		if cursorPresent {
+			var err error
+			cursor, err = services.DecodeConversationCursor(c.Query("cursor"), userID)
+			if err != nil {
+				c.JSON(400, gin.H{"error": "invalid cursor"})
 				return
 			}
 		}
 
-		conversations, err := services.GetConversationsPage(db, userID, limit, offset)
+		page, err := services.GetConversationsHeadPage(db, userID, limit, cursor)
 		if err != nil {
 			c.JSON(500, gin.H{"error": "failed to get conversations"})
 			return
+		}
+		conversations := page.Conversations
+		if page.NextCursor != "" {
+			c.Header("X-Next-Cursor", page.NextCursor)
 		}
 		for i := range conversations {
 			if avatar, ok := conversations[i]["avatar"].(string); ok {
@@ -293,6 +304,7 @@ func PinConversation(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		services.InvalidateMessageCaches()
+		broadcastConversationDeltas(c.Request.Context(), db, userID, conversationID, map[uint]struct{}{userID: {}})
 		c.JSON(200, gin.H{"is_pinned": true})
 	}
 }
@@ -324,6 +336,7 @@ func UnpinConversation(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		services.InvalidateMessageCaches()
+		broadcastConversationDeltas(c.Request.Context(), db, userID, conversationID, map[uint]struct{}{userID: {}})
 		c.JSON(200, gin.H{"is_pinned": false})
 	}
 }
@@ -610,6 +623,11 @@ func DeleteMessage(db *gorm.DB) gin.HandlerFunc {
 				return
 			}
 		}
+		lastMessageOwners, err := repository.GetConversationHeadOwnersByLastMessageIDs(db, []uint{messageID})
+		if err != nil {
+			c.JSON(500, gin.H{"error": "failed to delete message"})
+			return
+		}
 
 		message, err := services.DeleteMessageForUser(db, userID, messageID, mode)
 		if errors.Is(err, services.ErrMessageForbidden) {
@@ -633,6 +651,11 @@ func DeleteMessage(db *gorm.DB) gin.HandlerFunc {
 		} else {
 			broadcastMessageDelete(c.Request.Context(), messageID, userID)
 		}
+		onlyUserID := uint(0)
+		if mode == services.MessageDeleteForMe {
+			onlyUserID = userID
+		}
+		broadcastConversationDeltasAfterDelete(c.Request.Context(), db, []models.Message{message}, lastMessageOwners, onlyUserID)
 
 		c.JSON(200, gin.H{"message": "deleted", "mode": mode})
 	}
@@ -673,6 +696,11 @@ func DeleteMessagesBatch(db *gorm.DB) gin.HandlerFunc {
 				return
 			}
 		}
+		lastMessageOwners, err := repository.GetConversationHeadOwnersByLastMessageIDs(db, req.MessageIDs)
+		if err != nil {
+			c.JSON(500, gin.H{"error": "failed to delete messages"})
+			return
+		}
 
 		messages, err := services.DeleteMessagesBatchForUser(db, req.MessageIDs, userID, mode)
 		if errors.Is(err, services.ErrMessageForbidden) {
@@ -696,6 +724,11 @@ func DeleteMessagesBatch(db *gorm.DB) gin.HandlerFunc {
 				broadcastMessageUnpinned(c.Request.Context(), pin.ConversationID, pin.MessageID, pin.Message.FromID, pin.Message.ToID)
 			}
 		}
+		onlyUserID := uint(0)
+		if mode == services.MessageDeleteForMe {
+			onlyUserID = userID
+		}
+		broadcastConversationDeltasAfterDelete(c.Request.Context(), db, messages, lastMessageOwners, onlyUserID)
 
 		c.JSON(200, gin.H{"message": "deleted", "mode": mode})
 	}
@@ -747,6 +780,7 @@ func MarkMessagesAsRead(db *gorm.DB) gin.HandlerFunc {
 			sendMessageReadReceipt(c.Request.Context(), userID, fromID)
 			sendConversationReadSync(c.Request.Context(), userID, fromID)
 			enqueueMessageReadSync(db, userID, fromID)
+			broadcastConversationDeltas(c.Request.Context(), db, userID, fromID, nil)
 		}
 
 		c.JSON(200, gin.H{"message": "marked as read"})

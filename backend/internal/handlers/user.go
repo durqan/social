@@ -10,17 +10,6 @@ import (
 	"gorm.io/gorm"
 )
 
-func GetUsers(db *gorm.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		users, err := repository.GetAllUsers(db)
-		if err != nil {
-			c.JSON(500, gin.H{"error": "failed to fetch users"})
-			return
-		}
-		c.JSON(200, dto.ToPublicUserResponses(users))
-	}
-}
-
 func GetUser(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id, ok := uintParam(c, "id", "invalid user id")

@@ -1,12 +1,10 @@
 package handlers
 
 import (
-	"encoding/json"
-	"fmt"
+	"errors"
 	"net/http"
 	"notifications/auth"
 	"notifications/dto"
-	"notifications/hub"
 	"notifications/services"
 	"strconv"
 
@@ -15,11 +13,10 @@ import (
 
 type Handler struct {
 	service *services.Service
-	hub     *hub.Hub
 }
 
-func NewHandler(service *services.Service, hub *hub.Hub) *Handler {
-	return &Handler{service: service, hub: hub}
+func NewHandler(service *services.Service) *Handler {
+	return &Handler{service: service}
 }
 
 func (h *Handler) GetUserNotifications(c *gin.Context) {
@@ -28,12 +25,29 @@ func (h *Handler) GetUserNotifications(c *gin.Context) {
 		return
 	}
 
-	userNotifications, err := h.service.GetUserNotifications(userID)
+	limit := 30
+	if rawLimit := c.Query("limit"); rawLimit != "" {
+		parsed, err := strconv.Atoi(rawLimit)
+		if err != nil || parsed < 1 || parsed > 100 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid limit"})
+			return
+		}
+		limit = parsed
+	}
+	page, err := h.service.GetUserNotificationsPage(userID, limit, c.Query("cursor"))
+	if errors.Is(err, services.ErrInvalidNotificationCursor) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid cursor"})
+		return
+	}
 	if err != nil {
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
-	c.JSON(http.StatusOK, userNotifications)
+	if page.NextCursor != "" {
+		c.Header("X-Next-Cursor", page.NextCursor)
+	}
+	c.Header("X-Unseen-Count", strconv.FormatInt(page.UnseenCount, 10))
+	c.JSON(http.StatusOK, page.Notifications)
 	return
 }
 
@@ -113,45 +127,6 @@ func (h *Handler) CreateNotification(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"status": "created"})
 }
 
-func (h *Handler) SubscribePush(c *gin.Context) {
-	req := dto.PushSubscriptionReq{}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	userID, ok := auth.UserID(c)
-	if !ok {
-		return
-	}
-	req.UserID = userID
-
-	if err := h.service.SavePushSubscription(&req); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"status": "subscribed"})
-}
-
-func (h *Handler) UnsubscribePush(c *gin.Context) {
-	req := dto.DeletePushSubscriptionReq{}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid push subscription"})
-		return
-	}
-	userID, ok := auth.UserID(c)
-	if !ok {
-		return
-	}
-
-	if err := h.service.DeletePushSubscription(userID, req.Endpoint); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid push subscription"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"status": "unsubscribed"})
-}
-
 func (h *Handler) RegisterMobilePushToken(c *gin.Context) {
 	req := dto.MobilePushTokenReq{}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -189,43 +164,4 @@ func (h *Handler) RevokeMobilePushToken(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"status": "revoked"})
-}
-
-func (h *Handler) StreamNotifications(c *gin.Context) {
-	userID, ok := auth.UserID(c)
-	if !ok {
-		return
-	}
-
-	flusher, ok := c.Writer.(http.Flusher)
-	if !ok {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "streaming unsupported"})
-		return
-	}
-
-	notifications, cleanup := h.hub.AddClient(userID)
-	defer cleanup()
-
-	c.Header("Content-Type", "text/event-stream")
-	c.Header("Cache-Control", "no-cache")
-	c.Header("Connection", "keep-alive")
-	c.Status(http.StatusOK)
-	flusher.Flush()
-
-	for {
-		select {
-		case <-c.Request.Context().Done():
-			return
-		case notification := <-notifications:
-			data, err := json.Marshal(notification)
-			if err != nil {
-				continue
-			}
-
-			if _, err := fmt.Fprintf(c.Writer, "data: %s\n\n", data); err != nil {
-				return
-			}
-			flusher.Flush()
-		}
-	}
 }

@@ -17,6 +17,8 @@ type NotificationOutbox struct {
 	Attempts       int        `json:"attempts" gorm:"not null;default:0;index"`
 	LastError      string     `json:"last_error,omitempty" gorm:"type:text"`
 	NextAttemptAt  time.Time  `json:"next_attempt_at" gorm:"not null;index"`
+	LeaseToken     string     `json:"-" gorm:"size:64;index"`
+	LeaseUntil     *time.Time `json:"lease_until,omitempty" gorm:"index"`
 	PublishedAt    *time.Time `json:"published_at,omitempty" gorm:"index"`
 	CreatedAt      time.Time  `json:"created_at" gorm:"index"`
 	UpdatedAt      time.Time  `json:"updated_at"`

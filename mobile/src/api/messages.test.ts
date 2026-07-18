@@ -1,4 +1,5 @@
 const mockApiRequest = jest.fn();
+const mockApiRequestMeta = jest.fn();
 
 jest.mock(
   '@social/shared',
@@ -26,6 +27,7 @@ jest.mock(
 jest.mock('./http', () => ({
   apiCacheKey: (scope: string, key: string) => `${scope}:${key}`,
   apiRequest: (...args: unknown[]) => mockApiRequest(...args),
+  apiRequestMeta: (...args: unknown[]) => mockApiRequestMeta(...args),
   toQueryString: (params?: Record<string, unknown>) => {
     if (!params) {
       return '';
@@ -44,23 +46,28 @@ describe('message api conversation normalization', () => {
   });
 
   it('keeps legacy user_id as the chat peer id', async () => {
-    mockApiRequest.mockResolvedValueOnce([
-      {
-        user_id: 7,
-        name: 'Legacy User',
-        last_message: 'hi',
-        last_message_at: '2026-01-01T00:00:00.000Z',
-        last_sender_id: 7,
-        last_sender_name: 'Legacy User',
-        last_is_mine: false,
-        last_read: false,
-        unread_count: 1,
-        is_pinned: false,
-      },
-    ]);
+    mockApiRequestMeta.mockResolvedValueOnce({
+      data: [
+        {
+          user_id: 7,
+          name: 'Legacy User',
+          last_message: 'hi',
+          last_message_at: '2026-01-01T00:00:00.000Z',
+          last_sender_id: 7,
+          last_sender_name: 'Legacy User',
+          last_is_mine: false,
+          last_read: false,
+          unread_count: 1,
+          is_pinned: false,
+        },
+      ],
+      headers: {},
+    });
 
     const { messageApi } = require('./messages');
-    const conversations = await messageApi.getConversations();
+    const { conversations } = await messageApi.getConversationsPage({
+      limit: 50,
+    });
 
     expect(conversations[0]).toMatchObject({
       user_id: 7,
@@ -69,30 +76,35 @@ describe('message api conversation normalization', () => {
   });
 
   it('uses nested peer user data when conversation no longer has user_id', async () => {
-    mockApiRequest.mockResolvedValueOnce([
-      {
-        other_user: {
-          id: '42',
-          name: 'Peer User',
-          avatar: '/avatar.png',
-          avatar_position_x: '44',
-          avatar_position_y: '55',
-          avatar_scale: '1.25',
-          last_seen_at: '2026-01-02T00:00:00.000Z',
+    mockApiRequestMeta.mockResolvedValueOnce({
+      data: [
+        {
+          other_user: {
+            id: '42',
+            name: 'Peer User',
+            avatar: '/avatar.png',
+            avatar_position_x: '44',
+            avatar_position_y: '55',
+            avatar_scale: '1.25',
+            last_seen_at: '2026-01-02T00:00:00.000Z',
+          },
+          last_message: 'hello',
+          last_message_at: '2026-01-01T00:00:00.000Z',
+          last_sender_id: 42,
+          last_sender_name: 'Peer User',
+          last_is_mine: false,
+          last_read: true,
+          unread_count: 0,
+          is_pinned: false,
         },
-        last_message: 'hello',
-        last_message_at: '2026-01-01T00:00:00.000Z',
-        last_sender_id: 42,
-        last_sender_name: 'Peer User',
-        last_is_mine: false,
-        last_read: true,
-        unread_count: 0,
-        is_pinned: false,
-      },
-    ]);
+      ],
+      headers: {},
+    });
 
     const { messageApi } = require('./messages');
-    const conversations = await messageApi.getConversations();
+    const { conversations } = await messageApi.getConversationsPage({
+      limit: 50,
+    });
 
     expect(conversations[0]).toMatchObject({
       user_id: 42,
@@ -102,6 +114,33 @@ describe('message api conversation normalization', () => {
       avatar_position_y: 55,
       avatar_scale: 1.25,
       last_seen_at: '2026-01-02T00:00:00.000Z',
+    });
+  });
+
+  it('uses the opaque response cursor without sending offset', async () => {
+    mockApiRequestMeta.mockResolvedValueOnce({
+      data: [],
+      headers: { 'x-next-cursor': 'opaque.cursor' },
+      fromCache: false,
+      stale: false,
+    });
+
+    const { messageApi } = require('./messages');
+    const page = await messageApi.getConversationsPage({
+      limit: 50,
+      cursor: 'previous.cursor',
+    });
+
+    expect(mockApiRequestMeta).toHaveBeenCalledWith(
+      '/conversations?limit=50&cursor=previous.cursor',
+      expect.objectContaining({
+        cacheKey: expect.stringContaining('previous.cursor'),
+      }),
+    );
+    expect(page).toMatchObject({
+      conversations: [],
+      has_more: true,
+      next_cursor: 'opaque.cursor',
     });
   });
 });

@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"notifications/hub"
 	"notifications/models"
 	"notifications/repository"
 	"notifications/services"
@@ -17,63 +16,9 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestSubscribePushUsesAuthenticatedUserID(t *testing.T) {
-	database := newPushHandlerTestDB(t)
-	handler := NewHandler(
-		services.NewService(repository.NewRepository(database), hub.NewHub(), nil),
-		hub.NewHub(),
-	)
-	context, recorder := newPushHandlerContext(
-		http.MethodPost,
-		`{"user_id":99,"endpoint":"https://push.example/endpoint","keys":{"p256dh":"key","auth":"auth"}}`,
-	)
-	context.Set("user_id", uint(10))
-
-	handler.SubscribePush(context)
-
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
-	}
-	var subscription models.PushSubscription
-	if err := database.First(&subscription).Error; err != nil {
-		t.Fatalf("load subscription: %v", err)
-	}
-	if subscription.UserID != 10 {
-		t.Fatalf("subscription user_id = %d, want authenticated user 10", subscription.UserID)
-	}
-}
-
-func TestSubscribePushRequiresAuthentication(t *testing.T) {
-	database := newPushHandlerTestDB(t)
-	handler := NewHandler(
-		services.NewService(repository.NewRepository(database), hub.NewHub(), nil),
-		hub.NewHub(),
-	)
-	context, recorder := newPushHandlerContext(
-		http.MethodPost,
-		`{"endpoint":"https://push.example/endpoint","keys":{"p256dh":"key","auth":"auth"}}`,
-	)
-
-	handler.SubscribePush(context)
-
-	if recorder.Code != http.StatusUnauthorized {
-		t.Fatalf("status = %d, want 401", recorder.Code)
-	}
-	var count int64
-	if err := database.Model(&models.PushSubscription{}).Count(&count).Error; err != nil {
-		t.Fatalf("count subscriptions: %v", err)
-	}
-	if count != 0 {
-		t.Fatalf("unauthenticated request created %d subscriptions", count)
-	}
-}
-
 func TestRegisterMobilePushTokenUsesAuthenticatedUserID(t *testing.T) {
 	database := newPushHandlerTestDB(t)
-	handler := NewHandler(
-		services.NewService(repository.NewRepository(database), hub.NewHub(), nil),
-		hub.NewHub(),
-	)
+	handler := NewHandler(services.NewService(repository.NewRepository(database), nil))
 	context, recorder := newPushHandlerContext(
 		http.MethodPost,
 		`{"user_id":99,"provider":"fcm","platform":"android","token":"mobile-token"}`,
@@ -102,10 +47,7 @@ func TestRevokeMobilePushTokenOnlyCurrentUser(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("seed mobile tokens: %v", err)
 	}
-	handler := NewHandler(
-		services.NewService(repository.NewRepository(database), hub.NewHub(), nil),
-		hub.NewHub(),
-	)
+	handler := NewHandler(services.NewService(repository.NewRepository(database), nil))
 	context, recorder := newPushHandlerContext(
 		http.MethodDelete,
 		`{"provider":"fcm","platform":"android","token":"other-user-token"}`,
@@ -136,8 +78,8 @@ func newPushHandlerTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := database.AutoMigrate(&models.PushSubscription{}, &models.MobilePushToken{}); err != nil {
-		t.Fatalf("migrate push subscriptions: %v", err)
+	if err := database.AutoMigrate(&models.MobilePushToken{}); err != nil {
+		t.Fatalf("migrate mobile push tokens: %v", err)
 	}
 	return database
 }

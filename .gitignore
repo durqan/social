@@ -18,12 +18,8 @@ backend/*.dylib
 backend/bin/
 backend/dist/
 
-# Node/Vite build artifacts
+# Node/mobile build artifacts
 node_modules/
-dist/
-dist-ssr/
-.vite/
-web-build/
 *.tsbuildinfo
 *.local
 

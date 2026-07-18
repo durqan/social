@@ -29,7 +29,6 @@ export type MainTabParamList = {
   Profile: undefined;
   Friends: undefined;
   Chats: NavigatorScreenParams<ChatStackParamList>;
-  Notifications: undefined;
   Settings: undefined;
 };
 

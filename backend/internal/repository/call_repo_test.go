@@ -152,7 +152,7 @@ func TestCallRejectMarksDeclined(t *testing.T) {
 	}
 }
 
-func TestFindActiveRingingCallForCalleeReturnsRecoveryPayload(t *testing.T) {
+func TestFindActiveCallForUserReturnsRecoveryPayload(t *testing.T) {
 	db := newCallRepoTestDB(t)
 	seedCallUsers(t, db, 1, 2)
 
@@ -171,7 +171,7 @@ func TestFindActiveRingingCallForCalleeReturnsRecoveryPayload(t *testing.T) {
 		t.Fatal("expected ice transition to be forwarded")
 	}
 
-	active, err := FindActiveRingingCallForCallee(db, 2)
+	active, err := FindActiveCallForUser(db, 2)
 	if err != nil {
 		t.Fatal(err)
 	}

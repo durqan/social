@@ -19,7 +19,10 @@ describe('notification navigation', () => {
 
   it('stores pending route when navigation is not ready', async () => {
     mockNavigationRef.isReady.mockReturnValue(false);
-    const { navigateFromNotification, flushPendingNotificationNavigation } = require('./navigation');
+    const {
+      navigateFromNotification,
+      flushPendingNotificationNavigation,
+    } = require('./navigation');
 
     navigateFromNotification({
       type: 'message_received',
@@ -106,7 +109,9 @@ describe('notification navigation', () => {
       callId: 'call-123',
     });
 
-    expect(mockPendingIncomingCall.rememberPendingIncomingCall).toHaveBeenCalledWith(
+    expect(
+      mockPendingIncomingCall.rememberPendingIncomingCall,
+    ).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'incoming_call',
         callId: 'call-123',
@@ -140,7 +145,7 @@ describe('notification navigation', () => {
     });
   });
 
-  it('falls back to notifications screen without route data', async () => {
+  it('falls back to the home screen without route data', async () => {
     mockNavigationRef.isReady.mockReturnValue(true);
     const { navigateFromNotification } = require('./navigation');
 
@@ -149,7 +154,7 @@ describe('notification navigation', () => {
     });
 
     expect(mockNavigationRef.navigate).toHaveBeenCalledWith('MainTabs', {
-      screen: 'Notifications',
+      screen: 'Home',
     });
   });
 });

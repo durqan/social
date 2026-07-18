@@ -46,7 +46,7 @@ func main() {
 	services.StartUnverifiedUserCleanup(database)
 	services.StartAbandonedUploadCleanup(database)
 
-	router := server.NewRouter(database, cfg)
+	router := server.NewRouter(database)
 	handlers.StartMessageUpdateSubscriber(database)
 
 	log.Printf("Server starting on port %s", cfg.Port)

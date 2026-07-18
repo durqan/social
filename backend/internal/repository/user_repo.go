@@ -11,12 +11,6 @@ func CreateUser(db *gorm.DB, user *models.User) error {
 	return result.Error
 }
 
-func GetAllUsers(db *gorm.DB) ([]models.User, error) {
-	var users []models.User
-	result := db.Select(publicUserColumns).Find(&users)
-	return users, result.Error
-}
-
 func GetUserById(db *gorm.DB, userId uint) (models.User, error) {
 	var user models.User
 	result := db.First(&user, userId)

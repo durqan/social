@@ -79,12 +79,10 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
     return refresh;
   }, [userId]);
 
-  const signalChatDataChanged = useCallback(() => {
+  const scheduleUnreadRefresh = useCallback(() => {
     if (!userId) {
       return;
     }
-
-    setChatRefreshVersion(value => value + 1);
 
     if (refreshTimer.current) {
       clearTimeout(refreshTimer.current);
@@ -95,6 +93,19 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
       refreshUnreadCount().catch(() => undefined);
     }, 300);
   }, [refreshUnreadCount, userId]);
+
+  const signalChatDataChanged = useCallback(() => {
+    if (!userId) {
+      return;
+    }
+    // While realtime is connected, conversation:delta owns list updates. A
+    // full page resync is only needed when the mutation/push happened without
+    // a live socket.
+    if (!chatSocket.isConnected()) {
+      setChatRefreshVersion(value => value + 1);
+    }
+    scheduleUnreadRefresh();
+  }, [scheduleUnreadRefresh, userId]);
 
   useEffect(() => {
     if (!userId) {
@@ -149,7 +160,7 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
         event.type === WS_EVENTS.MESSAGE_READ ||
         event.type === WS_EVENTS.CONVERSATION_READ
       ) {
-        signalChatDataChanged();
+        scheduleUnreadRefresh();
       }
     };
 
@@ -159,7 +170,7 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
     return () => {
       unsubscribe();
     };
-  }, [signalChatDataChanged, userId]);
+  }, [scheduleUnreadRefresh, userId]);
 
   useEffect(
     () => () => {

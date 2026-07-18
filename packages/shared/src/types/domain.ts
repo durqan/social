@@ -194,6 +194,8 @@ export interface PinnedMessage {
 }
 
 export interface Conversation {
+  conversation_id?: number;
+  last_message_id?: number | null;
   user_id: number;
   name: string;
   avatar?: string | null;
@@ -204,7 +206,7 @@ export interface Conversation {
   updated_at?: string;
   last_seen_at?: string | null;
   last_message: string;
-  last_message_at: string;
+  last_message_at: string | null;
   last_sender_id: number;
   last_sender_name: string;
   last_is_mine: boolean;

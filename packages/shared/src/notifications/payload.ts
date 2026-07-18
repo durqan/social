@@ -1,23 +1,23 @@
 export const BACKEND_NOTIFICATION_TYPES = {
-  MESSAGE_RECEIVED: 'message_received',
-  FRIEND_REQUEST: 'friend_request',
-  FRIEND_ACCEPTED: 'friend_accepted',
-  POST_LIKED: 'post_liked',
-  COMMENT_CREATED: 'comment_created',
-  INCOMING_CALL: 'incoming_call',
-  CALL_ENDED: 'call_ended',
-  CALL_REJECTED: 'call_rejected',
-  CALL_MISSED: 'call_missed',
+  MESSAGE_RECEIVED: "message_received",
+  FRIEND_REQUEST: "friend_request",
+  FRIEND_ACCEPTED: "friend_accepted",
+  POST_LIKED: "post_liked",
+  COMMENT_CREATED: "comment_created",
+  INCOMING_CALL: "incoming_call",
+  CALL_ENDED: "call_ended",
+  CALL_REJECTED: "call_rejected",
+  CALL_MISSED: "call_missed",
 } as const;
 
 export const NOTIFICATION_TYPES = {
   ...BACKEND_NOTIFICATION_TYPES,
-  NOTIFICATION_SYNC: 'notification_sync',
-  SYSTEM: 'system',
+  NOTIFICATION_SYNC: "notification_sync",
+  SYSTEM: "system",
 } as const;
 
 export const NOTIFICATION_SYNC_ACTIONS = {
-  MESSAGE_READ: 'message_read',
+  MESSAGE_READ: "message_read",
 } as const;
 
 export type NotificationType =
@@ -34,9 +34,8 @@ export type PushNotificationData = {
   messageId?: number;
   conversationId?: number;
   callId?: string;
-  callType?: 'audio' | 'video' | string;
+  callType?: "audio" | "video" | string;
   syncAction?: string;
-  url?: string;
 };
 
 export type MobileNotificationType = NotificationType;
@@ -47,11 +46,11 @@ export function messageNotificationTag(conversationId: number | string) {
 }
 
 function numberFromValue(value: unknown) {
-  if (typeof value === 'number' && Number.isFinite(value)) {
+  if (typeof value === "number" && Number.isFinite(value)) {
     return value;
   }
 
-  if (typeof value === 'string') {
+  if (typeof value === "string") {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : undefined;
   }
@@ -60,7 +59,7 @@ function numberFromValue(value: unknown) {
 }
 
 export function normalizeNotificationData(
-  data?: Record<string, unknown> | null,
+  data?: Record<string, unknown> | null
 ): PushNotificationData {
   if (!data) {
     return {
@@ -69,20 +68,19 @@ export function normalizeNotificationData(
   }
 
   const type =
-    typeof data.type === 'string' ? data.type : NOTIFICATION_TYPES.SYSTEM;
-  const url = typeof data.url === 'string' ? data.url : undefined;
+    typeof data.type === "string" ? data.type : NOTIFICATION_TYPES.SYSTEM;
   const callId =
-    typeof data.call_id === 'string'
+    typeof data.call_id === "string"
       ? data.call_id
-      : typeof data.callId === 'string'
-        ? data.callId
-        : undefined;
+      : typeof data.callId === "string"
+      ? data.callId
+      : undefined;
   const callType =
-    typeof data.call_type === 'string'
+    typeof data.call_type === "string"
       ? data.call_type
-      : typeof data.callType === 'string'
-        ? data.callType
-        : undefined;
+      : typeof data.callType === "string"
+      ? data.callType
+      : undefined;
 
   return {
     type,
@@ -90,15 +88,16 @@ export function normalizeNotificationData(
     senderId: numberFromValue(data.sender_id ?? data.senderId),
     entityId: numberFromValue(data.entity_id ?? data.entityId),
     messageId: numberFromValue(data.message_id ?? data.messageId),
-    conversationId: numberFromValue(data.conversation_id ?? data.conversationId),
+    conversationId: numberFromValue(
+      data.conversation_id ?? data.conversationId
+    ),
     callId,
     callType,
     syncAction:
-      typeof data.sync_action === 'string'
+      typeof data.sync_action === "string"
         ? data.sync_action
-        : typeof data.syncAction === 'string'
-          ? data.syncAction
-          : undefined,
-    url,
+        : typeof data.syncAction === "string"
+        ? data.syncAction
+        : undefined,
   };
 }

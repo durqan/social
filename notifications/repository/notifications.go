@@ -13,6 +13,11 @@ type Repository struct {
 	db *gorm.DB
 }
 
+type NotificationCursor struct {
+	CreatedAt time.Time
+	ID        uint
+}
+
 func NewRepository(db *gorm.DB) *Repository {
 	return &Repository{db: db}
 }
@@ -32,19 +37,29 @@ func (r *Repository) CreateOnce(notification *models.Notification) (bool, error)
 	return result.RowsAffected > 0, nil
 }
 
-func (r *Repository) FindByRecipientID(userID uint) ([]models.Notification, error) {
-	var notifications []models.Notification
-
-	err := r.db.
-		Where("recipient_id = ?", userID).
-		Order("created_at desc").
-		Find(&notifications).Error
-
-	if err != nil {
-		return nil, err
+func (r *Repository) FindPageByRecipientID(userID uint, limit int, cursor *NotificationCursor) ([]models.Notification, bool, error) {
+	query := r.db.Where("recipient_id = ?", userID)
+	if cursor != nil {
+		query = query.Where("created_at < ? OR (created_at = ? AND id < ?)", cursor.CreatedAt, cursor.CreatedAt, cursor.ID)
 	}
+	var notifications []models.Notification
+	err := query.Order("created_at DESC, id DESC").Limit(limit + 1).Find(&notifications).Error
+	if err != nil {
+		return nil, false, err
+	}
+	hasMore := len(notifications) > limit
+	if hasMore {
+		notifications = notifications[:limit]
+	}
+	return notifications, hasMore, nil
+}
 
-	return notifications, nil
+func (r *Repository) CountUnseen(userID uint) (int64, error) {
+	var count int64
+	err := r.db.Model(&models.Notification{}).
+		Where("recipient_id = ? AND is_seen = ?", userID, false).
+		Count(&count).Error
+	return count, err
 }
 
 func (r *Repository) MarkAsRead(id uint, userID uint) error {
@@ -110,42 +125,6 @@ func (r *Repository) IsNotificationRead(id uint) (bool, error) {
 		return false, err
 	}
 	return notification.IsRead, nil
-}
-
-func (r *Repository) UpsertPushSubscription(subscription *models.PushSubscription) error {
-	now := time.Now()
-	return r.db.Clauses(clause.OnConflict{
-		Columns: []clause.Column{{Name: "endpoint"}},
-		DoUpdates: clause.Assignments(map[string]interface{}{
-			"user_id":    subscription.UserID,
-			"p256dh":     subscription.P256DH,
-			"auth":       subscription.Auth,
-			"updated_at": now,
-		}),
-	}).Create(subscription).Error
-}
-
-func (r *Repository) FindPushSubscriptionsByUserID(userID uint) ([]models.PushSubscription, error) {
-	var subscriptions []models.PushSubscription
-
-	err := r.db.
-		Where("user_id = ?", userID).
-		Find(&subscriptions).Error
-	if err != nil {
-		return nil, err
-	}
-
-	return subscriptions, nil
-}
-
-func (r *Repository) DeletePushSubscription(id uint) error {
-	return r.db.Delete(&models.PushSubscription{}, id).Error
-}
-
-func (r *Repository) DeletePushSubscriptionForUser(userID uint, endpoint string) error {
-	return r.db.
-		Where("user_id = ? AND endpoint = ?", userID, endpoint).
-		Delete(&models.PushSubscription{}).Error
 }
 
 func (r *Repository) UpsertMobilePushToken(token *models.MobilePushToken) error {

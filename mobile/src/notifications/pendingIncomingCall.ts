@@ -21,20 +21,6 @@ type IncomingCallListener = (call: PendingIncomingCallPush) => void;
 
 const listeners = new Set<IncomingCallListener>();
 
-function timestampFromURL(url?: string) {
-  if (!url) {
-    return undefined;
-  }
-
-  try {
-    const parsed = new URL(url, 'https://social.local');
-    const ts = Number(parsed.searchParams.get('ts'));
-    return Number.isFinite(ts) ? ts : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 function isFresh(timestamp: number, now: number) {
   return now - timestamp <= INCOMING_CALL_PUSH_TTL_MS;
 }
@@ -47,8 +33,7 @@ export function incomingCallFromNotification(
     return null;
   }
 
-  const payloadTimestamp =
-    notification.timestamp ?? timestampFromURL(notification.url);
+  const payloadTimestamp = notification.timestamp;
   if (payloadTimestamp && !isFresh(payloadTimestamp, now)) {
     return null;
   }

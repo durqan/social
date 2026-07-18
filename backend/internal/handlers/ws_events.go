@@ -174,6 +174,40 @@ func broadcastNewMessage(ctx context.Context, message models.Message) {
 			log.Println("Failed to send message to sender:", err)
 		}
 	}
+
+	broadcastConversationDeltas(ctx, dbInstance, message.FromID, message.ToID, nil)
+}
+
+func broadcastConversationDeltas(ctx context.Context, db *gorm.DB, firstUserID, secondUserID uint, onlyRecipients map[uint]struct{}) {
+	if db == nil || firstUserID == 0 || secondUserID == 0 || firstUserID == secondUserID {
+		return
+	}
+
+	deltas, err := services.GetConversationDeltasForPair(db, firstUserID, secondUserID)
+	if err != nil {
+		log.Printf("failed to build conversation delta: first_user_id=%d second_user_id=%d error=%v", firstUserID, secondUserID, err)
+		return
+	}
+	for _, delta := range deltas {
+		if onlyRecipients != nil {
+			if _, ok := onlyRecipients[delta.RecipientUserID]; !ok {
+				continue
+			}
+		}
+		deltaBytes, err := json.Marshal(gin.H{
+			"type":    "conversation:delta",
+			"payload": delta,
+		})
+		if err != nil {
+			log.Println("failed to marshal conversation delta:", err)
+			continue
+		}
+		for _, conn := range clients.getAll(delta.RecipientUserID) {
+			if err := conn.write(ctx, deltaBytes); err != nil {
+				log.Println("failed to send conversation delta:", err)
+			}
+		}
+	}
 }
 
 func BroadcastMessageUpdate(ctx context.Context, message models.Message) {
@@ -196,6 +230,65 @@ func BroadcastMessageUpdate(ctx context.Context, message models.Message) {
 		if err := fromConn.write(ctx, messageBytes); err != nil {
 			log.Println("Failed to send message update to sender:", err)
 		}
+	}
+
+	broadcastConversationDeltaForLastMessage(ctx, dbInstance, message)
+}
+
+func broadcastConversationDeltaForLastMessage(ctx context.Context, db *gorm.DB, message models.Message) {
+	owners, err := repository.GetConversationHeadOwnersByLastMessageIDs(db, []uint{message.ID})
+	if err != nil {
+		log.Printf("failed to identify conversation delta recipients: message_id=%d error=%v", message.ID, err)
+		return
+	}
+	recipients := make(map[uint]struct{}, len(owners))
+	for _, owner := range owners {
+		recipients[owner.UserID] = struct{}{}
+	}
+	if len(recipients) > 0 {
+		broadcastConversationDeltas(ctx, db, message.FromID, message.ToID, recipients)
+	}
+}
+
+func broadcastConversationDeltasAfterDelete(
+	ctx context.Context,
+	db *gorm.DB,
+	messages []models.Message,
+	lastMessageOwners []repository.ConversationHeadOwner,
+	onlyUserID uint,
+) {
+	type pair struct {
+		first  uint
+		second uint
+	}
+	recipientsByPair := make(map[pair]map[uint]struct{})
+	addRecipient := func(firstUserID, secondUserID, recipientUserID uint) {
+		if onlyUserID != 0 && recipientUserID != onlyUserID {
+			return
+		}
+		if firstUserID > secondUserID {
+			firstUserID, secondUserID = secondUserID, firstUserID
+		}
+		key := pair{first: firstUserID, second: secondUserID}
+		if recipientsByPair[key] == nil {
+			recipientsByPair[key] = make(map[uint]struct{})
+		}
+		recipientsByPair[key][recipientUserID] = struct{}{}
+	}
+
+	for _, owner := range lastMessageOwners {
+		addRecipient(owner.UserID, owner.PeerUserID, owner.UserID)
+	}
+	// Deleting an unread non-last message does not move the row, but it does
+	// change its authoritative unread projection and therefore needs a delta.
+	for _, message := range messages {
+		if !message.IsRead {
+			addRecipient(message.FromID, message.ToID, message.ToID)
+		}
+	}
+
+	for key, recipients := range recipientsByPair {
+		broadcastConversationDeltas(ctx, db, key.first, key.second, recipients)
 	}
 }
 
@@ -292,6 +385,7 @@ func handleWebSocketReadReceipt(ctx context.Context, userID uint, rawPayload jso
 	sendMessageReadReceipt(ctx, userID, payload.ToID)
 	sendConversationReadSync(ctx, userID, payload.ToID)
 	enqueueMessageReadSync(dbInstance, userID, payload.ToID)
+	broadcastConversationDeltas(ctx, dbInstance, userID, payload.ToID, nil)
 }
 
 func sendMessageReadReceipt(ctx context.Context, readerID uint, senderID uint) {
@@ -397,6 +491,8 @@ func broadcastMessageUpdate(ctx context.Context, message models.Message) {
 			}
 		}
 	}
+
+	broadcastConversationDeltaForLastMessage(ctx, dbInstance, message)
 }
 
 func broadcastMessageReactionUpdate(ctx context.Context, db *gorm.DB, message models.Message) {

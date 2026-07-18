@@ -25,9 +25,18 @@ import {
   UserPlus,
 } from 'lucide-react-native';
 
-import { getApiErrorMessage } from '../../api/http';
+import { ApiError, getApiErrorMessage } from '../../api/http';
 import { messageApi } from '../../api/messages';
-import type { Conversation } from '@social/shared';
+import {
+  WS_EVENTS,
+  appendConversationPage,
+  applyConversationDelta,
+  sortConversations,
+  type Conversation,
+  type ConversationDeltaEvent,
+  type ConversationVersionMap,
+} from '@social/shared';
+import {chatSocket, type WsEvent} from '../../api/ws';
 import {
   EmptyState,
   ErrorBanner,
@@ -50,21 +59,6 @@ type LoadMode = 'refresh' | 'silent';
 type ConversationFilter = 'all' | 'unread' | 'pinned';
 const CONVERSATION_PAGE_SIZE = 50;
 const ONLINE_WINDOW_MS = 5 * 60 * 1000;
-
-function conversationTimestamp(conversation: Conversation) {
-  const timestamp = Date.parse(conversation.last_message_at || '');
-  return Number.isFinite(timestamp) ? timestamp : 0;
-}
-
-function sortConversations(conversations: Conversation[]) {
-  return [...conversations].sort((first, second) => {
-    if (first.is_pinned !== second.is_pinned) {
-      return first.is_pinned ? -1 : 1;
-    }
-
-    return conversationTimestamp(second) - conversationTimestamp(first);
-  });
-}
 
 function conversationPeerId(conversation: Conversation) {
   const peerId = Number(conversation.user_id);
@@ -103,9 +97,14 @@ export default function ChatListScreen({ navigation }: Props) {
   );
   const [success, setSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadSeq = useRef(0);
-  const nextOffsetRef = useRef(0);
+  const nextCursorRef = useRef<string | null>(null);
+  const activeLoadMoreCursorRef = useRef<string | null>(null);
+  const loadMoreInFlightRef = useRef(false);
+  const invalidCursorRecoveryRef = useRef(false);
+  const conversationVersionsRef = useRef<ConversationVersionMap>(new Map());
+  const hasLoadedRef = useRef(false);
+  const hasConnectedRef = useRef(false);
   const screenActiveRef = useRef(false);
   const loadAbortRef = useRef<AbortController | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -137,13 +136,39 @@ export default function ChatListScreen({ navigation }: Props) {
 
   const load = useCallback(
     async (mode: LoadMode | 'more' = 'refresh') => {
-      const requestSeq = ++loadSeq.current;
-
       if (mode === 'more') {
-        loadMoreAbortRef.current?.abort();
+        const cursor = nextCursorRef.current;
+        if (
+          !cursor ||
+          loadMoreInFlightRef.current ||
+          activeLoadMoreCursorRef.current === cursor
+        ) {
+          return;
+        }
+        loadMoreInFlightRef.current = true;
+        activeLoadMoreCursorRef.current = cursor;
+        setLoadingMore(true);
       } else {
+        loadSeq.current += 1;
         loadAbortRef.current?.abort();
+        loadMoreAbortRef.current?.abort();
+        loadMoreInFlightRef.current = false;
+        activeLoadMoreCursorRef.current = null;
+        nextCursorRef.current = null;
+        setHasMore(false);
+        setLoadingMore(false);
+        if (mode === 'refresh') {
+          if (hasLoadedRef.current) {
+            setRefreshing(true);
+          } else {
+            setLoading(true);
+          }
+        }
       }
+
+      const requestSeq = loadSeq.current;
+      const cursor =
+        mode === 'more' ? activeLoadMoreCursorRef.current : null;
 
       const controller = new AbortController();
 
@@ -154,40 +179,50 @@ export default function ChatListScreen({ navigation }: Props) {
       }
       setError(null);
       try {
-        const offset = mode === 'more' ? nextOffsetRef.current : 0;
-        const limit =
-          mode === 'more'
-            ? CONVERSATION_PAGE_SIZE
-            : Math.max(CONVERSATION_PAGE_SIZE, nextOffsetRef.current || 0);
         const page = await messageApi.getConversationsPage(
           {
-            limit,
-            offset,
+            limit: CONVERSATION_PAGE_SIZE,
+            ...(cursor ? {cursor} : {}),
           },
           {
             signal: controller.signal,
           },
         );
-        if (!screenActiveRef.current || loadSeq.current !== requestSeq) {
+        if (
+          !screenActiveRef.current ||
+          loadSeq.current !== requestSeq ||
+          controller.signal.aborted ||
+          (mode === 'more' && activeLoadMoreCursorRef.current !== cursor)
+        ) {
           return;
         }
         setConversations(previous => {
           if (mode !== 'more') {
             return sortConversations(page.conversations);
           }
-          const existingIds = new Set(previous.map(item => item.user_id));
-          const nextConversations = page.conversations.filter(
-            item => !existingIds.has(item.user_id),
-          );
-          return nextConversations.length
-            ? sortConversations([...previous, ...nextConversations])
-            : previous;
+          return appendConversationPage(previous, page.conversations);
         });
         setHasMore(page.has_more);
-        nextOffsetRef.current = page.next_offset;
+        nextCursorRef.current = page.next_cursor;
         refreshUnreadCount().catch(() => undefined);
       } catch (apiError) {
         if ((apiError as Error)?.message === 'request aborted') {
+          return;
+        }
+        const shouldRecoverCursor =
+          mode === 'more' &&
+          apiError instanceof ApiError &&
+          apiError.status === 400 &&
+          !invalidCursorRecoveryRef.current;
+        if (shouldRecoverCursor) {
+          invalidCursorRecoveryRef.current = true;
+          nextCursorRef.current = null;
+          setHasMore(false);
+          setTimeout(() => {
+            if (screenActiveRef.current) {
+              load('silent').catch(() => undefined);
+            }
+          }, 0);
           return;
         }
         if (screenActiveRef.current && loadSeq.current === requestSeq) {
@@ -198,6 +233,10 @@ export default function ChatListScreen({ navigation }: Props) {
           if (loadMoreAbortRef.current === controller) {
             loadMoreAbortRef.current = null;
           }
+          if (activeLoadMoreCursorRef.current === cursor) {
+            activeLoadMoreCursorRef.current = null;
+          }
+          loadMoreInFlightRef.current = false;
         } else if (loadAbortRef.current === controller) {
           loadAbortRef.current = null;
         }
@@ -211,6 +250,8 @@ export default function ChatListScreen({ navigation }: Props) {
           }
 
           if (loadSeq.current === requestSeq) {
+            hasLoadedRef.current = true;
+            invalidCursorRecoveryRef.current = false;
             setHasLoaded(true);
           }
         }
@@ -218,17 +259,6 @@ export default function ChatListScreen({ navigation }: Props) {
     },
     [refreshUnreadCount],
   );
-
-  const scheduleRealtimeRefresh = useCallback(() => {
-    if (refreshTimer.current) {
-      clearTimeout(refreshTimer.current);
-    }
-
-    refreshTimer.current = setTimeout(() => {
-      refreshTimer.current = null;
-      load('silent').catch(() => undefined);
-    }, 250);
-  }, [load]);
 
   useFocusEffect(
     useCallback(() => {
@@ -238,13 +268,13 @@ export default function ChatListScreen({ navigation }: Props) {
       return () => {
         screenActiveRef.current = false;
         loadSeq.current += 1;
-        if (refreshTimer.current) {
-          clearTimeout(refreshTimer.current);
-          refreshTimer.current = null;
-        }
         loadAbortRef.current?.abort();
+        loadMoreAbortRef.current?.abort();
         loadAbortRef.current = null;
-        nextOffsetRef.current = 0;
+        loadMoreAbortRef.current = null;
+        nextCursorRef.current = null;
+        activeLoadMoreCursorRef.current = null;
+        loadMoreInFlightRef.current = false;
         setHasMore(false);
         setLoadingMore(false);
         setLoading(false);
@@ -258,8 +288,42 @@ export default function ChatListScreen({ navigation }: Props) {
       return;
     }
 
-    scheduleRealtimeRefresh();
-  }, [chatRefreshVersion, isFocused, scheduleRealtimeRefresh]);
+    conversationVersionsRef.current.clear();
+    load('silent').catch(() => undefined);
+  }, [chatRefreshVersion, isFocused, load]);
+
+  useEffect(() => {
+    if (!isFocused) {
+      return undefined;
+    }
+
+    const unsubscribeMessage = chatSocket.onMessage((event: WsEvent) => {
+      if (event.type !== WS_EVENTS.CONVERSATION_DELTA) {
+        return;
+      }
+      setConversations(previous =>
+        applyConversationDelta(
+          previous,
+          event as ConversationDeltaEvent,
+          conversationVersionsRef.current,
+        ),
+      );
+    });
+    const unsubscribeStatus = chatSocket.onStatus(connected => {
+      if (connected && hasConnectedRef.current && screenActiveRef.current) {
+        conversationVersionsRef.current.clear();
+        load('silent').catch(() => undefined);
+      }
+      if (connected) {
+        hasConnectedRef.current = true;
+      }
+    });
+
+    return () => {
+      unsubscribeMessage();
+      unsubscribeStatus();
+    };
+  }, [isFocused, load]);
 
   useAppResumeEffect(() => {
     if (!isFocused) {

@@ -104,42 +104,6 @@ func GetActiveCall(database *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-func DebugCall(database *gorm.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		userID, ok := authenticatedUserID(c)
-		if !ok {
-			return
-		}
-		emitExpiredCallTimeouts(c.Request.Context(), database)
-
-		callID := strings.TrimSpace(c.Param("callId"))
-		call, err := repository.DebugCallDump(database, userID, callID)
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			jsonError(c, http.StatusNotFound, "call not found")
-			return
-		}
-		if err != nil {
-			jsonError(c, http.StatusInternalServerError, "failed to get call debug dump")
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"call_id":          call.CallID,
-			"conversation_id":  call.ConversationID,
-			"caller_id":        call.CallerID,
-			"callee_id":        call.CalleeID,
-			"call_type":        call.CallType,
-			"status":           call.Status,
-			"started_at":       call.StartedAt,
-			"expires_at":       call.ExpiresAt,
-			"answered_at":      call.AnsweredAt,
-			"ended_at":         call.EndedAt,
-			"duration_seconds": call.DurationSeconds,
-			"updated_at":       call.UpdatedAt,
-		})
-	}
-}
-
 func RejectCall(database *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID, ok := authenticatedUserID(c)

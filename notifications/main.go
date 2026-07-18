@@ -5,14 +5,12 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"notifications/auth"
 	"notifications/cache"
 	"notifications/db"
 	"notifications/handlers"
-	"notifications/hub"
 	"notifications/messagecrypto"
 	"notifications/middleware"
 	pushsvc "notifications/push"
@@ -43,10 +41,10 @@ func main() {
 	}
 
 	repo := repository.NewRepository(newDB)
-	notificationHub := hub.NewHub()
 	pushService := pushsvc.NewServiceFromEnv()
-	svc := services.NewService(repo, notificationHub, pushService)
-	h := handlers.NewHandler(svc, notificationHub)
+	svc := services.NewService(repo, pushService)
+	defer svc.Close()
+	h := handlers.NewHandler(svc)
 
 	if err := cache.InitRedis(); err != nil {
 		log.Fatal("failed to connect redis:", err)
@@ -59,22 +57,6 @@ func main() {
 	go consumer.Start(consumerCtx)
 
 	r := gin.Default()
-	r.Use(func(c *gin.Context) {
-		if origin := c.GetHeader("Origin"); originAllowed(origin) {
-			c.Header("Access-Control-Allow-Origin", origin)
-			c.Header("Access-Control-Allow-Credentials", "true")
-		}
-		c.Header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token")
-
-		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(http.StatusNoContent)
-			return
-		}
-
-		c.Next()
-	})
-
 	r.GET("/health", func(c *gin.Context) {
 		rabbitStatus := consumer.Status()
 		statusCode := http.StatusOK
@@ -92,51 +74,14 @@ func main() {
 	r.POST("/notifications", middleware.RateLimit(30, time.Minute), auth.InternalMiddleware(), h.CreateNotification)
 
 	protected := r.Group("/", auth.Middleware())
-	protected.GET("/notifications/stream", h.StreamNotifications)
 	protected.GET("/notifications", h.GetUserNotifications)
-	protected.GET("/notifications/:user_id/stream", h.StreamNotifications)
-	protected.GET("/notifications/:user_id", h.GetUserNotifications)
 	protected.PATCH("/notifications/seen", h.MarkAsSeen)
 	protected.PATCH("/notifications/read-matching", h.MarkMatchingAsRead)
 	protected.PATCH("/notifications/:id/read", h.MarkAsRead)
-	protected.POST("/push/subscribe", h.SubscribePush)
-	protected.DELETE("/push/subscribe", h.UnsubscribePush)
 	protected.POST("/push/mobile-token", middleware.RateLimit(20, time.Hour), h.RegisterMobilePushToken)
 	protected.DELETE("/push/mobile-token", middleware.RateLimit(20, time.Hour), h.RevokeMobilePushToken)
 
 	if err = r.Run(":8085"); err != nil {
 		log.Fatal(err)
 	}
-}
-
-func originAllowed(origin string) bool {
-	if origin == "" {
-		return false
-	}
-	for _, allowed := range allowedOrigins() {
-		if origin == allowed {
-			return true
-		}
-	}
-	return false
-}
-
-func allowedOrigins() []string {
-	raw := os.Getenv("CORS_ALLOWED_ORIGINS")
-	if raw == "" {
-		raw = os.Getenv("FRONTEND_URL")
-	}
-	if raw == "" {
-		return []string{"http://localhost:5173", "http://localhost:5174", "http://localhost:5175"}
-	}
-
-	parts := strings.Split(raw, ",")
-	origins := make([]string, 0, len(parts))
-	for _, part := range parts {
-		origin := strings.TrimSpace(part)
-		if origin != "" {
-			origins = append(origins, origin)
-		}
-	}
-	return origins
 }

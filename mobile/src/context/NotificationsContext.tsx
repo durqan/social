@@ -31,8 +31,11 @@ type NotificationsContextValue = {
   notifications: SocialNotification[];
   unreadNotificationCount: number;
   loading: boolean;
+  loadingMore: boolean;
+  hasMore: boolean;
   error: string | null;
   refreshNotifications: () => Promise<void>;
+  loadMoreNotifications: () => Promise<void>;
   markAsRead: (notificationId: number) => Promise<void>;
   markAsSeen: (notificationIds: number[]) => Promise<void>;
   markMatchingAsRead: (payload: MarkNotificationsReadPayload) => Promise<void>;
@@ -53,8 +56,20 @@ function notificationMatchesConversation(
   );
 }
 
-function countUnseenNotificationBadge(notifications: SocialNotification[]) {
-  return notifications.filter(notification => !notification.is_seen).length;
+function notificationMatchesReadRequest(
+  notification: SocialNotification,
+  payload: MarkNotificationsReadPayload,
+) {
+  return (
+    (payload.types.length === 0 || payload.types.includes(notification.type)) &&
+    (payload.actor_id === undefined ||
+      payload.actor_id === notification.actor_id) &&
+    (payload.entity_id === undefined ||
+      payload.entity_id === notification.entity_id) &&
+    (payload.conversation_id === undefined ||
+      payload.conversation_id === notification.conversation_id ||
+      payload.conversation_id === notification.actor_id)
+  );
 }
 
 export function NotificationsProvider({ children }: { children: ReactNode }) {
@@ -63,21 +78,21 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   const { refreshUnreadCount, signalChatDataChanged } = useUnread();
   const [notifications, setNotifications] = useState<SocialNotification[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const refreshInFlight = useRef<Promise<void> | null>(null);
   const refreshInFlightUserId = useRef<number | null>(null);
   const refreshSeq = useRef(0);
   const userId = user?.id ?? null;
   const currentUserIdRef = useRef(userId);
+  const nextCursorRef = useRef<string | null>(null);
+  const loadMoreInFlightRef = useRef(false);
 
   useEffect(() => {
     currentUserIdRef.current = userId;
   }, [userId]);
-
-  const unreadNotificationCount = useMemo(
-    () => countUnseenNotificationBadge(notifications),
-    [notifications],
-  );
 
   const refreshNotifications = useCallback(async () => {
     if (!userId) {
@@ -94,17 +109,18 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     setError(null);
     const refresh = notificationsApi
-      .getNotifications()
-      .then(nextNotifications => {
+      .getNotificationsPage({ limit: 30 })
+      .then(page => {
         if (
           refreshSeq.current !== requestSeq ||
           refreshInFlightUserId.current !== userId
         ) {
           return;
         }
-        setNotifications(
-          Array.isArray(nextNotifications) ? nextNotifications : [],
-        );
+        setNotifications(page.notifications);
+        nextCursorRef.current = page.next_cursor;
+        setHasMore(page.has_more);
+        setUnreadNotificationCount(page.unseen_count);
       })
       .catch(apiError => {
         if (refreshSeq.current === requestSeq) {
@@ -125,6 +141,41 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     return refresh;
   }, [userId]);
 
+  const loadMoreNotifications = useCallback(async () => {
+    const cursor = nextCursorRef.current;
+    if (!userId || !cursor || loadMoreInFlightRef.current) {
+      return;
+    }
+    loadMoreInFlightRef.current = true;
+    setLoadingMore(true);
+    const requestSeq = refreshSeq.current;
+    try {
+      const page = await notificationsApi.getNotificationsPage({
+        limit: 30,
+        cursor,
+      });
+      if (
+        requestSeq !== refreshSeq.current ||
+        userId !== currentUserIdRef.current
+      ) {
+        return;
+      }
+      setNotifications(previous => {
+        const seen = new Set(previous.map(item => item.id));
+        const appended = page.notifications.filter(item => !seen.has(item.id));
+        return [...previous, ...appended].slice(0, 200);
+      });
+      nextCursorRef.current = page.next_cursor;
+      setHasMore(page.has_more && page.notifications.length > 0);
+      setUnreadNotificationCount(page.unseen_count);
+    } catch (apiError) {
+      setError(getApiErrorMessage(apiError));
+    } finally {
+      loadMoreInFlightRef.current = false;
+      setLoadingMore(false);
+    }
+  }, [userId]);
+
   const markAsRead = useCallback(
     async (notificationId: number) => {
       const requestUserId = userId;
@@ -139,8 +190,12 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
             : notification,
         ),
       );
+      const target = notifications.find(item => item.id === notificationId);
+      if (target && !target.is_seen) {
+        setUnreadNotificationCount(count => Math.max(0, count - 1));
+      }
     },
-    [userId],
+    [notifications, userId],
   );
 
   const markAsSeen = useCallback(
@@ -155,6 +210,9 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
         return;
       }
       const seenIds = new Set(notificationIds);
+      const newlySeen = notifications.filter(
+        notification => seenIds.has(notification.id) && !notification.is_seen,
+      ).length;
       setNotifications(previous =>
         previous.map(notification =>
           seenIds.has(notification.id)
@@ -162,8 +220,11 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
             : notification,
         ),
       );
+      if (newlySeen > 0) {
+        setUnreadNotificationCount(count => Math.max(0, count - newlySeen));
+      }
     },
-    [userId],
+    [notifications, userId],
   );
 
   const markMatchingAsRead = useCallback(
@@ -174,31 +235,22 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
         return;
       }
       setNotifications(previous =>
-        previous.map(notification => {
-          const typeMatches =
-            payload.types.length === 0 ||
-            payload.types.includes(notification.type);
-          const actorMatches =
-            payload.actor_id === undefined ||
-            payload.actor_id === notification.actor_id;
-          const entityMatches =
-            payload.entity_id === undefined ||
-            payload.entity_id === notification.entity_id;
-          const conversationMatches =
-            payload.conversation_id === undefined ||
-            payload.conversation_id === notification.conversation_id ||
-            payload.conversation_id === notification.actor_id;
-
-          return typeMatches &&
-            actorMatches &&
-            entityMatches &&
-            conversationMatches
+        previous.map(notification =>
+          notificationMatchesReadRequest(notification, payload)
             ? { ...notification, is_read: true, is_seen: true }
-            : notification;
-        }),
+            : notification,
+        ),
       );
+      const newlySeen = notifications.filter(
+        notification =>
+          !notification.is_seen &&
+          notificationMatchesReadRequest(notification, payload),
+      ).length;
+      if (newlySeen > 0) {
+        setUnreadNotificationCount(count => Math.max(0, count - newlySeen));
+      }
     },
-    [userId],
+    [notifications, userId],
   );
 
   const markConversationNotificationsRead = useCallback(
@@ -214,8 +266,16 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
             : notification,
         ),
       );
+      const newlySeen = notifications.filter(
+        notification =>
+          !notification.is_seen &&
+          notificationMatchesConversation(notification, conversationId),
+      ).length;
+      if (newlySeen > 0) {
+        setUnreadNotificationCount(count => Math.max(0, count - newlySeen));
+      }
     },
-    [],
+    [notifications],
   );
 
   const handleNotification = useCallback(
@@ -278,6 +338,10 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       refreshInFlight.current = null;
       refreshInFlightUserId.current = null;
       setNotifications([]);
+      nextCursorRef.current = null;
+      setHasMore(false);
+      setLoadingMore(false);
+      setUnreadNotificationCount(0);
       setLoading(false);
       setError(null);
       return;
@@ -317,15 +381,21 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       notifications,
       unreadNotificationCount,
       loading,
+      loadingMore,
+      hasMore,
       error,
       refreshNotifications,
+      loadMoreNotifications,
       markAsRead,
       markAsSeen,
       markMatchingAsRead,
     }),
     [
       error,
+      hasMore,
       loading,
+      loadingMore,
+      loadMoreNotifications,
       markAsRead,
       markAsSeen,
       markMatchingAsRead,

@@ -1,6 +1,8 @@
 import { StyleSheet } from 'react-native';
 
-import { colors } from '../../../theme/colors';
+import { defaultThemeId, themes } from '../../../theme/themes';
+
+const colors = themes[defaultThemeId];
 import { radius, spacing, typography } from '../../../theme/layout';
 import type { ThemeColors } from '../../../theme/themes';
 
@@ -46,7 +48,9 @@ export const createChatThemeStyles = (theme: ThemeColors = colors) => {
       borderColor: theme.border,
     },
     surfaceBar: {
-      backgroundColor: theme.isDark ? 'rgba(0,0,0,0.18)' : 'rgba(255,255,255,0.72)',
+      backgroundColor: theme.isDark
+        ? 'rgba(0,0,0,0.18)'
+        : 'rgba(255,255,255,0.72)',
       borderColor: theme.border,
       borderTopColor: theme.border,
     },
@@ -160,17 +164,25 @@ export const createChatThemeStyles = (theme: ThemeColors = colors) => {
       shadowOpacity: theme.isDark ? 0.22 : 0.08,
     },
     replyPreview: {
-      backgroundColor: theme.isDark ? 'rgba(255,255,255,0.07)' : theme.surfaceMuted,
+      backgroundColor: theme.isDark
+        ? 'rgba(255,255,255,0.07)'
+        : theme.surfaceMuted,
       borderLeftColor: theme.accent,
     },
     voiceAttachment: {
-      backgroundColor: theme.isDark ? 'rgba(255,255,255,0.07)' : theme.surfaceMuted,
+      backgroundColor: theme.isDark
+        ? 'rgba(255,255,255,0.07)'
+        : theme.surfaceMuted,
     },
     genericVideoAttachment: {
-      backgroundColor: theme.isDark ? 'rgba(255,255,255,0.07)' : theme.surfaceMuted,
+      backgroundColor: theme.isDark
+        ? 'rgba(255,255,255,0.07)'
+        : theme.surfaceMuted,
     },
     genericFileAttachment: {
-      backgroundColor: theme.isDark ? 'rgba(255,255,255,0.07)' : theme.surfaceMuted,
+      backgroundColor: theme.isDark
+        ? 'rgba(255,255,255,0.07)'
+        : theme.surfaceMuted,
     },
     messageImageFrame: {
       backgroundColor: theme.surfaceMuted,

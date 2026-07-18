@@ -1,7 +1,6 @@
 package services
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -115,11 +114,6 @@ var allowedChatVideoNoteTypes = map[string]struct {
 	"video/mp4":  {extension: ".mp4", contentType: "video/mp4"},
 }
 
-func ChatImageExtension(contentType string) (string, bool) {
-	ext, ok := allowedChatImageTypes[contentType]
-	return ext, ok
-}
-
 func ChatVoiceExtension(contentType string) (string, string, bool) {
 	mediaType, _, err := mime.ParseMediaType(strings.TrimSpace(contentType))
 	if err != nil {
@@ -131,10 +125,6 @@ func ChatVoiceExtension(contentType string) (string, string, bool) {
 		return "", "", false
 	}
 	return format.extension, format.contentType, true
-}
-
-func ValidateChatVoiceUpload(data []byte, declaredContentType string) (string, string, error) {
-	return ValidateChatVoiceUploadMagic(data, declaredContentType)
 }
 
 func ValidateChatVoiceUploadMagic(header []byte, declaredContentType string) (string, string, error) {
@@ -165,10 +155,6 @@ func ChatVideoNoteExtension(contentType string) (string, string, bool) {
 		return "", "", false
 	}
 	return format.extension, format.contentType, true
-}
-
-func ValidateChatVideoNoteUpload(data []byte, declaredContentType string) (string, string, error) {
-	return ValidateChatVideoNoteUploadMagic(data, declaredContentType)
 }
 
 func ValidateChatVideoNoteUploadMagic(header []byte, declaredContentType string) (string, string, error) {
@@ -213,10 +199,6 @@ func ValidateChatVoiceDurationSeconds(duration int) (int, error) {
 }
 
 func ParseChatVideoNoteDurationSeconds(value string) (int, bool) {
-	return parseChatMediaDurationSeconds(value)
-}
-
-func ParseChatGenericMediaDurationSeconds(value string) (int, bool) {
 	return parseChatMediaDurationSeconds(value)
 }
 
@@ -623,13 +605,6 @@ func WithPrivateAttachmentURLsForMessages(messages []models.Message) []models.Me
 		messages[i] = WithPrivateAttachmentURLs(messages[i])
 	}
 	return messages
-}
-
-func ChatUploadPath(filename string) (string, bool) {
-	if filename == "" || filename != filepath.Base(filename) {
-		return "", false
-	}
-	return filepath.Join("uploads", "chat", filename), true
 }
 
 func ChatUploadKey(filename string, userID uint) string {
@@ -1191,24 +1166,5 @@ func ContentTypeForKey(key string) string {
 		return "application/octet-stream"
 	default:
 		return ""
-	}
-}
-
-func DeleteObjectKeys(ctx context.Context, values []string) {
-	store, err := storage.Default()
-	if err != nil {
-		return
-	}
-	seen := make(map[string]struct{}, len(values))
-	for _, value := range values {
-		key, ok := storage.KeyFromStoredValue(value)
-		if !ok {
-			continue
-		}
-		if _, exists := seen[key]; exists {
-			continue
-		}
-		seen[key] = struct{}{}
-		_ = store.Delete(ctx, key)
 	}
 }

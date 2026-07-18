@@ -55,36 +55,29 @@ func TestWebsocketRegistryTracksActiveConversationPerClient(t *testing.T) {
 		second: {},
 	}
 
-	if registry.hasActiveConversation(10, 20) {
-		t.Fatal("expected no active conversation before client update")
-	}
-
 	if !registry.setActiveConversation(10, first, 20) {
 		t.Fatal("expected active conversation update to succeed")
 	}
-	if !registry.hasActiveConversation(10, 20) {
+	if first.activeConversationID != 20 {
 		t.Fatal("expected first client to mark conversation active")
-	}
-	if registry.hasActiveConversation(10, 30) {
-		t.Fatal("did not expect different conversation to be active")
 	}
 
 	if !registry.setActiveConversation(10, first, 0) {
 		t.Fatal("expected active conversation clear to succeed")
 	}
-	if registry.hasActiveConversation(10, 20) {
+	if first.activeConversationID != 0 {
 		t.Fatal("expected active conversation to clear for first client")
 	}
 
 	if !registry.setActiveConversation(10, second, 30) {
 		t.Fatal("expected second client active conversation update to succeed")
 	}
-	if !registry.hasActiveConversation(10, 30) {
+	if second.activeConversationID != 30 {
 		t.Fatal("expected second client to track its own active conversation")
 	}
 
 	registry.remove(10, second)
-	if registry.hasActiveConversation(10, 30) {
-		t.Fatal("expected removed client active conversation to be cleared from registry")
+	if len(registry.getAll(10)) != 1 {
+		t.Fatal("expected removed client to leave the registry")
 	}
 }

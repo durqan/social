@@ -137,23 +137,6 @@ func FindCallForParticipant(db *gorm.DB, userID uint, callID string) (models.Cal
 	return call, err
 }
 
-func FindActiveRingingCallForCallee(db *gorm.DB, calleeID uint) (models.CallLog, error) {
-	if calleeID == 0 {
-		return models.CallLog{}, gorm.ErrRecordNotFound
-	}
-
-	now := time.Now()
-	var call models.CallLog
-	err := db.
-		Preload("Caller", preloadPublicUser).
-		Preload("Callee", preloadPublicUser).
-		Where("callee_id = ? AND status = ?", calleeID, models.CallStatusRinging).
-		Where("expires_at IS NULL OR expires_at > ?", now).
-		Order("started_at DESC, id DESC").
-		First(&call).Error
-	return call, err
-}
-
 func FindActiveCallForUser(db *gorm.DB, userID uint) (models.CallLog, error) {
 	if userID == 0 {
 		return models.CallLog{}, gorm.ErrRecordNotFound
@@ -169,11 +152,6 @@ func FindActiveCallForUser(db *gorm.DB, userID uint) (models.CallLog, error) {
 		Order("started_at DESC, id DESC").
 		First(&call).Error
 	return call, err
-}
-
-func ExpireStaleRingingCalls(db *gorm.DB) error {
-	_, err := ExpireStaleRingingCallsWithResult(db)
-	return err
 }
 
 func ExpireStaleRingingCallsWithResult(db *gorm.DB) ([]models.CallLog, error) {
@@ -296,46 +274,6 @@ func MarkCallHeartbeat(db *gorm.DB, actorID, peerID uint, callID string) (models
 		return call, false, nil
 	}
 	call.UpdatedAt = now
-	return call, true, nil
-}
-
-func DebugCallDump(db *gorm.DB, userID uint, callID string) (models.CallLog, error) {
-	call, err := FindCallForParticipant(db, userID, callID)
-	if err != nil {
-		return models.CallLog{}, err
-	}
-	call.OfferPayload = ""
-	call.AnswerPayload = ""
-	call.IceCandidates = ""
-	return call, nil
-}
-
-func ForceExpireRingingCall(db *gorm.DB, actorID, peerID uint, callID string) (models.CallLog, bool, error) {
-	call, err := findCallBetweenUsersByID(db, actorID, peerID, callID)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return models.CallLog{}, false, nil
-	}
-	if err != nil {
-		return models.CallLog{}, false, err
-	}
-	if call.Status != models.CallStatusRinging || callExpired(call) {
-		return call, false, nil
-	}
-	now := time.Now()
-	result := db.Model(&models.CallLog{}).
-		Where("id = ? AND status = ?", call.ID, models.CallStatusRinging).
-		Updates(map[string]interface{}{
-			"status":   models.CallStatusMissed,
-			"ended_at": now,
-		})
-	if result.Error != nil {
-		return call, false, result.Error
-	}
-	if result.RowsAffected == 0 {
-		return call, false, nil
-	}
-	call.Status = models.CallStatusMissed
-	call.EndedAt = &now
 	return call, true, nil
 }
 

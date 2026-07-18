@@ -2,15 +2,20 @@ package services
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"tester/internal/cache"
+	"tester/internal/config"
 	"tester/internal/dto"
 	"tester/internal/messagecrypto"
 	"tester/internal/models"
@@ -32,6 +37,7 @@ var (
 	ErrMessageEncryptedForwardUnsupported = errors.New("encrypted messages must be forwarded by the client")
 	ErrMessageEncryptionUnavailable       = errors.New("message encryption is not configured")
 	ErrMessageInvalidReaction             = errors.New("invalid message reaction")
+	ErrInvalidConversationCursor          = errors.New("invalid conversation cursor")
 )
 
 const (
@@ -115,8 +121,7 @@ func E2EEPolicyForConversation(db *gorm.DB, senderID uint, recipientID uint) (Co
 	// If either participant has enabled E2EE, the backend must not accept new
 	// plaintext message bodies or plaintext attachments for that pair. A new
 	// encrypted payload is accepted only when both participants are E2EE-enabled.
-	// TODO: multi-device/prekey support should replace this backup/public-key
-	// readiness check with per-device recipient key availability.
+	// The current protocol uses one backup/public-key bundle per account.
 	required := senderStatus.Enabled || recipientStatus.Enabled
 	ready := senderStatus.Enabled && recipientStatus.Enabled
 	return ConversationE2EEPolicy{
@@ -490,29 +495,170 @@ func LoadMessage(db *gorm.DB, messageID uint) (models.Message, error) {
 	return *message, nil
 }
 
-func GetConversations(db *gorm.DB, userID uint) ([]map[string]interface{}, error) {
-	return GetConversationsPage(db, userID, 0, 0)
+type ConversationCursorPage struct {
+	Conversations []map[string]interface{}
+	NextCursor    string
 }
 
-func GetConversationsPage(db *gorm.DB, userID uint, limit int, offset int) ([]map[string]interface{}, error) {
-	conversations, err := repository.GetConversationsPage(db, userID, limit, offset)
+type ConversationDelta struct {
+	RecipientUserID uint                   `json:"-"`
+	Operation       string                 `json:"operation"`
+	PeerUserID      uint                   `json:"peer_user_id"`
+	ConversationID  uint                   `json:"conversation_id"`
+	Version         string                 `json:"version"`
+	EventID         string                 `json:"event_id"`
+	Conversation    map[string]interface{} `json:"conversation,omitempty"`
+}
+
+type conversationCursorPayload struct {
+	Version        int        `json:"v"`
+	UserID         uint       `json:"u"`
+	IsPinned       bool       `json:"p"`
+	LastMessageAt  *time.Time `json:"t"`
+	ConversationID uint       `json:"c"`
+}
+
+const conversationCursorVersion = 1
+
+const conversationCursorSignatureDomain = "social:conversation-cursor:v1"
+
+func GetConversationsHeadPage(db *gorm.DB, userID uint, limit int, cursor *repository.ConversationHeadCursor) (ConversationCursorPage, error) {
+	page, err := repository.GetConversationsFromHeadsPage(db, userID, limit, cursor)
+	if err != nil {
+		return ConversationCursorPage{}, err
+	}
+
+	finalizeConversationRows(page.Rows, false)
+	result := ConversationCursorPage{Conversations: page.Rows}
+	if page.NextCursor != nil {
+		result.NextCursor, err = EncodeConversationCursor(userID, *page.NextCursor)
+		if err != nil {
+			return ConversationCursorPage{}, err
+		}
+	}
+	return result, nil
+}
+
+func EncodeConversationCursor(userID uint, cursor repository.ConversationHeadCursor) (string, error) {
+	if userID == 0 || cursor.ConversationID == 0 {
+		return "", ErrInvalidConversationCursor
+	}
+	payload, err := json.Marshal(conversationCursorPayload{
+		Version:        conversationCursorVersion,
+		UserID:         userID,
+		IsPinned:       cursor.IsPinned,
+		LastMessageAt:  cursor.LastMessageAt,
+		ConversationID: cursor.ConversationID,
+	})
+	if err != nil {
+		return "", err
+	}
+	payloadToken := base64.RawURLEncoding.EncodeToString(payload)
+	signatureToken := base64.RawURLEncoding.EncodeToString(signConversationCursor(payload))
+	return payloadToken + "." + signatureToken, nil
+}
+
+func DecodeConversationCursor(encoded string, userID uint) (*repository.ConversationHeadCursor, error) {
+	if strings.TrimSpace(encoded) == "" || userID == 0 {
+		return nil, ErrInvalidConversationCursor
+	}
+	parts := strings.Split(encoded, ".")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return nil, ErrInvalidConversationCursor
+	}
+	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return nil, ErrInvalidConversationCursor
+	}
+	signature, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil || !hmac.Equal(signature, signConversationCursor(payloadBytes)) {
+		return nil, ErrInvalidConversationCursor
+	}
+
+	var payload conversationCursorPayload
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		return nil, ErrInvalidConversationCursor
+	}
+	if payload.Version != conversationCursorVersion || payload.UserID != userID || payload.ConversationID == 0 {
+		return nil, ErrInvalidConversationCursor
+	}
+	if payload.LastMessageAt != nil && payload.LastMessageAt.IsZero() {
+		return nil, ErrInvalidConversationCursor
+	}
+	return &repository.ConversationHeadCursor{
+		IsPinned:       payload.IsPinned,
+		LastMessageAt:  payload.LastMessageAt,
+		ConversationID: payload.ConversationID,
+	}, nil
+}
+
+func signConversationCursor(payload []byte) []byte {
+	mac := hmac.New(sha256.New, []byte(config.Load().JWTSecret))
+	_, _ = mac.Write([]byte(conversationCursorSignatureDomain))
+	_, _ = mac.Write([]byte{0})
+	_, _ = mac.Write(payload)
+	return mac.Sum(nil)
+}
+
+// GetConversationDeltasForPair hydrates both participant views from the
+// authoritative head state in a fixed number of queries. The caller can then
+// fan each delta out only to RecipientUserID.
+func GetConversationDeltasForPair(db *gorm.DB, firstUserID, secondUserID uint) ([]ConversationDelta, error) {
+	hydrated, err := repository.GetHydratedConversationHeadsForPair(db, firstUserID, secondUserID)
 	if err != nil {
 		return nil, err
 	}
 
+	deltas := make([]ConversationDelta, 0, len(hydrated))
+	for _, item := range hydrated {
+		version := strconv.FormatInt(item.Head.UpdatedAt.UnixNano(), 10)
+		if item.Head.UpdatedAt.IsZero() {
+			version = "0"
+		}
+		delta := ConversationDelta{
+			RecipientUserID: item.Head.UserID,
+			PeerUserID:      item.Head.PeerUserID,
+			ConversationID:  item.Head.ConversationID,
+			Version:         version,
+			EventID:         fmt.Sprintf("conversation:%d:%d:%s", item.Head.UserID, item.Head.ConversationID, version),
+		}
+		if item.Head.LastMessageID == nil {
+			delta.Operation = "remove"
+			deltas = append(deltas, delta)
+			continue
+		}
+
+		row := make(map[string]interface{}, len(item.Row))
+		for key, value := range item.Row {
+			row[key] = value
+		}
+		finalizeConversationRows([]map[string]interface{}{row}, true)
+		if avatar, ok := row["avatar"].(string); ok {
+			row["avatar"] = dto.AvatarEndpoint(item.Head.PeerUserID, avatar)
+		}
+
+		delta.Operation = "upsert"
+		delta.Conversation = row
+		deltas = append(deltas, delta)
+	}
+	return deltas, nil
+}
+
+func finalizeConversationRows(conversations []map[string]interface{}, keepLastMessageID bool) {
 	for i := range conversations {
 		preview := decryptedConversationPreview(conversations[i])
 		if preview != "" {
 			conversations[i]["last_message"] = preview
 		}
-		delete(conversations[i], "last_message_id")
+		delete(conversations[i], "conversation_id")
+		if !keepLastMessageID {
+			delete(conversations[i], "last_message_id")
+		}
 		delete(conversations[i], "last_message_content")
 		delete(conversations[i], "last_encryption_version")
 		delete(conversations[i], "last_ciphertext")
 		delete(conversations[i], "last_nonce")
 	}
-
-	return conversations, nil
 }
 
 func decryptedConversationPreview(conversation map[string]interface{}) string {
@@ -925,13 +1071,6 @@ func DecryptMessageForClient(message models.Message) models.Message {
 	return message
 }
 
-func DecryptMessagesForClient(messages []models.Message) []models.Message {
-	for i := range messages {
-		messages[i] = DecryptMessageForClient(messages[i])
-	}
-	return messages
-}
-
 func decryptSingleMessageForClient(message models.Message) models.Message {
 	if message.EncryptionVersion <= 0 {
 		return message
@@ -1084,11 +1223,6 @@ func uniqueMessageIDs(ids []uint) []uint {
 		unique = append(unique, id)
 	}
 	return unique
-}
-
-func MarkConversationRead(db *gorm.DB, fromID, toID uint) error {
-	_, err := MarkConversationReadWithResult(db, fromID, toID)
-	return err
 }
 
 func MarkConversationReadWithResult(db *gorm.DB, fromID, toID uint) (int64, error) {

@@ -8,67 +8,6 @@ export const navigationRef = createNavigationContainerRef<MainStackParamList>();
 
 let pendingNotification: MobileNotificationData | null = null;
 
-function actorFromChatURL(url?: string) {
-  if (!url) {
-    return undefined;
-  }
-
-  const match = url.match(/\/chat\/(\d+)/);
-  if (!match) {
-    return undefined;
-  }
-
-  const actorId = Number(match[1]);
-  return Number.isFinite(actorId) ? actorId : undefined;
-}
-
-function routeFromURL(url?: string): NotificationRoute | null {
-  if (!url) {
-    return null;
-  }
-
-  let parsed: URL;
-  try {
-    parsed = new URL(url, 'https://social.local');
-  } catch {
-    return null;
-  }
-
-  const chatMatch = parsed.pathname.match(/^\/users\/\d+\/chat\/(\d+)$/);
-  if (chatMatch) {
-    const userId = Number(chatMatch[1]);
-    return Number.isFinite(userId)
-      ? {
-          kind: 'chat',
-          userId,
-          name: 'Чат',
-        }
-      : null;
-  }
-
-  if (/^\/users\/\d+\/friends$/.test(parsed.pathname)) {
-    return { kind: 'tab', tab: 'Friends' };
-  }
-
-  if (/^\/users\/\d+\/wall$/.test(parsed.pathname)) {
-    return { kind: 'tab', tab: 'Home' };
-  }
-
-  const userMatch = parsed.pathname.match(/^\/users\/(\d+)$/);
-  if (userMatch) {
-    const userId = Number(userMatch[1]);
-    return Number.isFinite(userId)
-      ? {
-          kind: 'userProfile',
-          userId,
-          name: 'Профиль',
-        }
-      : null;
-  }
-
-  return null;
-}
-
 type NotificationRoute =
   | {
       kind: 'chat';
@@ -82,7 +21,7 @@ type NotificationRoute =
     }
   | {
       kind: 'tab';
-      tab: 'Home' | 'Friends' | 'Notifications' | 'Profile' | 'Settings';
+      tab: 'Home' | 'Friends' | 'Profile' | 'Settings';
     }
   | {
       kind: 'userProfile';
@@ -96,10 +35,7 @@ export function notificationRouteFromPayload(
     actorName?: string;
   } = {},
 ): NotificationRoute {
-  const actorId =
-    notification.actorId ??
-    notification.senderId ??
-    actorFromChatURL(notification.url);
+  const actorId = notification.actorId ?? notification.senderId;
   const chatPeerId = actorId ?? notification.conversationId;
 
   switch (notification.type) {
@@ -130,11 +66,9 @@ export function notificationRouteFromPayload(
       return { kind: 'tab', tab: 'Friends' };
     case 'post_liked':
     case 'comment_created':
-      return routeFromURL(notification.url) ?? { kind: 'tab', tab: 'Home' };
+      return { kind: 'tab', tab: 'Home' };
     default:
-      return (
-        routeFromURL(notification.url) ?? { kind: 'tab', tab: 'Notifications' }
-      );
+      return { kind: 'tab', tab: 'Home' };
   }
 }
 

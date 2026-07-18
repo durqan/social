@@ -26,15 +26,13 @@ var onlineUsers = struct {
 }
 
 var dbInstance *gorm.DB
-var websocketOriginPatterns []string
 var callTimeoutSweeperOnce sync.Once
 
 const websocketPingInterval = 30 * time.Second
 const callTimeoutSweepInterval = 5 * time.Second
 
-func InitWebSocket(db *gorm.DB, originPatterns []string) {
+func InitWebSocket(db *gorm.DB) {
 	dbInstance = db
-	websocketOriginPatterns = originPatterns
 	callTimeoutSweeperOnce.Do(func() {
 		go startCallTimeoutSweeper(db)
 	})
@@ -62,9 +60,7 @@ func WebSocketHandler(c *gin.Context) {
 		return
 	}
 
-	conn, err := websocket.Accept(c.Writer, c.Request, &websocket.AcceptOptions{
-		OriginPatterns: websocketOriginPatterns,
-	})
+	conn, err := websocket.Accept(c.Writer, c.Request, nil)
 	if err != nil {
 		log.Println("Upgrade error:", err)
 		return

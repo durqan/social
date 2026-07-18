@@ -9,6 +9,7 @@ import (
 	"notifications/dto"
 	"notifications/services"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -49,6 +50,9 @@ type Consumer struct {
 	svc           *services.Service
 	retryMinDelay time.Duration
 	retryMaxDelay time.Duration
+	workerCount   int
+	prefetch      int
+	publishMu     sync.Mutex
 
 	mu                  sync.RWMutex
 	connected           bool
@@ -81,6 +85,8 @@ func NewConsumerWithURL(rabbitURL string, svc *services.Service) *Consumer {
 		svc:           svc,
 		retryMinDelay: time.Second,
 		retryMaxDelay: 30 * time.Second,
+		workerCount:   envInt("NOTIFICATION_WORKERS", 4, 1, 64),
+		prefetch:      envInt("NOTIFICATION_PREFETCH", 16, 1, 512),
 	}
 }
 
@@ -108,7 +114,7 @@ func (c *Consumer) Start(ctx context.Context) {
 		log.Println("rabbit consumer connected and starting")
 		delay = c.retryMinDelay
 
-		err = startConsumer(ch, c.svc, c)
+		err = startConsumerContext(ctx, ch, c.svc, c, c.workerCount, c.prefetch)
 		_ = ch.Close()
 		_ = conn.Close()
 
@@ -199,14 +205,6 @@ func (c *Consumer) recordDeadLetter(reason string, cause error) {
 	}
 }
 
-func NewRabbit() (*amqp.Connection, *amqp.Channel, error) {
-	rabbitURL := os.Getenv("RABBIT_URL")
-	if rabbitURL == "" {
-		rabbitURL = defaultRabbitURL
-	}
-	return newRabbit(rabbitURL)
-}
-
 func newRabbit(rabbitURL string) (*amqp.Connection, *amqp.Channel, error) {
 	conn, err := amqp.Dial(rabbitURL)
 	if err != nil {
@@ -228,45 +226,112 @@ func newRabbit(rabbitURL string) (*amqp.Connection, *amqp.Channel, error) {
 	return conn, ch, nil
 }
 
-func StartConsumer(ch *amqp.Channel, svc *services.Service) error {
-	return startConsumer(ch, svc, nil)
-}
-
-func startConsumer(ch *amqp.Channel, svc *services.Service, recorder *Consumer) error {
+func startConsumerContext(ctx context.Context, ch *amqp.Channel, svc *services.Service, recorder *Consumer, workerCount, prefetch int) error {
+	if workerCount < 1 {
+		workerCount = 1
+	}
+	if prefetch < workerCount {
+		prefetch = workerCount
+	}
+	if err := ch.Qos(prefetch, 0, false); err != nil {
+		return err
+	}
 	consume, err := ch.Consume(notificationsQueue, "", false,
 		false, false, false, nil)
 	if err != nil {
 		return err
 	}
 
-	return consumeDeliveries(ch, consume, svc, recorder)
+	return consumeDeliveriesWithContext(ctx, ch, consume, svc, recorder, workerCount, prefetch)
 }
 
-func consumeDeliveries(ch *amqp.Channel, deliveries <-chan amqp.Delivery, svc *services.Service, recorder *Consumer) error {
-	for msg := range deliveries {
-		var req dto.CreateNotificationReq
+func consumeDeliveriesWithContext(ctx context.Context, ch *amqp.Channel, deliveries <-chan amqp.Delivery, svc *services.Service, recorder *Consumer, workerCount, capacity int) error {
+	if workerCount < 1 {
+		workerCount = 1
+	}
+	if capacity < workerCount {
+		capacity = workerCount
+	}
+	jobs := make(chan amqp.Delivery, capacity)
+	var workers sync.WaitGroup
+	for i := 0; i < workerCount; i++ {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for msg := range jobs {
+				processDelivery(ctx, ch, msg, svc, recorder)
+			}
+		}()
+	}
 
-		if err := json.Unmarshal(msg.Body, &req); err != nil {
-			deadLetter(ch, msg, "invalid_json", err, recorder)
-			continue
-		}
-
-		if err := validateNotificationReq(req); err != nil {
-			deadLetter(ch, msg, "invalid_payload", err, recorder)
-			continue
-		}
-
-		if err := handleNotificationReq(svc, &req); err != nil {
-			retryOrDeadLetter(ch, msg, err, recorder)
-			continue
-		}
-
-		msg.Ack(false)
-		if recorder != nil {
-			recorder.recordProcessed()
+	finish := func(err error) error {
+		close(jobs)
+		workers.Wait()
+		return err
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return finish(ctx.Err())
+		case msg, ok := <-deliveries:
+			if !ok {
+				return finish(ErrConsumerStopped)
+			}
+			select {
+			case jobs <- msg:
+			case <-ctx.Done():
+				return finish(ctx.Err())
+			}
 		}
 	}
-	return ErrConsumerStopped
+}
+
+func processDelivery(ctx context.Context, ch *amqp.Channel, msg amqp.Delivery, svc *services.Service, recorder *Consumer) {
+	var req dto.CreateNotificationReq
+	if err := json.Unmarshal(msg.Body, &req); err != nil {
+		withConsumerPublishLock(recorder, func() { deadLetter(ch, msg, "invalid_json", err, recorder) })
+		return
+	}
+	if err := validateNotificationReq(req); err != nil {
+		withConsumerPublishLock(recorder, func() { deadLetter(ch, msg, "invalid_payload", err, recorder) })
+		return
+	}
+	if err := handleNotificationReq(svc, &req); err != nil {
+		retries := retryCount(msg.Headers)
+		_ = sleepWithContext(ctx, retryBackoff(retries))
+		withConsumerPublishLock(recorder, func() { retryOrDeadLetter(ch, msg, err, recorder) })
+		return
+	}
+	_ = msg.Ack(false)
+	if recorder != nil {
+		recorder.recordProcessed()
+	}
+}
+
+func withConsumerPublishLock(recorder *Consumer, fn func()) {
+	if recorder == nil {
+		fn()
+		return
+	}
+	recorder.publishMu.Lock()
+	defer recorder.publishMu.Unlock()
+	fn()
+}
+
+func retryBackoff(retries int) time.Duration {
+	delay := 250 * time.Millisecond * time.Duration(1<<max(retries, 0))
+	if delay > 5*time.Second {
+		return 5 * time.Second
+	}
+	return delay
+}
+
+func envInt(name string, fallback, minimum, maximum int) int {
+	value, err := strconv.Atoi(strings.TrimSpace(os.Getenv(name)))
+	if err != nil || value < minimum || value > maximum {
+		return fallback
+	}
+	return value
 }
 
 func sleepWithContext(ctx context.Context, delay time.Duration) bool {

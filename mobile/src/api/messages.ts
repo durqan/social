@@ -17,7 +17,7 @@ import {
 import { formatDuration, formatFileSize } from '@social/shared';
 import type { EncryptedAttachmentFields } from '../crypto/attachment';
 import type { EncryptedMessagePayload } from '../crypto/encryptMessage';
-import { apiCacheKey, apiRequest, toQueryString } from './http';
+import { apiCacheKey, apiRequest, apiRequestMeta, toQueryString } from './http';
 import type {
   Conversation,
   Message,
@@ -183,9 +183,7 @@ function appendAttachmentEncryption(
   }
 }
 
-function attachmentForApi(
-  attachment: MessageAttachment,
-): MessageAttachment {
+function attachmentForApi(attachment: MessageAttachment): MessageAttachment {
   return {
     id: attachment.id,
     attachment_id: attachment.attachment_id,
@@ -385,10 +383,7 @@ function normalizeConversation(conversation: Conversation): Conversation {
       stringValue(peer?.name) ||
       stringValue(peer?.email) ||
       'Пользователь',
-    avatar:
-      stringValue(source.avatar) ||
-      stringValue(peer?.avatar) ||
-      null,
+    avatar: stringValue(source.avatar) || stringValue(peer?.avatar) || null,
     avatar_position_x:
       firstDefined(
         finiteNumber(source.avatar_position_x),
@@ -413,7 +408,7 @@ function normalizeConversation(conversation: Conversation): Conversation {
       stringValue(peer?.lastSeenAt) ||
       null,
     last_message: conversation.last_message || '',
-    last_message_at: conversation.last_message_at || '',
+    last_message_at: conversation.last_message_at || null,
     last_sender_id: Number(conversation.last_sender_id) || 0,
     last_sender_name: conversation.last_sender_name || '',
     last_is_mine: Boolean(conversation.last_is_mine),
@@ -424,49 +419,32 @@ function normalizeConversation(conversation: Conversation): Conversation {
 }
 
 export const messageApi = {
-  async getConversations(
-    params?: {
-      limit?: number;
-      offset?: number;
+  async getConversationsPage(
+    params: {
+      limit: number;
+      cursor?: string;
     },
     options?: ApiCallOptions,
   ) {
-    const query = params ? toQueryString(params) : '';
-    const conversations = await apiRequest<Conversation[]>(
+    const query = toQueryString(params);
+    const response = await apiRequestMeta<Conversation[]>(
       `/conversations${query}`,
       {
         cacheKey: apiCacheKey(
           'chat-list',
-          `conversations:${params?.offset ?? 0}:${params?.limit ?? 'all'}`,
+          `conversations:${params.cursor ?? 'first'}:${params.limit}`,
         ),
         signal: options?.signal,
       },
     );
-    return Array.isArray(conversations)
-      ? conversations.map(normalizeConversation)
+    const conversations = Array.isArray(response.data)
+      ? response.data.map(normalizeConversation)
       : [];
-  },
-
-  async getConversationsPage(
-    params: {
-      limit: number;
-      offset: number;
-    },
-    options?: ApiCallOptions,
-  ) {
-    const conversations = await this.getConversations(
-      {
-        limit: params.limit + 1,
-        offset: params.offset,
-      },
-      options,
-    );
-    const hasMore = conversations.length > params.limit;
-    const page = hasMore ? conversations.slice(0, params.limit) : conversations;
+    const nextCursor = response.headers['x-next-cursor'] || null;
     return {
-      conversations: page,
-      has_more: hasMore,
-      next_offset: params.offset + page.length,
+      conversations,
+      has_more: nextCursor !== null,
+      next_cursor: nextCursor,
     };
   },
 

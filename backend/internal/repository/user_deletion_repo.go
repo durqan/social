@@ -264,8 +264,8 @@ func deleteNotificationRows(tx *gorm.DB, userID uint) error {
 		}
 	}
 
-	if tx.Migrator().HasTable("push_subscriptions") {
-		if err := tx.Exec("DELETE FROM push_subscriptions WHERE user_id = ?", userID).Error; err != nil {
+	if tx.Migrator().HasTable("mobile_push_tokens") {
+		if err := tx.Exec("DELETE FROM mobile_push_tokens WHERE user_id = ?", userID).Error; err != nil {
 			return err
 		}
 	}

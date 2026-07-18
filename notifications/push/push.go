@@ -10,18 +10,15 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
 	"time"
 
-	webpush "github.com/SherClockHolmes/webpush-go"
 	"golang.org/x/oauth2/google"
 
 	"notifications/models"
 )
 
-var ErrSubscriptionInvalid = errors.New("push subscription invalid")
 var ErrMobileTokenInvalid = errors.New("mobile push token invalid")
 
 const firebaseMessagingScope = "https://www.googleapis.com/auth/firebase.messaging"
@@ -35,7 +32,6 @@ const (
 type Payload struct {
 	Title          string `json:"title"`
 	Body           string `json:"body"`
-	URL            string `json:"url"`
 	Tag            string `json:"tag"`
 	NotificationID uint   `json:"notification_id"`
 	Type           string `json:"type"`
@@ -52,30 +48,12 @@ type Payload struct {
 }
 
 type Service struct {
-	publicKey     string
-	privateKey    string
-	subject       string
-	httpClient    *http.Client
-	webEnabled    bool
 	fcmProjectID  string
 	fcmHTTPClient *http.Client
 	fcmEnabled    bool
 }
 
 func NewServiceFromEnv() *Service {
-	publicKey := os.Getenv("VAPID_PUBLIC_KEY")
-	privateKey := os.Getenv("VAPID_PRIVATE_KEY")
-	subject := os.Getenv("VAPID_SUBJECT")
-	if subject == "" {
-		subject = "example@example.com"
-	}
-	subject = normalizeVAPIDSubject(subject)
-
-	webEnabled := publicKey != "" && privateKey != ""
-	if !webEnabled {
-		log.Println("web push disabled: VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY are required")
-	}
-
 	fcmProjectID, fcmHTTPClient := newFCMClientFromEnv()
 	fcmEnabled := fcmProjectID != "" && fcmHTTPClient != nil
 	if !fcmEnabled {
@@ -83,11 +61,6 @@ func NewServiceFromEnv() *Service {
 	}
 
 	return &Service{
-		publicKey:     publicKey,
-		privateKey:    privateKey,
-		subject:       subject,
-		httpClient:    &http.Client{Timeout: 10 * time.Second},
-		webEnabled:    webEnabled,
 		fcmProjectID:  fcmProjectID,
 		fcmHTTPClient: fcmHTTPClient,
 		fcmEnabled:    fcmEnabled,
@@ -95,70 +68,11 @@ func NewServiceFromEnv() *Service {
 }
 
 func (s *Service) Enabled() bool {
-	return s != nil && (s.webEnabled || s.fcmEnabled)
-}
-
-func (s *Service) WebPushEnabled() bool {
-	return s != nil && s.webEnabled
+	return s != nil && s.fcmEnabled
 }
 
 func (s *Service) FCMEnabled() bool {
 	return s != nil && s.fcmEnabled
-}
-
-func (s *Service) Send(subscription models.PushSubscription, payload Payload) error {
-	if !s.WebPushEnabled() {
-		return nil
-	}
-	if payload.Silent {
-		return nil
-	}
-
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-
-	resp, err := webpush.SendNotification(body, &webpush.Subscription{
-		Endpoint: subscription.Endpoint,
-		Keys: webpush.Keys{
-			P256dh: subscription.P256DH,
-			Auth:   subscription.Auth,
-		},
-	}, &webpush.Options{
-		HTTPClient:      s.httpClient,
-		Subscriber:      s.subject,
-		VAPIDPublicKey:  s.publicKey,
-		VAPIDPrivateKey: s.privateKey,
-		TTL:             86400,
-		Urgency:         webpush.UrgencyNormal,
-	})
-	if resp != nil {
-		defer resp.Body.Close()
-	}
-
-	if err != nil {
-		return fmt.Errorf("web push request failed for %s: %w", endpointHost(subscription.Endpoint), err)
-	}
-	if resp != nil && isInvalidStatus(resp.StatusCode) {
-		return fmt.Errorf(
-			"%w: endpoint=%s status=%d body=%s",
-			ErrSubscriptionInvalid,
-			endpointHost(subscription.Endpoint),
-			resp.StatusCode,
-			responseBodySnippet(resp),
-		)
-	}
-	if resp != nil && resp.StatusCode >= http.StatusBadRequest {
-		return fmt.Errorf(
-			"web push failed: endpoint=%s status=%d body=%s",
-			endpointHost(subscription.Endpoint),
-			resp.StatusCode,
-			responseBodySnippet(resp),
-		)
-	}
-
-	return nil
 }
 
 func (s *Service) SendMobile(token models.MobilePushToken, payload Payload) error {
@@ -170,7 +84,6 @@ func (s *Service) SendMobile(token models.MobilePushToken, payload Payload) erro
 		Token: token.Token,
 		Data: map[string]string{
 			"type":            payload.Type,
-			"url":             payload.URL,
 			"tag":             payload.Tag,
 			"notification_id": fmt.Sprintf("%d", payload.NotificationID),
 			"entity_id":       fmt.Sprintf("%d", payload.EntityID),
@@ -253,50 +166,6 @@ func messageIDDataValue(payload Payload) string {
 	return fmt.Sprintf("%d", payload.EntityID)
 }
 
-func isInvalidStatus(status int) bool {
-	return status == http.StatusGone || status == http.StatusNotFound
-}
-
-func normalizeVAPIDSubject(subject string) string {
-	subject = strings.TrimSpace(subject)
-	lowerSubject := strings.ToLower(subject)
-
-	if strings.HasPrefix(lowerSubject, "mailto:") {
-		subject = strings.TrimSpace(subject[len("mailto:"):])
-	}
-
-	if strings.HasPrefix(strings.ToLower(subject), "https:") {
-		return "https:" + subject[len("https:"):]
-	}
-
-	if len(subject) >= 2 && subject[0] == '<' && subject[len(subject)-1] == '>' {
-		return strings.TrimSpace(subject[1 : len(subject)-1])
-	}
-
-	return subject
-}
-
-func endpointHost(endpoint string) string {
-	parsed, err := url.Parse(endpoint)
-	if err != nil || parsed.Host == "" {
-		return "unknown"
-	}
-	return parsed.Host
-}
-
-func responseBodySnippet(resp *http.Response) string {
-	if resp == nil || resp.Body == nil {
-		return ""
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 2048))
-	if err != nil {
-		return fmt.Sprintf("read_error:%v", err)
-	}
-
-	return strings.TrimSpace(string(body))
-}
-
 type fcmSendRequest struct {
 	Message fcmMessage `json:"message"`
 }
@@ -347,7 +216,9 @@ func newFCMClientFromEnv() (string, *http.Client) {
 		return "", nil
 	}
 
-	return projectID, cfg.Client(context.Background())
+	client := cfg.Client(context.Background())
+	client.Timeout = 10 * time.Second
+	return projectID, client
 }
 
 func firebaseCredentialsFromEnv() ([]byte, error) {

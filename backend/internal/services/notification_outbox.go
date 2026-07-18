@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -19,23 +20,26 @@ import (
 
 const (
 	NotificationOutboxStatusPending         = "pending"
-	NotificationOutboxStatusSent            = "sent"
+	NotificationOutboxStatusPublishing      = "publishing"
+	NotificationOutboxStatusPublished       = "published"
+	NotificationOutboxStatusSent            = NotificationOutboxStatusPublished
 	NotificationOutboxStatusFailed          = "failed"
 	NotificationOutboxStatusPermanentFailed = "permanent_failed"
 
 	notificationOutboxMaxAttempts = 12
 	notificationOutboxBatchSize   = 50
 	notificationOutboxPollEvery   = 2 * time.Second
+	notificationOutboxLease       = 30 * time.Second
 )
 
 type NotificationPublisher interface {
-	PublishNotification(req dto.CreateNotificationReq) error
+	PublishNotification(ctx context.Context, req dto.CreateNotificationReq) error
 }
 
 type rabbitNotificationPublisher struct{}
 
-func (rabbitNotificationPublisher) PublishNotification(req dto.CreateNotificationReq) error {
-	return rabbit.PublishNotification(req)
+func (rabbitNotificationPublisher) PublishNotification(ctx context.Context, req dto.CreateNotificationReq) error {
+	return rabbit.PublishNotificationContext(ctx, req)
 }
 
 func EnqueueNotificationOutbox(tx *gorm.DB, req dto.CreateNotificationReq) error {
@@ -119,68 +123,109 @@ func PublishNotificationOutboxBatch(ctx context.Context, db *gorm.DB, publisher 
 		limit = notificationOutboxBatchSize
 	}
 
-	now := time.Now()
-	processed := 0
-	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	items, err := claimNotificationOutboxBatch(ctx, db, limit, time.Now())
+	if err != nil {
+		return 0, err
+	}
+
+	var firstFinalizeError error
+	for _, item := range items {
+		publishErr := publisher.PublishNotification(ctx, notificationOutboxRequest(item))
+		if err := finalizeNotificationOutboxPublish(ctx, db, item, publishErr); err != nil && firstFinalizeError == nil {
+			firstFinalizeError = err
+		}
+	}
+	return len(items), firstFinalizeError
+}
+
+func claimNotificationOutboxBatch(ctx context.Context, db *gorm.DB, limit int, now time.Time) ([]models.NotificationOutbox, error) {
+	leaseToken, err := notificationOutboxLeaseToken()
+	if err != nil {
+		return nil, err
+	}
+	leaseUntil := now.Add(notificationOutboxLease)
+	var claimed []models.NotificationOutbox
+	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var items []models.NotificationOutbox
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
-			Where("status IN ? AND next_attempt_at <= ? AND attempts < ?",
-				[]string{NotificationOutboxStatusPending, NotificationOutboxStatusFailed},
-				now,
+			Where(`attempts < ? AND next_attempt_at <= ? AND (
+				status IN ? OR (status = ? AND (lease_until IS NULL OR lease_until <= ?))
+			)`,
 				notificationOutboxMaxAttempts,
+				now,
+				[]string{NotificationOutboxStatusPending, NotificationOutboxStatusFailed},
+				NotificationOutboxStatusPublishing,
+				now,
 			).
 			Order("next_attempt_at ASC, id ASC").
 			Limit(limit).
 			Find(&items).Error; err != nil {
 			return err
 		}
-
-		for _, item := range items {
-			processed++
-			req := notificationOutboxRequest(item)
-			if err := publisher.PublishNotification(req); err != nil {
-				if updateErr := markNotificationOutboxFailed(tx, item, err); updateErr != nil {
-					return updateErr
-				}
-				continue
-			}
-
-			publishedAt := time.Now()
-			if err := tx.Model(&models.NotificationOutbox{}).
-				Where("id = ?", item.ID).
+		for i := range items {
+			result := tx.Model(&models.NotificationOutbox{}).
+				Where("id = ? AND attempts = ?", items[i].ID, items[i].Attempts).
 				Updates(map[string]interface{}{
-					"status":       NotificationOutboxStatusSent,
-					"published_at": &publishedAt,
-					"last_error":   "",
-					"updated_at":   publishedAt,
-				}).Error; err != nil {
-				return err
+					"status":      NotificationOutboxStatusPublishing,
+					"attempts":    gorm.Expr("attempts + 1"),
+					"lease_token": leaseToken,
+					"lease_until": &leaseUntil,
+					"updated_at":  now,
+				})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 1 {
+				items[i].Status = NotificationOutboxStatusPublishing
+				items[i].Attempts++
+				items[i].LeaseToken = leaseToken
+				items[i].LeaseUntil = &leaseUntil
+				claimed = append(claimed, items[i])
 			}
 		}
-
 		return nil
 	})
-
-	return processed, err
+	return claimed, err
 }
 
-func markNotificationOutboxFailed(tx *gorm.DB, item models.NotificationOutbox, cause error) error {
-	attempts := item.Attempts + 1
-	status := NotificationOutboxStatusFailed
-	if attempts >= notificationOutboxMaxAttempts {
-		status = NotificationOutboxStatusPermanentFailed
+func finalizeNotificationOutboxPublish(ctx context.Context, db *gorm.DB, item models.NotificationOutbox, cause error) error {
+	now := time.Now()
+	updates := map[string]interface{}{
+		"lease_token": "",
+		"lease_until": nil,
+		"updated_at":  now,
 	}
+	if cause == nil {
+		updates["status"] = NotificationOutboxStatusPublished
+		updates["published_at"] = &now
+		updates["last_error"] = ""
+	} else {
+		status := NotificationOutboxStatusFailed
+		if item.Attempts >= notificationOutboxMaxAttempts {
+			status = NotificationOutboxStatusPermanentFailed
+		}
+		updates["status"] = status
+		updates["last_error"] = truncateNotificationOutboxError(cause)
+		updates["next_attempt_at"] = now.Add(notificationOutboxBackoff(item.Attempts))
+	}
+	result := db.WithContext(ctx).Model(&models.NotificationOutbox{}).
+		Where("id = ? AND status = ? AND lease_token = ?", item.ID, NotificationOutboxStatusPublishing, item.LeaseToken).
+		Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return fmt.Errorf("notification outbox lease lost: id=%d", item.ID)
+	}
+	return nil
+}
 
-	nextAttemptAt := time.Now().Add(notificationOutboxBackoff(attempts))
-	return tx.Model(&models.NotificationOutbox{}).
-		Where("id = ?", item.ID).
-		Updates(map[string]interface{}{
-			"status":          status,
-			"attempts":        attempts,
-			"last_error":      truncateNotificationOutboxError(cause),
-			"next_attempt_at": nextAttemptAt,
-			"updated_at":      time.Now(),
-		}).Error
+func notificationOutboxLeaseToken() (string, error) {
+	raw := make([]byte, 16)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(raw), nil
 }
 
 func notificationOutboxRequest(item models.NotificationOutbox) dto.CreateNotificationReq {

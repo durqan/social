@@ -162,19 +162,6 @@ func KeyFromStoredValue(value string) (string, bool) {
 	return keyFromPathLike(value)
 }
 
-func URLForStoredValue(ctx context.Context, store Storage, value string) (string, error) {
-	if strings.TrimSpace(value) == "" {
-		return "", nil
-	}
-
-	key, ok := KeyFromStoredValue(value)
-	if !ok {
-		return value, nil
-	}
-
-	return store.URL(ctx, key)
-}
-
 func DeleteStoredValue(ctx context.Context, store Storage, value string) error {
 	key, ok := KeyFromStoredValue(value)
 	if !ok {

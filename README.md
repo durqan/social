@@ -1,249 +1,176 @@
-# Social Network
+# Social
 
-Full-stack социальная сеть с веб-клиентом, React Native Android-приложением, REST API, WebSocket-чатом, push-уведомлениями, 1-на-1 звонками и server-side encryption личных сообщений.
+Мобильная социальная сеть: React Native Android-приложение, Go API и отдельный Go-сервис FCM-уведомлений. Backend предоставляет REST API, WebSocket-чат и signaling для WebRTC-звонков.
+
+## Состав проекта
+
+```text
+backend/              Go API, WebSocket, фоновые задачи и миграции
+mobile/               React Native Android-приложение
+notifications/        Go-сервис уведомлений и FCM push
+packages/shared/      общие TypeScript-контракты мобильного клиента
+infrastructure/nginx/ production API gateway и TURN SNI routing
+ops/                  служебные скрипты production-инфраструктуры
+docker-compose.local.yml
+docker-compose.prod.yml
+.env.example
+.env.local.example
+```
+
+Основные зависимости backend: PostgreSQL, Redis, RabbitMQ и local/S3-compatible storage. Локальный S3 предоставляется MinIO. Coturn нужен для WebRTC-звонков вне простой локальной сети.
 
 ## Возможности
 
-### Пользователи и социальные функции
+- JWT-сессии в HttpOnly cookies, refresh token, CSRF и rate limiting.
+- Профили, поиск, друзья, блокировки, посты, комментарии и лайки.
+- Личные сообщения, вложения, реакции, ответы, пересылка, закрепление и статусы прочтения.
+- WebSocket-синхронизация чатов и состояния звонков.
+- Server-side encryption-at-rest и client-side E2EE для поддерживаемых диалогов.
+- Аудио- и видеозвонки через WebRTC/Coturn.
+- Android push-уведомления через Firebase Cloud Messaging.
+- Локальное либо S3-compatible хранение файлов.
 
-* Авторизация через JWT и HttpOnly cookies.
-* CSRF-защита и rate limiting.
-* Профили пользователей с аватаром и биографией.
-* Поиск пользователей.
-* Друзья, заявки в друзья и блокировки.
-* Подтверждение электронной почты.
-* Ограничение некоторых действий для неподтвержденных аккаунтов.
+## Требования
 
-### Посты
+- Docker с Compose plugin — для полного локального стека.
+- Go 1.26.2 — для запуска и проверки Go-сервисов без Docker.
+- Node.js 22.11+, npm, JDK 17 и Android SDK 36 — для мобильного приложения.
 
-* Создание и редактирование постов.
-* Лайки и комментарии.
-* Лента публикаций.
-* Удаление собственных публикаций.
+## Быстрый локальный запуск
 
-### Чат
-
-* Приватные сообщения.
-* Ответы на сообщения (Reply).
-* Пересылка сообщений (Forward).
-* Закрепленные сообщения.
-* Индикаторы печати.
-* Статусы прочтения.
-* Массовое удаление сообщений.
-* Загрузка изображений, файлов, голосовых и видео-сообщений.
-* WebSocket-синхронизация в реальном времени.
-
-### Шифрование сообщений на сервере
-
-* Messages are encrypted at rest on the server before being stored in the database.
-* Legacy/plaintext chat sends still use backend AES-256-GCM encryption-at-rest.
-* Client E2EE is active when both chat participants have an E2EE backup/public key.
-* For client E2EE messages and attachments, the backend stores opaque ciphertext and encrypted blobs.
-* Старые plaintext-сообщения с `encryption_version = 0` остаются читаемыми.
-
-### Уведомления
-
-* RabbitMQ-based notification pipeline.
-* SSE уведомления.
-* Web Push уведомления.
-* Android FCM уведомления.
-* Уведомления о сообщениях, лайках, комментариях и заявках в друзья.
-
-### Звонки
-
-* WebRTC 1-на-1 аудиозвонки.
-* WebRTC 1-на-1 видеозвонки.
-* Поддержка TURN-сервера через Coturn.
-* Переключение камеры.
-* Включение и выключение микрофона.
-* Включение и выключение камеры.
-
-### Хранение файлов
-
-* Локальное файловое хранилище.
-* S3-compatible object storage.
-* Поддержка MinIO для локальной разработки.
-
-## Стек
-
-### Frontend
-
-* React 19
-* TypeScript
-* Vite
-* Tailwind CSS 4
-
-### Mobile
-
-* React Native
-* TypeScript
-* React Native Firebase
-* react-native-webrtc
-
-### Backend
-
-* Go 1.26
-* Gin
-* GORM
-* PostgreSQL
-* Redis
-* WebSocket
-
-### Security
-
-* JWT Authentication
-* HttpOnly Cookies
-* CSRF Protection
-* AES-256-GCM
-* Server-side message encryption at rest
-* Password Hashing
-
-### Notifications
-
-* Go
-* Gin
-* RabbitMQ
-* PostgreSQL
-* SSE
-* Web Push (VAPID)
-* Firebase Cloud Messaging (FCM)
-
-### Infrastructure
-
-* Docker
-* Docker Compose
-* Nginx
-* Coturn (optional)
-
-## Архитектура
-
-```text
-backend/        основной API, авторизация, пользователи, посты, чат, WebSocket
-frontend/       React/Vite веб-клиент
-mobile/         React Native Android-приложение
-notifications/  сервис уведомлений
-backend/init/   SQL инициализация PostgreSQL для backend-контейнера
-packages/       shared TypeScript-типы и helpers
-```
-
-## Message Encryption
-
-Личные сообщения поддерживают два режима: legacy server-side encryption / encryption at rest и client-side E2EE для диалогов, где у обоих участников есть E2EE backup/public key.
-
-Особенности реализации:
-
-* В legacy-режиме клиент отправляет обычный текст, backend шифрует его перед сохранением и расшифровывает перед отдачей клиенту.
-* В client E2EE-режиме клиент отправляет `ciphertext`, `nonce`, `encryption_version = 1`; backend не расшифровывает payload.
-* Новые E2EE-вложения шифруются на клиенте до upload, сохраняются как opaque `.bin`, а file key хранится только в `encrypted_file_key`.
-* Старые вложения с `message_attachments.encryption_version = 0` остаются legacy и открываются как раньше.
-* Для legacy encryption-at-rest и client E2EE payload используется AES-256-GCM; file/message keys заворачиваются клиентом через RSA-OAEP-SHA-256.
-
-Важно:
-
-`MESSAGE_ENCRYPTION_KEY` обязателен для production (`GIN_MODE=release`). Ключ должен быть base64-encoded 32 bytes и не должен логироваться или попадать в исходники. В local compose есть dev fallback только для локальной разработки, его нельзя использовать в production.
-
-## Быстрый старт
-
-### Локальная разработка
+Создайте локальный env-файл и запустите инфраструктуру вместе с Go-сервисами:
 
 ```bash
 cp .env.local.example .env.local
-
-docker compose \
-  --env-file .env.local \
-  -f docker-compose.local.yml \
-  up -d --build
+docker compose --env-file .env.local -f docker-compose.local.yml up -d --build
 ```
 
-Остановка:
+Проверка состояния и логи:
 
 ```bash
-docker compose \
-  --env-file .env.local \
-  -f docker-compose.local.yml \
-  down
+docker compose --env-file .env.local -f docker-compose.local.yml ps
+docker compose --env-file .env.local -f docker-compose.local.yml logs -f backend notifications
 ```
 
-Логи:
-
-```bash
-docker compose \
-  --env-file .env.local \
-  -f docker-compose.local.yml \
-  logs -f
-```
-
-Доступные URL:
+Локальные адреса по умолчанию:
 
 ```text
-Frontend:      http://localhost:5173
-Backend API:   http://localhost:8080/health
-Notifications: http://localhost:8085/health
-RabbitMQ UI:   http://localhost:15672
-MinIO Console: http://localhost:9001
+Backend health:       http://localhost:8080/health
+Notifications health: http://localhost:8085/health
+MinIO API:            http://localhost:9000
+MinIO Console:        http://localhost:9001
 ```
 
-## Production
-
-Запуск production окружения:
+Остановка не удаляет persistent volumes:
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d
+docker compose --env-file .env.local -f docker-compose.local.yml down
 ```
 
-Для TURN-сервера:
+## Запуск Go backend без контейнера приложения
+
+Сначала поднимите только инфраструктурные сервисы:
 
 ```bash
-docker compose \
-  -f docker-compose.prod.yml \
-  --profile turn \
-  up -d
+cp .env.local.example .env.local
+docker compose --env-file .env.local -f docker-compose.local.yml \
+  up -d postgres redis rabbitmq minio minio-create-bucket
 ```
 
-## Проверка
-
-Backend:
+Заполните `.env.example`, затем запустите API из отдельного терминала:
 
 ```bash
 cd backend
-go test ./...
+set -a
+. ../.env.example
+set +a
+go run ./cmd/api
 ```
 
-Notifications:
+Сервис уведомлений и video-import worker запускаются при необходимости ещё в двух терминалах:
 
 ```bash
 cd notifications
-go test ./...
+set -a
+. ../.env.example
+set +a
+go run .
 ```
-
-Frontend:
 
 ```bash
-cd frontend
-npm run lint
-npm run test
-npm run build
+cd backend
+set -a
+. ../.env.example
+set +a
+go run ./cmd/video-import-worker
 ```
 
-Mobile:
+`DATABASE_URL`, `REDIS_*` и `RABBIT_URL` в `.env.example` уже ориентированы на опубликованные local Compose-порты. Перед запуском задайте непустой `MESSAGE_ENCRYPTION_KEY` (`openssl rand -base64 32`).
+
+## Запуск React Native Android
+
+Android emulator обращается к хосту через `10.0.2.2`. Сначала установите зависимости и запустите Metro:
 
 ```bash
 cd mobile
 npm ci
-npx tsc --noEmit
-npm run lint
-npm test -- --runInBand
+SOCIAL_API_BASE_URL=http://10.0.2.2:8080 \
+SOCIAL_NOTIFICATIONS_BASE_URL=http://10.0.2.2:8085 \
+npm start
 ```
 
-## Основные возможности проекта
+В другом терминале:
 
-* Full-stack приложение на Go + React + React Native.
-* WebSocket чат в реальном времени.
-* Server-side encryption-at-rest и client-side E2EE для чата/вложений.
-* WebRTC аудио и видеозвонки.
-* Push-уведомления.
-* RabbitMQ.
-* PostgreSQL + Redis.
-* Docker-first инфраструктура.
-* Поддержка S3-хранилищ.
-* Android приложение.
+```bash
+cd mobile
+npm run android
+```
+
+Для физического устройства замените `10.0.2.2` на LAN-адрес машины. Для реальных FCM push добавьте `mobile/android/app/google-services.json`; production-файл в репозиторий не коммитится. Настройка signed AAB описана в [`mobile/GOOGLE_PLAY_RELEASE.md`](mobile/GOOGLE_PLAY_RELEASE.md).
+
+## Production
+
+Создайте `.env` на основе `.env.example`, задайте production secrets, container-адрес PostgreSQL/Redis/RabbitMQ, S3 и Firebase credentials. Затем запустите стек:
+
+```bash
+docker compose --env-file .env -f docker-compose.prod.yml up -d
+```
+
+Coturn включается отдельным profile:
+
+```bash
+docker compose --env-file .env -f docker-compose.prod.yml --profile turn up -d
+```
+
+Production Nginx служит только API gateway: `/api/` направляется в backend, `/ws` — в WebSocket, `/notifications-api/` — в notifications. На порту 443 SNI для TURN-домена направляется в Coturn.
+
+## Проверки
+
+```bash
+cd backend
+go mod tidy
+gofmt -w .
+go vet ./...
+go test ./...
+go build ./...
+```
+
+```bash
+cd notifications
+go mod tidy
+gofmt -w .
+go vet ./...
+go test ./...
+go build ./...
+```
+
+```bash
+cd mobile
+npm ci
+npm run typecheck
+npm run lint
+npm test -- --runInBand
+npm run build:android
+```
+
+Общие TypeScript-типы подключены мобильным приложением напрямую из `packages/shared` через Metro и TypeScript aliases; отдельная сборка или публикация пакета не требуется.

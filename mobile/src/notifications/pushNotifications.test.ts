@@ -79,7 +79,6 @@ jest.mock(
       ),
       callId: data?.call_id ?? data?.callId,
       syncAction: data?.sync_action ?? data?.syncAction,
-      url: data?.url,
     })),
   }),
   { virtual: true },

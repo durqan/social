@@ -37,7 +37,7 @@ func SendVerificationEmail(db *gorm.DB, user *models.User) error {
 		return fmt.Errorf("failed to create email verification: %w", err)
 	}
 
-	verifyURL := fmt.Sprintf("%s/verify-email/%s", frontendURL(), token)
+	verifyURL := fmt.Sprintf("%sverify-email/%s", mobileDeepLinkPrefix(), url.PathEscape(token))
 
 	htmlBody := fmt.Sprintf(`<h2>Привет, %s!</h2>
 				<p>Спасибо за регистрацию.</p>
@@ -50,7 +50,7 @@ func SendVerificationEmail(db *gorm.DB, user *models.User) error {
 }
 
 func SendPasswordResetEmail(user *models.User, token string) error {
-	resetURL := fmt.Sprintf("%s/reset-password?token=%s", frontendURL(), url.QueryEscape(token))
+	resetURL := fmt.Sprintf("%sreset-password?token=%s", mobileDeepLinkPrefix(), url.QueryEscape(token))
 	htmlBody := fmt.Sprintf(`<h2>Привет, %s!</h2>
 				<p>Мы получили запрос на восстановление пароля.</p>
 				<p>Чтобы задать новый пароль, перейдите по ссылке:</p>
@@ -126,12 +126,12 @@ func VerifyEmail(db *gorm.DB, token string) error {
 	})
 }
 
-func frontendURL() string {
-	url := strings.TrimRight(os.Getenv("FRONTEND_URL"), "/")
-	if url == "" {
-		return "https://durqan.ru"
+func mobileDeepLinkPrefix() string {
+	prefix := strings.TrimSpace(os.Getenv("MOBILE_DEEP_LINK_PREFIX"))
+	if prefix == "" {
+		prefix = "social://"
 	}
-	return url
+	return strings.TrimRight(prefix, "/") + "/"
 }
 
 func InvalidateEmailVerificationCaches() {
