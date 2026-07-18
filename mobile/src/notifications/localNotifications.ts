@@ -360,8 +360,8 @@ async function acceptIncomingCallFromNotification(
 
   try {
     const { callsApi } = await import('../api/calls');
-    const call = await callsApi.acceptCallIntent(notification.callId);
-    if (!call || call.status !== 'ringing') {
+    const call = await callsApi.acceptCall(notification.callId);
+    if (!call || call.status !== 'accepted') {
       await rememberTerminalIncomingCall(notification.callId).catch(
         () => undefined,
       );
@@ -461,8 +461,8 @@ export function registerLocalNotificationBackgroundHandler() {
     if (event.detail.pressAction?.id === 'answer' && notification.callId) {
       try {
         const { callsApi } = await import('../api/calls');
-        const call = await callsApi.acceptCallIntent(notification.callId);
-        if (!call || call.status !== 'ringing') {
+        const call = await callsApi.acceptCall(notification.callId);
+        if (!call || call.status !== 'accepted') {
           await rememberTerminalIncomingCall(notification.callId).catch(
             () => undefined,
           );

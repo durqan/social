@@ -24,9 +24,8 @@ export const WS_EVENTS = {
   FRIEND_REQUEST: 'friend:request',
   FRIEND_ACCEPTED: 'friend:accepted',
   PRESENCE_UPDATE: 'presence:update',
-  CALL_OFFER: 'call:offer',
-  CALL_ANSWER: 'call:answer',
-  CALL_ICE: 'call:ice',
+  CALL_INCOMING: 'call:incoming',
+  CALL_ACCEPTED: 'call:accepted',
   CALL_END: 'call:end',
   CALL_REJECT: 'call:reject',
   CALL_HEARTBEAT: 'call:heartbeat',
@@ -165,46 +164,18 @@ export type NonCallWsEvent =
 
 export type CallType = 'audio' | 'video';
 
-export type CallSessionDescription = {
-  type: string | null;
-  sdp: string;
-};
-
-export type CallIceCandidate = {
-  candidate: string;
-  sdpMLineIndex?: number | null;
-  sdpMid?: string | null;
-};
-
-export type CallOfferEvent = BaseWsEvent<
-  typeof WS_EVENTS.CALL_OFFER,
+export type CallIncomingEvent = BaseWsEvent<
+  typeof WS_EVENTS.CALL_INCOMING,
   {
     from_id: number;
     call_id: string;
-    event_id?: string;
-    event_seq?: number;
-    call_type?: CallType;
-    offer: CallSessionDescription;
   }
 >;
-export type CallAnswerEvent = BaseWsEvent<
-  typeof WS_EVENTS.CALL_ANSWER,
+export type CallAcceptedEvent = BaseWsEvent<
+  typeof WS_EVENTS.CALL_ACCEPTED,
   {
     from_id: number;
     call_id: string;
-    event_id?: string;
-    event_seq?: number;
-    answer: CallSessionDescription;
-  }
->;
-export type CallIceEvent = BaseWsEvent<
-  typeof WS_EVENTS.CALL_ICE,
-  {
-    from_id: number;
-    call_id: string;
-    event_id?: string;
-    event_seq?: number;
-    candidate: CallIceCandidate;
   }
 >;
 export type CallEndEvent = BaseWsEvent<
@@ -212,8 +183,6 @@ export type CallEndEvent = BaseWsEvent<
   {
     from_id: number;
     call_id: string;
-    event_id?: string;
-    event_seq?: number;
   }
 >;
 export type CallRejectEvent = BaseWsEvent<
@@ -221,8 +190,6 @@ export type CallRejectEvent = BaseWsEvent<
   {
     from_id: number;
     call_id: string;
-    event_id?: string;
-    event_seq?: number;
   }
 >;
 export type CallHeartbeatEvent = BaseWsEvent<
@@ -256,9 +223,8 @@ export type CallReplacedEvent = BaseWsEvent<
 
 export type WsEvent =
   | NonCallWsEvent
-  | CallOfferEvent
-  | CallAnswerEvent
-  | CallIceEvent
+  | CallIncomingEvent
+  | CallAcceptedEvent
   | CallEndEvent
   | CallRejectEvent
   | CallHeartbeatEvent

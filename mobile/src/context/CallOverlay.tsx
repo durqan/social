@@ -26,33 +26,25 @@ import {
     Volume2,
     VolumeOff,
 } from 'lucide-react-native';
-import { RTCView, type MediaStream } from 'react-native-webrtc';
+import {
+    VideoTrack,
+    type TrackReference,
+} from '@livekit/react-native';
 
-import type { CallType } from '../api/ws';
-import type { WebRTCDiagnosticsSnapshot } from '../utils/webrtcStats';
-
-type CallStatus =
-    | 'idle'
-    | 'incoming'
-    | 'connecting'
-    | 'ringing'
-    | 'active'
-    | 'reconnecting'
-    | 'ended'
-    | 'error';
+import type { CallStatus, CallType } from '../calls/types';
 
 type CallOverlayProps = {
     status: CallStatus;
     callType: CallType;
     peerName: string;
-    localStream: MediaStream | null;
-    remoteStream: MediaStream | null;
+    acceptedAt?: string;
+    localVideoTrack?: TrackReference;
+    remoteVideoTrack?: TrackReference;
     microphoneOn: boolean;
     cameraOn: boolean;
     speakerphoneOn: boolean;
     frontCamera: boolean;
     error: string | null;
-    diagnostics: WebRTCDiagnosticsSnapshot | null;
     onAccept: () => void;
     onReject: () => void;
     onEnd: () => void;
@@ -93,14 +85,14 @@ export function CallOverlay({
     status,
     callType,
     peerName,
-    localStream,
-    remoteStream,
+    acceptedAt,
+    localVideoTrack,
+    remoteVideoTrack,
     microphoneOn,
     cameraOn,
     speakerphoneOn,
     frontCamera,
     error,
-    diagnostics,
     onAccept,
     onReject,
     onEnd,
@@ -111,35 +103,24 @@ export function CallOverlay({
 }: CallOverlayProps) {
     const insets = useSafeAreaInsets();
     const [chromeVisible, setChromeVisible] = useState(true);
+    const [durationSeconds, setDurationSeconds] = useState(0);
 
     const isVideoCall = callType === 'video';
 
-    const remoteVideoTrack = remoteStream
-        ?.getVideoTracks()
-        .find(track => track.readyState === 'live');
-
-    const localVideoTrack = localStream
-        ?.getVideoTracks()
-        .find(track => track.readyState === 'live');
-
-    const remoteStreamUrl = remoteStream?.toURL?.();
-    const localStreamUrl = localStream?.toURL?.();
-
-    const showRemoteVideo = Boolean(
-        isVideoCall && remoteStream && remoteStreamUrl && remoteVideoTrack,
-    );
+    const showRemoteVideo = Boolean(isVideoCall && remoteVideoTrack);
 
     const showVideoPlaceholder = Boolean(isVideoCall && !remoteVideoTrack);
 
-    const showLocalPreview = Boolean(
-        isVideoCall && localStream && localStreamUrl && localVideoTrack,
-    );
+    const showLocalPreview = Boolean(isVideoCall && localVideoTrack);
 
     const showActiveControls =
         status === 'connecting' ||
         status === 'ringing' ||
         status === 'active' ||
-        status === 'reconnecting';
+        status === 'reconnecting' ||
+        status === 'error';
+
+    const showMediaControls = status !== 'error';
 
     const initial = peerName.slice(0, 1).toUpperCase();
 
@@ -153,7 +134,27 @@ export function CallOverlay({
 
     useEffect(() => {
         setChromeVisible(true);
-    }, [status, callType, remoteStreamUrl]);
+    }, [status, callType, remoteVideoTrack]);
+
+    useEffect(() => {
+        const acceptedAtMs = acceptedAt ? Date.parse(acceptedAt) : NaN;
+        const showDuration =
+            Number.isFinite(acceptedAtMs) &&
+            (status === 'active' || status === 'reconnecting');
+        if (!showDuration) {
+            setDurationSeconds(0);
+            return;
+        }
+
+        const updateDuration = () => {
+            setDurationSeconds(
+                Math.max(0, Math.floor((Date.now() - acceptedAtMs) / 1000)),
+            );
+        };
+        updateDuration();
+        const timer = setInterval(updateDuration, 1000);
+        return () => clearInterval(timer);
+    }, [acceptedAt, status]);
 
     useEffect(() => {
         if (!shouldAutoHideChrome || !chromeVisible) {
@@ -214,10 +215,9 @@ export function CallOverlay({
                     onPress={toggleChrome}
                     {...panResponder.panHandlers}
                 >
-                    {showRemoteVideo && remoteStreamUrl ? (
-                        <RTCView
-                            key={remoteStreamUrl}
-                            streamURL={remoteStreamUrl}
+                    {showRemoteVideo ? (
+                        <VideoTrack
+                            trackRef={remoteVideoTrack}
                             style={styles.remoteVideo}
                             mirror={false}
                             objectFit="contain"
@@ -256,13 +256,6 @@ export function CallOverlay({
                     ) : null}
                 </Pressable>
 
-                {__DEV__ && isVideoCall && diagnostics ? (
-                    <CallDiagnosticsPanel
-                        diagnostics={diagnostics}
-                        top={Math.max(insets.top, 12) + 72}
-                    />
-                ) : null}
-
                 {chromeVisible ? (
                     <View
                         pointerEvents="none"
@@ -276,12 +269,18 @@ export function CallOverlay({
                         </Text>
 
                         <Text style={styles.callStatus}>
-                            {error ?? callStatusText(status, callType)}
+                            {error ??
+                                `${callStatusText(status, callType)}${
+                                    status === 'active' ||
+                                    status === 'reconnecting'
+                                        ? ` · ${formatDuration(durationSeconds)}`
+                                        : ''
+                                }`}
                         </Text>
                     </View>
                 ) : null}
 
-                {showLocalPreview && localStreamUrl ? (
+                {showLocalPreview ? (
                     <View
                         pointerEvents="none"
                         style={[
@@ -293,9 +292,8 @@ export function CallOverlay({
                             },
                         ]}
                     >
-                        <RTCView
-                            key={localStreamUrl}
-                            streamURL={localStreamUrl}
+                        <VideoTrack
+                            trackRef={localVideoTrack}
                             style={styles.localVideo}
                             mirror={frontCamera}
                             objectFit="cover"
@@ -333,14 +331,21 @@ export function CallOverlay({
 
                         {showActiveControls ? (
                             <View style={styles.callButtonsRow}>
-                                <CallButton
-                                    label={microphoneOn ? 'Микрофон' : 'Выкл.'}
-                                    icon={microphoneOn ? Mic : MicOff}
-                                    muted={!microphoneOn}
-                                    onPress={onToggleMicrophone}
-                                />
+                                {showMediaControls ? (
+                                    <CallButton
+                                        label={
+                                            microphoneOn
+                                                ? 'Микрофон'
+                                                : 'Выкл.'
+                                        }
+                                        icon={microphoneOn ? Mic : MicOff}
+                                        muted={!microphoneOn}
+                                        onPress={onToggleMicrophone}
+                                    />
+                                ) : null}
 
-                                {callType === 'audio' ? (
+                                {showMediaControls &&
+                                callType === 'audio' ? (
                                     <CallButton
                                         label={
                                             speakerphoneOn
@@ -357,7 +362,8 @@ export function CallOverlay({
                                     />
                                 ) : null}
 
-                                {callType === 'video' ? (
+                                {showMediaControls &&
+                                callType === 'video' ? (
                                     <>
                                         <CallButton
                                             label={
@@ -391,72 +397,14 @@ export function CallOverlay({
     );
 }
 
-function formatBitrate(value: number | null | undefined) {
-    if (typeof value !== 'number') {
-        return '—';
-    }
-    if (value >= 1_000_000) {
-        return `${(value / 1_000_000).toFixed(2)} Mbps`;
-    }
-    return `${Math.round(value / 1000)} kbps`;
-}
-
-function formatResolution(
-    width: number | null | undefined,
-    height: number | null | undefined,
-) {
-    return width && height ? `${width}×${height}` : '—';
-}
-
-function formatPercent(value: number | null | undefined) {
-    return typeof value === 'number' ? `${value.toFixed(1)}%` : '—';
-}
-
-function CallDiagnosticsPanel({
-    diagnostics,
-    top,
-}: {
-    diagnostics: WebRTCDiagnosticsSnapshot;
-    top: number;
-}) {
-    const outbound = diagnostics.outboundVideo;
-    const inbound = diagnostics.inboundVideo;
-    const pair = diagnostics.candidatePair;
-    const outboundRTT =
-        outbound?.roundTripTimeMs ?? pair?.currentRoundTripTimeMs ?? null;
-
-    return (
-        <View pointerEvents="none" style={[styles.diagnosticsPanel, { top }]}>
-            <Text style={styles.diagnosticsTitle}>WebRTC DEV</Text>
-            <Text style={styles.diagnosticsText}>
-                CAM {formatResolution(diagnostics.capture?.width, diagnostics.capture?.height)} ·{' '}
-                {diagnostics.capture?.frameRate ?? '—'} fps
-            </Text>
-            <Text style={styles.diagnosticsText}>
-                TX {formatResolution(outbound?.frameWidth, outbound?.frameHeight)} ·{' '}
-                {outbound?.framesPerSecond ?? '—'} fps · {formatBitrate(outbound?.bitrateBps)}
-            </Text>
-            <Text style={styles.diagnosticsText}>
-                RX {formatResolution(inbound?.frameWidth, inbound?.frameHeight)} ·{' '}
-                {inbound?.framesPerSecond ?? '—'} fps · {formatBitrate(inbound?.bitrateBps)}
-            </Text>
-            <Text style={styles.diagnosticsText}>
-                CODEC {outbound?.codec ?? '—'} / {inbound?.codec ?? '—'}
-            </Text>
-            <Text style={styles.diagnosticsText}>
-                LOSS ↑{formatPercent(outbound?.packetLossPercent)} ↓
-                {formatPercent(inbound?.packetLossPercent)} · RTT {outboundRTT ?? '—'} ms
-            </Text>
-            <Text style={styles.diagnosticsText}>
-                ICE {pair?.localCandidateType ?? '—'}→{pair?.remoteCandidateType ?? '—'} ·{' '}
-                {pair?.relayProtocol ?? pair?.localProtocol ?? '—'}
-            </Text>
-            <Text style={styles.diagnosticsText}>
-                LIMIT {outbound?.qualityLimitationReason ?? '—'} · avail{' '}
-                {formatBitrate(pair?.availableOutgoingBitrate)}
-            </Text>
-        </View>
-    );
+function formatDuration(totalSeconds: number) {
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    const clock = [minutes, seconds]
+        .map(value => String(value).padStart(2, '0'))
+        .join(':');
+    return hours > 0 ? `${hours}:${clock}` : clock;
 }
 
 function CallButton({
@@ -618,32 +566,6 @@ const styles = StyleSheet.create({
         textShadowColor: 'rgba(0,0,0,0.45)',
         textShadowOffset: { width: 0, height: 1 },
         textShadowRadius: 6,
-    },
-    diagnosticsPanel: {
-        position: 'absolute',
-        left: 12,
-        zIndex: 40,
-        elevation: 40,
-        maxWidth: 330,
-        paddingHorizontal: 10,
-        paddingVertical: 8,
-        borderRadius: 10,
-        backgroundColor: 'rgba(0,0,0,0.72)',
-        borderWidth: StyleSheet.hairlineWidth,
-        borderColor: 'rgba(255,255,255,0.3)',
-    },
-    diagnosticsTitle: {
-        color: '#a7f3d0',
-        fontSize: 10,
-        lineHeight: 13,
-        fontWeight: '900',
-    },
-    diagnosticsText: {
-        color: '#ffffff',
-        fontSize: 10,
-        lineHeight: 14,
-        fontWeight: '600',
-        fontVariant: ['tabular-nums'],
     },
     callHint: {
         marginTop: 2,

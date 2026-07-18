@@ -63,9 +63,9 @@ func enqueueMessageReadSync(db *gorm.DB, readerID uint, conversationID uint) {
 	}
 }
 
-// enqueueIncomingCallNotification creates a push-eligible notification for an incoming call offer.
-// It is called ONLY for "call:offer" events (enforced by the caller).
-// Outbox persistence errors are logged but MUST NOT prevent WS call signalling.
+// enqueueIncomingCallNotification creates a push-eligible notification after
+// the backend has persisted a new ringing call.
+// Outbox persistence errors are logged but MUST NOT roll back call creation.
 // If callID is empty we still publish using conversationID fallback for tag/URL (dedup will be weaker).
 // See detailed rationale in ws_events.go.
 func enqueueIncomingCallNotification(db *gorm.DB, recipientID, actorID uint, callID string, conversationID uint, callType string) {

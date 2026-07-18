@@ -1,20 +1,21 @@
 # Social
 
-Мобильная социальная сеть: React Native Android-приложение и Go backend. Backend предоставляет REST API, WebSocket-чат, signaling для WebRTC-звонков и FCM push-уведомления.
+Мобильная социальная сеть: React Native Android-приложение и Go backend. Backend предоставляет REST API, WebSocket-чат, управление жизненным циклом звонков и FCM push-уведомления; media-соединение обслуживает self-hosted LiveKit.
 
 ## Состав проекта
 
 ```text
 backend/              Go API, WebSocket, фоновые задачи и миграции
 mobile/               React Native Android-приложение
-infrastructure/nginx/ production API gateway и TURN SNI routing
+livekit/              local/production конфигурация LiveKit Server
+infrastructure/nginx/ production API/LiveKit gateway и TURN/TLS SNI routing
 docker-compose.local.yml
 docker-compose.prod.yml
 .env.example
 .env.local.example
 ```
 
-Основные зависимости backend: PostgreSQL, Redis, FCM и local/S3-compatible storage. Локальный S3 предоставляется MinIO. Coturn нужен для WebRTC-звонков вне простой локальной сети. Уведомления сохраняются в PostgreSQL outbox и доставляются встроенным worker backend напрямую в FCM; video-import worker подхватывает сохранённые задания из PostgreSQL ограниченным пулом workers.
+Основные зависимости backend: PostgreSQL, Redis, LiveKit, FCM и local/S3-compatible storage. Локальный S3 предоставляется MinIO. LiveKit отвечает за WebRTC negotiation, ICE, reconnect, аудио/видео tracks и embedded TURN. Уведомления сохраняются в PostgreSQL outbox и доставляются встроенным worker backend напрямую в FCM; video-import worker подхватывает сохранённые задания из PostgreSQL ограниченным пулом workers.
 
 ## Возможности
 
@@ -23,7 +24,7 @@ docker-compose.prod.yml
 - Личные сообщения, вложения, реакции, ответы, пересылка, закрепление и статусы прочтения.
 - WebSocket-синхронизация чатов и состояния звонков.
 - Server-side encryption-at-rest и client-side E2EE для поддерживаемых диалогов.
-- Аудио- и видеозвонки через WebRTC/Coturn.
+- Аудио- и видеозвонки через self-hosted LiveKit с embedded TURN.
 - Android push-уведомления через Firebase Cloud Messaging.
 - Локальное либо S3-compatible хранение файлов.
 
@@ -53,6 +54,7 @@ docker compose --env-file .env.local -f docker-compose.local.yml logs -f backend
 
 ```text
 Backend health:       http://localhost:8080/health
+LiveKit signaling:    ws://localhost:7880
 MinIO API:            http://localhost:9000
 MinIO Console:        http://localhost:9001
 ```
@@ -70,7 +72,7 @@ docker compose --env-file .env.local -f docker-compose.local.yml down
 ```bash
 cp .env.local.example .env.local
 docker compose --env-file .env.local -f docker-compose.local.yml \
-  up -d postgres redis minio minio-create-bucket
+  up -d postgres redis livekit minio minio-create-bucket
 ```
 
 Заполните `.env.example`, затем запустите API из отдельного терминала:
@@ -93,7 +95,7 @@ set +a
 go run ./cmd/video-import-worker
 ```
 
-`DATABASE_URL` и `REDIS_*` в `.env.example` уже ориентированы на опубликованные local Compose-порты. Перед запуском задайте непустой `MESSAGE_ENCRYPTION_KEY` (`openssl rand -base64 32`). Для реальных push задайте FCM project и Firebase service account credentials непосредственно backend.
+`DATABASE_URL` и `REDIS_*` в `.env.example` уже ориентированы на опубликованные local Compose-порты. Для запуска backend на хосте задайте `LIVEKIT_URL=http://localhost:7880`; публичный адрес для emulator остаётся `LIVEKIT_WS_URL=ws://10.0.2.2:7880`. Перед запуском задайте непустой `MESSAGE_ENCRYPTION_KEY` (`openssl rand -base64 32`). Для реальных push задайте FCM project и Firebase service account credentials непосредственно backend.
 
 ## Запуск React Native Android
 
@@ -122,13 +124,17 @@ npm run android
 docker compose --env-file .env -f docker-compose.prod.yml up -d
 ```
 
-Coturn включается отдельным profile:
+LiveKit запускается в основном production-стеке. Backend получает только internal `LIVEKIT_URL` и server credentials, а mobile получает короткоживущий token и `LIVEKIT_WS_URL` из `POST /calls/:callId/token`. API secret никогда не входит в mobile bundle.
 
-```bash
-docker compose --env-file .env -f docker-compose.prod.yml --profile turn up -d
-```
+Production DNS и сертификаты:
 
-Production Nginx служит только API gateway: `/api/` направляется в backend, `/ws` — в WebSocket. На порту 443 SNI для TURN-домена направляется в Coturn.
+- `durqan.ru` — REST и основной WebSocket;
+- `livekit.durqan.ru` — LiveKit signaling по WSS с публичным CA-сертификатом;
+- `turn.durqan.ru` — embedded TURN/TLS на 443 с отдельным публичным CA-сертификатом.
+
+Откройте на VPS `7881/tcp`, `3478/udp` и `50000-50100/udp`. UDP media не проходит через nginx. Порт 443 использует SNI: HTTPS/WSS завершается в nginx, а `turn.durqan.ru` передаётся напрямую embedded TURN LiveKit на 5349. После обновления сертификата TURN перезапустите `livekit`; после обновления HTTPS-сертификатов перезапустите `gateway`. Self-signed сертификаты для production не поддерживаются.
+
+Room name выводится backend из уникального call ID. PostgreSQL остаётся источником бизнес-состояния (`ringing`, `accepted`, `rejected`, `timeout`, `ended`, `replaced`); LiveKit room не заменяет call log. Основной WebSocket передаёт `call:incoming`, `call:accepted`, `call:reject`, `call:timeout`, `call:end`, `call:busy`, `call:replaced` и heartbeat, но не media negotiation.
 
 ## Проверки
 
@@ -147,7 +153,6 @@ npm ci
 npm run typecheck
 npm run lint
 npm test -- --runInBand
-npm run build:android
 ```
 
 TypeScript-типы REST-контрактов, WebSocket-событий и push payload принадлежат мобильному приложению и находятся в `mobile/src/api` и `mobile/src/notifications`; отдельного workspace-пакета и шага его сборки нет.

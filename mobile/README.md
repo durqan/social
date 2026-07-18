@@ -1,6 +1,6 @@
 # Social Mobile
 
-React Native Android-клиент Social. Приложение использует REST API, один WebSocket-клиент для realtime-событий и signaling звонков, FCM/Notifee для push-уведомлений и native cookie jar для сессии.
+React Native Android-клиент Social. Приложение использует REST API, один WebSocket-клиент для realtime и call lifecycle, официальный LiveKit React Native SDK для media, FCM/Notifee для push-уведомлений и native cookie jar для сессии.
 
 ## Требования
 
@@ -19,6 +19,7 @@ src/screens/        экраны авторизации и основного п
 src/components/     переиспользуемые UI-компоненты
 src/features/       крупная feature-логика чата
 src/api/            HTTP-клиент, API-модули, REST-типы и WebSocket-контракт
+src/calls/          LiveKit Room/media controls и backend/WS/FCM lifecycle
 src/notifications/  FCM, локальные уведомления и переходы
 src/context/        состояние сессии, звонков и уведомлений
 src/crypto/         E2EE и защищённое хранение ключей
@@ -56,11 +57,8 @@ npm run android
 ## Конфигурация
 
 - `SOCIAL_API_BASE_URL` — REST API; production URL обычно заканчивается на `/api`.
-- `SOCIAL_TURN_URLS` — список TURN URL через запятую.
-- `SOCIAL_TURN_USERNAME` и `SOCIAL_TURN_CREDENTIAL` — TURN credentials.
-- `SOCIAL_WEBRTC_FORCE_RELAY=true` — только debug-проверка принудительного TURN relay.
 
-WebSocket URL строится из API URL автоматически. REST-запросы уведомлений используют тот же API URL.
+WebSocket URL строится из API URL автоматически. Public LiveKit URL и короткоживущий join token возвращает backend; LiveKit API key/secret и TURN credentials в mobile configuration отсутствуют.
 
 ## Сессия и storage
 
@@ -70,9 +68,11 @@ E2EE-ключи хранятся через `react-native-keychain`/Android Keys
 
 ## Realtime, звонки и push
 
-- `src/api/ws.ts` — единственная реализация WebSocket и reconnect.
+- `src/api/ws.ts` — единственная реализация основного WebSocket и его reconnect.
 - `src/api/wsEvents.ts` — типы и имена WebSocket-событий.
-- `src/context/CallContext.tsx` — состояние WebRTC-звонка.
+- `src/context/CallContext.tsx` — UI/business state звонка.
+- `src/calls/liveKitCall.ts` — `Room`, tracks, `AudioSession` и media controls.
+- `src/calls/callLifecycle.ts` — REST lifecycle, call events и FCM recovery.
 - `src/notifications/pushNotifications.ts` — регистрация FCM и mobile token.
 - `src/notifications/localNotifications.ts` — foreground/incoming-call notifications.
 
@@ -85,7 +85,7 @@ Push payload содержит структурированные `type`, `sender
 - `/posts/*` — лента, комментарии и лайки.
 - `/conversations` — cursor pagination списка диалогов и pinning.
 - `/messages/*` — сообщения, read state, вложения и реакции.
-- `/calls/*` и `/ws` — восстановление звонка и signaling.
+- `/calls/*` — создание/восстановление звонка и выдача LiveKit token; `/ws` — lifecycle без SDP/ICE.
 - `/notifications/*` и `/push/mobile-token` — список уведомлений и FCM-токены.
 
 ## Проверки и сборка
@@ -94,7 +94,6 @@ Push payload содержит структурированные `type`, `sender
 npm run typecheck
 npm run lint
 npm test -- --runInBand
-npm run build:android
 ```
 
-`npm run build:android` создаёт debug APK. Signed AAB и release APK собираются GitHub Actions с Firebase и signing secrets. Полная настройка release: [`GOOGLE_PLAY_RELEASE.md`](GOOGLE_PLAY_RELEASE.md).
+Signed AAB и release APK собираются GitHub Actions с Firebase и signing secrets. Полная настройка release: [`GOOGLE_PLAY_RELEASE.md`](GOOGLE_PLAY_RELEASE.md).

@@ -33,6 +33,37 @@ services:
     networks:
       - social_network
 
+  livekit:
+    image: livekit/livekit-server:v1.13.4
+    container_name: social_livekit
+    restart: unless-stopped
+    command:
+      - --config
+      - /etc/livekit/livekit.prod.yaml
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:?LIVEKIT_API_KEY is required}: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET is required}"
+    ports:
+      - "7881:7881/tcp"
+      - "3478:3478/udp"
+      - "50000-50100:50000-50100/udp"
+    expose:
+      - "7880/tcp"
+      - "5349/tcp"
+    volumes:
+      - ./livekit/livekit.prod.yaml:/etc/livekit/livekit.prod.yaml:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -q --spider http://127.0.0.1:7880/ || exit 1" ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - social_network
+
   uploads-permissions:
     image: alpine:3.20
     container_name: social_uploads_permissions
@@ -72,6 +103,10 @@ services:
       REDIS_PORT: ${REDIS_PORT:-6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       REDIS_DB: ${REDIS_DB:-0}
+      LIVEKIT_URL: ${LIVEKIT_URL:-http://livekit:7880}
+      LIVEKIT_WS_URL: ${LIVEKIT_WS_URL:?LIVEKIT_WS_URL is required}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY is required}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET is required}
       FCM_PROJECT_ID: ${FCM_PROJECT_ID:-}
       FIREBASE_SERVICE_ACCOUNT_JSON_BASE64: ${FIREBASE_SERVICE_ACCOUNT_JSON_BASE64:-}
       FIREBASE_SERVICE_ACCOUNT_JSON: ${FIREBASE_SERVICE_ACCOUNT_JSON:-}
@@ -101,6 +136,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      livekit:
         condition: service_healthy
       uploads-permissions:
         condition: service_completed_successfully
@@ -168,6 +205,8 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+      livekit:
+        condition: service_healthy
     healthcheck:
       test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1/gateway-health" ]
       interval: 30s
@@ -183,94 +222,16 @@ services:
     volumes:
       - ./certbot/www:/var/www/certbot:rw
       - ./certbot/conf:/etc/letsencrypt:rw
-      - coturn_cert_reload:/var/run/certbot-hooks:rw
     entrypoint: /bin/sh
     command:
       - -c
       - |
         trap 'exit 0' TERM INT
         while :; do
-          certbot renew --deploy-hook 'touch /var/run/certbot-hooks/coturn-cert-renewed'
+          certbot renew
           sleep 12h &
           wait "$!"
         done
-    networks:
-      - social_network
-
-  coturn-cert-reloader:
-    image: docker:27-cli
-    container_name: social_coturn_cert_reloader
-    restart: unless-stopped
-    profiles:
-      - turn
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - coturn_cert_reload:/var/run/certbot-hooks:rw
-    entrypoint: /bin/sh
-    command:
-      - -c
-      - |
-        marker=/var/run/certbot-hooks/coturn-cert-renewed
-        mkdir -p /var/run/certbot-hooks
-        touch "$$marker"
-        last="$$(stat -c %Y "$$marker" 2>/dev/null || echo 0)"
-        while :; do
-          current="$$(stat -c %Y "$$marker" 2>/dev/null || echo 0)"
-          if [ "$$current" != "$$last" ]; then
-            last="$$current"
-            docker restart social_coturn >/dev/null || true
-          fi
-          sleep 60
-        done
-    networks:
-      - social_network
-
-  coturn:
-    image: coturn/coturn:4.6.2
-    container_name: social_coturn
-    restart: unless-stopped
-    user: root
-    profiles:
-      - turn
-    ports:
-      - "3478:3478/tcp"
-      - "3478:3478/udp"
-      - "49160-49200:49160-49200/udp"
-      - "49160-49200:49160-49200/tcp"
-    expose:
-      - "5349/tcp"
-    volumes:
-      - ./certbot/conf:/etc/letsencrypt:ro
-    environment:
-      TURN_REALM: ${TURN_REALM:-turn.durqan.ru}
-      TURN_USERNAME: ${TURN_USERNAME:-social_turn}
-      TURN_PASSWORD: ${TURN_PASSWORD:?TURN_PASSWORD is required}
-      TURN_EXTERNAL_IP: ${TURN_EXTERNAL_IP:?TURN_EXTERNAL_IP is required for Docker TURN relay candidates}
-      TURN_TLS_LISTENING_PORT: ${TURN_TLS_LISTENING_PORT:-5349}
-      TURN_TLS_CERT: ${TURN_TLS_CERT:-/etc/letsencrypt/live/turn.durqan.ru/fullchain.pem}
-      TURN_TLS_PKEY: ${TURN_TLS_PKEY:-/etc/letsencrypt/live/turn.durqan.ru/privkey.pem}
-    entrypoint: /bin/sh
-    command:
-      - -c
-      - |
-        exec turnserver \
-        -n \
-        --log-file=stdout \
-        --listening-ip=0.0.0.0 \
-        --listening-port=3478 \
-        --tls-listening-port="$$TURN_TLS_LISTENING_PORT" \
-        --cert="$$TURN_TLS_CERT" \
-        --pkey="$$TURN_TLS_PKEY" \
-        --min-port=49160 \
-        --max-port=49200 \
-        --realm="$$TURN_REALM" \
-        --server-name="$$TURN_REALM" \
-        --lt-cred-mech \
-        --user="$$TURN_USERNAME:$$TURN_PASSWORD" \
-        --fingerprint \
-        --no-multicast-peers \
-        --no-cli \
-        --external-ip=$$TURN_EXTERNAL_IP
     networks:
       - social_network
 
@@ -283,9 +244,6 @@ volumes:
     name: social_uploads_data
   video_import_tmp:
     name: social_video_import_tmp
-  coturn_cert_reload:
-    name: social_coturn_cert_reload
-
 networks:
   social_network:
     name: social_network

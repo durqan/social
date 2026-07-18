@@ -1,5 +1,5 @@
 import { apiRequest, toQueryString } from './http';
-import type { CallIceCandidate, CallSessionDescription, CallType } from './ws';
+import type { CallType } from './ws';
 import {
   callError,
   callLog,
@@ -8,11 +8,9 @@ import {
 
 export type ActiveCallStatus =
   | 'ringing'
-  | 'answered'
   | 'accepted'
-  | 'declined'
   | 'rejected'
-  | 'missed'
+  | 'timeout'
   | 'ended'
   | 'failed'
   | 'replaced';
@@ -21,11 +19,6 @@ export type CallUser = {
   id: number;
   name: string;
   avatar?: string;
-};
-
-export type RestoredCallIceCandidate = CallIceCandidate & {
-  from_id?: number;
-  fromId?: number;
 };
 
 export type ActiveCall = {
@@ -37,12 +30,17 @@ export type ActiveCall = {
   status: ActiveCallStatus;
   started_at: string;
   expires_at?: string;
+  accepted_at?: string;
+  ended_at?: string;
+  duration_seconds?: number;
   created_at: string;
   caller?: CallUser;
   callee?: CallUser;
-  offer?: CallSessionDescription;
-  answer?: CallSessionDescription;
-  ice_candidates?: RestoredCallIceCandidate[];
+};
+
+export type LiveKitCredentials = {
+  server_url: string;
+  token: string;
 };
 
 type ActiveCallResponse = {
@@ -61,9 +59,6 @@ function summarizeCall(call: ActiveCall | null | undefined) {
     callerId: call.caller_id,
     calleeId: call.callee_id,
     callType: call.call_type,
-    hasOffer: Boolean(call.offer),
-    hasAnswer: Boolean(call.answer),
-    iceCandidates: call.ice_candidates?.length ?? 0,
   };
 }
 
@@ -96,6 +91,25 @@ async function callApiRequest<T>(
 }
 
 export const callsApi = {
+  async createCall(toId: number, callType: CallType) {
+    const path = '/calls';
+    const response = await callApiRequest(
+      'create_call',
+      'POST',
+      path,
+      () =>
+        apiRequest<ActiveCallResponse>(path, {
+          method: 'POST',
+          body: {
+            to_id: toId,
+            call_type: callType,
+          },
+        }),
+      payload => summarizeCall(payload.call),
+    );
+    return response.call;
+  },
+
   getCall(callId: string) {
     const path = `/calls/${encodeURIComponent(callId)}`;
     return callApiRequest(
@@ -120,7 +134,7 @@ export const callsApi = {
     return response.call;
   },
 
-  async acceptCallIntent(callId: string) {
+  async acceptCall(callId: string) {
     const path = `/calls/${encodeURIComponent(callId)}/accept`;
     const response = await callApiRequest(
       'accept_call',
@@ -133,6 +147,23 @@ export const callsApi = {
       payload => summarizeCall(payload.call),
     );
     return response.call;
+  },
+
+  getLiveKitCredentials(callId: string) {
+    const path = `/calls/${encodeURIComponent(callId)}/token`;
+    return callApiRequest(
+      'get_livekit_token',
+      'POST',
+      path,
+      () =>
+        apiRequest<LiveKitCredentials>(path, {
+          method: 'POST',
+        }),
+      response => ({
+        serverUrl: response.server_url,
+        hasToken: Boolean(response.token),
+      }),
+    );
   },
 
   rejectCall(callId: string) {

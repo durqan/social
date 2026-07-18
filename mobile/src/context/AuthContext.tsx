@@ -24,7 +24,7 @@ import {
   resetPostAuthBootstrap,
   runPostAuthBootstrap,
 } from '../bootstrap/postAuthBootstrap';
-import { shutdownCurrentCallForLogout } from './callLifecycle';
+import { shutdownCurrentCallForLogout } from '../calls/callLifecycle';
 import { revokeRegisteredPushToken } from '../notifications/pushNotifications';
 import { clearActivePushConversation } from '../notifications/activeConversation';
 import { clearPendingIncomingCall } from '../notifications/pendingIncomingCall';

@@ -21,6 +21,11 @@ const (
 	defaultRedisPassword = ""
 	defaultRedisDB       = 0
 
+	defaultLiveKitURL       = "http://localhost:7880"
+	defaultLiveKitWSURL     = "ws://localhost:7880"
+	defaultLiveKitAPIKey    = "devkey"
+	defaultLiveKitAPISecret = "local-development-secret-change-me"
+
 	defaultDBMaxOpenConns       = 25
 	defaultDBMaxIdleConns       = 25
 	defaultDBConnMaxLifetimeMin = 30
@@ -37,6 +42,11 @@ type Config struct {
 	RedisPort     string
 	RedisPassword string
 	RedisDB       int
+
+	LiveKitURL       string
+	LiveKitWSURL     string
+	LiveKitAPIKey    string
+	LiveKitAPISecret string
 
 	DBMaxOpenConns       int
 	DBMaxIdleConns       int
@@ -64,6 +74,11 @@ func Load() Config {
 			RedisPort:     getEnv("REDIS_PORT", defaultRedisPort),
 			RedisPassword: getEnv("REDIS_PASSWORD", defaultRedisPassword),
 			RedisDB:       getEnvInt("REDIS_DB", defaultRedisDB),
+
+			LiveKitURL:       getEnv("LIVEKIT_URL", defaultLiveKitURL),
+			LiveKitWSURL:     getEnv("LIVEKIT_WS_URL", defaultLiveKitWSURL),
+			LiveKitAPIKey:    getEnv("LIVEKIT_API_KEY", defaultLiveKitAPIKey),
+			LiveKitAPISecret: getEnv("LIVEKIT_API_SECRET", defaultLiveKitAPISecret),
 
 			DBMaxOpenConns:       getEnvInt("DB_MAX_OPEN_CONNS", defaultDBMaxOpenConns),
 			DBMaxIdleConns:       getEnvInt("DB_MAX_IDLE_CONNS", defaultDBMaxIdleConns),
@@ -149,7 +164,26 @@ func validateSecurity(cfg Config) {
 	if len(cfg.JWTSecret) < 32 || strings.Contains(cfg.JWTSecret, "your-secret-key") {
 		log.Fatal("JWT_SECRET must be changed and contain at least 32 characters in release mode")
 	}
+	if strings.TrimSpace(cfg.LiveKitURL) == "" ||
+		strings.TrimSpace(cfg.LiveKitAPIKey) == "" ||
+		strings.EqualFold(strings.TrimSpace(cfg.LiveKitAPIKey), "devkey") ||
+		looksLikePlaceholder(cfg.LiveKitAPIKey) ||
+		len(strings.TrimSpace(cfg.LiveKitAPISecret)) < 32 ||
+		looksLikePlaceholder(cfg.LiveKitAPISecret) {
+		log.Fatal("LiveKit backend credentials must be configured securely in release mode")
+	}
+	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(cfg.LiveKitWSURL)), "wss://") {
+		log.Fatal("LIVEKIT_WS_URL must use wss:// in release mode")
+	}
 	if err := messagecrypto.ValidateProductionKey(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func looksLikePlaceholder(value string) bool {
+	normalized := strings.NewReplacer("_", "-", " ", "-").
+		Replace(strings.ToLower(strings.TrimSpace(value)))
+	return strings.Contains(normalized, "change-me") ||
+		strings.Contains(normalized, "replace-with") ||
+		strings.Contains(normalized, "your-secret")
 }

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"sync"
 	"time"
 
 	"tester/internal/middleware"
@@ -23,13 +22,6 @@ import (
 type WSMessage struct {
 	Type    string          `json:"type"`
 	Payload json.RawMessage `json:"payload"`
-}
-
-var callEventOrder = struct {
-	sync.Mutex
-	seenIDs map[string]time.Time
-}{
-	seenIDs: make(map[string]time.Time),
 }
 
 func handleWebSocketMessage(ctx context.Context, userID uint, client *websocketClient, wsMsg WSMessage) {
@@ -50,11 +42,6 @@ func handleWebSocketMessage(ctx context.Context, userID uint, client *websocketC
 		if client != nil {
 			clients.setActiveConversation(userID, client, 0)
 		}
-	case "call:offer", "call:answer", "call:ice", "call:end", "call:reject":
-		if _, ok := authorizeRealtimePeerEvent(userID, wsMsg.Payload, wsMsg.Type); !ok {
-			return
-		}
-		forwardCallEvent(ctx, wsMsg.Type, userID, wsMsg.Payload)
 	case "call:heartbeat":
 		toID, ok := authorizeRealtimePeerEvent(userID, wsMsg.Payload, wsMsg.Type)
 		if !ok {
@@ -612,115 +599,6 @@ func writeToUsers(ctx context.Context, payload []byte, userIDs ...uint) {
 	}
 }
 
-func forwardCallEvent(ctx context.Context, eventType string, fromID uint, payload json.RawMessage) {
-	emitExpiredCallTimeouts(ctx, dbInstance)
-
-	var callPayload map[string]json.RawMessage
-
-	if err := json.Unmarshal(payload, &callPayload); err != nil {
-		log.Println("Invalid call payload:", err)
-		return
-	}
-
-	toRaw, ok := callPayload["to_id"]
-	if !ok {
-		return
-	}
-
-	var toID uint
-	if err := json.Unmarshal(toRaw, &toID); err != nil || toID == 0 {
-		return
-	}
-
-	delete(callPayload, "to_id")
-
-	callIDRaw, ok := callPayload["call_id"]
-	if !ok {
-		log.Println("Invalid call payload: missing call_id")
-		return
-	}
-
-	var callID string
-	if err := json.Unmarshal(callIDRaw, &callID); err != nil || callID == "" {
-		log.Println("Invalid call payload: invalid call_id")
-		return
-	}
-	callID = strings.TrimSpace(callID)
-	if callID == "" {
-		log.Println("Invalid call payload: empty call_id")
-		return
-	}
-
-	callType := callTypeFromPayload(callPayload)
-	if !acceptCallEventOrder(fromID, callID, callPayload) {
-		log.Printf("late or duplicate call event ignored: type=%s call_id=%s from_id=%d", eventType, callID, fromID)
-		return
-	}
-	transition, ok := recordCallEvent(eventType, fromID, toID, callID, callType, callOfferPayload(callPayload), callAnswerPayload(callPayload), callCandidatePayload(callPayload))
-
-	if !ok {
-		log.Printf("call event ignored before forward: type=%s call_id=%s from_id=%d to_id=%d", eventType, callID, fromID, toID)
-		return
-	}
-	for _, replaced := range transition.Replaced {
-		sendCallStateEvent(ctx, "call:replaced", fromID, replaced.CallID, replaced.CallerID, replaced.CalleeID)
-		enqueueCallStateNotification(dbInstance, replaced.CalleeID, replaced.CallerID, notifications.TypeCallEnded, replaced.CallID, conversationIDForCall(replaced), replaced.CallType)
-		log.Printf("call state transition: call_id=%s from=ringing to=replaced reason=new_offer caller_id=%d callee_id=%d", replaced.CallID, replaced.CallerID, replaced.CalleeID)
-	}
-	notificationCallType := transition.CallType
-	if notificationCallType == "" {
-		notificationCallType = callType
-	}
-	if eventType == "call:offer" {
-		log.Printf(
-			"call:offer received, attempting incoming_call push publish: call_id=%s caller_id=%d recipient_id=%d conversation_id=%d",
-			callID, fromID, toID, fromID,
-		)
-		enqueueIncomingCallNotification(dbInstance, toID, fromID, callID, fromID, notificationCallType)
-	}
-	if eventType == "call:end" {
-		enqueueCallStateNotification(dbInstance, toID, fromID, notifications.TypeCallEnded, callID, fromID, notificationCallType)
-	}
-	if eventType == "call:reject" {
-		enqueueCallStateNotification(dbInstance, toID, fromID, notifications.TypeCallRejected, callID, fromID, notificationCallType)
-	}
-
-	eventPayload := gin.H{
-		"from_id": fromID,
-	}
-
-	for key, value := range callPayload {
-		eventPayload[key] = value
-	}
-
-	eventBytes, err := json.Marshal(gin.H{
-		"type":    eventType,
-		"payload": eventPayload,
-	})
-	if err != nil {
-		log.Println("Failed to marshal call event:", err)
-		return
-	}
-
-	toConnections := clients.getAll(toID)
-	deliveredCount := 0
-	failedCount := 0
-	for _, toConn := range toConnections {
-		if err := toConn.write(ctx, eventBytes); err != nil {
-			failedCount++
-			log.Printf("call event persisted but websocket forward failed: type=%s call_id=%s from_id=%d to_id=%d error=%v", eventType, callID, fromID, toID, err)
-			continue
-		}
-		deliveredCount++
-	}
-	status := transition.Status
-	if status == "" {
-		status = "forwarded_without_state"
-	}
-
-	log.Printf("call event persisted: type=%s call_id=%s from_id=%d to_id=%d status=%s websocket_clients=%d delivered=%d failed=%d", eventType, callID, fromID, toID, status, len(toConnections), deliveredCount, failedCount)
-}
-
 func emitExpiredCallTimeouts(ctx context.Context, database *gorm.DB) {
 	if database == nil {
 		return
@@ -733,10 +611,11 @@ func emitExpiredCallTimeouts(ctx context.Context, database *gorm.DB) {
 	for _, call := range expired {
 		sendCallStateEvent(ctx, "call:timeout", call.CallerID, call.CallID, call.CallerID, call.CalleeID)
 		enqueueCallStateNotification(database, call.CalleeID, call.CallerID, notifications.TypeCallMissed, call.CallID, conversationIDForCall(call), call.CallType)
-		log.Printf("call state transition: call_id=%s from=ringing to=missed reason=server_timeout caller_id=%d callee_id=%d", call.CallID, call.CallerID, call.CalleeID)
+		closeLiveKitRoom(ctx, liveKitInstance, call.CallID)
+		log.Printf("call state transition: call_id=%s from=ringing to=timeout reason=server_timeout caller_id=%d callee_id=%d", call.CallID, call.CallerID, call.CalleeID)
 	}
 
-	staleActive, err := repository.ExpireStaleAnsweredCallsWithResult(database)
+	staleActive, err := repository.ExpireStaleAcceptedCallsWithResult(database)
 	if err != nil {
 		log.Printf("failed to expire stale active calls: error=%v", err)
 		return
@@ -744,7 +623,8 @@ func emitExpiredCallTimeouts(ctx context.Context, database *gorm.DB) {
 	for _, call := range staleActive {
 		sendCallStateEvent(ctx, "call:end", call.CallerID, call.CallID, call.CallerID, call.CalleeID)
 		enqueueCallStateNotification(database, call.CalleeID, call.CallerID, notifications.TypeCallEnded, call.CallID, conversationIDForCall(call), call.CallType)
-		log.Printf("call state transition: call_id=%s from=answered to=ended reason=heartbeat_timeout caller_id=%d callee_id=%d", call.CallID, call.CallerID, call.CalleeID)
+		closeLiveKitRoom(ctx, liveKitInstance, call.CallID)
+		log.Printf("call state transition: call_id=%s from=accepted to=ended reason=heartbeat_timeout caller_id=%d callee_id=%d", call.CallID, call.CallerID, call.CalleeID)
 	}
 }
 
@@ -768,121 +648,4 @@ func handleCallHeartbeat(fromID uint, toID uint, payload json.RawMessage) {
 	} else if !ok {
 		log.Printf("call heartbeat ignored: call_id=%s from_id=%d to_id=%d", callID, fromID, toID)
 	}
-}
-
-func acceptCallEventOrder(fromID uint, callID string, payload map[string]json.RawMessage) bool {
-	if fromID == 0 || callID == "" {
-		return false
-	}
-
-	var eventID string
-	if raw, ok := payload["event_id"]; ok {
-		_ = json.Unmarshal(raw, &eventID)
-		eventID = strings.TrimSpace(eventID)
-	}
-	callEventOrder.Lock()
-	defer callEventOrder.Unlock()
-
-	now := time.Now()
-	if eventID != "" {
-		key := callID + ":" + eventID
-		if _, exists := callEventOrder.seenIDs[key]; exists {
-			return false
-		}
-		callEventOrder.seenIDs[key] = now
-	}
-	if len(callEventOrder.seenIDs) > 10000 {
-		cutoff := now.Add(-10 * time.Minute)
-		for key, seenAt := range callEventOrder.seenIDs {
-			if seenAt.Before(cutoff) {
-				delete(callEventOrder.seenIDs, key)
-			}
-		}
-	}
-	return true
-}
-
-func callTypeFromPayload(callPayload map[string]json.RawMessage) string {
-	raw, ok := callPayload["call_type"]
-	if !ok {
-		return models.CallTypeAudio
-	}
-
-	var callType string
-	if err := json.Unmarshal(raw, &callType); err != nil {
-		return models.CallTypeAudio
-	}
-	return repository.NormalizeCallType(callType)
-}
-
-func callOfferPayload(callPayload map[string]json.RawMessage) string {
-	raw, ok := callPayload["offer"]
-	if !ok || len(raw) == 0 {
-		return ""
-	}
-	return string(raw)
-}
-
-func callAnswerPayload(callPayload map[string]json.RawMessage) string {
-	raw, ok := callPayload["answer"]
-	if !ok || len(raw) == 0 {
-		return ""
-	}
-	return string(raw)
-}
-
-func callCandidatePayload(callPayload map[string]json.RawMessage) string {
-	raw, ok := callPayload["candidate"]
-	if !ok || len(raw) == 0 {
-		return ""
-	}
-	return string(raw)
-}
-
-type callTransitionResult struct {
-	models.CallLog
-	Replaced []models.CallLog
-}
-
-func recordCallEvent(eventType string, fromID uint, toID uint, callID string, callType string, offerPayload string, answerPayload string, candidatePayload string) (callTransitionResult, bool) {
-	var transition callTransitionResult
-	if dbInstance == nil {
-		return transition, false
-	}
-
-	var err error
-	var shouldForward bool
-	switch eventType {
-	case "call:offer":
-		conversationID := fromID
-		var created *models.CallLog
-		created, transition.Replaced, shouldForward, err = repository.CreateCallOffer(dbInstance, fromID, toID, callID, callType, &conversationID, offerPayload)
-		if errors.Is(err, repository.ErrCallBusy) {
-			sendCallStateEvent(context.Background(), "call:busy", toID, callID, fromID)
-			log.Printf("call event rejected: type=call:offer call_id=%s caller_id=%d callee_id=%d reason=busy", callID, fromID, toID)
-			return transition, false
-		}
-		if created != nil {
-			transition.CallLog = *created
-		}
-	case "call:answer":
-		transition.CallLog, shouldForward, err = repository.MarkCallAnswered(dbInstance, fromID, toID, callID, answerPayload)
-	case "call:reject":
-		transition.CallLog, shouldForward, err = repository.MarkCallDeclined(dbInstance, fromID, toID, callID)
-	case "call:end":
-		transition.CallLog, shouldForward, err = repository.MarkCallEnded(dbInstance, fromID, toID, callID)
-	case "call:ice":
-		transition.CallLog, shouldForward, err = repository.AppendCallIceCandidate(dbInstance, fromID, toID, callID, candidatePayload)
-	default:
-		return transition, false
-	}
-
-	if err != nil {
-		log.Printf("failed to record %s call event: call_id=%s from_id=%d to_id=%d error=%v", eventType, callID, fromID, toID, err)
-		return transition, false
-	}
-	if shouldForward {
-		log.Printf("call state transition accepted: type=%s call_id=%s from_id=%d to_id=%d status=%s", eventType, callID, fromID, toID, transition.Status)
-	}
-	return transition, shouldForward
 }

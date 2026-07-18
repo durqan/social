@@ -1,0 +1,26 @@
+port: 7880
+
+logging:
+  level: info
+
+redis:
+  address: redis:6379
+
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 50100
+  use_external_ip: true
+
+room:
+  empty_timeout: 60
+  departure_timeout: 20
+  max_participants: 4
+
+turn:
+  enabled: true
+  udp_port: 3478
+  tls_port: 5349
+  domain: turn.durqan.ru
+  cert_file: /etc/letsencrypt/live/turn.durqan.ru/fullchain.pem
+  key_file: /etc/letsencrypt/live/turn.durqan.ru/privkey.pem

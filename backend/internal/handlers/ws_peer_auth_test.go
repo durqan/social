@@ -107,7 +107,7 @@ func TestAuthorizeRealtimePeerEventRejectsMalformedPayload(t *testing.T) {
 		dbInstance = previousDB
 	})
 
-	toID, ok := authorizeRealtimePeerEvent(1, []byte("{"), "call:offer")
+	toID, ok := authorizeRealtimePeerEvent(1, []byte("{"), "call:heartbeat")
 	if ok {
 		t.Fatal("authorizeRealtimePeerEvent accepted malformed payload")
 	}

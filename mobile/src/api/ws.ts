@@ -1,8 +1,6 @@
 import type { AppStateStatus } from 'react-native';
 import {
   WS_EVENTS,
-  type CallIceCandidate,
-  type CallSessionDescription,
   type CallType,
   type WsEvent,
 } from './wsEvents';
@@ -22,7 +20,7 @@ import {
 } from '../utils/callDiagnostics';
 
 export { WS_EVENTS };
-export type { CallIceCandidate, CallSessionDescription, CallType, WsEvent };
+export type { CallType, WsEvent };
 
 type WsHandler = (event: WsEvent) => void;
 type StatusHandler = (connected: boolean) => void;
@@ -41,12 +39,6 @@ type RNWebSocketConstructor = new (
     headers?: Record<string, string>;
   },
 ) => WebSocket;
-
-function createEventId(type: string, callId?: string) {
-  return `${type}:${callId ?? 'event'}:${Date.now()}:${Math.random()
-    .toString(36)
-    .slice(2)}`;
-}
 
 function attachmentForTransport(
   attachment: MessageAttachment,
@@ -92,12 +84,10 @@ class ChatSocket {
   private appState: AppStateStatus = 'unknown';
   private pendingEvents: QueuedEvent[] = [];
   private activeConversationId: number | null = null;
-  private callEventSeq = new Map<string, number>();
   private readonly callEventQueueTtlMs = 30000;
   private readonly callEventTypes: ReadonlySet<string> = new Set([
-    WS_EVENTS.CALL_OFFER,
-    WS_EVENTS.CALL_ANSWER,
-    WS_EVENTS.CALL_ICE,
+    WS_EVENTS.CALL_INCOMING,
+    WS_EVENTS.CALL_ACCEPTED,
     WS_EVENTS.CALL_END,
     WS_EVENTS.CALL_REJECT,
     WS_EVENTS.CALL_HEARTBEAT,
@@ -250,7 +240,6 @@ class ChatSocket {
     this.clearReconnectTimer();
     this.reconnectAttempts = 0;
     this.pendingEvents = [];
-    this.callEventSeq.clear();
     this.closeCurrentSocket();
     this.setConnectionStatus('disconnected');
   }
@@ -302,79 +291,6 @@ class ChatSocket {
     );
   }
 
-  sendCallOffer(
-    toId: number,
-    offer: CallSessionDescription,
-    callType: CallType,
-    callId: string,
-  ) {
-    return this.sendEvent({
-      type: WS_EVENTS.CALL_OFFER,
-      payload: {
-        to_id: toId,
-        offer,
-        call_type: callType,
-        call_id: callId,
-        event_id: createEventId(WS_EVENTS.CALL_OFFER, callId),
-        event_seq: this.nextCallEventSeq(callId),
-      },
-    });
-  }
-
-  sendCallAnswer(toId: number, answer: CallSessionDescription, callId: string) {
-    return this.sendEvent({
-      type: WS_EVENTS.CALL_ANSWER,
-      payload: {
-        to_id: toId,
-        answer,
-        call_id: callId,
-        event_id: createEventId(WS_EVENTS.CALL_ANSWER, callId),
-        event_seq: this.nextCallEventSeq(callId),
-      },
-    });
-  }
-
-  sendCallIce(toId: number, candidate: CallIceCandidate, callId: string) {
-    return this.sendEvent({
-      type: WS_EVENTS.CALL_ICE,
-      payload: {
-        to_id: toId,
-        candidate,
-        call_id: callId,
-        event_id: createEventId(WS_EVENTS.CALL_ICE, callId),
-        event_seq: this.nextCallEventSeq(callId),
-      },
-    });
-  }
-
-  sendCallEnd(toId: number, callId: string) {
-    const sent = this.sendEvent({
-      type: WS_EVENTS.CALL_END,
-      payload: {
-        to_id: toId,
-        call_id: callId,
-        event_id: createEventId(WS_EVENTS.CALL_END, callId),
-        event_seq: this.nextCallEventSeq(callId),
-      },
-    });
-    this.callEventSeq.delete(callId);
-    return sent;
-  }
-
-  sendCallReject(toId: number, callId: string) {
-    const sent = this.sendEvent({
-      type: WS_EVENTS.CALL_REJECT,
-      payload: {
-        to_id: toId,
-        call_id: callId,
-        event_id: createEventId(WS_EVENTS.CALL_REJECT, callId),
-        event_seq: this.nextCallEventSeq(callId),
-      },
-    });
-    this.callEventSeq.delete(callId);
-    return sent;
-  }
-
   sendCallHeartbeat(toId: number, callId: string) {
     return this.sendEvent({
       type: WS_EVENTS.CALL_HEARTBEAT,
@@ -401,16 +317,6 @@ class ChatSocket {
       },
       queueIfClosed,
     );
-  }
-
-  discardPendingCallEvents(callId?: string) {
-    this.pendingEvents = this.pendingEvents.filter(event => {
-      if (!this.isCallEvent(event)) {
-        return true;
-      }
-
-      return callId ? this.eventCallId(event) !== callId : false;
-    });
   }
 
   private async open() {
@@ -588,13 +494,13 @@ class ChatSocket {
       return;
     }
 
-    logDev('[SocialMobile] Call signaling event ' + mode, {
+    logDev('[SocialMobile] Call lifecycle event ' + mode, {
       type: event.type,
       callId: this.eventCallId(event),
       connected: this.isConnected(),
       pendingEvents: this.pendingEvents.length,
     });
-    callLog('CALL_WS', `call signaling event ${mode}`, {
+    callLog('CALL_WS', `call lifecycle event ${mode}`, {
       type: event.type,
       callId: this.eventCallId(event),
       connected: this.isConnected(),
@@ -647,7 +553,7 @@ class ChatSocket {
       const parsed = JSON.parse(raw) as WsEvent;
       if (parsed && typeof parsed.type === 'string') {
         if (this.callEventTypes.has(parsed.type)) {
-          callLog('CALL_WS', 'call signaling event received', {
+          callLog('CALL_WS', 'call lifecycle event received', {
             type: parsed.type,
             callId:
               parsed.payload && typeof parsed.payload === 'object'
@@ -877,12 +783,6 @@ class ChatSocket {
 
     const callId = (event.payload as { call_id?: unknown }).call_id;
     return typeof callId === 'string' ? callId : null;
-  }
-
-  private nextCallEventSeq(callId: string) {
-    const next = (this.callEventSeq.get(callId) ?? 0) + 1;
-    this.callEventSeq.set(callId, next);
-    return next;
   }
 
   private isCurrentSocket(socket: WebSocket, generation: number) {

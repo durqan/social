@@ -37,6 +37,32 @@ services:
     networks:
       - social_local
 
+  livekit:
+    image: livekit/livekit-server:v1.13.4
+    restart: unless-stopped
+    command:
+      - --config
+      - /etc/livekit/livekit.local.yaml
+      - --node-ip
+      - ${LIVEKIT_NODE_IP:-10.0.2.2}
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-devkey}: ${LIVEKIT_API_SECRET:-local-development-secret-change-me}"
+    ports:
+      - "${LIVEKIT_SIGNAL_HOST_PORT:-7880}:7880/tcp"
+      - "${LIVEKIT_RTC_TCP_HOST_PORT:-7881}:7881/tcp"
+      - "${LIVEKIT_TURN_UDP_HOST_PORT:-3478}:3478/udp"
+      - "50000-50100:50000-50100/udp"
+    volumes:
+      - ./livekit/livekit.local.yaml:/etc/livekit/livekit.local.yaml:ro
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -q --spider http://127.0.0.1:7880/ || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - social_local
+
   minio:
     image: minio/minio:latest
     restart: unless-stopped
@@ -76,9 +102,6 @@ services:
       dockerfile: Dockerfile.dev
     restart: unless-stopped
     working_dir: /app
-    env_file:
-      - path: .env.local
-        required: false
     environment:
       DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgres://social:social@postgres:5432/social?sslmode=disable}
       PORT: ${PORT:-8080}
@@ -91,16 +114,32 @@ services:
       REDIS_PORT: ${COMPOSE_REDIS_PORT:-6379}
       REDIS_PASSWORD: ${COMPOSE_REDIS_PASSWORD:-}
       REDIS_DB: ${COMPOSE_REDIS_DB:-0}
+      LIVEKIT_URL: ${LIVEKIT_URL:-http://livekit:7880}
+      LIVEKIT_WS_URL: ${LIVEKIT_WS_URL:-ws://10.0.2.2:7880}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-devkey}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-local-development-secret-change-me}
       FCM_PROJECT_ID: ${FCM_PROJECT_ID:-}
       FIREBASE_SERVICE_ACCOUNT_JSON_BASE64: ${FIREBASE_SERVICE_ACCOUNT_JSON_BASE64:-}
       FIREBASE_SERVICE_ACCOUNT_JSON: ${FIREBASE_SERVICE_ACCOUNT_JSON:-}
       GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
+      GMAIL_USERNAME: ${GMAIL_USERNAME:-}
+      GMAIL_PASSWORD: ${GMAIL_PASSWORD:-}
       STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
       STORAGE_LOCAL_ROOT: ${STORAGE_LOCAL_ROOT:-uploads}
       STORAGE_PUBLIC_BASE_URL: ${STORAGE_PUBLIC_BASE_URL:-}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_REGION: ${S3_REGION:-auto}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-}
+      S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
       CHAT_VIDEO_TEMP_ROOT: ${CHAT_VIDEO_TEMP_ROOT:-/tmp/chat-video-normalization}
       CHAT_VIDEO_NORMALIZATION_CONCURRENCY: ${CHAT_VIDEO_NORMALIZATION_CONCURRENCY:-1}
       CHAT_VIDEO_NORMALIZATION_TIMEOUT: ${CHAT_VIDEO_NORMALIZATION_TIMEOUT:-20m}
+      YTDLP_PROXY: ${YTDLP_PROXY:-}
+      YTDLP_IMPERSONATE: ${YTDLP_IMPERSONATE:-chrome}
+      YTDLP_COOKIES_FILE: ${YTDLP_COOKIES_FILE:-}
     command: air
     ports:
       - "${BACKEND_HOST_PORT:-8080}:8080"
@@ -120,6 +159,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      livekit:
+        condition: service_healthy
     networks:
       - social_local
 
@@ -129,9 +170,6 @@ services:
       dockerfile: Dockerfile.dev
     restart: unless-stopped
     working_dir: /app
-    env_file:
-      - path: .env.local
-        required: false
     environment:
       DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgres://social:social@postgres:5432/social?sslmode=disable}
       GIN_MODE: ${GIN_MODE:-debug}
@@ -144,6 +182,13 @@ services:
       STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
       STORAGE_LOCAL_ROOT: ${STORAGE_LOCAL_ROOT:-uploads}
       STORAGE_PUBLIC_BASE_URL: ${STORAGE_PUBLIC_BASE_URL:-}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_REGION: ${S3_REGION:-auto}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-}
+      S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
       VIDEO_IMPORT_WORKER_CONCURRENCY: ${VIDEO_IMPORT_WORKER_CONCURRENCY:-1}
       VIDEO_IMPORT_QUEUE_SIZE: ${VIDEO_IMPORT_QUEUE_SIZE:-8}
       VIDEO_IMPORT_TEMP_ROOT: ${VIDEO_IMPORT_TEMP_ROOT:-/tmp/video-imports}

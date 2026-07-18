@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"tester/internal/handlers"
+	livekitservice "tester/internal/livekit"
 	"tester/internal/middleware"
 	"tester/internal/notifications"
 
@@ -16,6 +17,7 @@ func NewRouter(
 	ctx context.Context,
 	database *gorm.DB,
 	notificationService *notifications.Service,
+	liveKit *livekitservice.Service,
 ) *gin.Engine {
 	router := gin.Default()
 	router.GET("/health", func(c *gin.Context) {
@@ -29,10 +31,10 @@ func NewRouter(
 	registerPostRoutes(router, database)
 	registerMessageRoutes(router, database)
 	registerConversationRoutes(router, database)
-	registerCallRoutes(router, database)
+	registerCallRoutes(router, database, liveKit)
 	registerE2EERoutes(router, database)
 	registerNotificationRoutes(router, database, notificationService)
-	registerWebSocketRoutes(ctx, router, database)
+	registerWebSocketRoutes(ctx, router, database, liveKit)
 
 	return router
 }
@@ -70,7 +72,7 @@ func registerNotificationRoutes(
 	)
 }
 
-func registerCallRoutes(router *gin.Engine, database *gorm.DB) {
+func registerCallRoutes(router *gin.Engine, database *gorm.DB, liveKit *livekitservice.Service) {
 	calls := router.Group(
 		"/calls",
 		middleware.AuthMiddleware(),
@@ -78,10 +80,12 @@ func registerCallRoutes(router *gin.Engine, database *gorm.DB) {
 		middleware.CSRFMiddleware(),
 	)
 
+	calls.POST("", middleware.RateLimitMiddleware(30, time.Minute), handlers.CreateCall(database, liveKit))
 	calls.GET("/active", handlers.GetActiveCall(database))
-	calls.POST("/:callId/accept", middleware.RateLimitMiddleware(30, time.Minute), handlers.AcceptCallIntent(database))
-	calls.POST("/:callId/reject", middleware.RateLimitMiddleware(30, time.Minute), handlers.RejectCall(database))
-	calls.POST("/:callId/end", middleware.RateLimitMiddleware(30, time.Minute), handlers.EndCall(database))
+	calls.POST("/:callId/accept", middleware.RateLimitMiddleware(30, time.Minute), handlers.AcceptCall(database))
+	calls.POST("/:callId/reject", middleware.RateLimitMiddleware(30, time.Minute), handlers.RejectCall(database, liveKit))
+	calls.POST("/:callId/end", middleware.RateLimitMiddleware(30, time.Minute), handlers.EndCall(database, liveKit))
+	calls.POST("/:callId/token", middleware.RateLimitMiddleware(30, time.Minute), handlers.GetLiveKitToken(database, liveKit))
 	calls.GET("/:callId", handlers.GetCall(database))
 }
 
@@ -221,7 +225,7 @@ func registerConversationRoutes(router *gin.Engine, database *gorm.DB) {
 	conversations.DELETE("/:conversationId/pinned-message", handlers.UnpinMessage(database))
 }
 
-func registerWebSocketRoutes(ctx context.Context, router *gin.Engine, database *gorm.DB) {
-	handlers.InitWebSocket(ctx, database)
+func registerWebSocketRoutes(ctx context.Context, router *gin.Engine, database *gorm.DB, liveKit *livekitservice.Service) {
+	handlers.InitWebSocket(ctx, database, liveKit)
 	router.GET("/ws", middleware.RateLimitMiddleware(60, time.Minute), handlers.WebSocketHandler)
 }

@@ -45,6 +45,9 @@ func Migrate(database *gorm.DB) error {
 	if err := finishNotificationMigrations(database); err != nil {
 		return err
 	}
+	if err := migrateCallsToLiveKit(database); err != nil {
+		return err
+	}
 
 	if err := migrateEncryptedKeyBackups(database); err != nil {
 		return err
@@ -58,6 +61,56 @@ func Migrate(database *gorm.DB) error {
 	}
 
 	return normalizeStoredUploadKeys(database)
+}
+
+func migrateCallsToLiveKit(database *gorm.DB) error {
+	migrator := database.Migrator()
+	if !migrator.HasTable(&models.CallLog{}) {
+		return nil
+	}
+	hasAnsweredAt := migrator.HasColumn(&models.CallLog{}, "answered_at")
+
+	if err := database.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&models.CallLog{}).
+			Where("status = ?", "answered").
+			Update("status", models.CallStatusAccepted).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&models.CallLog{}).
+			Where("status = ?", "declined").
+			Update("status", models.CallStatusRejected).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&models.CallLog{}).
+			Where("status = ?", "missed").
+			Update("status", models.CallStatusTimeout).Error; err != nil {
+			return err
+		}
+		if hasAnsweredAt {
+			if err := tx.Exec(
+				"UPDATE call_logs SET accepted_at = answered_at WHERE accepted_at IS NULL AND answered_at IS NOT NULL",
+			).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	for _, legacyColumn := range []string{
+		"offer_payload",
+		"answer_payload",
+		"ice_candidates",
+		"answered_at",
+	} {
+		if migrator.HasColumn(&models.CallLog{}, legacyColumn) {
+			if err := migrator.DropColumn(&models.CallLog{}, legacyColumn); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func cleanupOrphanLinkPreviewVideoAttachments(database *gorm.DB) error {

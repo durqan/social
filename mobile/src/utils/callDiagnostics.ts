@@ -1,16 +1,11 @@
-import {
-  API_BASE_URL,
-  TURN_URLS,
-  WEBRTC_FORCE_RELAY,
-  WS_URL,
-} from '../config/env';
+import { API_BASE_URL, WS_URL } from '../config/env';
 
 type CallDiagnosticTag =
   | 'CALL_UI'
   | 'CALL_START'
   | 'CALL_API'
   | 'CALL_WS'
-  | 'CALL_WEBRTC'
+  | 'CALL_LIVEKIT'
   | 'CALL_ERROR'
   | 'CALL_ENV';
 
@@ -111,8 +106,6 @@ export function logCallEnvOnce(source = 'app_start') {
     mode: releaseMode ? 'release' : 'debug',
     apiBaseURL,
     wsURL,
-    turnConfigured: TURN_URLS.length > 0,
-    forceRelay: WEBRTC_FORCE_RELAY,
   });
 
   if (releaseMode && API_BASE_URL.startsWith('http://')) {

@@ -14,6 +14,7 @@ import (
 	"tester/internal/config"
 	"tester/internal/db"
 	"tester/internal/handlers"
+	livekitservice "tester/internal/livekit"
 	"tester/internal/notifications"
 	"tester/internal/server"
 	"tester/internal/services"
@@ -46,12 +47,22 @@ func main() {
 		log.Fatal("failed to migrate database:", err)
 	}
 
+	liveKit, err := livekitservice.NewService(
+		cfg.LiveKitURL,
+		cfg.LiveKitWSURL,
+		cfg.LiveKitAPIKey,
+		cfg.LiveKitAPISecret,
+	)
+	if err != nil {
+		log.Fatal("failed to configure LiveKit:", err)
+	}
+
 	notificationService := notifications.NewService(database, handlers.IsConversationActive)
 	outboxDone := services.StartNotificationOutboxWorker(runtimeCtx, database, notificationService)
 	services.StartUnverifiedUserCleanup(database)
 	services.StartAbandonedUploadCleanup(database)
 
-	router := server.NewRouter(runtimeCtx, database, notificationService)
+	router := server.NewRouter(runtimeCtx, database, notificationService, liveKit)
 	messageUpdatesDone := handlers.StartMessageUpdateSubscriber(runtimeCtx, database)
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.Port,

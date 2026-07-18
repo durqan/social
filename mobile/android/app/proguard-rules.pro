@@ -19,7 +19,7 @@
 -dontwarn com.facebook.react.**
 -dontwarn com.facebook.hermes.**
 
-# WebRTC calls need native peer connection, media constraints and track classes.
+# LiveKit's official React Native media package uses these native classes.
 -keep class org.webrtc.** { *; }
 -keep class com.oney.WebRTCModule.** { *; }
 -dontwarn org.webrtc.**

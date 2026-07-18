@@ -76,72 +76,6 @@ def validatePublicHttpsUrl = { name, value, required = false ->
     }
 }
 
-def parseTurnUrl = { rawValue ->
-    def trimmed = (rawValue ?: "").trim()
-    def lower = trimmed.toLowerCase(Locale.ROOT)
-    def scheme = lower.startsWith("turns:") ? "turns" : (lower.startsWith("turn:") ? "turn" : null)
-    if (scheme == null) {
-        throw new GradleException("SOCIAL_TURN_URLS contains a non-TURN URL: ${trimmed}.")
-    }
-
-    def withoutScheme = trimmed.substring(scheme.length() + 1)
-    def parts = withoutScheme.split("\\?", 2)
-    def authority = parts.length > 0 ? parts[0].replaceFirst("^//", "") : ""
-    def query = parts.length > 1 ? parts[1] : ""
-    def hostPort = authority.split("/", 2)[0]
-    def transportMatcher = query =~ /(?i)(^|&)transport=(udp|tcp)(&|$)/
-    def transport = transportMatcher.find()
-        ? transportMatcher.group(2).toLowerCase(Locale.ROOT)
-        : (scheme == "turns" ? "tcp" : "udp")
-
-    Integer port = null
-    if (hostPort.startsWith("[")) {
-        def bracketIndex = hostPort.indexOf("]")
-        def portText = bracketIndex >= 0 && hostPort.length() > bracketIndex + 2 && hostPort.charAt(bracketIndex + 1) == ':'
-            ? hostPort.substring(bracketIndex + 2)
-            : ""
-        if (!portText.isBlank()) {
-            port = portText as Integer
-        }
-    } else {
-        def colonIndex = hostPort.lastIndexOf(":")
-        if (colonIndex > 0 && hostPort.indexOf(":") == colonIndex) {
-            port = hostPort.substring(colonIndex + 1) as Integer
-        }
-    }
-
-    return [scheme: scheme, transport: transport, port: port]
-}
-
-def validateTurnConfig = {
-    def turnUrlsValue = propOrEnv("SOCIAL_TURN_URLS")
-    if (turnUrlsValue == null || turnUrlsValue.isBlank()) {
-        return
-    }
-
-    def turnUsername = propOrEnv("SOCIAL_TURN_USERNAME")
-    def turnCredential = propOrEnv("SOCIAL_TURN_CREDENTIAL")
-    if (turnUsername == null || turnUsername.isBlank() || turnCredential == null || turnCredential.isBlank()) {
-        throw new GradleException(
-            "SOCIAL_TURN_USERNAME and SOCIAL_TURN_CREDENTIAL are required when SOCIAL_TURN_URLS is set."
-        )
-    }
-
-    def parsedUrls = turnUrlsValue
-        .split(",")
-        .collect { it.trim() }
-        .findAll { !it.isBlank() }
-        .collect { parseTurnUrl(it) }
-    def hasUdp = parsedUrls.any { it.scheme == "turn" && it.transport == "udp" }
-    def hasPlainTcp = parsedUrls.any { it.scheme == "turn" && it.transport == "tcp" }
-    def hasTcp443 = parsedUrls.any { it.transport == "tcp" && it.port == 443 }
-    if (!hasUdp || !hasPlainTcp || !hasTcp443) {
-        throw new GradleException(
-            "SOCIAL_TURN_URLS must include UDP TURN, plain TCP TURN, and TCP/TLS TURN on port 443 fallback."
-        )
-    }
-}
-
 /**
  * This is the configuration block to customize your React Native Android app.
  * By default you don't need to apply any configuration, just uncomment the lines you need.
@@ -293,7 +227,6 @@ gradle.taskGraph.whenReady { taskGraph ->
     }
 
     validatePublicHttpsUrl("SOCIAL_API_BASE_URL", propOrEnv("SOCIAL_API_BASE_URL"), true)
-    validateTurnConfig()
 }
 
 dependencies {

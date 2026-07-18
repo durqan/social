@@ -1,9 +1,8 @@
 import type { ActiveCall, ActiveCallStatus } from '../api/calls';
 
 const terminalCallStatuses: ReadonlySet<ActiveCallStatus> = new Set([
-  'declined',
   'rejected',
-  'missed',
+  'timeout',
   'ended',
   'failed',
   'replaced',
@@ -17,7 +16,7 @@ export function isLiveServerCall(call: ActiveCall | null | undefined) {
   if (!call || isTerminalCallStatus(call.status)) {
     return false;
   }
-  if (call.status === 'answered' || call.status === 'accepted') {
+  if (call.status === 'accepted') {
     return true;
   }
   if (call.status !== 'ringing') {
@@ -40,8 +39,7 @@ export function shouldShowIncomingServerCall(
       call?.status === 'ringing' &&
       isLiveServerCall(call) &&
       call.callee_id === userId &&
-      call.caller_id !== userId &&
-      call.offer,
+      call.caller_id !== userId,
   );
 }
 
