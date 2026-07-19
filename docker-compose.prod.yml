@@ -124,9 +124,6 @@ services:
       S3_SECRET_KEY: ${S3_SECRET_KEY:-}
       S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-}
       S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
-      YTDLP_PROXY: ${YTDLP_PROXY:-}
-      YTDLP_IMPERSONATE: ${YTDLP_IMPERSONATE:-chrome}
-      YTDLP_COOKIES_FILE: ${YTDLP_COOKIES_FILE:-}
     healthcheck:
       test: [ "CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health >/dev/null || exit 1" ]
       interval: 30s
@@ -141,52 +138,6 @@ services:
         condition: service_healthy
       uploads-permissions:
         condition: service_completed_successfully
-    networks:
-      - social_network
-
-  video-import-worker:
-    image: ${BACKEND_IMAGE:-ghcr.io/durqan/social-backend:latest}
-    container_name: social_video_import_worker
-    restart: unless-stopped
-    pull_policy: always
-    command: [ "./video-import-worker" ]
-    volumes:
-      - uploads_data:/app/uploads
-      - video_import_tmp:/tmp/video-imports
-    environment:
-      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
-      DB_MAX_OPEN_CONNS: ${DB_MAX_OPEN_CONNS:-10}
-      DB_MAX_IDLE_CONNS: ${DB_MAX_IDLE_CONNS:-10}
-      DB_CONN_MAX_LIFETIME_MINUTES: ${DB_CONN_MAX_LIFETIME_MINUTES:-30}
-      DB_CONN_MAX_IDLE_TIME_MINUTES: ${DB_CONN_MAX_IDLE_TIME_MINUTES:-5}
-      GIN_MODE: ${GIN_MODE:-release}
-      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
-      MESSAGE_ENCRYPTION_KEY: ${MESSAGE_ENCRYPTION_KEY:?MESSAGE_ENCRYPTION_KEY is required}
-      REDIS_HOST: ${REDIS_HOST:-redis}
-      REDIS_PORT: ${REDIS_PORT:-6379}
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-      REDIS_DB: ${REDIS_DB:-0}
-      STORAGE_DRIVER: ${STORAGE_DRIVER:-s3}
-      STORAGE_LOCAL_ROOT: ${STORAGE_LOCAL_ROOT:-uploads}
-      STORAGE_PUBLIC_BASE_URL: ${STORAGE_PUBLIC_BASE_URL:-}
-      S3_ENDPOINT: ${S3_ENDPOINT:-}
-      S3_REGION: ${S3_REGION:-auto}
-      S3_BUCKET: ${S3_BUCKET:-}
-      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
-      S3_SECRET_KEY: ${S3_SECRET_KEY:-}
-      S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-}
-      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
-      VIDEO_IMPORT_WORKER_CONCURRENCY: ${VIDEO_IMPORT_WORKER_CONCURRENCY:-1}
-      VIDEO_IMPORT_QUEUE_SIZE: ${VIDEO_IMPORT_QUEUE_SIZE:-8}
-      VIDEO_IMPORT_TEMP_ROOT: ${VIDEO_IMPORT_TEMP_ROOT:-/tmp/video-imports}
-      YTDLP_PROXY: ${YTDLP_PROXY:-}
-      YTDLP_IMPERSONATE: ${YTDLP_IMPERSONATE:-chrome}
-      YTDLP_COOKIES_FILE: ${YTDLP_COOKIES_FILE:-}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
     networks:
       - social_network
 
@@ -242,8 +193,6 @@ volumes:
     name: social_redis_data
   uploads_data:
     name: social_uploads_data
-  video_import_tmp:
-    name: social_video_import_tmp
 networks:
   social_network:
     name: social_network
