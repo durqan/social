@@ -64,7 +64,7 @@ func SendVerificationEmail(db *gorm.DB, user *models.User) error {
 	}
 
 	verifyURL := fmt.Sprintf(
-		"%s/verify-email/%s",
+		"%s/auth/verify-email/%s",
 		baseURL,
 		url.PathEscape(token),
 	)
@@ -104,14 +104,9 @@ func publicAPIURL() (string, error) {
 }
 
 func SendPasswordResetEmail(user *models.User, token string) error {
-	baseURL, err := publicAPIURL()
-	if err != nil {
-		return err
-	}
-
 	resetURL := fmt.Sprintf(
-		"%s/reset-password?token=%s",
-		baseURL,
+		"%sreset-password?token=%s",
+		mobileDeepLinkPrefix(),
 		url.QueryEscape(token),
 	)
 
