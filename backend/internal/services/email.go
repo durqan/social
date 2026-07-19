@@ -1,8 +1,12 @@
 package services
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"strings"
@@ -17,7 +21,7 @@ import (
 	"gorm.io/gorm"
 )
 
-var sendEmailMessage = sendSMTPEmail
+var sendEmailMessage = sendConfiguredEmail
 
 func SetEmailSenderForTest(sender func(to, subject, htmlBody, textBody string) error) func() {
 	previous := sendEmailMessage
@@ -60,6 +64,89 @@ func SendPasswordResetEmail(user *models.User, token string) error {
 	textBody := "Привет, " + user.Name + "!\nВосстановить пароль: " + resetURL + "\nСсылка действует 30 минут."
 
 	return sendEmailMessage(user.Email, "Восстановление пароля — Social", htmlBody, textBody)
+}
+
+type resendEmailRequest struct {
+	From    string   `json:"from"`
+	To      []string `json:"to"`
+	Subject string   `json:"subject"`
+	HTML    string   `json:"html"`
+	Text    string   `json:"text"`
+}
+
+func sendConfiguredEmail(to, subject, htmlBody, textBody string) error {
+	provider := strings.ToLower(strings.TrimSpace(os.Getenv("EMAIL_PROVIDER")))
+
+	switch provider {
+	case "", "resend":
+		return sendResendEmail(to, subject, htmlBody, textBody)
+	case "gmail", "smtp":
+		return sendSMTPEmail(to, subject, htmlBody, textBody)
+	default:
+		return fmt.Errorf("unsupported EMAIL_PROVIDER: %s", provider)
+	}
+}
+
+func sendResendEmail(to, subject, htmlBody, textBody string) error {
+	apiKey := strings.TrimSpace(os.Getenv("RESEND_API_KEY"))
+	if apiKey == "" {
+		return errors.New("RESEND_API_KEY is not configured")
+	}
+
+	from := strings.TrimSpace(os.Getenv("EMAIL_FROM"))
+	if from == "" {
+		from = "Social <no-reply@mail.durqan.ru>"
+	}
+
+	payload := resendEmailRequest{
+		From:    from,
+		To:      []string{to},
+		Subject: subject,
+		HTML:    htmlBody,
+		Text:    textBody,
+	}
+
+	requestBody, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to encode Resend request: %w", err)
+	}
+
+	request, err := http.NewRequest(
+		http.MethodPost,
+		"https://api.resend.com/emails",
+		bytes.NewReader(requestBody),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create Resend request: %w", err)
+	}
+
+	request.Header.Set("Authorization", "Bearer "+apiKey)
+	request.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{
+		Timeout: 20 * time.Second,
+	}
+
+	response, err := client.Do(request)
+	if err != nil {
+		return fmt.Errorf("failed to call Resend API: %w", err)
+	}
+	defer response.Body.Close()
+
+	responseBody, err := io.ReadAll(io.LimitReader(response.Body, 1024*1024))
+	if err != nil {
+		return fmt.Errorf("failed to read Resend response: %w", err)
+	}
+
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return fmt.Errorf(
+			"Resend API returned %s: %s",
+			response.Status,
+			strings.TrimSpace(string(responseBody)),
+		)
+	}
+
+	return nil
 }
 
 func sendSMTPEmail(to, subject, htmlBody, textBody string) error {
