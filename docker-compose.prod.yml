@@ -97,6 +97,7 @@ services:
       MESSAGE_ENCRYPTION_KEY: ${MESSAGE_ENCRYPTION_KEY:?MESSAGE_ENCRYPTION_KEY is required}
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       MOBILE_DEEP_LINK_PREFIX: ${MOBILE_DEEP_LINK_PREFIX:-social://}
+      PUBLIC_API_URL: ${PUBLIC_API_URL:?PUBLIC_API_URL is required}
       RESEND_API_KEY: ${RESEND_API_KEY:?RESEND_API_KEY is required}
       EMAIL_FROM: "${EMAIL_FROM:-Social <no-reply@mail.durqan.ru>}"
       REDIS_HOST: ${REDIS_HOST:-redis}

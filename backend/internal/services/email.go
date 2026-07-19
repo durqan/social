@@ -58,9 +58,14 @@ func SendVerificationEmail(db *gorm.DB, user *models.User) error {
 		return fmt.Errorf("failed to create email verification: %w", err)
 	}
 
+	baseURL, err := publicAPIURL()
+	if err != nil {
+		return err
+	}
+
 	verifyURL := fmt.Sprintf(
-		"%sverify-email/%s",
-		mobileDeepLinkPrefix(),
+		"%s/verify-email/%s",
+		baseURL,
 		url.PathEscape(token),
 	)
 
@@ -89,10 +94,24 @@ func SendVerificationEmail(db *gorm.DB, user *models.User) error {
 	)
 }
 
+func publicAPIURL() (string, error) {
+	baseURL := strings.TrimSpace(os.Getenv("PUBLIC_API_URL"))
+	if baseURL == "" {
+		return "", errors.New("PUBLIC_API_URL is not configured")
+	}
+
+	return strings.TrimRight(baseURL, "/"), nil
+}
+
 func SendPasswordResetEmail(user *models.User, token string) error {
+	baseURL, err := publicAPIURL()
+	if err != nil {
+		return err
+	}
+
 	resetURL := fmt.Sprintf(
-		"%sreset-password?token=%s",
-		mobileDeepLinkPrefix(),
+		"%s/reset-password?token=%s",
+		baseURL,
 		url.QueryEscape(token),
 	)
 
